@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Layout } from "@/components/layout/Layout";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -5,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Search, Phone, Video, Info, Paperclip, Smile, Send } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
+import { useLocation } from "wouter";
 
 const contacts = [
   { id: 1, name: "Команда дизайна", lastMsg: "Выглядит хорошо!", time: "10:42", unread: 2, avatar: null, group: true },
@@ -24,6 +26,8 @@ const messages = [
 ];
 
 export default function Chat() {
+  const [, setLocation] = useLocation();
+
   return (
     <Layout>
       <div className="h-[calc(100vh-8rem)] rounded-xl border border-border/50 shadow-sm bg-card overflow-hidden flex animate-in fade-in duration-500">
@@ -87,10 +91,35 @@ export default function Chat() {
                 </div>
               </div>
               <div className="flex items-center gap-1">
-                 <Button variant="ghost" size="icon"><Phone className="w-5 h-5 text-muted-foreground" /></Button>
-                 <Button variant="ghost" size="icon"><Video className="w-5 h-5 text-muted-foreground" /></Button>
+                 <Button 
+                   variant="ghost" 
+                   size="icon"
+                   className="hover:bg-secondary"
+                   onClick={() => setLocation("/call")}
+                   data-testid="button-start-audio-call"
+                   title="Аудио звонок"
+                 >
+                   <Phone className="w-5 h-5 text-muted-foreground" />
+                 </Button>
+                 <Button 
+                   variant="ghost" 
+                   size="icon"
+                   className="hover:bg-secondary"
+                   onClick={() => setLocation("/call")}
+                   data-testid="button-start-video-call"
+                   title="Видео звонок"
+                 >
+                   <Video className="w-5 h-5 text-muted-foreground" />
+                 </Button>
                  <Separator orientation="vertical" className="h-6 mx-2" />
-                 <Button variant="ghost" size="icon"><Info className="w-5 h-5 text-muted-foreground" /></Button>
+                 <Button 
+                   variant="ghost" 
+                   size="icon"
+                   className="hover:bg-secondary"
+                   data-testid="button-call-info"
+                 >
+                   <Info className="w-5 h-5 text-muted-foreground" />
+                 </Button>
               </div>
            </div>
 

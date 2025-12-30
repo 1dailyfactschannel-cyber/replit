@@ -9,6 +9,7 @@ import Kanban from "@/pages/kanban";
 import Tasks from "@/pages/tasks";
 import CalendarPage from "@/pages/calendar";
 import Chat from "@/pages/chat";
+import Call from "@/pages/call";
 
 function Router() {
   return (
@@ -18,6 +19,7 @@ function Router() {
       <Route path="/tasks" component={Tasks} />
       <Route path="/calendar" component={CalendarPage} />
       <Route path="/chat" component={Chat} />
+      <Route path="/call" component={Call} />
       <Route path="/team" component={Dashboard} /> {/* Placeholder for now */}
       <Route component={NotFound} />
     </Switch>
