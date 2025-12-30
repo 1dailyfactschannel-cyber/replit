@@ -4,9 +4,11 @@ import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Search, Phone, Video, Info, Paperclip, Smile, Send } from "lucide-react";
+import { Search, Phone, Video, Info, Paperclip, Smile, Send, Clock } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import { useLocation } from "wouter";
+import { ScheduleCallDialog, ScheduledCall } from "@/components/call/ScheduleCallDialog";
+import { Badge } from "@/components/ui/badge";
 
 const contacts = [
   { id: 1, name: "Команда дизайна", lastMsg: "Выглядит хорошо!", time: "10:42", unread: 2, avatar: null, group: true },
@@ -27,6 +29,13 @@ const messages = [
 
 export default function Chat() {
   const [, setLocation] = useLocation();
+  const [scheduleOpen, setScheduleOpen] = useState(false);
+  const [scheduledCalls, setScheduledCalls] = useState<ScheduledCall[]>([]);
+
+  const handleScheduleCall = (callData: ScheduledCall) => {
+    setScheduledCalls([...scheduledCalls, callData]);
+    // In a real app, this would also update the calendar
+  };
 
   return (
     <Layout>
@@ -111,6 +120,16 @@ export default function Chat() {
                  >
                    <Video className="w-5 h-5 text-muted-foreground" />
                  </Button>
+                 <Button 
+                   variant="ghost" 
+                   size="icon"
+                   className="hover:bg-secondary"
+                   onClick={() => setScheduleOpen(true)}
+                   data-testid="button-schedule-call"
+                   title="Запланировать звонок"
+                 >
+                   <Clock className="w-5 h-5 text-muted-foreground" />
+                 </Button>
                  <Separator orientation="vertical" className="h-6 mx-2" />
                  <Button 
                    variant="ghost" 
@@ -122,6 +141,21 @@ export default function Chat() {
                  </Button>
               </div>
            </div>
+
+           {/* Scheduled Calls Info */}
+           {scheduledCalls.length > 0 && (
+             <div className="bg-blue-50 dark:bg-blue-950/30 border-b border-blue-200 dark:border-blue-900 px-6 py-3">
+               <p className="text-sm font-medium text-blue-900 dark:text-blue-300 mb-2">Запланированные звонки:</p>
+               <div className="flex flex-wrap gap-2">
+                 {scheduledCalls.map((call, i) => (
+                   <Badge key={i} variant="secondary" className="bg-blue-100 dark:bg-blue-900/50 text-blue-900 dark:text-blue-300 flex items-center gap-1">
+                     <Clock className="w-3 h-3" />
+                     {call.date} в {call.time} ({call.type === 'video' ? 'видео' : 'аудио'})
+                   </Badge>
+                 ))}
+               </div>
+             </div>
+           )}
 
            {/* Messages */}
            <ScrollArea className="flex-1 p-6">
@@ -163,6 +197,13 @@ export default function Chat() {
            </div>
         </div>
 
+        {/* Schedule Call Dialog */}
+        <ScheduleCallDialog
+          open={scheduleOpen}
+          onOpenChange={setScheduleOpen}
+          contactName="Юлия Дарицкая"
+          onSchedule={handleScheduleCall}
+        />
       </div>
     </Layout>
   );
