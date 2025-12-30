@@ -7,13 +7,13 @@ import { Button } from "@/components/ui/button";
 import { MoreHorizontal, Calendar, ArrowUpDown, Filter } from "lucide-react";
 
 const tasks = [
-  { id: "TASK-872", title: "Create new design system tokens", status: "In Progress", priority: "High", assignee: "Sarah", due: "Tomorrow" },
-  { id: "TASK-873", title: "Fix navigation bug on mobile", status: "Todo", priority: "Medium", assignee: "Mike", due: "Wed, Jan 12" },
-  { id: "TASK-874", title: "Update dependency packages", status: "Done", priority: "Low", assignee: "Alex", due: "Yesterday" },
-  { id: "TASK-875", title: "Write documentation for API", status: "In Progress", priority: "Medium", assignee: "Sarah", due: "Fri, Jan 14" },
-  { id: "TASK-876", title: "Refactor auth middleware", status: "Todo", priority: "High", assignee: "Mike", due: "Next Week" },
-  { id: "TASK-877", title: "User testing session results", status: "Done", priority: "High", assignee: "Jane", due: "Last Week" },
-  { id: "TASK-878", title: "Optimize image assets", status: "Todo", priority: "Low", assignee: "Alex", due: "Next Month" },
+  { id: "TASK-872", title: "Создать новые токены дизайн-системы", status: "В процессе", priority: "Высокий", assignee: "Сара", due: "Завтра" },
+  { id: "TASK-873", title: "Исправить баг навигации на мобильных", status: "К выполнению", priority: "Средний", assignee: "Майк", due: "Ср, 12 янв" },
+  { id: "TASK-874", title: "Обновить зависимости", status: "Готово", priority: "Низкий", assignee: "Алексей", due: "Вчера" },
+  { id: "TASK-875", title: "Написать документацию API", status: "В процессе", priority: "Средний", assignee: "Сара", due: "Пт, 14 янв" },
+  { id: "TASK-876", title: "Рефакторинг middleware аутентификации", status: "К выполнению", priority: "Высокий", assignee: "Майк", due: "На следующей неделе" },
+  { id: "TASK-877", title: "Результаты сеанса пользовательского тестирования", status: "Готово", priority: "Высокий", assignee: "Юлия", due: "На прошлой неделе" },
+  { id: "TASK-878", title: "Оптимизировать изображения", status: "К выполнению", priority: "Низкий", assignee: "Алексей", due: "В следующем месяце" },
 ];
 
 export default function Tasks() {
@@ -22,12 +22,12 @@ export default function Tasks() {
       <div className="space-y-6 animate-in fade-in duration-500">
         <div className="flex items-center justify-between">
            <div>
-             <h1 className="text-3xl font-bold tracking-tight text-foreground">My Tasks</h1>
-             <p className="text-muted-foreground mt-1">Manage your personal workload.</p>
+             <h1 className="text-3xl font-bold tracking-tight text-foreground">Мои задачи</h1>
+             <p className="text-muted-foreground mt-1">Управляйте своей рабочей нагрузкой.</p>
            </div>
            <div className="flex gap-2">
-              <Button variant="outline" className="gap-2"><Filter className="w-4 h-4" /> Filter</Button>
-              <Button>New Task</Button>
+              <Button variant="outline" className="gap-2"><Filter className="w-4 h-4" /> Фильтр</Button>
+              <Button>Новая задача</Button>
            </div>
         </div>
 
@@ -37,13 +37,13 @@ export default function Tasks() {
               <TableRow className="hover:bg-transparent">
                 <TableHead className="w-[50px]"><Checkbox /></TableHead>
                 <TableHead className="w-[100px]">ID</TableHead>
-                <TableHead>Title</TableHead>
-                <TableHead className="w-[140px]">Status</TableHead>
-                <TableHead className="w-[120px]">Priority</TableHead>
-                <TableHead className="w-[150px]">Assignee</TableHead>
+                <TableHead>Название</TableHead>
+                <TableHead className="w-[140px]">Статус</TableHead>
+                <TableHead className="w-[120px]">Приоритет</TableHead>
+                <TableHead className="w-[150px]">Исполнитель</TableHead>
                 <TableHead className="w-[150px]">
                   <div className="flex items-center gap-1 cursor-pointer hover:text-foreground">
-                    Due Date <ArrowUpDown className="w-3 h-3" />
+                    Срок <ArrowUpDown className="w-3 h-3" />
                   </div>
                 </TableHead>
                 <TableHead className="w-[50px]"></TableHead>
@@ -59,8 +59,8 @@ export default function Tasks() {
                   </TableCell>
                   <TableCell>
                     <Badge variant="outline" className={
-                      task.status === "Done" ? "border-emerald-200 text-emerald-700 bg-emerald-50" :
-                      task.status === "In Progress" ? "border-blue-200 text-blue-700 bg-blue-50" :
+                      task.status === "Готово" ? "border-emerald-200 text-emerald-700 bg-emerald-50" :
+                      task.status === "В процессе" ? "border-blue-200 text-blue-700 bg-blue-50" :
                       "border-slate-200 text-slate-700 bg-slate-50"
                     }>
                       {task.status}
@@ -69,8 +69,8 @@ export default function Tasks() {
                   <TableCell>
                     <div className="flex items-center gap-2">
                       <div className={`w-2 h-2 rounded-full ${
-                        task.priority === "High" ? "bg-rose-500" :
-                        task.priority === "Medium" ? "bg-amber-500" : "bg-emerald-500"
+                        task.priority === "Высокий" ? "bg-rose-500" :
+                        task.priority === "Средний" ? "bg-amber-500" : "bg-emerald-500"
                       }`} />
                       <span className="text-sm">{task.priority}</span>
                     </div>

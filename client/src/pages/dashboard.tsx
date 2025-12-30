@@ -17,13 +17,13 @@ import {
 } from "recharts";
 
 const performanceData = [
-  { name: "Mon", tasks: 12 },
-  { name: "Tue", tasks: 18 },
-  { name: "Wed", tasks: 15 },
-  { name: "Thu", tasks: 25 },
-  { name: "Fri", tasks: 22 },
-  { name: "Sat", tasks: 10 },
-  { name: "Sun", tasks: 5 },
+  { name: "Пн", tasks: 12 },
+  { name: "Вт", tasks: 18 },
+  { name: "Ср", tasks: 15 },
+  { name: "Чт", tasks: 25 },
+  { name: "Пт", tasks: 22 },
+  { name: "Сб", tasks: 10 },
+  { name: "Вс", tasks: 5 },
 ];
 
 export default function Dashboard() {
@@ -32,22 +32,22 @@ export default function Dashboard() {
       <div className="space-y-8 animate-in fade-in duration-500">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight text-foreground">Overview</h1>
-            <p className="text-muted-foreground mt-1">Good morning, Jane! Here's what's happening today.</p>
+            <h1 className="text-3xl font-bold tracking-tight text-foreground">Обзор</h1>
+            <p className="text-muted-foreground mt-1">Доброе утро, Юлия! Вот что происходит сегодня.</p>
           </div>
           <div className="flex gap-3">
-             <Button variant="outline" className="hidden sm:flex">Export Report</Button>
-             <Button className="shadow-lg shadow-primary/20">Create Task</Button>
+             <Button variant="outline" className="hidden sm:flex">Экспортировать отчёт</Button>
+             <Button className="shadow-lg shadow-primary/20">Создать задачу</Button>
           </div>
         </div>
 
         {/* Stats Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           {[
-            { label: "Total Tasks", value: "24", change: "+12%", trend: "up" },
-            { label: "Completed", value: "18", change: "+8%", trend: "up" },
-            { label: "In Progress", value: "4", change: "-2%", trend: "down" },
-            { label: "Team Velocity", value: "92%", change: "+5%", trend: "up" },
+            { label: "Всего задач", value: "24", change: "+12%", trend: "up" },
+            { label: "Завершено", value: "18", change: "+8%", trend: "up" },
+            { label: "В процессе", value: "4", change: "-2%", trend: "down" },
+            { label: "Скорость команды", value: "92%", change: "+5%", trend: "up" },
           ].map((stat, i) => (
             <Card key={i} className="border-border/50 shadow-sm hover:shadow-md transition-shadow">
               <CardContent className="p-6">
@@ -73,8 +73,8 @@ export default function Dashboard() {
           {/* Main Chart */}
           <Card className="col-span-1 lg:col-span-4 border-border/50 shadow-sm">
             <CardHeader>
-              <CardTitle>Task Completion</CardTitle>
-              <CardDescription>Weekly performance overview</CardDescription>
+              <CardTitle>Завершение задач</CardTitle>
+              <CardDescription>Еженедельный обзор производительности</CardDescription>
             </CardHeader>
             <CardContent className="pl-0">
                <div className="h-[300px] w-full">
@@ -103,7 +103,7 @@ export default function Dashboard() {
           {/* Recent Tasks / Timeline */}
           <Card className="col-span-1 lg:col-span-3 border-border/50 shadow-sm flex flex-col">
             <CardHeader className="flex flex-row items-center justify-between">
-              <CardTitle>Today's Focus</CardTitle>
+              <CardTitle>Фокус на сегодня</CardTitle>
               <Button variant="ghost" size="icon" className="h-8 w-8">
                 <MoreHorizontal className="w-4 h-4" />
               </Button>
@@ -111,10 +111,10 @@ export default function Dashboard() {
             <CardContent className="flex-1">
               <div className="space-y-6">
                 {[
-                  { title: "Design System Review", time: "10:00 AM", status: "done", team: "Design" },
-                  { title: "Client Meeting - Q3 Plan", time: "11:30 AM", status: "current", team: "Product" },
-                  { title: "Update Documentation", time: "2:00 PM", status: "todo", team: "Eng" },
-                  { title: "Team Sync", time: "4:00 PM", status: "todo", team: "All" },
+                  { title: "Ревью дизайн-системы", time: "10:00", status: "done", team: "Дизайн" },
+                  { title: "Встреча с клиентом - План Q3", time: "11:30", status: "current", team: "Продукт" },
+                  { title: "Обновить документацию", time: "14:00", status: "todo", team: "Разработка" },
+                  { title: "Синхронизация команды", time: "16:00", status: "todo", team: "Все" },
                 ].map((task, i) => (
                   <div key={i} className="flex gap-4">
                     <div className="flex flex-col items-center">
@@ -146,14 +146,14 @@ export default function Dashboard() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <Card className="border-border/50 shadow-sm md:col-span-2">
             <CardHeader>
-              <CardTitle>Team Workload</CardTitle>
+              <CardTitle>Загруженность команды</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="space-y-5">
                 {[
-                  { name: "Alex Chen", role: "Frontend Dev", progress: 75, avatar: "AC" },
-                  { name: "Sarah Miller", role: "Designer", progress: 45, avatar: "SM" },
-                  { name: "Mike Ross", role: "Backend Dev", progress: 90, avatar: "MR" },
+                  { name: "Алексей Чэнь", role: "Frontend-разработчик", progress: 75, avatar: "АЧ" },
+                  { name: "Сара Миллер", role: "Дизайнер", progress: 45, avatar: "СМ" },
+                  { name: "Майк Росс", role: "Backend-разработчик", progress: 90, avatar: "МР" },
                 ].map((member, i) => (
                    <div key={i} className="flex items-center gap-4">
                       <Avatar>
@@ -174,13 +174,13 @@ export default function Dashboard() {
 
            <Card className="border-border/50 shadow-sm bg-primary text-primary-foreground">
             <CardHeader>
-              <CardTitle className="text-primary-foreground">Pro Plan</CardTitle>
+              <CardTitle className="text-primary-foreground">Pro План</CardTitle>
               <CardDescription className="text-primary-foreground/80">
-                Your team is growing fast! Upgrade to unlock unlimited projects.
+                Ваша команда растёт быстро! Обновитесь, чтобы разблокировать неограниченные проекты.
               </CardDescription>
             </CardHeader>
             <CardContent>
-               <Button variant="secondary" className="w-full font-semibold text-primary">Upgrade Now</Button>
+               <Button variant="secondary" className="w-full font-semibold text-primary">Обновить сейчас</Button>
             </CardContent>
           </Card>
         </div>

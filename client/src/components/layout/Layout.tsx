@@ -23,12 +23,12 @@ import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 
 const sidebarItems = [
-  { icon: LayoutDashboard, label: "Dashboard", href: "/" },
-  { icon: Kanban, label: "Kanban Board", href: "/kanban" },
-  { icon: CheckSquare, label: "My Tasks", href: "/tasks" },
-  { icon: Calendar, label: "Calendar", href: "/calendar" },
-  { icon: MessageSquare, label: "Team Chat", href: "/chat" },
-  { icon: Users, label: "Team", href: "/team" },
+  { icon: LayoutDashboard, label: "Главная", href: "/" },
+  { icon: Kanban, label: "Доска Канбан", href: "/kanban" },
+  { icon: CheckSquare, label: "Мои задачи", href: "/tasks" },
+  { icon: Calendar, label: "Календарь", href: "/calendar" },
+  { icon: MessageSquare, label: "Чат команды", href: "/chat" },
+  { icon: Users, label: "Команда", href: "/team" },
 ];
 
 export function Layout({ children }: { children: React.ReactNode }) {
@@ -48,14 +48,14 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <div className="mb-4">
           <Button variant="outline" className="w-full justify-start gap-2 bg-sidebar-accent/50 border-sidebar-border text-sidebar-foreground/70 hover:text-sidebar-foreground shadow-sm">
             <Plus className="w-4 h-4" />
-            <span>New Project</span>
+            <span>Новый проект</span>
           </Button>
         </div>
       </div>
 
       <ScrollArea className="flex-1 px-4">
         <div className="space-y-1">
-          <p className="text-xs font-medium text-muted-foreground px-2 mb-2 uppercase tracking-wider">Menu</p>
+          <p className="text-xs font-medium text-muted-foreground px-2 mb-2 uppercase tracking-wider">Меню</p>
           {sidebarItems.map((item) => {
             const isActive = location === item.href;
             return (
@@ -77,8 +77,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
         </div>
 
         <div className="mt-8 space-y-1">
-          <p className="text-xs font-medium text-muted-foreground px-2 mb-2 uppercase tracking-wider">Your Teams</p>
-          {["Design Team", "Engineering", "Marketing"].map((team, i) => (
+          <p className="text-xs font-medium text-muted-foreground px-2 mb-2 uppercase tracking-wider">Ваши команды</p>
+          {["Дизайн", "Разработка", "Маркетинг"].map((team, i) => (
              <button key={i} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors text-left">
                 <span className={cn("w-2 h-2 rounded-full", i===0 ? "bg-purple-500" : i===1 ? "bg-blue-500" : "bg-orange-500")} />
                 {team}
@@ -91,11 +91,11 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <div className="flex items-center gap-3 p-2 rounded-lg hover:bg-sidebar-accent transition-colors cursor-pointer">
           <Avatar className="w-9 h-9 border border-border">
             <AvatarImage src="https://github.com/shadcn.png" />
-            <AvatarFallback>JD</AvatarFallback>
+            <AvatarFallback>ЮД</AvatarFallback>
           </Avatar>
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium truncate">Jane Doe</p>
-            <p className="text-xs text-muted-foreground truncate">Product Lead</p>
+            <p className="text-sm font-medium truncate">Юлия Дарицкая</p>
+            <p className="text-xs text-muted-foreground truncate">Руководитель продукта</p>
           </div>
           <Settings className="w-4 h-4 text-muted-foreground" />
         </div>
@@ -127,7 +127,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
             <div className="relative hidden sm:block w-96">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input
-                placeholder="Search tasks, projects, or messages..."
+                placeholder="Поиск задач, проектов или сообщений..."
                 className="pl-9 bg-secondary/50 border-transparent hover:bg-secondary focus:bg-background transition-colors rounded-xl"
               />
             </div>

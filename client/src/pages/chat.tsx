@@ -7,20 +7,20 @@ import { Search, Phone, Video, Info, Paperclip, Smile, Send } from "lucide-react
 import { Separator } from "@/components/ui/separator";
 
 const contacts = [
-  { id: 1, name: "Design Team", lastMsg: "Looks good to me!", time: "10:42 AM", unread: 2, avatar: null, group: true },
-  { id: 2, name: "Jane Doe", lastMsg: "Can you review the PR?", time: "09:30 AM", unread: 0, avatar: "https://github.com/shadcn.png", online: true },
-  { id: 3, name: "Marketing", lastMsg: "New campaign is live 🚀", time: "Yesterday", unread: 5, avatar: null, group: true },
-  { id: 4, name: "Mike Ross", lastMsg: "Server is down...", time: "Yesterday", unread: 0, avatar: null, online: false },
-  { id: 5, name: "Sarah Miller", lastMsg: "Thanks for the help!", time: "Mon", unread: 0, avatar: null, online: true },
+  { id: 1, name: "Команда дизайна", lastMsg: "Выглядит хорошо!", time: "10:42", unread: 2, avatar: null, group: true },
+  { id: 2, name: "Юлия Дарицкая", lastMsg: "Можешь посмотреть PR?", time: "09:30", unread: 0, avatar: "https://github.com/shadcn.png", online: true },
+  { id: 3, name: "Маркетинг", lastMsg: "Новая кампания в прямом эфире 🚀", time: "Вчера", unread: 5, avatar: null, group: true },
+  { id: 4, name: "Майк Росс", lastMsg: "Сервер не работает...", time: "Вчера", unread: 0, avatar: null, online: false },
+  { id: 5, name: "Сара Миллер", lastMsg: "Спасибо за помощь!", time: "Пн", unread: 0, avatar: null, online: true },
 ];
 
 const messages = [
-  { id: 1, sender: "Jane Doe", content: "Hey team, how is the new design coming along?", time: "10:30 AM", me: false },
-  { id: 2, sender: "Me", content: "Almost done! Just finishing up the dark mode variables.", time: "10:32 AM", me: true },
-  { id: 3, sender: "Jane Doe", content: "Great! Can we schedule a review later?", time: "10:33 AM", me: false },
-  { id: 4, sender: "Me", content: "Sure, how about 2 PM?", time: "10:35 AM", me: true },
-  { id: 5, sender: "Jane Doe", content: "Works for me. Sending the invite now.", time: "10:36 AM", me: false },
-  { id: 6, sender: "Me", content: "👍", time: "10:36 AM", me: true },
+  { id: 1, sender: "Юлия Дарицкая", content: "Привет команда, как идёт новый дизайн?", time: "10:30", me: false },
+  { id: 2, sender: "Я", content: "Почти готово! Заканчиваю переменные тёмного режима.", time: "10:32", me: true },
+  { id: 3, sender: "Юлия Дарицкая", content: "Отлично! Можем ли мы запланировать ревью позже?", time: "10:33", me: false },
+  { id: 4, sender: "Я", content: "Конечно, как насчёт 14:00?", time: "10:35", me: true },
+  { id: 5, sender: "Юлия Дарицкая", content: "Для меня подходит. Сейчас отправлю приглашение.", time: "10:36", me: false },
+  { id: 6, sender: "Я", content: "👍", time: "10:36", me: true },
 ];
 
 export default function Chat() {
@@ -31,10 +31,10 @@ export default function Chat() {
         {/* Sidebar List */}
         <div className="w-80 border-r border-border bg-card flex flex-col">
           <div className="p-4 border-b border-border">
-            <h2 className="font-semibold mb-4">Messages</h2>
+            <h2 className="font-semibold mb-4">Сообщения</h2>
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <Input placeholder="Search..." className="pl-9 bg-secondary/50 border-none" />
+              <Input placeholder="Поиск..." className="pl-9 bg-secondary/50 border-none" />
             </div>
           </div>
           <ScrollArea className="flex-1">
@@ -77,12 +77,12 @@ export default function Chat() {
               <div className="flex items-center gap-3">
                 <Avatar>
                   <AvatarImage src="https://github.com/shadcn.png" />
-                  <AvatarFallback>JD</AvatarFallback>
+                  <AvatarFallback>ЮД</AvatarFallback>
                 </Avatar>
                 <div>
-                   <h3 className="font-semibold text-sm">Jane Doe</h3>
+                   <h3 className="font-semibold text-sm">Юлия Дарицкая</h3>
                    <span className="flex items-center gap-1.5 text-xs text-emerald-500">
-                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> Online
+                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> В сети
                    </span>
                 </div>
               </div>
@@ -102,7 +102,7 @@ export default function Chat() {
                        {!msg.me && (
                          <Avatar className="w-8 h-8 mr-2 mt-1">
                            <AvatarImage src="https://github.com/shadcn.png" />
-                           <AvatarFallback>JD</AvatarFallback>
+                           <AvatarFallback>ЮД</AvatarFallback>
                          </Avatar>
                        )}
                        <div className={`max-w-[70%] rounded-2xl px-4 py-3 shadow-sm ${
@@ -125,7 +125,7 @@ export default function Chat() {
               <div className="flex gap-2 items-center bg-secondary/30 rounded-xl px-2 border border-border/50 focus-within:ring-2 ring-primary/20 transition-all">
                  <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-foreground shrink-0"><Paperclip className="w-5 h-5" /></Button>
                  <Input 
-                   placeholder="Type a message..." 
+                   placeholder="Напишите сообщение..." 
                    className="border-0 bg-transparent focus-visible:ring-0 shadow-none py-6" 
                  />
                  <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-foreground shrink-0"><Smile className="w-5 h-5" /></Button>

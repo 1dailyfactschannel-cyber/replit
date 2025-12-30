@@ -9,34 +9,34 @@ import { cn } from "@/lib/utils";
 const columns = [
   {
     id: "todo",
-    title: "To Do",
+    title: "К выполнению",
     tasks: [
-      { id: 1, title: "Research competitors", tag: "Strategy", priority: "high", comments: 2, attach: 0 },
-      { id: 2, title: "Draft user stories", tag: "Product", priority: "medium", comments: 0, attach: 1 },
-      { id: 3, title: "Update README", tag: "Docs", priority: "low", comments: 1, attach: 0 },
+      { id: 1, title: "Исследовать конкурентов", tag: "Стратегия", priority: "high", comments: 2, attach: 0 },
+      { id: 2, title: "Составить пользовательские истории", tag: "Продукт", priority: "medium", comments: 0, attach: 1 },
+      { id: 3, title: "Обновить README", tag: "Документы", priority: "low", comments: 1, attach: 0 },
     ]
   },
   {
     id: "in-progress",
-    title: "In Progress",
+    title: "В процессе",
     tasks: [
-      { id: 4, title: "Design system setup", tag: "Design", priority: "high", comments: 5, attach: 3, image: "https://images.unsplash.com/photo-1542744173-8e7e53415bb0?auto=format&fit=crop&q=80&w=600" },
-      { id: 5, title: "Authentication flow", tag: "Backend", priority: "high", comments: 3, attach: 0 },
+      { id: 4, title: "Настройка дизайн-системы", tag: "Дизайн", priority: "high", comments: 5, attach: 3, image: "https://images.unsplash.com/photo-1542744173-8e7e53415bb0?auto=format&fit=crop&q=80&w=600" },
+      { id: 5, title: "Поток аутентификации", tag: "Backend", priority: "high", comments: 3, attach: 0 },
     ]
   },
   {
     id: "review",
-    title: "In Review",
+    title: "На проверке",
     tasks: [
-      { id: 6, title: "Landing page copy", tag: "Marketing", priority: "medium", comments: 8, attach: 2 },
+      { id: 6, title: "Копия лэндинг-страницы", tag: "Маркетинг", priority: "medium", comments: 8, attach: 2 },
     ]
   },
   {
     id: "done",
-    title: "Done",
+    title: "Готово",
     tasks: [
-      { id: 7, title: "Project setup", tag: "DevOps", priority: "medium", comments: 0, attach: 0 },
-      { id: 8, title: "Initial commit", tag: "DevOps", priority: "low", comments: 0, attach: 0 },
+      { id: 7, title: "Инициализация проекта", tag: "DevOps", priority: "medium", comments: 0, attach: 0 },
+      { id: 8, title: "Первый коммит", tag: "DevOps", priority: "low", comments: 0, attach: 0 },
     ]
   }
 ];
@@ -47,24 +47,24 @@ export default function Kanban() {
       <div className="h-full flex flex-col animate-in fade-in duration-500">
         <div className="flex items-center justify-between mb-8">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight text-foreground">Project Alpha</h1>
+            <h1 className="text-3xl font-bold tracking-tight text-foreground">Проект Альфа</h1>
             <div className="flex items-center gap-4 mt-2">
               <div className="flex -space-x-2">
                  {[1,2,3].map(i => (
                    <Avatar key={i} className="w-8 h-8 border-2 border-background">
-                     <AvatarFallback className="text-xs">U{i}</AvatarFallback>
+                     <AvatarFallback className="text-xs">У{i}</AvatarFallback>
                    </Avatar>
                  ))}
                  <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center text-xs font-medium border-2 border-background text-muted-foreground">+2</div>
               </div>
               <div className="h-4 w-[1px] bg-border" />
-              <p className="text-sm text-muted-foreground">Updated 2h ago</p>
+              <p className="text-sm text-muted-foreground">Обновлено 2 часа назад</p>
             </div>
           </div>
           <div className="flex gap-3">
-             <Button variant="outline">Filter</Button>
+             <Button variant="outline">Фильтр</Button>
              <Button className="shadow-lg shadow-primary/20 gap-2">
-               <Plus className="w-4 h-4" /> New Task
+               <Plus className="w-4 h-4" /> Новая задача
              </Button>
           </div>
         </div>
@@ -95,9 +95,9 @@ export default function Kanban() {
                         <div className="flex justify-between items-start mb-2">
                           <Badge variant="secondary" className={cn(
                             "rounded-md text-[10px] font-medium px-1.5 py-0.5 pointer-events-none",
-                            task.tag === 'Design' ? "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300" :
+                            task.tag === 'Дизайн' ? "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300" :
                             task.tag === 'Backend' ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300" :
-                            task.tag === 'Strategy' ? "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300" :
+                            task.tag === 'Стратегия' ? "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300" :
                             "bg-secondary text-secondary-foreground"
                           )}>
                             {task.tag}
@@ -134,7 +134,7 @@ export default function Kanban() {
                       </div>
                     ))}
                     <Button variant="ghost" className="w-full justify-start text-muted-foreground hover:text-foreground text-sm border border-dashed border-border hover:bg-secondary/50">
-                      <Plus className="w-4 h-4 mr-2" /> Add Task
+                      <Plus className="w-4 h-4 mr-2" /> Добавить задачу
                     </Button>
                   </div>
                 </ScrollArea>
