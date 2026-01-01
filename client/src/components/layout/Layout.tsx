@@ -37,6 +37,14 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
 
+  const handleCollapse = () => {
+    if (window.innerWidth >= 768) {
+      setIsCollapsed(true);
+    } else {
+      setIsMobileOpen(false);
+    }
+  };
+
   const SidebarContent = () => (
     <div className={cn(
       "flex flex-col h-full bg-sidebar text-sidebar-foreground border-r border-sidebar-border transition-all duration-300 ease-in-out",
@@ -53,6 +61,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <div className="mb-4">
           <Button 
             variant="outline" 
+            onClick={handleCollapse}
             className={cn(
               "w-full justify-start gap-2 bg-sidebar-accent/50 border-sidebar-border text-sidebar-foreground/70 hover:text-sidebar-foreground shadow-sm overflow-hidden whitespace-nowrap",
               isCollapsed && "px-2 justify-center"
@@ -74,11 +83,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
                 key={item.href}
                 onClick={() => {
                   setLocation(item.href);
-                  if (window.innerWidth >= 768) {
-                    setIsCollapsed(true);
-                  } else {
-                    setIsMobileOpen(false);
-                  }
+                  handleCollapse();
                 }}
                 className={cn(
                   "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 group overflow-hidden whitespace-nowrap cursor-pointer",
@@ -101,11 +106,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
           {["Дизайн", "Разработка", "Маркетинг"].map((team, i) => (
              <button 
                key={i} 
-               onClick={() => {
-                 if (window.innerWidth >= 768) {
-                   setIsCollapsed(true);
-                 }
-               }}
+               onClick={handleCollapse}
                className={cn(
                  "w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors text-left overflow-hidden whitespace-nowrap",
                  isCollapsed && "px-2 justify-center"
