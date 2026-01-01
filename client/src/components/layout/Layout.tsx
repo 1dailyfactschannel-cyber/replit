@@ -35,42 +35,55 @@ const sidebarItems = [
 export function Layout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
   const [isMobileOpen, setIsMobileOpen] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(false);
 
   const SidebarContent = () => (
-    <div className="flex flex-col h-full bg-sidebar text-sidebar-foreground border-r border-sidebar-border">
-      <div className="p-6">
+    <div className={cn(
+      "flex flex-col h-full bg-sidebar text-sidebar-foreground border-r border-sidebar-border transition-all duration-300 ease-in-out",
+      isCollapsed ? "w-20" : "w-64"
+    )}>
+      <div className={cn("p-6", isCollapsed && "px-4 flex justify-center")}>
         <div className="flex items-center gap-2 mb-8">
-          <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center text-primary-foreground font-bold text-xl">
+          <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center text-primary-foreground font-bold text-xl shrink-0">
             T
           </div>
-          <span className="font-sans font-bold text-lg">TeamSync</span>
+          {!isCollapsed && <span className="font-sans font-bold text-lg animate-in fade-in duration-300">TeamSync</span>}
         </div>
 
         <div className="mb-4">
-          <Button variant="outline" className="w-full justify-start gap-2 bg-sidebar-accent/50 border-sidebar-border text-sidebar-foreground/70 hover:text-sidebar-foreground shadow-sm">
-            <Plus className="w-4 h-4" />
-            <span>Новый проект</span>
+          <Button 
+            variant="outline" 
+            className={cn(
+              "w-full justify-start gap-2 bg-sidebar-accent/50 border-sidebar-border text-sidebar-foreground/70 hover:text-sidebar-foreground shadow-sm overflow-hidden whitespace-nowrap",
+              isCollapsed && "px-2 justify-center"
+            )}
+          >
+            <Plus className="w-4 h-4 shrink-0" />
+            {!isCollapsed && <span className="animate-in fade-in duration-300">Новый проект</span>}
           </Button>
         </div>
       </div>
 
       <ScrollArea className="flex-1 px-4">
         <div className="space-y-1">
-          <p className="text-xs font-medium text-muted-foreground px-2 mb-2 uppercase tracking-wider">Меню</p>
+          {!isCollapsed && <p className="text-xs font-medium text-muted-foreground px-2 mb-2 uppercase tracking-wider animate-in fade-in duration-300">Меню</p>}
           {sidebarItems.map((item) => {
             const isActive = location.startsWith(item.href) && (item.href !== "/" || location === "/");
             return (
               <Link key={item.href} href={item.href}>
                 <a
+                  onClick={() => setIsCollapsed(true)}
                   className={cn(
-                    "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 group",
+                    "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 group overflow-hidden whitespace-nowrap",
                     isActive
                       ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-sm"
-                      : "text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                      : "text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+                    isCollapsed && "px-2 justify-center"
                   )}
+                  title={isCollapsed ? item.label : ""}
                 >
-                  <item.icon className={cn("w-5 h-5", isActive ? "text-sidebar-primary-foreground" : "text-muted-foreground group-hover:text-sidebar-accent-foreground")} />
-                  {item.label}
+                  <item.icon className={cn("w-5 h-5 shrink-0", isActive ? "text-sidebar-primary-foreground" : "text-muted-foreground group-hover:text-sidebar-accent-foreground")} />
+                  {!isCollapsed && <span className="animate-in fade-in duration-300">{item.label}</span>}
                 </a>
               </Link>
             );
@@ -78,41 +91,60 @@ export function Layout({ children }: { children: React.ReactNode }) {
         </div>
 
         <div className="mt-8 space-y-1">
-          <p className="text-xs font-medium text-muted-foreground px-2 mb-2 uppercase tracking-wider">Ваши команды</p>
+          {!isCollapsed && <p className="text-xs font-medium text-muted-foreground px-2 mb-2 uppercase tracking-wider animate-in fade-in duration-300">Ваши команды</p>}
           {["Дизайн", "Разработка", "Маркетинг"].map((team, i) => (
-             <button key={i} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors text-left">
-                <span className={cn("w-2 h-2 rounded-full", i===0 ? "bg-purple-500" : i===1 ? "bg-blue-500" : "bg-orange-500")} />
-                {team}
+             <button 
+               key={i} 
+               onClick={() => setIsCollapsed(true)}
+               className={cn(
+                 "w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors text-left overflow-hidden whitespace-nowrap",
+                 isCollapsed && "px-2 justify-center"
+               )}
+               title={isCollapsed ? team : ""}
+             >
+                <span className={cn("w-2 h-2 rounded-full shrink-0", i===0 ? "bg-purple-500" : i===1 ? "bg-blue-500" : "bg-orange-500")} />
+                {!isCollapsed && <span className="animate-in fade-in duration-300">{team}</span>}
              </button>
           ))}
         </div>
       </ScrollArea>
 
-      <div className="p-4 border-t border-sidebar-border">
-        <div className="flex items-center gap-3 p-2 rounded-lg hover:bg-sidebar-accent transition-colors cursor-pointer">
-          <Avatar className="w-9 h-9 border border-border">
+      <div className="p-4 border-t border-sidebar-border overflow-hidden">
+        <div 
+          onClick={() => setIsCollapsed(!isCollapsed)}
+          className={cn(
+            "flex items-center gap-3 p-2 rounded-lg hover:bg-sidebar-accent transition-colors cursor-pointer whitespace-nowrap",
+            isCollapsed && "px-1 justify-center"
+          )}
+        >
+          <Avatar className="w-9 h-9 border border-border shrink-0">
             <AvatarImage src="https://github.com/shadcn.png" />
             <AvatarFallback>ЮД</AvatarFallback>
           </Avatar>
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium truncate">Юлия Дарицкая</p>
-            <p className="text-xs text-muted-foreground truncate">Руководитель продукта</p>
-          </div>
-          <Settings className="w-4 h-4 text-muted-foreground" />
+          {!isCollapsed && (
+            <div className="flex-1 min-w-0 animate-in fade-in duration-300">
+              <p className="text-sm font-medium truncate">Юлия Дарицкая</p>
+              <p className="text-xs text-muted-foreground truncate">Руководитель продукта</p>
+            </div>
+          )}
+          {!isCollapsed && <Settings className="w-4 h-4 text-muted-foreground shrink-0" />}
         </div>
       </div>
     </div>
   );
 
   return (
-    <div className="min-h-screen bg-background flex">
+    <div className="min-h-screen bg-background flex overflow-hidden">
       {/* Desktop Sidebar */}
-      <div className="hidden md:block w-64 flex-shrink-0 h-screen sticky top-0">
+      <div className={cn(
+        "hidden md:block flex-shrink-0 h-screen sticky top-0 transition-all duration-300 ease-in-out",
+        isCollapsed ? "w-20" : "w-64"
+      )}>
         <SidebarContent />
       </div>
 
       {/* Main Content */}
-      <div className="flex-1 flex flex-col min-h-screen min-w-0">
+      <div className="flex-1 flex flex-col min-h-screen min-w-0 overflow-hidden">
         <header className="h-16 px-6 border-b border-border flex items-center justify-between bg-card/50 backdrop-blur-sm sticky top-0 z-10">
           <div className="flex items-center gap-4">
              <Sheet open={isMobileOpen} onOpenChange={setIsMobileOpen}>
