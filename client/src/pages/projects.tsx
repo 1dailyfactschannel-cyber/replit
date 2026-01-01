@@ -18,6 +18,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
 // Mock Data
 const INITIAL_PROJECTS = [
@@ -162,8 +163,8 @@ export default function Projects() {
           </div>
 
           {/* Kanban Columns */}
-          <ScrollArea className="flex-1 p-6" orientation="horizontal">
-            <div className="flex gap-6 h-full items-start">
+          <ScrollArea className="flex-1 p-6">
+            <div className="flex gap-6 h-full items-start pb-6">
               {Object.entries(kanbanData).map(([column, tasks]) => (
                 <div key={column} className="w-80 shrink-0 flex flex-col gap-4">
                   <div className="flex items-center justify-between px-1">
