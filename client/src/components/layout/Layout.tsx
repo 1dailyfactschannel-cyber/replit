@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Link, useLocation } from "wouter";
+import { useLocation } from "wouter";
 import { cn } from "@/lib/utils";
 import {
   LayoutDashboard,
@@ -33,7 +33,7 @@ const sidebarItems = [
 ];
 
 export function Layout({ children }: { children: React.ReactNode }) {
-  const [location] = useLocation();
+  const [location, setLocation] = useLocation();
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
 
@@ -70,28 +70,28 @@ export function Layout({ children }: { children: React.ReactNode }) {
           {sidebarItems.map((item) => {
             const isActive = location.startsWith(item.href) && (item.href !== "/" || location === "/");
             return (
-              <Link key={item.href} href={item.href}>
-                <div
-                  onClick={() => {
-                    if (window.innerWidth >= 768) {
-                      setIsCollapsed(true);
-                    } else {
-                      setIsMobileOpen(false);
-                    }
-                  }}
-                  className={cn(
-                    "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 group overflow-hidden whitespace-nowrap cursor-pointer",
-                    isActive
-                      ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-sm"
-                      : "text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
-                    isCollapsed && "px-2 justify-center"
-                  )}
-                  title={isCollapsed ? item.label : ""}
-                >
-                  <item.icon className={cn("w-5 h-5 shrink-0", isActive ? "text-sidebar-primary-foreground" : "text-muted-foreground group-hover:text-sidebar-accent-foreground")} />
-                  {!isCollapsed && <span className="animate-in fade-in duration-300">{item.label}</span>}
-                </div>
-              </Link>
+              <div
+                key={item.href}
+                onClick={() => {
+                  setLocation(item.href);
+                  if (window.innerWidth >= 768) {
+                    setIsCollapsed(true);
+                  } else {
+                    setIsMobileOpen(false);
+                  }
+                }}
+                className={cn(
+                  "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 group overflow-hidden whitespace-nowrap cursor-pointer",
+                  isActive
+                    ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-sm"
+                    : "text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+                  isCollapsed && "px-2 justify-center"
+                )}
+                title={isCollapsed ? item.label : ""}
+              >
+                <item.icon className={cn("w-5 h-5 shrink-0", isActive ? "text-sidebar-primary-foreground" : "text-muted-foreground group-hover:text-sidebar-accent-foreground")} />
+                {!isCollapsed && <span className="animate-in fade-in duration-300">{item.label}</span>}
+              </div>
             );
           })}
         </div>
