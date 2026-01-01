@@ -21,6 +21,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
+import { ThemeToggle } from "./ThemeToggle";
 
 const sidebarItems = [
   { icon: LayoutDashboard, label: "Главная", href: "/" },
@@ -134,6 +135,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
           </div>
 
           <div className="flex items-center gap-3">
+             <ThemeToggle />
              <Button variant="ghost" size="icon" className="relative rounded-full hover:bg-secondary">
                <Bell className="w-5 h-5 text-muted-foreground" />
                <span className="absolute top-2.5 right-2.5 w-2 h-2 bg-red-500 rounded-full border-2 border-background" />
