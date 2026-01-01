@@ -25,7 +25,7 @@ import { ThemeToggle } from "./ThemeToggle";
 
 const sidebarItems = [
   { icon: LayoutDashboard, label: "Главная", href: "/" },
-  { icon: Kanban, label: "Доска Канбан", href: "/kanban" },
+  { icon: Kanban, label: "Проекты", href: "/projects" },
   { icon: CheckSquare, label: "Мои задачи", href: "/tasks" },
   { icon: Calendar, label: "Календарь", href: "/calendar" },
   { icon: MessageSquare, label: "Чат команды", href: "/chat" },
@@ -58,7 +58,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <div className="space-y-1">
           <p className="text-xs font-medium text-muted-foreground px-2 mb-2 uppercase tracking-wider">Меню</p>
           {sidebarItems.map((item) => {
-            const isActive = location === item.href;
+            const isActive = location.startsWith(item.href) && (item.href !== "/" || location === "/");
             return (
               <Link key={item.href} href={item.href}>
                 <a
@@ -143,7 +143,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
           </div>
         </header>
 
-        <main className="flex-1 p-6 md:p-8 overflow-y-auto">
+        <main className="flex-1 overflow-y-auto">
           {children}
         </main>
       </div>
