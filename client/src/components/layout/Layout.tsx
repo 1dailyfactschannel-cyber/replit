@@ -71,7 +71,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
             const isActive = location.startsWith(item.href) && (item.href !== "/" || location === "/");
             return (
               <Link key={item.href} href={item.href}>
-                <a
+                <div
                   onClick={() => {
                     if (window.innerWidth >= 768) {
                       setIsCollapsed(true);
@@ -80,7 +80,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
                     }
                   }}
                   className={cn(
-                    "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 group overflow-hidden whitespace-nowrap",
+                    "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 group overflow-hidden whitespace-nowrap cursor-pointer",
                     isActive
                       ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-sm"
                       : "text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
@@ -90,7 +90,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
                 >
                   <item.icon className={cn("w-5 h-5 shrink-0", isActive ? "text-sidebar-primary-foreground" : "text-muted-foreground group-hover:text-sidebar-accent-foreground")} />
                   {!isCollapsed && <span className="animate-in fade-in duration-300">{item.label}</span>}
-                </a>
+                </div>
               </Link>
             );
           })}
