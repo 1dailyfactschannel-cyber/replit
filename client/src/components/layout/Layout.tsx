@@ -72,7 +72,13 @@ export function Layout({ children }: { children: React.ReactNode }) {
             return (
               <Link key={item.href} href={item.href}>
                 <a
-                  onClick={() => setIsCollapsed(true)}
+                  onClick={() => {
+                    if (window.innerWidth >= 768) {
+                      setIsCollapsed(true);
+                    } else {
+                      setIsMobileOpen(false);
+                    }
+                  }}
                   className={cn(
                     "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 group overflow-hidden whitespace-nowrap",
                     isActive
@@ -95,7 +101,11 @@ export function Layout({ children }: { children: React.ReactNode }) {
           {["Дизайн", "Разработка", "Маркетинг"].map((team, i) => (
              <button 
                key={i} 
-               onClick={() => setIsCollapsed(true)}
+               onClick={() => {
+                 if (window.innerWidth >= 768) {
+                   setIsCollapsed(true);
+                 }
+               }}
                className={cn(
                  "w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors text-left overflow-hidden whitespace-nowrap",
                  isCollapsed && "px-2 justify-center"
