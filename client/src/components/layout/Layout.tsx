@@ -37,10 +37,14 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
 
-  // Collapse sidebar on location change for desktop
+  // Collapse sidebar on location change for desktop only if going to projects
   useEffect(() => {
     if (window.innerWidth >= 768) {
-      setIsCollapsed(true);
+      if (location.startsWith("/projects")) {
+        setIsCollapsed(true);
+      } else {
+        setIsCollapsed(false);
+      }
     }
   }, [location]);
 
