@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { cn } from "@/lib/utils";
 import {
@@ -37,13 +37,12 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
 
-  const handleCollapse = () => {
+  // Collapse sidebar on location change for desktop
+  useEffect(() => {
     if (window.innerWidth >= 768) {
       setIsCollapsed(true);
-    } else {
-      setIsMobileOpen(false);
     }
-  };
+  }, [location]);
 
   const SidebarContent = () => (
     <div className={cn(
@@ -61,7 +60,9 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <div className="mb-4">
           <Button 
             variant="outline" 
-            onClick={handleCollapse}
+            onClick={() => {
+              if (window.innerWidth >= 768) setIsCollapsed(true);
+            }}
             className={cn(
               "w-full justify-start gap-2 bg-sidebar-accent/50 border-sidebar-border text-sidebar-foreground/70 hover:text-sidebar-foreground shadow-sm overflow-hidden whitespace-nowrap",
               isCollapsed && "px-2 justify-center"
@@ -83,7 +84,9 @@ export function Layout({ children }: { children: React.ReactNode }) {
                 key={item.href}
                 onClick={() => {
                   setLocation(item.href);
-                  handleCollapse();
+                  if (window.innerWidth < 768) {
+                    setIsMobileOpen(false);
+                  }
                 }}
                 className={cn(
                   "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 group overflow-hidden whitespace-nowrap cursor-pointer",
@@ -106,7 +109,9 @@ export function Layout({ children }: { children: React.ReactNode }) {
           {["Дизайн", "Разработка", "Маркетинг"].map((team, i) => (
              <button 
                key={i} 
-               onClick={handleCollapse}
+               onClick={() => {
+                 if (window.innerWidth >= 768) setIsCollapsed(true);
+               }}
                className={cn(
                  "w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors text-left overflow-hidden whitespace-nowrap",
                  isCollapsed && "px-2 justify-center"
