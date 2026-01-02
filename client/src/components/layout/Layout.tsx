@@ -167,7 +167,10 @@ export function Layout({ children }: { children: React.ReactNode }) {
               <span className="w-2 h-2 rounded-full bg-emerald-500" />
               Статус: В сети
             </DropdownMenuItem>
-            <DropdownMenuItem className="gap-2 cursor-pointer">
+            <DropdownMenuItem 
+              className="gap-2 cursor-pointer" 
+              onClick={() => setLocation("/profile")}
+            >
               <User className="w-4 h-4" />
               Профиль
             </DropdownMenuItem>
