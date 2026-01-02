@@ -15,6 +15,7 @@ export default function Auth() {
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
+    // Тестовая учетная запись: admin@example.com / admin123
     setLocation("/");
   };
 
@@ -107,6 +108,11 @@ export default function Auth() {
             </TabsList>
 
             <TabsContent value="login">
+              <div className="mb-4 p-3 bg-primary/10 border border-primary/20 rounded-lg text-xs">
+                <p className="font-bold text-primary mb-1">Тестовый доступ:</p>
+                <p>Email: <span className="font-mono">admin@teamsync.ru</span></p>
+                <p>Пароль: <span className="font-mono">admin123</span></p>
+              </div>
               <form onSubmit={handleLogin} className="space-y-4">
                 <div className="space-y-2">
                   <Label htmlFor="email">Email</Label>
