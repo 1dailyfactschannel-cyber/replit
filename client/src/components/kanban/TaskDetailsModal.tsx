@@ -35,6 +35,8 @@ import {
 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { RichTextEditor } from "@/components/ui/rich-text-editor";
+import { Progress } from "@/components/ui/progress";
+import { FileIcon, X, Paperclip, Loader2 } from "lucide-react";
 
 export interface Task {
   id: number;
@@ -65,6 +67,34 @@ export function TaskDetailsModal({
   onOpenChange,
   onUpdate,
 }: TaskDetailsModalProps) {
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [attachments, setAttachments] = useState<{ name: string; size: string; type: string }[]>([]);
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsUploading(true);
+    setUploadProgress(0);
+
+    const interval = setInterval(() => {
+      setUploadProgress((prev) => {
+        if (prev >= 100) {
+          clearInterval(interval);
+          setIsUploading(false);
+          setAttachments([...attachments, { name: file.name, size: `${(file.size / 1024).toFixed(1)} KB`, type: file.type }]);
+          return 100;
+        }
+        return prev + 10;
+      });
+    }, 200);
+  };
+
+  const removeAttachment = (index: number) => {
+    setAttachments(attachments.filter((_, i) => i !== index));
+  };
+
   if (!task) return null;
 
   return (
@@ -106,6 +136,75 @@ export function TaskDetailsModal({
                   }}
                   placeholder="Добавьте детальное описание задачи..."
                 />
+              </div>
+
+              {/* Attachments Section */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <Label className="text-sm font-semibold text-foreground/70 uppercase tracking-wide flex items-center gap-2">
+                    <Paperclip className="w-4 h-4" />
+                    Вложения
+                  </Label>
+                  <div className="relative">
+                    <input
+                      type="file"
+                      id="file-upload"
+                      className="hidden"
+                      onChange={handleFileUpload}
+                      disabled={isUploading}
+                    />
+                    <Button 
+                      variant="ghost" 
+                      size="sm" 
+                      className="h-7 text-xs gap-1"
+                      asChild
+                    >
+                      <label htmlFor="file-upload" className="cursor-pointer">
+                        <Plus className="w-3 h-3" /> Добавить файл
+                      </label>
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Upload Progress */}
+                {isUploading && (
+                  <div className="p-3 rounded-lg border border-border/40 bg-secondary/10 space-y-2">
+                    <div className="flex items-center justify-between text-xs">
+                      <div className="flex items-center gap-2">
+                        <Loader2 className="w-3 h-3 animate-spin text-primary" />
+                        <span className="text-muted-foreground italic">Загрузка файла...</span>
+                      </div>
+                      <span className="font-medium">{uploadProgress}%</span>
+                    </div>
+                    <Progress value={uploadProgress} className="h-1.5" />
+                  </div>
+                )}
+
+                {/* Attachments List */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {attachments.map((file, idx) => (
+                    <div
+                      key={idx}
+                      className="flex items-center gap-3 p-3 rounded-lg border border-border/40 hover:bg-secondary/20 transition-colors group relative"
+                    >
+                      <div className="w-8 h-8 rounded bg-primary/10 flex items-center justify-center shrink-0">
+                        <FileIcon className="w-4 h-4 text-primary" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate pr-6">{file.name}</p>
+                        <p className="text-[10px] text-muted-foreground">{file.size}</p>
+                      </div>
+                      <Button 
+                        variant="ghost" 
+                        size="icon" 
+                        className="h-7 w-7 absolute right-2 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity text-destructive"
+                        onClick={() => removeAttachment(idx)}
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
               </div>
 
               {/* Subtasks Section */}
