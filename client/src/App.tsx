@@ -10,10 +10,12 @@ import Tasks from "@/pages/tasks";
 import CalendarPage from "@/pages/calendar";
 import Chat from "@/pages/chat";
 import Call from "@/pages/call";
+import Auth from "@/pages/auth";
 
 function Router() {
   return (
     <Switch>
+      <Route path="/auth" component={Auth} />
       <Route path="/" component={Dashboard} />
       <Route path="/projects" component={Projects} />
       <Route path="/tasks" component={Tasks} />
