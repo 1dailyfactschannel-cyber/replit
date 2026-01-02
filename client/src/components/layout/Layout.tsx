@@ -21,6 +21,14 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { ThemeToggle } from "./ThemeToggle";
 
 const sidebarItems = [
@@ -130,25 +138,52 @@ export function Layout({ children }: { children: React.ReactNode }) {
       </ScrollArea>
 
       <div className="p-4 border-t border-sidebar-border overflow-hidden">
-        <div 
-          onClick={() => setIsCollapsed(!isCollapsed)}
-          className={cn(
-            "flex items-center gap-3 p-2 rounded-lg hover:bg-sidebar-accent transition-colors cursor-pointer whitespace-nowrap",
-            isCollapsed && "px-1 justify-center"
-          )}
-        >
-          <Avatar className="w-9 h-9 border border-border shrink-0">
-            <AvatarImage src="https://github.com/shadcn.png" />
-            <AvatarFallback>ЮД</AvatarFallback>
-          </Avatar>
-          {!isCollapsed && (
-            <div className="flex-1 min-w-0 animate-in fade-in duration-300">
-              <p className="text-sm font-medium truncate">Юлия Дарицкая</p>
-              <p className="text-xs text-muted-foreground truncate">Руководитель продукта</p>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <div 
+              className={cn(
+                "flex items-center gap-3 p-2 rounded-lg hover:bg-sidebar-accent transition-colors cursor-pointer whitespace-nowrap",
+                isCollapsed && "px-1 justify-center"
+              )}
+            >
+              <Avatar className="w-9 h-9 border border-border shrink-0">
+                <AvatarImage src="https://github.com/shadcn.png" />
+                <AvatarFallback>ЮД</AvatarFallback>
+              </Avatar>
+              {!isCollapsed && (
+                <div className="flex-1 min-w-0 animate-in fade-in duration-300">
+                  <p className="text-sm font-medium truncate">Юлия Дарицкая</p>
+                  <p className="text-xs text-muted-foreground truncate">Руководитель продукта</p>
+                </div>
+              )}
+              {!isCollapsed && <Settings className="w-4 h-4 text-muted-foreground shrink-0" />}
             </div>
-          )}
-          {!isCollapsed && <Settings className="w-4 h-4 text-muted-foreground shrink-0" />}
-        </div>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent side={isCollapsed ? "right" : "top"} align="end" className="w-56 mb-2">
+            <DropdownMenuLabel>Мой аккаунт</DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem className="gap-2 cursor-pointer">
+              <span className="w-2 h-2 rounded-full bg-emerald-500" />
+              Статус: В сети
+            </DropdownMenuItem>
+            <DropdownMenuItem className="gap-2 cursor-pointer">
+              <User className="w-4 h-4" />
+              Профиль
+            </DropdownMenuItem>
+            <DropdownMenuItem className="gap-2 cursor-pointer">
+              <Settings className="w-4 h-4" />
+              Настройки
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem 
+              className="gap-2 cursor-pointer text-rose-500 focus:text-rose-500"
+              onClick={() => setLocation("/auth")}
+            >
+              <LogOut className="w-4 h-4" />
+              Выход
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
     </div>
   );
