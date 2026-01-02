@@ -34,6 +34,7 @@ import {
   Flag,
 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { RichTextEditor } from "@/components/ui/rich-text-editor";
 
 export interface Task {
   id: number;
@@ -98,12 +99,13 @@ export function TaskDetailsModal({
                 <Label className="text-sm font-semibold text-foreground/70 uppercase tracking-wide">
                   Описание
                 </Label>
-                <div className="min-h-[150px] p-4 rounded-xl bg-secondary/30 border border-border/50 text-sm leading-relaxed prose prose-sm dark:prose-invert max-w-none">
-                  <p>{task.description || "Описания пока нет..."}</p>
-                  <p className="mt-4 text-xs text-muted-foreground italic">
-                    (Здесь будет полноценный Rich Text Editor)
-                  </p>
-                </div>
+                <RichTextEditor 
+                  content={task.description} 
+                  onChange={(content) => {
+                    console.log('Description updated:', content);
+                  }}
+                  placeholder="Добавьте детальное описание задачи..."
+                />
               </div>
 
               {/* Subtasks Section */}
