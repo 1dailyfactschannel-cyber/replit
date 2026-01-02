@@ -284,9 +284,8 @@ export function TaskDetailsModal({
                           <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground shrink-0" title="Добавить">
                             <Plus className="w-4 h-4" />
                           </Button>
-                          <Button size="sm" className="h-8 px-3 gap-1.5 font-semibold">
+                          <Button size="sm" className="h-8 w-8 p-0" title="Отправить">
                             <Send className="w-3.5 h-3.5" />
-                            Отправить
                           </Button>
                         </div>
                       </div>
