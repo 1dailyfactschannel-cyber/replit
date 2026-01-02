@@ -32,6 +32,7 @@ import {
   MoreVertical,
   Calendar as CalendarIcon,
   Flag,
+  Send,
 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { RichTextEditor } from "@/components/ui/rich-text-editor";
@@ -254,14 +255,39 @@ export function TaskDetailsModal({
                   </TabsList>
                   
                   <TabsContent value="comments" className="pt-4 space-y-6">
-                    <div className="flex gap-3">
-                      <Avatar className="w-8 h-8">
+                    <div className="flex gap-3 items-center">
+                      <Avatar className="w-8 h-8 shrink-0">
                         <AvatarFallback>JD</AvatarFallback>
                       </Avatar>
-                      <div className="flex-1 space-y-2">
-                        <Input placeholder="Напишите комментарий..." className="bg-secondary/30 h-10 text-sm border-none" />
-                        <div className="flex justify-end">
-                          <Button size="sm">Отправить</Button>
+                      <div className="flex-1 flex gap-2 items-center bg-secondary/30 rounded-xl px-2 border border-border/50 focus-within:ring-2 ring-primary/20 transition-all">
+                        <Input 
+                          placeholder="Напишите комментарий..." 
+                          className="border-0 bg-transparent focus-visible:ring-0 shadow-none h-10 text-sm flex-1" 
+                        />
+                        <div className="flex items-center gap-1 shrink-0">
+                          <input
+                            type="file"
+                            id="comment-file-upload"
+                            className="hidden"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file) {
+                                console.log('Uploading file for comment:', file.name);
+                              }
+                            }}
+                          />
+                          <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground shrink-0" asChild title="Прикрепить файл">
+                            <label htmlFor="comment-file-upload" className="cursor-pointer">
+                              <Paperclip className="w-4 h-4" />
+                            </label>
+                          </Button>
+                          <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground shrink-0" title="Добавить">
+                            <Plus className="w-4 h-4" />
+                          </Button>
+                          <Button size="sm" className="h-8 px-3 gap-1.5 font-semibold">
+                            <Send className="w-3.5 h-3.5" />
+                            Отправить
+                          </Button>
                         </div>
                       </div>
                     </div>
