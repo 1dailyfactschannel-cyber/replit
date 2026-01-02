@@ -8,6 +8,7 @@ import {
   Calendar,
   MessageSquare,
   Users,
+  User,
   Settings,
   LogOut,
   Menu,
