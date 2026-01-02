@@ -19,6 +19,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { TaskDetailsModal, Task } from "@/components/kanban/TaskDetailsModal";
 
 // Mock Data
 const INITIAL_PROJECTS = [
@@ -27,10 +28,39 @@ const INITIAL_PROJECTS = [
   { id: 3, name: "API Интеграция", boards: ["Техзадание"], color: "bg-emerald-500", members: 4 },
 ];
 
+const MOCK_TASK_DETAILS: Task = {
+  id: 3,
+  title: "Разработка темной темы",
+  description: "Необходимо реализовать поддержку темной темы во всех основных компонентах системы. Цветовая схема должна соответствовать гайдлайнам Indigo/Slate. Особое внимание уделить контрастности и доступности интерфейса.",
+  status: "В работе",
+  priority: "Высокий",
+  type: "UI/UX",
+  assignee: { name: "Юлия Дарицкая", avatar: "https://github.com/shadcn.png" },
+  creator: { name: "Майк Росс", date: "24 окт. 2025, 14:20" },
+  dueDate: "15 янв. 2026",
+  labels: ["Дизайн", "Frontend", "V2"],
+  subtasks: [
+    { id: 1, title: "Настройка CSS переменных", completed: true },
+    { id: 2, title: "Обновление компонентов Shadcn", completed: false },
+    { id: 3, title: "Тестирование на мобильных устройствах", completed: false },
+  ],
+  comments: [
+    { id: 1, user: "Майк Росс", content: "Юлия, как продвигается работа над палитрой?", time: "2 часа назад" },
+    { id: 2, user: "Юлия Дарицкая", content: "Уже закончила основные переменные, завтра приступлю к верстке модальных окон.", time: "1 час назад" },
+  ],
+  history: [
+    { id: 1, action: "изменил(а) статус на 'В работе'", user: "Юлия Дарицкая", time: "Вчера, 18:30" },
+    { id: 2, action: "назначил(а) задачу на Юлия Дарицкая", user: "Майк Росс", time: "Вчера, 10:15" },
+    { id: 3, action: "создал(а) задачу", user: "Майк Росс", time: "24 окт. 2025" },
+  ]
+};
+
 export default function Projects() {
   const [projects, setProjects] = useState(INITIAL_PROJECTS);
   const [activeProject, setActiveProject] = useState(projects[0]);
   const [activeBoard, setActiveBoard] = useState(projects[0].boards[0]);
+  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  const [modalOpen, setModalOpen] = useState(false);
 
   const [kanbanData, setKanbanData] = useState({
     "В планах": [
@@ -47,6 +77,12 @@ export default function Projects() {
       { id: 5, title: "Настройка сервера", priority: "Завершено", type: "DevOps" },
     ],
   });
+
+  const handleTaskClick = (taskId: number) => {
+    // In a real app we'd fetch task data, here we use mock
+    setSelectedTask(MOCK_TASK_DETAILS);
+    setModalOpen(true);
+  };
 
   return (
     <Layout>
@@ -183,7 +219,8 @@ export default function Projects() {
                     {tasks.map((task) => (
                       <div
                         key={task.id}
-                        className="group bg-card border border-border/60 p-4 rounded-xl shadow-sm hover:shadow-md hover:border-primary/30 transition-all cursor-grab active:cursor-grabbing animate-in fade-in slide-in-from-bottom-2 duration-300"
+                        onClick={() => handleTaskClick(task.id)}
+                        className="group bg-card border border-border/60 p-4 rounded-xl shadow-sm hover:shadow-md hover:border-primary/30 transition-all cursor-pointer animate-in fade-in slide-in-from-bottom-2 duration-300"
                         data-testid={`card-task-${task.id}`}
                       >
                         <div className="flex items-center justify-between mb-3">
@@ -238,6 +275,12 @@ export default function Projects() {
           </ScrollArea>
         </div>
       </div>
+
+      <TaskDetailsModal
+        task={selectedTask}
+        open={modalOpen}
+        onOpenChange={setModalOpen}
+      />
     </Layout>
   );
 }
