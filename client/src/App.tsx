@@ -13,6 +13,7 @@ import Call from "@/pages/call";
 import Auth from "@/pages/auth";
 import Profile from "@/pages/profile";
 import Team from "@/pages/team";
+import Shop from "@/pages/shop";
 
 function Router() {
   return (
@@ -20,6 +21,7 @@ function Router() {
       <Route path="/auth" component={Auth} />
       <Route path="/profile" component={Profile} />
       <Route path="/team" component={Team} />
+      <Route path="/shop" component={Shop} />
       <Route path="/" component={Dashboard} />
       <Route path="/projects" component={Projects} />
       <Route path="/tasks" component={Tasks} />
