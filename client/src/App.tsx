@@ -14,6 +14,7 @@ import Auth from "@/pages/auth";
 import Profile from "@/pages/profile";
 import Team from "@/pages/team";
 import Shop from "@/pages/shop";
+import Roles from "@/pages/roles";
 
 function Router() {
   return (
@@ -22,6 +23,7 @@ function Router() {
       <Route path="/profile" component={Profile} />
       <Route path="/team" component={Team} />
       <Route path="/shop" component={Shop} />
+      <Route path="/roles" component={Roles} />
       <Route path="/" component={Dashboard} />
       <Route path="/projects" component={Projects} />
       <Route path="/tasks" component={Tasks} />

@@ -15,7 +15,8 @@ import {
   Bell,
   Search,
   Plus,
-  ShoppingBag
+  ShoppingBag,
+  Shield
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -41,6 +42,7 @@ const sidebarItems = [
   { icon: MessageSquare, label: "Чат команды", href: "/chat" },
   { icon: Users, label: "Сотрудники", href: "/team" },
   { icon: ShoppingBag, label: "Магазин", href: "/shop" },
+  { icon: Shield, label: "Роли", href: "/roles" },
 ];
 
 export function Layout({ children }: { children: React.ReactNode }) {
