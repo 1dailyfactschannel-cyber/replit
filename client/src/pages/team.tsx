@@ -35,7 +35,8 @@ import {
   Coins, 
   UserCog,
   Search,
-  Filter
+  Filter,
+  Calendar as CalendarIcon
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -81,96 +82,157 @@ export default function EmployeesPage() {
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full sm:w-auto">
             <TabsList className="bg-secondary/50">
               <TabsTrigger value="list">Список</TabsTrigger>
-              <TabsTrigger value="org">Оргструктура</TabsTrigger>
+              <TabsTrigger value="analytics">Аналитика</TabsTrigger>
               <TabsTrigger value="roles">Роли</TabsTrigger>
             </TabsList>
           </Tabs>
         </div>
 
-        <div className="flex items-center gap-4">
-          <div className="relative flex-1 max-w-sm">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <Input placeholder="Поиск сотрудника..." className="pl-9 bg-secondary/30 border-border/50" />
-          </div>
-          <Button variant="outline" className="gap-2 border-border/50">
-            <Filter className="w-4 h-4" />
-            Фильтры
-          </Button>
-          <Button className="gap-2">
-            <UserCog className="w-4 h-4" />
-            Добавить сотрудника
-          </Button>
-        </div>
+        {activeTab === "list" ? (
+          <>
+            <div className="flex items-center gap-4">
+              <div className="relative flex-1 max-w-sm">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <Input placeholder="Поиск сотрудника..." className="pl-9 bg-secondary/30 border-border/50" />
+              </div>
+              <Button variant="outline" className="gap-2 border-border/50">
+                <Filter className="w-4 h-4" />
+                Фильтры
+              </Button>
+              <Button className="gap-2">
+                <UserCog className="w-4 h-4" />
+                Добавить сотрудника
+              </Button>
+            </div>
 
-        <div className="border border-border/50 rounded-xl bg-card/50 backdrop-blur-sm overflow-hidden shadow-sm">
-          <Table>
-            <TableHeader className="bg-secondary/20">
-              <TableRow>
-                <TableHead className="w-[300px]">Сотрудник</TableHead>
-                <TableHead>Должность</TableHead>
-                <TableHead>Статус</TableHead>
-                <TableHead>Баллы</TableHead>
-                <TableHead className="text-right">Действия</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {mockEmployees.map((employee) => (
-                <TableRow 
-                  key={employee.id} 
-                  className="cursor-pointer hover:bg-secondary/30 transition-colors"
-                  onClick={() => {
-                    setSelectedEmployee(employee);
-                    setIsDetailsOpen(true);
-                  }}
-                >
-                  <TableCell className="font-medium">
-                    <div className="flex items-center gap-3">
-                      <Avatar className="h-9 w-9 border border-border">
-                        <AvatarImage src={employee.avatar} />
-                        <AvatarFallback>{employee.name.split(' ').map(n => n[0]).join('')}</AvatarFallback>
-                      </Avatar>
-                      <div className="flex flex-col">
-                        <span className="text-sm font-semibold">{employee.name}</span>
-                        <span className="text-xs text-muted-foreground">{employee.email}</span>
-                      </div>
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-sm text-muted-foreground">{employee.position}</TableCell>
-                  <TableCell>{getStatusBadge(employee.status)}</TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-1.5 font-medium">
-                      <Coins className="w-4 h-4 text-amber-500" />
-                      {employee.points}
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-                        <Button variant="ghost" size="icon" className="h-8 w-8">
-                          <MoreVertical className="w-4 h-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" className="w-48">
-                        <DropdownMenuItem className="gap-2">
-                          <UserCog className="w-4 h-4" /> Редактировать
-                        </DropdownMenuItem>
-                        {employee.status === 'blocked' ? (
-                          <DropdownMenuItem className="gap-2 text-emerald-500">
-                            <UserCheck className="w-4 h-4" /> Разблокировать
-                          </DropdownMenuItem>
-                        ) : (
-                          <DropdownMenuItem className="gap-2 text-rose-500">
-                            <UserMinus className="w-4 h-4" /> Заблокировать
-                          </DropdownMenuItem>
-                        )}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+            <div className="border border-border/50 rounded-xl bg-card/50 backdrop-blur-sm overflow-hidden shadow-sm">
+              <Table>
+                <TableHeader className="bg-secondary/20">
+                  <TableRow>
+                    <TableHead className="w-[300px]">Сотрудник</TableHead>
+                    <TableHead>Должность</TableHead>
+                    <TableHead>Статус</TableHead>
+                    <TableHead>Баллы</TableHead>
+                    <TableHead className="text-right">Действия</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {mockEmployees.map((employee) => (
+                    <TableRow 
+                      key={employee.id} 
+                      className="cursor-pointer hover:bg-secondary/30 transition-colors"
+                      onClick={() => {
+                        setSelectedEmployee(employee);
+                        setIsDetailsOpen(true);
+                      }}
+                    >
+                      <TableCell className="font-medium">
+                        <div className="flex items-center gap-3">
+                          <Avatar className="h-9 w-9 border border-border">
+                            <AvatarImage src={employee.avatar} />
+                            <AvatarFallback>{employee.name.split(' ').map(n => n[0]).join('')}</AvatarFallback>
+                          </Avatar>
+                          <div className="flex flex-col">
+                            <span className="text-sm font-semibold">{employee.name}</span>
+                            <span className="text-xs text-muted-foreground">{employee.email}</span>
+                          </div>
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">{employee.position}</TableCell>
+                      <TableCell>{getStatusBadge(employee.status)}</TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-1.5 font-medium">
+                          <Coins className="w-4 h-4 text-amber-500" />
+                          {employee.points}
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                            <Button variant="ghost" size="icon" className="h-8 w-8">
+                              <MoreVertical className="w-4 h-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="w-48">
+                            <DropdownMenuItem className="gap-2">
+                              <UserCog className="w-4 h-4" /> Редактировать
+                            </DropdownMenuItem>
+                            {employee.status === 'blocked' ? (
+                              <DropdownMenuItem className="gap-2 text-emerald-500">
+                                <UserCheck className="w-4 h-4" /> Разблокировать
+                              </DropdownMenuItem>
+                            ) : (
+                              <DropdownMenuItem className="gap-2 text-rose-500">
+                                <UserMinus className="w-4 h-4" /> Заблокировать
+                              </DropdownMenuItem>
+                            )}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </>
+        ) : activeTab === "analytics" ? (
+          <div className="space-y-4">
+            <div className="flex items-center gap-4">
+              <div className="relative flex-1 max-w-sm">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <Input placeholder="Поиск по дате или сотруднику..." className="pl-9 bg-secondary/30 border-border/50" />
+              </div>
+              <Button variant="outline" className="gap-2 border-border/50">
+                <CalendarIcon className="w-4 h-4" />
+                Январь 2026
+              </Button>
+            </div>
+
+            <div className="border border-border/50 rounded-xl bg-card/50 backdrop-blur-sm overflow-hidden shadow-sm">
+              <Table>
+                <TableHeader className="bg-secondary/20">
+                  <TableRow>
+                    <TableHead className="w-[250px]">Сотрудник</TableHead>
+                    <TableHead>Время прихода</TableHead>
+                    <TableHead>Начало рабочего дня</TableHead>
+                    <TableHead>Окончание раб. дня</TableHead>
+                    <TableHead>Время ухода</TableHead>
+                    <TableHead className="text-right">Итого отработано</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {[
+                    { name: "Юлия Дарицкая", in: "08:45", start: "09:02", end: "18:05", out: "18:15", total: "9ч 03м" },
+                    { name: "Александр Петров", in: "09:15", start: "09:20", end: "18:30", out: "18:40", total: "9ч 10м" },
+                    { name: "Елена Сидорова", in: "08:55", start: "09:00", end: "17:55", out: "18:02", total: "8ч 55м" },
+                    { name: "Дарья Козлова", in: "09:30", start: "09:35", end: "19:00", out: "19:10", total: "9ч 25м" },
+                  ].map((row, i) => (
+                    <TableRow key={i} className="hover:bg-secondary/30 transition-colors">
+                      <TableCell className="font-medium">
+                        <div className="flex items-center gap-3">
+                          <Avatar className="h-8 w-8 border border-border">
+                            <AvatarFallback>{row.name.split(' ').map(n => n[0]).join('')}</AvatarFallback>
+                          </Avatar>
+                          <span className="text-sm font-semibold">{row.name}</span>
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-sm font-medium text-emerald-500">{row.in}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground">{row.start}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground">{row.end}</TableCell>
+                      <TableCell className="text-sm font-medium text-rose-500">{row.out}</TableCell>
+                      <TableCell className="text-right font-bold text-primary">{row.total}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </div>
+        ) : (
+          <div className="flex flex-col items-center justify-center py-20 text-muted-foreground border border-dashed rounded-xl border-border/50">
+            <ShieldAlert className="w-12 h-12 mb-4 opacity-20" />
+            <p>Этот раздел находится в разработке</p>
+          </div>
+        )}
 
         {/* Employee Details Modal */}
         <Dialog open={isDetailsOpen} onOpenChange={setIsDetailsOpen}>
