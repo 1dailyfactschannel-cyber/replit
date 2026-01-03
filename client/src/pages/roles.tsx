@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
 import { 
   Shield, 
   Plus, 
@@ -74,7 +75,7 @@ export default function RolesPage() {
         return {
           ...role,
           permissions: hasPermission 
-            ? role.permissions.filter(p => p.id !== permissionId)
+            ? role.permissions.filter(p => p !== permissionId)
             : [...role.permissions, permissionId]
         };
       }
