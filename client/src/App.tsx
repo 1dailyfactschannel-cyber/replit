@@ -12,19 +12,20 @@ import Chat from "@/pages/chat";
 import Call from "@/pages/call";
 import Auth from "@/pages/auth";
 import Profile from "@/pages/profile";
+import Team from "@/pages/team";
 
 function Router() {
   return (
     <Switch>
       <Route path="/auth" component={Auth} />
       <Route path="/profile" component={Profile} />
+      <Route path="/team" component={Team} />
       <Route path="/" component={Dashboard} />
       <Route path="/projects" component={Projects} />
       <Route path="/tasks" component={Tasks} />
       <Route path="/calendar" component={CalendarPage} />
       <Route path="/chat" component={Chat} />
       <Route path="/call" component={Call} />
-      <Route path="/team" component={Dashboard} /> {/* Placeholder */}
       <Route component={NotFound} />
     </Switch>
   );

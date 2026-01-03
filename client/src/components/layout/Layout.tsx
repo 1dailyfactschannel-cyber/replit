@@ -38,7 +38,7 @@ const sidebarItems = [
   { icon: CheckSquare, label: "Мои задачи", href: "/tasks" },
   { icon: Calendar, label: "Календарь", href: "/calendar" },
   { icon: MessageSquare, label: "Чат команды", href: "/chat" },
-  { icon: Users, label: "Команда", href: "/team" },
+  { icon: Users, label: "Сотрудники", href: "/team" },
 ];
 
 export function Layout({ children }: { children: React.ReactNode }) {
@@ -46,7 +46,6 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
 
-  // Collapse sidebar on location change for desktop only if going to projects
   useEffect(() => {
     if (window.innerWidth >= 768) {
       if (location.startsWith("/projects")) {
