@@ -193,7 +193,6 @@ export function Layout({ children }: { children: React.ReactNode }) {
                   <p className="text-xs text-muted-foreground truncate">Руководитель продукта</p>
                 </div>
               )}
-              {!isCollapsed && <Settings className="w-4 h-4 text-muted-foreground shrink-0" />}
             </div>
           </DropdownMenuTrigger>
           <DropdownMenuContent side={isCollapsed ? "right" : "top"} align="end" className="w-56 mb-2">
