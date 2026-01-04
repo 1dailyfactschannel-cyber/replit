@@ -3,7 +3,7 @@ import { useState } from "react";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Coins, ShoppingBag, CheckCircle2, Search, Filter } from "lucide-react";
+import { Coins, ShoppingBag, CheckCircle2, Search, Filter, Minus, Plus } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 
@@ -78,13 +78,23 @@ export default function ShopPage() {
   const { toast } = useToast();
   const [searchTerm, setSearchTerm] = useState("");
   const [purchasedIds, setPurchasedIds] = useState<string[]>([]);
+  const [quantities, setQuantities] = useState<Record<string, number>>({});
 
   const handleBuy = (product: Product) => {
+    const qty = quantities[product.id] || 1;
     toast({
       title: "Заявка отправлена",
-      description: `Ваша заявка на "${product.name}" отправлена на одобрение.`,
+      description: `Ваша заявка на "${product.name}" (${qty} шт.) отправлена на одобрение.`,
     });
     setPurchasedIds([...purchasedIds, product.id]);
+  };
+
+  const updateQuantity = (id: string, delta: number, max: number) => {
+    setQuantities(prev => {
+      const current = prev[id] || 1;
+      const next = Math.max(1, Math.min(max, current + delta));
+      return { ...prev, [id]: next };
+    });
   };
 
   const filteredProducts = products.filter(p => 
@@ -142,12 +152,40 @@ export default function ShopPage() {
                 <p className="text-sm text-muted-foreground line-clamp-2">
                   {product.description}
                 </p>
-                <div className="mt-4 flex items-center justify-between">
-                  <div className="flex items-center gap-1.5 font-bold text-lg">
-                    <Coins className="w-4 h-4 text-amber-500" />
-                    {product.price.toLocaleString()}
+                <div className="mt-4 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5 font-bold text-lg">
+                      <Coins className="w-4 h-4 text-amber-500" />
+                      {(product.price * (quantities[product.id] || 1)).toLocaleString()}
+                    </div>
+                    <span className="text-xs text-muted-foreground">В наличии: {product.stock} шт.</span>
                   </div>
-                  <span className="text-xs text-muted-foreground">В наличии: {product.stock} шт.</span>
+
+                  {!purchasedIds.includes(product.id) && (
+                    <div className="flex items-center justify-between bg-secondary/30 rounded-lg p-1 border border-border/50">
+                      <Button 
+                        variant="ghost" 
+                        size="icon" 
+                        className="h-8 w-8"
+                        onClick={() => updateQuantity(product.id, -1, product.stock)}
+                        disabled={ (quantities[product.id] || 1) <= 1 }
+                      >
+                        <Minus className="w-3.5 h-3.5" />
+                      </Button>
+                      <span className="text-sm font-bold w-8 text-center">
+                        {quantities[product.id] || 1}
+                      </span>
+                      <Button 
+                        variant="ghost" 
+                        size="icon" 
+                        className="h-8 w-8"
+                        onClick={() => updateQuantity(product.id, 1, product.stock)}
+                        disabled={ (quantities[product.id] || 1) >= product.stock }
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                      </Button>
+                    </div>
+                  )}
                 </div>
               </CardContent>
               <CardFooter className="p-4 pt-0">
