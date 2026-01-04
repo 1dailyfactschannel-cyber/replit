@@ -11,7 +11,8 @@ import {
   Search,
   Hash,
   Filter,
-  Users
+  Users,
+  Palette
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -20,6 +21,15 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { TaskDetailsModal, Task } from "@/components/kanban/TaskDetailsModal";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
 
 // Mock Data
 const INITIAL_PROJECTS = [
@@ -61,6 +71,36 @@ export default function Projects() {
   const [activeBoard, setActiveBoard] = useState(projects[0].boards[0]);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
+  const [isCreateProjectOpen, setIsCreateProjectOpen] = useState(false);
+  const [newProject, setNewProject] = useState({ name: "", color: "bg-blue-500" });
+
+  const colors = [
+    { name: "Purple", value: "bg-purple-500" },
+    { name: "Blue", value: "bg-blue-500" },
+    { name: "Emerald", value: "bg-emerald-500" },
+    { name: "Rose", value: "bg-rose-500" },
+    { name: "Amber", value: "bg-amber-500" },
+    { name: "Indigo", value: "bg-indigo-500" },
+  ];
+
+  const handleCreateProject = () => {
+    if (!newProject.name) return;
+    
+    const project = {
+      id: Date.now(),
+      name: newProject.name,
+      boards: ["Основная доска"],
+      color: newProject.color,
+      members: 1,
+      collapsed: false
+    };
+    
+    setProjects([...projects, project]);
+    setIsCreateProjectOpen(false);
+    setNewProject({ name: "", color: "bg-blue-500" });
+    setActiveProject(project);
+    setActiveBoard(project.boards[0]);
+  };
 
   const [kanbanData, setKanbanData] = useState({
     "В планах": [
@@ -98,9 +138,49 @@ export default function Projects() {
         <div className="w-72 bg-card border-r border-border flex flex-col">
           <div className="p-4 border-b border-border flex items-center justify-between">
             <h2 className="font-semibold text-lg">Проекты</h2>
-            <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg" data-testid="button-create-project">
-              <Plus className="w-4 h-4" />
-            </Button>
+            <Dialog open={isCreateProjectOpen} onOpenChange={setIsCreateProjectOpen}>
+              <DialogTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg" data-testid="button-create-project">
+                  <Plus className="w-4 h-4" />
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Создать новый проект</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-4 py-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="project-name">Название проекта</Label>
+                    <Input 
+                      id="project-name" 
+                      placeholder="Напр: Редизайн сайта" 
+                      value={newProject.name}
+                      onChange={(e) => setNewProject({ ...newProject, name: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Цвет метки</Label>
+                    <div className="flex flex-wrap gap-2">
+                      {colors.map((color) => (
+                        <button
+                          key={color.value}
+                          onClick={() => setNewProject({ ...newProject, color: color.value })}
+                          className={cn(
+                            "w-8 h-8 rounded-full transition-all ring-offset-background",
+                            color.value,
+                            newProject.color === color.value ? "ring-2 ring-primary ring-offset-2 scale-110" : "hover:scale-105"
+                          )}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setIsCreateProjectOpen(false)}>Отмена</Button>
+                  <Button onClick={handleCreateProject} disabled={!newProject.name}>Создать проект</Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
           </div>
 
           <div className="p-3">
