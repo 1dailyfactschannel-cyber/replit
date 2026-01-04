@@ -1,5 +1,5 @@
 import { Layout } from "@/components/layout/Layout";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { 
   Table, 
   TableBody, 
@@ -39,6 +39,7 @@ import {
   Calendar as CalendarIcon
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useLocation } from "wouter";
 
 interface Employee {
   id: string;
@@ -59,9 +60,18 @@ const mockEmployees: Employee[] = [
 ];
 
 export default function EmployeesPage() {
+  const [location] = useLocation();
+  const searchParams = new URLSearchParams(window.location.search);
+  const initialTab = searchParams.get('tab') || 'list';
+  
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState("list");
+  const [activeTab, setActiveTab] = useState(initialTab);
+
+  useEffect(() => {
+    const tab = new URLSearchParams(window.location.search).get('tab') || 'list';
+    setActiveTab(tab);
+  }, [window.location.search]);
 
   const getStatusBadge = (status: Employee['status']) => {
     switch (status) {

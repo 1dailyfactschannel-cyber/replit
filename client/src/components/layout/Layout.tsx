@@ -33,6 +33,15 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import {
+  ChevronRight,
+  ChevronDown
+} from "lucide-react";
+import {
   Dialog,
   DialogContent,
   DialogHeader,
@@ -56,9 +65,17 @@ const sidebarItems = [
   { icon: CheckSquare, label: "Мои задачи", href: "/tasks" },
   { icon: Calendar, label: "Календарь", href: "/calendar" },
   { icon: MessageSquare, label: "Чат команды", href: "/chat" },
-  { icon: Users, label: "Команда", href: "/team" },
+  { 
+    icon: Users, 
+    label: "Команда", 
+    href: "/team",
+    subItems: [
+      { label: "Список", href: "/team" },
+      { label: "Аналитика", href: "/team?tab=analytics" },
+      { label: "Роли", href: "/roles" }
+    ]
+  },
   { icon: ShoppingBag, label: "Магазин", href: "/shop" },
-  { icon: Shield, label: "Роли", href: "/roles" },
 ];
 
 export function Layout({ children }: { children: React.ReactNode }) {
@@ -128,6 +145,61 @@ export function Layout({ children }: { children: React.ReactNode }) {
           {!isCollapsed && <p className="text-xs font-medium text-muted-foreground px-2 mb-2 uppercase tracking-wider animate-in fade-in duration-300">Меню</p>}
           {sidebarItems.map((item) => {
             const isActive = location.startsWith(item.href) && (item.href !== "/" || location === "/");
+            const [isOpen, setIsOpen] = useState(isActive);
+
+            if (item.subItems && !isCollapsed) {
+              return (
+                <Collapsible
+                  key={item.href}
+                  open={isOpen}
+                  onOpenChange={setIsOpen}
+                  className="w-full"
+                >
+                  <CollapsibleTrigger asChild>
+                    <div
+                      className={cn(
+                        "flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 group cursor-pointer",
+                        isActive
+                          ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-sm"
+                          : "text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                      )}
+                    >
+                      <div className="flex items-center gap-3">
+                        <item.icon className={cn("w-5 h-5 shrink-0", isActive ? "text-sidebar-primary-foreground" : "text-muted-foreground group-hover:text-sidebar-accent-foreground")} />
+                        <span className="animate-in fade-in duration-300">{item.label}</span>
+                      </div>
+                      {isOpen ? (
+                        <ChevronDown className="w-4 h-4 opacity-50" />
+                      ) : (
+                        <ChevronRight className="w-4 h-4 opacity-50" />
+                      )}
+                    </div>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent className="pl-11 space-y-1 mt-1">
+                    {item.subItems.map((subItem) => (
+                      <div
+                        key={subItem.href}
+                        onClick={() => {
+                          setLocation(subItem.href);
+                          if (window.innerWidth < 768) {
+                            setIsMobileOpen(false);
+                          }
+                        }}
+                        className={cn(
+                          "px-3 py-1.5 rounded-md text-xs font-medium cursor-pointer transition-colors",
+                          location === subItem.href
+                            ? "text-primary bg-primary/10"
+                            : "text-muted-foreground hover:text-foreground hover:bg-sidebar-accent"
+                        )}
+                      >
+                        {subItem.label}
+                      </div>
+                    ))}
+                  </CollapsibleContent>
+                </Collapsible>
+              );
+            }
+
             return (
               <div
                 key={item.href}
