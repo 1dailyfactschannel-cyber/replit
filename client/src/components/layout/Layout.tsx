@@ -71,16 +71,16 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
   const statusColors = {
     online: "bg-emerald-500",
-    away: "bg-amber-500",
-    busy: "bg-rose-500",
     offline: "bg-slate-500",
+    vacation: "bg-blue-500",
+    sick: "bg-rose-500",
   };
 
   const statusLabels = {
     online: "В сети",
-    away: "Нет на месте",
-    busy: "Занят",
     offline: "Не в сети",
+    vacation: "В отпуске",
+    sick: "Больничный",
   };
 
   useEffect(() => {
@@ -294,25 +294,25 @@ export function Layout({ children }: { children: React.ReactNode }) {
                   <SelectItem value="online">
                     <div className="flex items-center gap-2">
                       <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                      В сети
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="away">
-                    <div className="flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full bg-amber-500" />
-                      Нет на месте
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="busy">
-                    <div className="flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full bg-rose-500" />
-                      Занят
+                      В сети (пришел на работу)
                     </div>
                   </SelectItem>
                   <SelectItem value="offline">
                     <div className="flex items-center gap-2">
                       <span className="w-2 h-2 rounded-full bg-slate-500" />
-                      Не в сети
+                      Не в сети (ушел с работы)
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="vacation">
+                    <div className="flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-blue-500" />
+                      В отпуске
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="sick">
+                    <div className="flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-rose-500" />
+                      Больничный
                     </div>
                   </SelectItem>
                 </SelectContent>
