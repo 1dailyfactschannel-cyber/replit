@@ -76,6 +76,31 @@ export default function Projects() {
   const [newProject, setNewProject] = useState({ name: "", color: "bg-blue-500" });
   const [newBoardName, setNewBoardName] = useState("");
 
+  const DEFAULT_KANBAN_DATA = {
+    "В планах": [],
+    "В работе": [],
+    "На проверке": [],
+    "Готово": [],
+  };
+
+  const [boardsData, setBoardsData] = useState<Record<string, any>>({
+    "1-Основная доска": {
+      "В планах": [
+        { id: 1, title: "Ревью дизайн-системы", priority: "Высокий", type: "Дизайн" },
+        { id: 2, title: "Исправить API эндпоинты", priority: "Средний", type: "Backend" },
+      ],
+      "В работе": [
+        { id: 3, title: "Разработка темной темы", priority: "Высокий", type: "UI/UX" },
+      ],
+      "На проверке": [
+        { id: 4, title: "Анимации переходов", priority: "Низкий", type: "Frontend" },
+      ],
+      "Готово": [
+        { id: 5, title: "Настройка сервера", priority: "Завершено", type: "DevOps" },
+      ],
+    }
+  });
+
   const colors = [
     { name: "Purple", value: "bg-purple-500" },
     { name: "Blue", value: "bg-blue-500" },
@@ -123,27 +148,21 @@ export default function Projects() {
     if (newActiveProject) {
       setActiveProject(newActiveProject);
       setActiveBoard(newBoardName);
+      
+      // Initialize fresh board data
+      const boardKey = `${activeProject.id}-${newBoardName}`;
+      setBoardsData(prev => ({
+        ...prev,
+        [boardKey]: DEFAULT_KANBAN_DATA
+      }));
     }
     
     setNewBoardName("");
     setIsCreateBoardOpen(false);
   };
 
-  const [kanbanData, setKanbanData] = useState({
-    "В планах": [
-      { id: 1, title: "Ревью дизайн-системы", priority: "Высокий", type: "Дизайн" },
-      { id: 2, title: "Исправить API эндпоинты", priority: "Средний", type: "Backend" },
-    ],
-    "В работе": [
-      { id: 3, title: "Разработка темной темы", priority: "Высокий", type: "UI/UX" },
-    ],
-    "На проверке": [
-      { id: 4, title: "Анимации переходов", priority: "Низкий", type: "Frontend" },
-    ],
-    "Готово": [
-      { id: 5, title: "Настройка сервера", priority: "Завершено", type: "DevOps" },
-    ],
-  });
+  const activeBoardKey = `${activeProject.id}-${activeBoard}`;
+  const kanbanData = boardsData[activeBoardKey] || DEFAULT_KANBAN_DATA;
 
   const handleTaskClick = (taskId: number) => {
     // In a real app we'd fetch task data, here we use mock
