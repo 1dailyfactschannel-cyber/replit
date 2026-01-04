@@ -72,7 +72,9 @@ export default function Projects() {
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [isCreateProjectOpen, setIsCreateProjectOpen] = useState(false);
+  const [isCreateBoardOpen, setIsCreateBoardOpen] = useState(false);
   const [newProject, setNewProject] = useState({ name: "", color: "bg-blue-500" });
+  const [newBoardName, setNewBoardName] = useState("");
 
   const colors = [
     { name: "Purple", value: "bg-purple-500" },
@@ -100,6 +102,24 @@ export default function Projects() {
     setNewProject({ name: "", color: "bg-blue-500" });
     setActiveProject(project);
     setActiveBoard(project.boards[0]);
+  };
+
+  const handleCreateBoard = () => {
+    if (!newBoardName || !activeProject) return;
+    
+    setProjects(prev => prev.map(p => {
+      if (p.id === activeProject.id) {
+        const updatedBoards = [...p.boards, newBoardName];
+        const updatedProject = { ...p, boards: updatedBoards };
+        setActiveProject(updatedProject);
+        setActiveBoard(newBoardName);
+        return updatedProject;
+      }
+      return p;
+    }));
+    
+    setNewBoardName("");
+    setIsCreateBoardOpen(false);
   };
 
   const [kanbanData, setKanbanData] = useState({
@@ -243,10 +263,34 @@ export default function Projects() {
                           <span className="truncate">{board}</span>
                         </button>
                       ))}
-                      <button className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-[13px] text-primary hover:bg-primary/5 transition-colors group">
-                        <Plus className="w-3.5 h-3.5" />
-                        <span>Новая доска</span>
-                      </button>
+                      <Dialog open={isCreateBoardOpen} onOpenChange={setIsCreateBoardOpen}>
+                        <DialogTrigger asChild>
+                          <button className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-[13px] text-primary hover:bg-primary/5 transition-colors group">
+                            <Plus className="w-3.5 h-3.5" />
+                            <span>Новая доска</span>
+                          </button>
+                        </DialogTrigger>
+                        <DialogContent>
+                          <DialogHeader>
+                            <DialogTitle>Создать новую доску</DialogTitle>
+                          </DialogHeader>
+                          <div className="space-y-4 py-4">
+                            <div className="space-y-2">
+                              <Label htmlFor="board-name">Название доски</Label>
+                              <Input 
+                                id="board-name" 
+                                placeholder="Напр: iOS Разработка" 
+                                value={newBoardName}
+                                onChange={(e) => setNewBoardName(e.target.value)}
+                              />
+                            </div>
+                          </div>
+                          <DialogFooter>
+                            <Button variant="outline" onClick={() => setIsCreateBoardOpen(false)}>Отмена</Button>
+                            <Button onClick={handleCreateBoard} disabled={!newBoardName}>Создать доску</Button>
+                          </DialogFooter>
+                        </DialogContent>
+                      </Dialog>
                     </div>
                   )}
                 </div>
