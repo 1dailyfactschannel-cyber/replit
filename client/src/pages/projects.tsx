@@ -107,16 +107,23 @@ export default function Projects() {
   const handleCreateBoard = () => {
     if (!newBoardName || !activeProject) return;
     
-    setProjects(prev => prev.map(p => {
+    // Update the projects list
+    const updatedProjects = projects.map(p => {
       if (p.id === activeProject.id) {
         const updatedBoards = [...p.boards, newBoardName];
-        const updatedProject = { ...p, boards: updatedBoards };
-        setActiveProject(updatedProject);
-        setActiveBoard(newBoardName);
-        return updatedProject;
+        return { ...p, boards: updatedBoards };
       }
       return p;
-    }));
+    });
+    
+    setProjects(updatedProjects);
+    
+    // Also update the activeProject reference so the UI re-renders correctly
+    const newActiveProject = updatedProjects.find(p => p.id === activeProject.id);
+    if (newActiveProject) {
+      setActiveProject(newActiveProject);
+      setActiveBoard(newBoardName);
+    }
     
     setNewBoardName("");
     setIsCreateBoardOpen(false);
