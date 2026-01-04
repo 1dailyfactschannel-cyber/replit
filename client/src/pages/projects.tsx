@@ -23,9 +23,9 @@ import { TaskDetailsModal, Task } from "@/components/kanban/TaskDetailsModal";
 
 // Mock Data
 const INITIAL_PROJECTS = [
-  { id: 1, name: "Ребрендинг TeamSync", boards: ["Основная доска", "Маркетинг"], color: "bg-purple-500", members: 12 },
-  { id: 2, name: "Мобильное приложение", boards: ["iOS Разработка", "Android Разработка", "Дизайн"], color: "bg-blue-500", members: 8 },
-  { id: 3, name: "API Интеграция", boards: ["Техзадание"], color: "bg-emerald-500", members: 4 },
+  { id: 1, name: "Ребрендинг TeamSync", boards: ["Основная доска", "Маркетинг"], color: "bg-purple-500", members: 12, collapsed: false },
+  { id: 2, name: "Мобильное приложение", boards: ["iOS Разработка", "Android Разработка", "Дизайн"], color: "bg-blue-500", members: 8, collapsed: false },
+  { id: 3, name: "API Интеграция", boards: ["Техзадание"], color: "bg-emerald-500", members: 4, collapsed: false },
 ];
 
 const MOCK_TASK_DETAILS: Task = {
@@ -84,6 +84,13 @@ export default function Projects() {
     setModalOpen(true);
   };
 
+  const toggleProjectCollapse = (projectId: number, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setProjects(prev => prev.map(p => 
+      p.id === projectId ? { ...p, collapsed: !p.collapsed } : p
+    ));
+  };
+
   return (
     <Layout>
       <div className="flex h-[calc(100vh-4rem)] overflow-hidden">
@@ -113,20 +120,33 @@ export default function Projects() {
                       setActiveBoard(project.boards[0]);
                     }}
                     className={cn(
-                      "w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-all",
+                      "w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-all group/project",
                       activeProject.id === project.id
                         ? "bg-primary/10 text-primary"
                         : "text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
                     )}
                   >
-                    <div className={cn("w-2 h-2 rounded-full shrink-0", project.color)} />
-                    <span className="truncate flex-1 text-left">{project.name}</span>
+                    <div 
+                      className="flex items-center gap-2 flex-1 min-w-0"
+                      onClick={(e) => {
+                        if (activeProject.id === project.id) {
+                          toggleProjectCollapse(project.id, e);
+                        }
+                      }}
+                    >
+                      <ChevronRight className={cn(
+                        "w-3.5 h-3.5 shrink-0 transition-transform duration-200 opacity-50",
+                        !project.collapsed && "rotate-90"
+                      )} />
+                      <div className={cn("w-2 h-2 rounded-full shrink-0", project.color)} />
+                      <span className="truncate text-left">{project.name}</span>
+                    </div>
                     <Badge variant="secondary" className="h-5 px-1.5 text-[10px] opacity-70">
                       {project.boards.length}
                     </Badge>
                   </button>
                   
-                  {activeProject.id === project.id && (
+                  {activeProject.id === project.id && !project.collapsed && (
                     <div className="ml-4 pl-3 border-l border-border/60 space-y-1 mt-1 animate-in slide-in-from-left-2 duration-300">
                       {project.boards.map((board) => (
                         <button
