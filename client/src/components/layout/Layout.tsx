@@ -56,7 +56,7 @@ const sidebarItems = [
   { icon: CheckSquare, label: "Мои задачи", href: "/tasks" },
   { icon: Calendar, label: "Календарь", href: "/calendar" },
   { icon: MessageSquare, label: "Чат команды", href: "/chat" },
-  { icon: Users, label: "Сотрудники", href: "/team" },
+  { icon: Users, label: "Команда", href: "/team" },
   { icon: ShoppingBag, label: "Магазин", href: "/shop" },
   { icon: Shield, label: "Роли", href: "/roles" },
 ];

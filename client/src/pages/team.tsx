@@ -76,7 +76,7 @@ export default function EmployeesPage() {
       <div className="p-6 space-y-6 animate-in fade-in duration-500">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">Сотрудники</h1>
+            <h1 className="text-3xl font-bold tracking-tight">Команда</h1>
             <p className="text-muted-foreground mt-1">Управление командой и аудит активности.</p>
           </div>
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full sm:w-auto">
