@@ -32,6 +32,22 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { ThemeToggle } from "./ThemeToggle";
 
 const sidebarItems = [
@@ -49,6 +65,23 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const [location, setLocation] = useLocation();
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const [isStatusDialogOpen, setIsStatusDialogOpen] = useState(false);
+  const [status, setStatus] = useState("online");
+  const [statusComment, setStatusComment] = useState("");
+
+  const statusColors = {
+    online: "bg-emerald-500",
+    away: "bg-amber-500",
+    busy: "bg-rose-500",
+    offline: "bg-slate-500",
+  };
+
+  const statusLabels = {
+    online: "В сети",
+    away: "Нет на месте",
+    busy: "Занят",
+    offline: "Не в сети",
+  };
 
   useEffect(() => {
     if (window.innerWidth >= 768) {
@@ -166,9 +199,12 @@ export function Layout({ children }: { children: React.ReactNode }) {
           <DropdownMenuContent side={isCollapsed ? "right" : "top"} align="end" className="w-56 mb-2">
             <DropdownMenuLabel>Мой аккаунт</DropdownMenuLabel>
             <DropdownMenuSeparator />
-            <DropdownMenuItem className="gap-2 cursor-pointer">
-              <span className="w-2 h-2 rounded-full bg-emerald-500" />
-              Статус: В сети
+            <DropdownMenuItem 
+              className="gap-2 cursor-pointer"
+              onClick={() => setIsStatusDialogOpen(true)}
+            >
+              <span className={cn("w-2 h-2 rounded-full", statusColors[status as keyof typeof statusColors])} />
+              Статус: {statusLabels[status as keyof typeof statusLabels]}
             </DropdownMenuItem>
             <DropdownMenuItem 
               className="gap-2 cursor-pointer" 
@@ -241,6 +277,64 @@ export function Layout({ children }: { children: React.ReactNode }) {
           {children}
         </main>
       </div>
+
+      <Dialog open={isStatusDialogOpen} onOpenChange={setIsStatusDialogOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Установить статус</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="space-y-2">
+              <Label>Выберите статус</Label>
+              <Select value={status} onValueChange={setStatus}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="online">
+                    <div className="flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                      В сети
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="away">
+                    <div className="flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-amber-500" />
+                      Нет на месте
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="busy">
+                    <div className="flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-rose-500" />
+                      Занят
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="offline">
+                    <div className="flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-slate-500" />
+                      Не в сети
+                    </div>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Комментарий к статусу</Label>
+              <Textarea 
+                placeholder="Что происходит?" 
+                value={statusComment}
+                onChange={(e) => setStatusComment(e.target.value)}
+                className="resize-none"
+                rows={3}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsStatusDialogOpen(false)}>Отмена</Button>
+            <Button onClick={() => setIsStatusDialogOpen(false)}>Обновить</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
