@@ -102,7 +102,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (window.innerWidth >= 768) {
-      if (location.startsWith("/projects") || location.startsWith("/shop")) {
+      if (location.startsWith("/projects") || location.startsWith("/shop") || location.startsWith("/chat")) {
         setIsCollapsed(true);
       } else {
         setIsCollapsed(false);
