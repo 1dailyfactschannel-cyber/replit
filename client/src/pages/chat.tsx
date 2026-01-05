@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Search, Phone, Video, Info, Paperclip, Smile, Send, Clock, Plus, Users, Check } from "lucide-react";
+import { Search, Phone, Video, Info, Paperclip, Smile, Send, Clock, Plus, Users, Check, FolderPlus, Folder } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import { useLocation } from "wouter";
 import { ScheduleCallDialog, ScheduledCall } from "@/components/call/ScheduleCallDialog";
@@ -30,6 +30,12 @@ interface Contact {
   group: boolean;
   online?: boolean;
   members?: string[];
+}
+
+interface ChatFolder {
+  id: string;
+  name: string;
+  chatIds: number[];
 }
 
 const initialContacts: Contact[] = [
@@ -63,9 +69,16 @@ export default function Chat() {
   const [scheduledCalls, setScheduledCalls] = useState<ScheduledCall[]>([]);
   const [contacts, setContacts] = useState<Contact[]>(initialContacts);
   const [activeChat, setActiveChat] = useState<Contact>(initialContacts[0]);
+  
   const [isCreateGroupOpen, setIsCreateGroupOpen] = useState(false);
   const [newGroupName, setNewGroupName] = useState("");
   const [selectedMembers, setSelectedMembers] = useState<string[]>([]);
+
+  const [isCreateFolderOpen, setIsCreateFolderOpen] = useState(false);
+  const [newFolderName, setNewFolderName] = useState("");
+  const [selectedChatIdsForFolder, setSelectedChatIdsForFolder] = useState<number[]>([]);
+  const [folders, setFolders] = useState<ChatFolder[]>([]);
+  const [activeFolderId, setActiveFolderId] = useState<string | null>(null);
 
   const handleScheduleCall = (callData: ScheduledCall) => {
     setScheduledCalls([...scheduledCalls, callData]);
@@ -73,7 +86,6 @@ export default function Chat() {
 
   const handleCreateGroup = () => {
     if (!newGroupName || selectedMembers.length === 0) return;
-    
     const newGroup: Contact = {
       id: Date.now(),
       name: newGroupName,
@@ -84,7 +96,6 @@ export default function Chat() {
       group: true,
       members: ["Я", ...selectedMembers.map(id => teamMembers.find(m => m.id === id)?.name || "")]
     };
-
     setContacts([newGroup, ...contacts]);
     setActiveChat(newGroup);
     setNewGroupName("");
@@ -92,13 +103,35 @@ export default function Chat() {
     setIsCreateGroupOpen(false);
   };
 
+  const handleCreateFolder = () => {
+    if (!newFolderName || selectedChatIdsForFolder.length === 0) return;
+    const newFolder: ChatFolder = {
+      id: Date.now().toString(),
+      name: newFolderName,
+      chatIds: selectedChatIdsForFolder
+    };
+    setFolders([...folders, newFolder]);
+    setActiveFolderId(newFolder.id);
+    setNewFolderName("");
+    setSelectedChatIdsForFolder([]);
+    setIsCreateFolderOpen(false);
+  };
+
   const toggleMember = (memberId: string) => {
     setSelectedMembers(prev => 
-      prev.includes(memberId) 
-        ? prev.filter(id => id !== memberId)
-        : [...prev, memberId]
+      prev.includes(memberId) ? prev.filter(id => id !== memberId) : [...prev, memberId]
     );
   };
+
+  const toggleChatForFolder = (chatId: number) => {
+    setSelectedChatIdsForFolder(prev => 
+      prev.includes(chatId) ? prev.filter(id => id !== chatId) : [...prev, chatId]
+    );
+  };
+
+  const filteredContacts = activeFolderId 
+    ? contacts.filter(c => folders.find(f => f.id === activeFolderId)?.chatIds.includes(c.id))
+    : contacts;
 
   return (
     <Layout>
@@ -108,77 +141,166 @@ export default function Chat() {
         <div className="w-80 border-r border-border bg-card flex flex-col">
           <div className="p-4 border-b border-border">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="font-semibold">Общение</h2>
-              <Dialog open={isCreateGroupOpen} onOpenChange={setIsCreateGroupOpen}>
-                <DialogTrigger asChild>
-                  <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg hover:bg-primary/10 hover:text-primary transition-colors">
-                    <Plus className="w-4 h-4" />
-                  </Button>
-                </DialogTrigger>
-                <DialogContent className="sm:max-w-[425px]">
-                  <DialogHeader>
-                    <DialogTitle>Создать группу</DialogTitle>
-                  </DialogHeader>
-                  <div className="space-y-4 py-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="group-name">Название группы</Label>
-                      <Input 
-                        id="group-name" 
-                        placeholder="Напр: Проект Альфа" 
-                        value={newGroupName}
-                        onChange={(e) => setNewGroupName(e.target.value)}
-                        className="bg-secondary/30"
-                      />
-                    </div>
-                    <div className="space-y-3">
-                      <Label>Выберите участников</Label>
-                      <ScrollArea className="h-[200px] pr-4">
-                        <div className="space-y-2">
-                          {teamMembers.map((member) => (
-                            <div 
-                              key={member.id} 
-                              className="flex items-center justify-between p-2 rounded-lg hover:bg-secondary/50 transition-colors cursor-pointer group"
-                              onClick={() => toggleMember(member.id)}
-                            >
-                              <div className="flex items-center gap-3">
-                                <Avatar className="h-8 w-8">
-                                  <AvatarFallback className="text-[10px]">{member.name.split(' ').map(n => n[0]).join('')}</AvatarFallback>
-                                </Avatar>
-                                <div className="flex flex-col">
-                                  <span className="text-sm font-medium">{member.name}</span>
-                                  <span className="text-[10px] text-muted-foreground">{member.position}</span>
+              <h2 className="font-semibold text-lg">Общение</h2>
+              <div className="flex gap-1">
+                <Dialog open={isCreateFolderOpen} onOpenChange={setIsCreateFolderOpen}>
+                  <DialogTrigger asChild>
+                    <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg hover:bg-primary/10 hover:text-primary transition-colors" title="Создать папку">
+                      <FolderPlus className="w-4 h-4" />
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent className="sm:max-w-[425px]">
+                    <DialogHeader>
+                      <DialogTitle>Создать папку для чатов</DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-4 py-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="folder-name">Название папки</Label>
+                        <Input 
+                          id="folder-name" 
+                          placeholder="Напр: Важное" 
+                          value={newFolderName}
+                          onChange={(e) => setNewFolderName(e.target.value)}
+                          className="bg-secondary/30"
+                        />
+                      </div>
+                      <div className="space-y-3">
+                        <Label>Выберите чаты</Label>
+                        <ScrollArea className="h-[200px] pr-4">
+                          <div className="space-y-2">
+                            {contacts.map((contact) => (
+                              <div 
+                                key={contact.id} 
+                                className="flex items-center justify-between p-2 rounded-lg hover:bg-secondary/50 transition-colors cursor-pointer group"
+                                onClick={() => toggleChatForFolder(contact.id)}
+                              >
+                                <div className="flex items-center gap-3">
+                                  <Avatar className={cn("h-8 w-8", contact.group && "rounded-lg")}>
+                                    <AvatarFallback className="text-[10px]">{contact.name.substring(0,2).toUpperCase()}</AvatarFallback>
+                                  </Avatar>
+                                  <span className="text-sm font-medium">{contact.name}</span>
+                                </div>
+                                <div className={cn(
+                                  "w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all",
+                                  selectedChatIdsForFolder.includes(contact.id) 
+                                    ? "bg-primary border-primary text-primary-foreground" 
+                                    : "border-muted-foreground/30 group-hover:border-primary/50"
+                                )}>
+                                  {selectedChatIdsForFolder.includes(contact.id) && <Check className="w-3 h-3" />}
                                 </div>
                               </div>
-                              <div className={cn(
-                                "w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all",
-                                selectedMembers.includes(member.id) 
-                                  ? "bg-primary border-primary text-primary-foreground" 
-                                  : "border-muted-foreground/30 group-hover:border-primary/50"
-                              )}>
-                                {selectedMembers.includes(member.id) && <Check className="w-3 h-3" />}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </ScrollArea>
+                            ))}
+                          </div>
+                        </ScrollArea>
+                      </div>
                     </div>
-                  </div>
-                  <DialogFooter>
-                    <Button variant="outline" onClick={() => setIsCreateGroupOpen(false)}>Отмена</Button>
-                    <Button onClick={handleCreateGroup} disabled={!newGroupName || selectedMembers.length === 0}>
-                      Создать группу
+                    <DialogFooter>
+                      <Button variant="outline" onClick={() => setIsCreateFolderOpen(false)}>Отмена</Button>
+                      <Button onClick={handleCreateFolder} disabled={!newFolderName || selectedChatIdsForFolder.length === 0}>
+                        Создать папку
+                      </Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
+
+                <Dialog open={isCreateGroupOpen} onOpenChange={setIsCreateGroupOpen}>
+                  <DialogTrigger asChild>
+                    <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg hover:bg-primary/10 hover:text-primary transition-colors" title="Создать группу">
+                      <Plus className="w-4 h-4" />
                     </Button>
-                  </DialogFooter>
-                </DialogContent>
-              </Dialog>
+                  </DialogTrigger>
+                  <DialogContent className="sm:max-w-[425px]">
+                    <DialogHeader>
+                      <DialogTitle>Создать группу</DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-4 py-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="group-name">Название группы</Label>
+                        <Input 
+                          id="group-name" 
+                          placeholder="Напр: Проект Альфа" 
+                          value={newGroupName}
+                          onChange={(e) => setNewGroupName(e.target.value)}
+                          className="bg-secondary/30"
+                        />
+                      </div>
+                      <div className="space-y-3">
+                        <Label>Выберите участников</Label>
+                        <ScrollArea className="h-[200px] pr-4">
+                          <div className="space-y-2">
+                            {teamMembers.map((member) => (
+                              <div 
+                                key={member.id} 
+                                className="flex items-center justify-between p-2 rounded-lg hover:bg-secondary/50 transition-colors cursor-pointer group"
+                                onClick={() => toggleMember(member.id)}
+                              >
+                                <div className="flex items-center gap-3">
+                                  <Avatar className="h-8 w-8">
+                                    <AvatarFallback className="text-[10px]">{member.name.split(' ').map(n => n[0]).join('')}</AvatarFallback>
+                                  </Avatar>
+                                  <div className="flex flex-col">
+                                    <span className="text-sm font-medium">{member.name}</span>
+                                    <span className="text-[10px] text-muted-foreground">{member.position}</span>
+                                  </div>
+                                </div>
+                                <div className={cn(
+                                  "w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all",
+                                  selectedMembers.includes(member.id) 
+                                    ? "bg-primary border-primary text-primary-foreground" 
+                                    : "border-muted-foreground/30 group-hover:border-primary/50"
+                                )}>
+                                  {selectedMembers.includes(member.id) && <Check className="w-3 h-3" />}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </ScrollArea>
+                      </div>
+                    </div>
+                    <DialogFooter>
+                      <Button variant="outline" onClick={() => setIsCreateGroupOpen(false)}>Отмена</Button>
+                      <Button onClick={handleCreateGroup} disabled={!newGroupName || selectedMembers.length === 0}>
+                        Создать группу
+                      </Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
+              </div>
             </div>
+            
+            {/* Folder Tabs */}
+            {folders.length > 0 && (
+              <div className="flex gap-2 mb-4 overflow-x-auto pb-1 no-scrollbar">
+                <Button 
+                  variant={activeFolderId === null ? "default" : "secondary"} 
+                  size="sm" 
+                  className="h-7 text-[10px] uppercase tracking-wider font-bold px-3 rounded-full shrink-0"
+                  onClick={() => setActiveFolderId(null)}
+                >
+                  Все
+                </Button>
+                {folders.map(folder => (
+                  <Button 
+                    key={folder.id}
+                    variant={activeFolderId === folder.id ? "default" : "secondary"} 
+                    size="sm" 
+                    className="h-7 text-[10px] uppercase tracking-wider font-bold px-3 rounded-full shrink-0 flex items-center gap-1.5"
+                    onClick={() => setActiveFolderId(folder.id)}
+                  >
+                    <Folder className="w-3 h-3" />
+                    {folder.name}
+                  </Button>
+                ))}
+              </div>
+            )}
+
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input placeholder="Поиск диалога..." className="pl-9 bg-secondary/50 border-none h-9 text-xs" />
             </div>
           </div>
           <ScrollArea className="flex-1">
-             {contacts.map(contact => (
+             {filteredContacts.map(contact => (
                <div 
                  key={contact.id} 
                  onClick={() => setActiveChat(contact)}
@@ -219,6 +341,11 @@ export default function Chat() {
                   </div>
                </div>
              ))}
+             {filteredContacts.length === 0 && (
+               <div className="p-8 text-center">
+                 <p className="text-xs text-muted-foreground italic">В этой папке пока нет чатов</p>
+               </div>
+             )}
           </ScrollArea>
         </div>
 
@@ -248,39 +375,17 @@ export default function Chat() {
                 </div>
               </div>
               <div className="flex items-center gap-1">
-                 <Button 
-                   variant="ghost" 
-                   size="icon"
-                   className="h-9 w-9 hover:bg-secondary rounded-lg"
-                   onClick={() => setLocation("/call")}
-                   title="Аудио звонок"
-                 >
+                 <Button variant="ghost" size="icon" className="h-9 w-9 hover:bg-secondary rounded-lg" onClick={() => setLocation("/call")} title="Аудио звонок">
                    <Phone className="w-4 h-4 text-muted-foreground" />
                  </Button>
-                 <Button 
-                   variant="ghost" 
-                   size="icon"
-                   className="h-9 w-9 hover:bg-secondary rounded-lg"
-                   onClick={() => setLocation("/call")}
-                   title="Видео звонок"
-                 >
+                 <Button variant="ghost" size="icon" className="h-9 w-9 hover:bg-secondary rounded-lg" onClick={() => setLocation("/call")} title="Видео звонок">
                    <Video className="w-4 h-4 text-muted-foreground" />
                  </Button>
-                 <Button 
-                   variant="ghost" 
-                   size="icon"
-                   className="h-9 w-9 hover:bg-secondary rounded-lg"
-                   onClick={() => setScheduleOpen(true)}
-                   title="Запланировать звонок"
-                 >
+                 <Button variant="ghost" size="icon" className="h-9 w-9 hover:bg-secondary rounded-lg" onClick={() => setScheduleOpen(true)} title="Запланировать звонок">
                    <Clock className="w-4 h-4 text-muted-foreground" />
                  </Button>
                  <Separator orientation="vertical" className="h-6 mx-2" />
-                 <Button 
-                   variant="ghost" 
-                   size="icon"
-                   className="h-9 w-9 hover:bg-secondary rounded-lg"
-                 >
+                 <Button variant="ghost" size="icon" className="h-9 w-9 hover:bg-secondary rounded-lg">
                    <Info className="w-4 h-4 text-muted-foreground" />
                  </Button>
               </div>
