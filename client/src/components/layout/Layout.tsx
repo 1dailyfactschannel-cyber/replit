@@ -128,6 +128,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
             variant="outline" 
             onClick={() => {
               if (window.innerWidth >= 768) setIsCollapsed(true);
+              if (location !== "/projects") setLocation("/projects");
             }}
             className={cn(
               "w-full justify-start gap-2 bg-sidebar-accent/50 border-sidebar-border text-sidebar-foreground/70 hover:text-sidebar-foreground shadow-sm overflow-hidden whitespace-nowrap",
@@ -226,21 +227,31 @@ export function Layout({ children }: { children: React.ReactNode }) {
         </div>
 
         <div className="mt-8 space-y-1">
-          {!isCollapsed && <p className="text-xs font-medium text-muted-foreground px-2 mb-2 uppercase tracking-wider animate-in fade-in duration-300">Ваши команды</p>}
-          {["Дизайн", "Разработка", "Маркетинг"].map((team, i) => (
+          {!isCollapsed && <p className="text-xs font-medium text-muted-foreground px-2 mb-2 uppercase tracking-wider animate-in fade-in duration-300">Проекты</p>}
+          {[
+            { name: "TeamSync Web", priority: "Высокий" },
+            { name: "Mobile App", priority: "Средний" },
+            { name: "Internal API", priority: "Низкий" }
+          ].map((project, i) => (
              <button 
                key={i} 
                onClick={() => {
+                 setLocation("/projects");
                  if (window.innerWidth >= 768) setIsCollapsed(true);
                }}
                className={cn(
                  "w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors text-left overflow-hidden whitespace-nowrap",
                  isCollapsed && "px-2 justify-center"
                )}
-               title={isCollapsed ? team : ""}
+               title={isCollapsed ? project.name : ""}
              >
-                <span className={cn("w-2 h-2 rounded-full shrink-0", i===0 ? "bg-purple-500" : i===1 ? "bg-blue-500" : "bg-orange-500")} />
-                {!isCollapsed && <span className="animate-in fade-in duration-300">{team}</span>}
+                <div className={cn(
+                  "w-2 h-2 rounded-full shrink-0 shadow-sm",
+                  project.priority === "Высокий" ? "bg-rose-500 shadow-rose-500/40" :
+                  project.priority === "Средний" ? "bg-amber-500 shadow-amber-500/40" :
+                  "bg-emerald-500 shadow-emerald-500/40"
+                )} />
+                {!isCollapsed && <span className="animate-in fade-in duration-300">{project.name}</span>}
              </button>
           ))}
         </div>
