@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Search, Phone, Video, Info, Paperclip, Smile, Send, Clock, Plus, Users, Check, FolderPlus, Folder, LogOut, User, Settings, Camera } from "lucide-react";
+import { Search, Phone, Video, Info, Paperclip, Smile, Send, Clock, Plus, Users, Check, FolderPlus, Folder, LogOut, User, Settings, Camera, UserMinus, ShieldAlert } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import { useLocation } from "wouter";
 import { ScheduleCallDialog, ScheduledCall } from "@/components/call/ScheduleCallDialog";
@@ -22,6 +22,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { toast } from "sonner";
 
 interface Contact {
   id: number;
@@ -138,6 +139,7 @@ export default function Chat() {
     setNewGroupName("");
     setSelectedMembers([]);
     setIsCreateGroupOpen(false);
+    toast.success("Группа успешно создана");
   };
 
   const handleCreateFolder = () => {
@@ -152,6 +154,7 @@ export default function Chat() {
     setNewFolderName("");
     setSelectedChatIdsForFolder([]);
     setIsCreateFolderOpen(false);
+    toast.success(`Папка "${newFolderName}" создана`);
   };
 
   const handleLeaveGroup = (groupId: number) => {
@@ -160,6 +163,31 @@ export default function Chat() {
       setActiveChat(contacts.find(c => c.id !== groupId) || contacts[0]);
     }
     setIsInfoOpen(false);
+    toast.info("Вы покинули группу");
+  };
+
+  const handleRemoveMember = (memberName: string) => {
+    if (memberName === "Я") {
+      toast.error("Вы не можете удалить себя этим способом. Используйте 'Выйти из группы'");
+      return;
+    }
+    
+    const updatedContacts = contacts.map(c => {
+      if (c.id === activeChat.id) {
+        const updatedMembers = c.members?.filter(m => m !== memberName) || [];
+        const updated = { ...c, members: updatedMembers };
+        setActiveChat(updated);
+        return updated;
+      }
+      return c;
+    });
+    setContacts(updatedContacts);
+    toast.success(`Пользователь ${memberName} удален из группы`);
+  };
+
+  const handleBlockMember = (memberName: string) => {
+    handleRemoveMember(memberName);
+    toast.warning(`Пользователь ${memberName} заблокирован`);
   };
 
   const handleUpdateGroup = () => {
@@ -172,6 +200,7 @@ export default function Chat() {
       return c;
     });
     setContacts(updatedContacts);
+    toast.success("Данные группы обновлены");
   };
 
   const handleAvatarUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -473,7 +502,7 @@ export default function Chat() {
                      <Tabs defaultValue="info" className="w-full">
                        <TabsList className="grid w-full grid-cols-2">
                          <TabsTrigger value="info">Информация</TabsTrigger>
-                         <TabsTrigger value="settings" disabled={!activeChat.group}>Настройки</TabsTrigger>
+                         <TabsTrigger value="settings" disabled={!activeChat.group}>Управление</TabsTrigger>
                        </TabsList>
                        
                        <TabsContent value="info">
@@ -508,11 +537,35 @@ export default function Chat() {
                                     <Label className="text-[10px] uppercase font-bold text-muted-foreground tracking-widest px-1">Участники ({activeChat.members?.length})</Label>
                                     <div className="grid grid-cols-1 gap-1 max-h-[160px] overflow-y-auto pr-2 no-scrollbar">
                                        {activeChat.members?.map((member, i) => (
-                                          <div key={i} className="flex items-center gap-3 p-2 rounded-lg hover:bg-secondary/20 transition-colors">
-                                             <Avatar className="w-6 h-6">
-                                                <AvatarFallback className="text-[8px]">{member.substring(0,2).toUpperCase()}</AvatarFallback>
-                                             </Avatar>
-                                             <span className="text-xs font-medium">{member}</span>
+                                          <div key={i} className="flex items-center justify-between p-2 rounded-lg hover:bg-secondary/20 transition-colors group/member">
+                                             <div className="flex items-center gap-3">
+                                                <Avatar className="w-6 h-6">
+                                                   <AvatarFallback className="text-[8px]">{member.substring(0,2).toUpperCase()}</AvatarFallback>
+                                                </Avatar>
+                                                <span className="text-xs font-medium">{member}</span>
+                                             </div>
+                                             {activeChat.owner === "Я" && member !== "Я" && (
+                                               <div className="flex gap-1 opacity-0 group-hover/member:opacity-100 transition-opacity">
+                                                  <Button 
+                                                    variant="ghost" 
+                                                    size="icon" 
+                                                    className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                                                    onClick={() => handleRemoveMember(member)}
+                                                    title="Удалить"
+                                                  >
+                                                     <UserMinus className="w-3.5 h-3.5" />
+                                                  </Button>
+                                                  <Button 
+                                                    variant="ghost" 
+                                                    size="icon" 
+                                                    className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                                                    onClick={() => handleBlockMember(member)}
+                                                    title="Заблокировать"
+                                                  >
+                                                     <ShieldAlert className="w-3.5 h-3.5" />
+                                                  </Button>
+                                               </div>
+                                             )}
                                           </div>
                                        ))}
                                     </div>
