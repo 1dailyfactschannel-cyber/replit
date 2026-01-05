@@ -1,10 +1,10 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { Layout } from "@/components/layout/Layout";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Search, Phone, Video, Info, Paperclip, Smile, Send, Clock, Plus, Users, Check, FolderPlus, Folder, LogOut, User } from "lucide-react";
+import { Search, Phone, Video, Info, Paperclip, Smile, Send, Clock, Plus, Users, Check, FolderPlus, Folder, LogOut, User, Settings, Camera } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import { useLocation } from "wouter";
 import { ScheduleCallDialog, ScheduledCall } from "@/components/call/ScheduleCallDialog";
@@ -19,7 +19,9 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 interface Contact {
   id: number;
@@ -90,6 +92,7 @@ const initialMessages = [
 
 export default function Chat() {
   const [, setLocation] = useLocation();
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [scheduleOpen, setScheduleOpen] = useState(false);
   const [scheduledCalls, setScheduledCalls] = useState<ScheduledCall[]>([]);
   const [contacts, setContacts] = useState<Contact[]>(initialContacts);
@@ -106,6 +109,11 @@ export default function Chat() {
   const [activeFolderId, setActiveFolderId] = useState<string | null>(null);
 
   const [isInfoOpen, setIsInfoOpen] = useState(false);
+  
+  // Group editing state
+  const [editName, setEditName] = useState("");
+  const [editDescription, setEditDescription] = useState("");
+  const [editAvatar, setEditAvatar] = useState<string | null>(null);
 
   const handleScheduleCall = (callData: ScheduledCall) => {
     setScheduledCalls([...scheduledCalls, callData]);
@@ -152,6 +160,29 @@ export default function Chat() {
       setActiveChat(contacts.find(c => c.id !== groupId) || contacts[0]);
     }
     setIsInfoOpen(false);
+  };
+
+  const handleUpdateGroup = () => {
+    const updatedContacts = contacts.map(c => {
+      if (c.id === activeChat.id) {
+        const updated = { ...c, name: editName, description: editDescription, avatar: editAvatar };
+        setActiveChat(updated);
+        return updated;
+      }
+      return c;
+    });
+    setContacts(updatedContacts);
+  };
+
+  const handleAvatarUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setEditAvatar(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
   };
 
   const toggleMember = (memberId: string) => {
@@ -425,71 +456,150 @@ export default function Chat() {
                  </Button>
                  <Separator orientation="vertical" className="h-6 mx-2" />
                  
-                 <Dialog open={isInfoOpen} onOpenChange={setIsInfoOpen}>
+                 <Dialog open={isInfoOpen} onOpenChange={(open) => {
+                   setIsInfoOpen(open);
+                   if (open) {
+                     setEditName(activeChat.name);
+                     setEditDescription(activeChat.description || "");
+                     setEditAvatar(activeChat.avatar);
+                   }
+                 }}>
                    <DialogTrigger asChild>
                      <Button variant="ghost" size="icon" className="h-9 w-9 hover:bg-secondary rounded-lg">
                        <Info className="w-4 h-4 text-muted-foreground" />
                      </Button>
                    </DialogTrigger>
                    <DialogContent className="sm:max-w-[425px]">
-                     <DialogHeader>
-                       <DialogTitle>Информация о {activeChat.group ? "группе" : "собеседнике"}</DialogTitle>
-                     </DialogHeader>
-                     <div className="py-6 flex flex-col items-center">
-                        <Avatar className={cn("w-24 h-24 mb-4 shadow-lg", activeChat.group && "rounded-2xl")}>
-                          <AvatarImage src={activeChat.avatar || undefined} />
-                          <AvatarFallback className="text-2xl bg-primary/10 text-primary font-bold">
-                            {activeChat.name.substring(0,2).toUpperCase()}
-                          </AvatarFallback>
-                        </Avatar>
-                        <h2 className="text-xl font-bold mb-1">{activeChat.name}</h2>
-                        <p className="text-sm text-muted-foreground mb-6 text-center px-4 italic">
-                          {activeChat.group ? activeChat.description : "Личный чат для приватного общения."}
-                        </p>
-                        
-                        <div className="w-full space-y-4">
-                           {activeChat.group && (
-                             <div className="space-y-2">
-                                <Label className="text-[10px] uppercase font-bold text-muted-foreground tracking-widest px-1">Владелец</Label>
-                                <div className="flex items-center gap-3 p-3 rounded-xl bg-secondary/30">
-                                   <User className="w-4 h-4 text-primary" />
-                                   <span className="text-sm font-medium">{activeChat.owner}</span>
-                                </div>
-                             </div>
-                           )}
-                           
-                           {activeChat.group && (
-                             <div className="space-y-2">
-                                <Label className="text-[10px] uppercase font-bold text-muted-foreground tracking-widest px-1">Участники ({activeChat.members?.length})</Label>
-                                <div className="grid grid-cols-1 gap-1 max-h-[160px] overflow-y-auto pr-2 no-scrollbar">
-                                   {activeChat.members?.map((member, i) => (
-                                      <div key={i} className="flex items-center gap-3 p-2 rounded-lg hover:bg-secondary/20 transition-colors">
-                                         <Avatar className="w-6 h-6">
-                                            <AvatarFallback className="text-[8px]">{member.substring(0,2).toUpperCase()}</AvatarFallback>
-                                         </Avatar>
-                                         <span className="text-xs font-medium">{member}</span>
-                                      </div>
-                                   ))}
-                                </div>
-                             </div>
-                           )}
-
-                           {!activeChat.group && (
-                              <div className="space-y-2">
-                                 <Label className="text-[10px] uppercase font-bold text-muted-foreground tracking-widest px-1">Статус</Label>
-                                 <div className="flex items-center gap-3 p-3 rounded-xl bg-secondary/30">
-                                    <div className={cn("w-2 h-2 rounded-full", activeChat.online ? "bg-emerald-500" : "bg-slate-500")} />
-                                    <span className="text-sm font-medium">{activeChat.online ? "В сети" : "Не в сети"}</span>
+                     <Tabs defaultValue="info" className="w-full">
+                       <TabsList className="grid w-full grid-cols-2">
+                         <TabsTrigger value="info">Информация</TabsTrigger>
+                         <TabsTrigger value="settings" disabled={!activeChat.group}>Настройки</TabsTrigger>
+                       </TabsList>
+                       
+                       <TabsContent value="info">
+                         <DialogHeader>
+                           <DialogTitle>Информация о {activeChat.group ? "группе" : "собеседнике"}</DialogTitle>
+                         </DialogHeader>
+                         <div className="py-6 flex flex-col items-center">
+                            <Avatar className={cn("w-24 h-24 mb-4 shadow-lg", activeChat.group && "rounded-2xl")}>
+                              <AvatarImage src={activeChat.avatar || undefined} />
+                              <AvatarFallback className="text-2xl bg-primary/10 text-primary font-bold">
+                                {activeChat.name.substring(0,2).toUpperCase()}
+                              </AvatarFallback>
+                            </Avatar>
+                            <h2 className="text-xl font-bold mb-1">{activeChat.name}</h2>
+                            <p className="text-sm text-muted-foreground mb-6 text-center px-4 italic">
+                              {activeChat.group ? activeChat.description : "Личный чат для приватного общения."}
+                            </p>
+                            
+                            <div className="w-full space-y-4">
+                               {activeChat.group && (
+                                 <div className="space-y-2">
+                                    <Label className="text-[10px] uppercase font-bold text-muted-foreground tracking-widest px-1">Владелец</Label>
+                                    <div className="flex items-center gap-3 p-3 rounded-xl bg-secondary/30">
+                                       <User className="w-4 h-4 text-primary" />
+                                       <span className="text-sm font-medium">{activeChat.owner}</span>
+                                    </div>
                                  </div>
-                              </div>
-                           )}
-                        </div>
-                     </div>
-                     <DialogFooter className="flex-col gap-2 sm:flex-col">
+                               )}
+                               
+                               {activeChat.group && (
+                                 <div className="space-y-2">
+                                    <Label className="text-[10px] uppercase font-bold text-muted-foreground tracking-widest px-1">Участники ({activeChat.members?.length})</Label>
+                                    <div className="grid grid-cols-1 gap-1 max-h-[160px] overflow-y-auto pr-2 no-scrollbar">
+                                       {activeChat.members?.map((member, i) => (
+                                          <div key={i} className="flex items-center gap-3 p-2 rounded-lg hover:bg-secondary/20 transition-colors">
+                                             <Avatar className="w-6 h-6">
+                                                <AvatarFallback className="text-[8px]">{member.substring(0,2).toUpperCase()}</AvatarFallback>
+                                             </Avatar>
+                                             <span className="text-xs font-medium">{member}</span>
+                                          </div>
+                                       ))}
+                                    </div>
+                                 </div>
+                               )}
+
+                               {!activeChat.group && (
+                                  <div className="space-y-2">
+                                     <Label className="text-[10px] uppercase font-bold text-muted-foreground tracking-widest px-1">Статус</Label>
+                                     <div className="flex items-center gap-3 p-3 rounded-xl bg-secondary/30">
+                                        <div className={cn("w-2 h-2 rounded-full", activeChat.online ? "bg-emerald-500" : "bg-slate-500")} />
+                                        <span className="text-sm font-medium">{activeChat.online ? "В сети" : "Не в сети"}</span>
+                                     </div>
+                                  </div>
+                               )}
+                            </div>
+                         </div>
+                       </TabsContent>
+                       
+                       <TabsContent value="settings">
+                         <DialogHeader>
+                           <DialogTitle>Настройки группы</DialogTitle>
+                           <DialogDescription>Измените визуальные и текстовые параметры группы.</DialogDescription>
+                         </DialogHeader>
+                         <div className="space-y-6 py-6">
+                            <div className="flex flex-col items-center gap-4">
+                               <div className="relative group cursor-pointer" onClick={() => fileInputRef.current?.click()}>
+                                  <Avatar className="w-24 h-24 rounded-2xl shadow-lg border-2 border-primary/20 transition-all group-hover:opacity-80">
+                                    <AvatarImage src={editAvatar || undefined} />
+                                    <AvatarFallback className="text-2xl bg-primary/10 text-primary font-bold">
+                                      {editName.substring(0,2).toUpperCase()}
+                                    </AvatarFallback>
+                                  </Avatar>
+                                  <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/20 rounded-2xl">
+                                     <Camera className="w-8 h-8 text-white" />
+                                  </div>
+                                  <input 
+                                    type="file" 
+                                    ref={fileInputRef} 
+                                    className="hidden" 
+                                    accept="image/*"
+                                    onChange={handleAvatarUpload}
+                                  />
+                               </div>
+                               <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()}>
+                                 Изменить аватар
+                               </Button>
+                            </div>
+                            
+                            <div className="space-y-4">
+                               <div className="space-y-2">
+                                  <Label htmlFor="edit-name">Название группы</Label>
+                                  <Input 
+                                    id="edit-name" 
+                                    value={editName} 
+                                    onChange={(e) => setEditName(e.target.value)}
+                                    className="bg-secondary/30"
+                                  />
+                               </div>
+                               <div className="space-y-2">
+                                  <Label htmlFor="edit-desc">Описание</Label>
+                                  <Textarea 
+                                    id="edit-desc" 
+                                    value={editDescription} 
+                                    onChange={(e) => setEditDescription(e.target.value)}
+                                    className="bg-secondary/30 min-h-[100px] resize-none"
+                                    placeholder="О чем этот чат..."
+                                  />
+                               </div>
+                            </div>
+                         </div>
+                       </TabsContent>
+                     </Tabs>
+                     
+                     <DialogFooter className="flex-col gap-2 sm:flex-col mt-4">
                         {activeChat.group && (
-                          <Button variant="destructive" className="w-full gap-2" onClick={() => handleLeaveGroup(activeChat.id)}>
-                            <LogOut className="w-4 h-4" /> Выйти из группы
-                          </Button>
+                          <div className="grid grid-cols-2 gap-2 w-full">
+                            <Button variant="destructive" className="gap-2" onClick={() => handleLeaveGroup(activeChat.id)}>
+                              <LogOut className="w-4 h-4" /> Выйти
+                            </Button>
+                            <Button className="gap-2" onClick={() => {
+                              handleUpdateGroup();
+                              setIsInfoOpen(false);
+                            }}>
+                              <Check className="w-4 h-4" /> Сохранить
+                            </Button>
+                          </div>
                         )}
                         <Button variant="secondary" className="w-full" onClick={() => setIsInfoOpen(false)}>Закрыть</Button>
                      </DialogFooter>
