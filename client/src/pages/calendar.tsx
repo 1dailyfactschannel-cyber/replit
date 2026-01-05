@@ -134,7 +134,7 @@ export default function CalendarPage() {
             </div>
             <Button onClick={() => setIsAddEventOpen(true)} className="gap-2 shadow-lg shadow-primary/20">
               <Plus className="w-4 h-4" />
-              Создать
+              Создать событие
             </Button>
           </div>
         </div>
