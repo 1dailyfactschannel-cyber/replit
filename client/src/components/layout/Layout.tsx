@@ -64,7 +64,7 @@ const sidebarItems = [
   { icon: Kanban, label: "Проекты", href: "/projects" },
   { icon: CheckSquare, label: "Мои задачи", href: "/tasks" },
   { icon: Calendar, label: "Календарь", href: "/calendar" },
-  { icon: MessageSquare, label: "Чат команды", href: "/chat" },
+  { icon: MessageSquare, label: "Общение", href: "/chat" },
   { 
     icon: Users, 
     label: "Команда", 
