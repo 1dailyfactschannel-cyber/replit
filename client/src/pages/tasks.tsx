@@ -4,19 +4,21 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import { MoreHorizontal, Calendar, ArrowUpDown, Filter } from "lucide-react";
+import { MoreHorizontal, Calendar, ArrowUpDown, Filter, Layout as LayoutIcon, Briefcase } from "lucide-react";
 import { useState } from "react";
 import { TaskDetailsModal, Task } from "@/components/kanban/TaskDetailsModal";
 
 // Mock tasks that look like real project tasks
-const initialTasks: Task[] = [
+const initialTasks: (Task & { project: string; board: string })[] = [
   { 
     id: 872, 
     title: "Создать новые токены дизайн-системы", 
     status: "В работе", 
     priority: "Высокий", 
     type: "Дизайн",
-    assignee: { name: "Сара Миллер" },
+    project: "TeamSync Web",
+    board: "UI/UX Design",
+    assignee: { name: "Я" },
     creator: { name: "Юлия Дарицкая", date: "10 янв 2026" },
     dueDate: "Завтра",
     description: "Необходимо обновить цветовую палитру и шрифтовые пары в соответствии с новым брендингом.",
@@ -38,7 +40,9 @@ const initialTasks: Task[] = [
     status: "В планах", 
     priority: "Средний", 
     type: "Разработка",
-    assignee: { name: "Майк Росс" },
+    project: "TeamSync Mobile",
+    board: "Frontend Dev",
+    assignee: { name: "Я" },
     creator: { name: "Александр Петров", date: "11 янв 2026" },
     dueDate: "Ср, 12 янв",
     description: "Меню не закрывается при клике на пункт на устройствах iOS.",
@@ -53,7 +57,9 @@ const initialTasks: Task[] = [
     status: "Готово", 
     priority: "Низкий", 
     type: "Техдолг",
-    assignee: { name: "Алексей Иванов" },
+    project: "Internal Tools",
+    board: "Maintenance",
+    assignee: { name: "Я" },
     creator: { name: "Максим Иванов", date: "09 янв 2026" },
     dueDate: "Вчера",
     description: "Обновление React и сопутствующих библиотек до последних версий.",
@@ -68,7 +74,9 @@ const initialTasks: Task[] = [
     status: "В работе", 
     priority: "Средний", 
     type: "Документация",
-    assignee: { name: "Сара Миллер" },
+    project: "TeamSync Web",
+    board: "Backend API",
+    assignee: { name: "Я" },
     creator: { name: "Максим Иванов", date: "12 янв 2026" },
     dueDate: "Пт, 14 янв",
     description: "Описать все эндпоинты модуля Общение.",
@@ -94,7 +102,7 @@ export default function Tasks() {
         <div className="flex items-center justify-between">
            <div>
              <h1 className="text-3xl font-bold tracking-tight text-foreground">Мои задачи</h1>
-             <p className="text-muted-foreground mt-1">Управляйте всеми задачами из ваших проектов в одном месте.</p>
+             <p className="text-muted-foreground mt-1">Все задачи, назначенные лично вам из разных проектов.</p>
            </div>
            <div className="flex gap-2">
               <Button variant="outline" className="gap-2"><Filter className="w-4 h-4" /> Фильтр</Button>
@@ -111,7 +119,7 @@ export default function Tasks() {
                 <TableHead>Название</TableHead>
                 <TableHead className="w-[140px]">Статус</TableHead>
                 <TableHead className="w-[120px]">Приоритет</TableHead>
-                <TableHead className="w-[180px]">Исполнитель</TableHead>
+                <TableHead className="w-[180px]">Проект / Доска</TableHead>
                 <TableHead className="w-[150px]">
                   <div className="flex items-center gap-1 cursor-pointer hover:text-foreground">
                     Срок <ArrowUpDown className="w-3 h-3" />
@@ -156,13 +164,15 @@ export default function Tasks() {
                     </div>
                   </TableCell>
                   <TableCell>
-                    <div className="flex items-center gap-2">
-                      <Avatar className="w-6 h-6 border border-border/50">
-                        <AvatarFallback className="text-[8px] bg-primary/10 text-primary font-bold">
-                          {task.assignee.name.split(' ').map(n => n[0]).join('')}
-                        </AvatarFallback>
-                      </Avatar>
-                      <span className="text-xs font-medium text-foreground/80">{task.assignee.name}</span>
+                    <div className="flex flex-col gap-1">
+                      <div className="flex items-center gap-1.5 text-xs font-semibold text-foreground/80">
+                        <Briefcase className="w-3 h-3 text-primary/70" />
+                        <span className="truncate max-w-[150px]">{task.project}</span>
+                      </div>
+                      <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+                        <LayoutIcon className="w-2.5 h-2.5" />
+                        <span className="truncate max-w-[150px]">{task.board}</span>
+                      </div>
                     </div>
                   </TableCell>
                   <TableCell className="text-xs text-muted-foreground font-medium">
