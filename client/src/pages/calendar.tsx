@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Calendar as CalendarUI } from "@/components/ui/calendar";
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { useState, useMemo } from "react";
-import { ChevronLeft, ChevronRight, Clock, MapPin, Video, Mic, Plus, Users as UsersIcon, X, PhoneCall } from "lucide-react";
+import { ChevronLeft, ChevronRight, Clock, MapPin, Video, Mic, Plus, Users as UsersIcon, X, PhoneCall, Info } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
@@ -47,7 +48,7 @@ export default function CalendarPage() {
     time: "10:00",
     type: "work",
     description: "",
-    meetingUrl: "https://team-sync.call/room-1"
+    meetingUrl: "https://teamsync.ru/room/juli-dar"
   });
 
   const calendarDays = useMemo(() => {
@@ -101,7 +102,7 @@ export default function CalendarPage() {
       };
       setEvents([...events, event]);
       setIsAddEventOpen(false);
-      setNewEvent({ title: "", time: "10:00", type: "work", description: "", meetingUrl: "https://team-sync.call/room-1" });
+      setNewEvent({ title: "", time: "10:00", type: "work", description: "", meetingUrl: "https://teamsync.ru/room/juli-dar" });
       toast.success("Событие создано");
     }
   };
@@ -369,12 +370,25 @@ export default function CalendarPage() {
             </div>
             {(newEvent.type === 'video' || newEvent.type === 'audio') && (
               <div className="grid gap-2">
-                <Label htmlFor="meeting-url">Ссылка на звонок</Label>
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="meeting-url">Ссылка на звонок</Label>
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Info className="w-4 h-4 text-muted-foreground cursor-help" />
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>Здесь указана ваша персональная комната. Вы можете изменить её для конкретного события.</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </div>
                 <Input 
                   id="meeting-url" 
                   placeholder="https://..." 
                   value={newEvent.meetingUrl}
                   onChange={(e) => setNewEvent({...newEvent, meetingUrl: e.target.value})}
+                  className="font-mono text-xs"
                 />
               </div>
             )}
