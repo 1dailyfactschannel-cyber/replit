@@ -23,6 +23,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
+import { TeamRooms } from "@/components/chat/TeamRooms";
 
 interface Contact {
   id: number;
