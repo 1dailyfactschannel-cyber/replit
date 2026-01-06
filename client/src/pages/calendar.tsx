@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Calendar as CalendarUI } from "@/components/ui/calendar";
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { useState, useMemo } from "react";
-import { ChevronLeft, ChevronRight, Clock, MapPin, Video, Mic, Plus, Users as UsersIcon, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Clock, MapPin, Video, Mic, Plus, Users as UsersIcon, X, PhoneCall } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 
 interface CalendarEvent {
   id: string;
@@ -21,6 +22,7 @@ interface CalendarEvent {
   type: 'work' | 'social' | 'external' | 'video' | 'audio';
   contact?: string;
   description?: string;
+  meetingUrl?: string;
 }
 
 const initialEvents: CalendarEvent[] = [
@@ -28,8 +30,8 @@ const initialEvents: CalendarEvent[] = [
   { id: "2", date: new Date(), title: "Обеденный перерыв команды", time: "12:30", type: "social" },
   { id: "3", date: new Date(new Date().setDate(new Date().getDate() + 1)), title: "Планирование спринта", time: "11:00", type: "work" },
   { id: "4", date: new Date(new Date().setDate(new Date().getDate() + 2)), title: "Звонок с клиентом", time: "15:00", type: "external" },
-  { id: "5", date: new Date(new Date().setDate(new Date().getDate() + 1)), title: "Встреча с Юлией Дарицкой", time: "14:00", type: "video", contact: "Юлия Дарицкая" },
-  { id: "6", date: new Date(new Date().setDate(new Date().getDate() + 2)), title: "Ревью кода - Майк Росс", time: "15:30", type: "audio", contact: "Майк Росс" },
+  { id: "5", date: new Date(new Date().setDate(new Date().getDate() + 1)), title: "Встреча с Юлией Дарицкой", time: "14:00", type: "video", contact: "Юлия Дарицкая", meetingUrl: "https://zoom.us/j/123456789" },
+  { id: "6", date: new Date(new Date().setDate(new Date().getDate() + 2)), title: "Ревью кода - Майк Росс", time: "15:30", type: "audio", contact: "Майк Росс", meetingUrl: "https://meet.google.com/abc-defg-hij" },
 ];
 
 export default function CalendarPage() {
@@ -44,7 +46,8 @@ export default function CalendarPage() {
     title: "",
     time: "10:00",
     type: "work",
-    description: ""
+    description: "",
+    meetingUrl: "https://team-sync.call/room-1"
   });
 
   const calendarDays = useMemo(() => {
@@ -93,11 +96,13 @@ export default function CalendarPage() {
         type: newEvent.type as any || "work",
         date: selectedDate,
         description: newEvent.description,
-        contact: newEvent.contact
+        contact: newEvent.contact,
+        meetingUrl: (newEvent.type === 'video' || newEvent.type === 'audio') ? (newEvent.meetingUrl || "https://team-sync.call/" + Math.random().toString(36).substr(2, 5)) : undefined
       };
       setEvents([...events, event]);
       setIsAddEventOpen(false);
-      setNewEvent({ title: "", time: "10:00", type: "work", description: "" });
+      setNewEvent({ title: "", time: "10:00", type: "work", description: "", meetingUrl: "https://team-sync.call/room-1" });
+      toast.success("Событие создано");
     }
   };
 
@@ -245,43 +250,59 @@ export default function CalendarPage() {
                        {getEventsForDate(selectedDate).map((event) => (
                          <div 
                            key={event.id} 
-                           className="flex gap-4 items-start group p-3 rounded-xl border border-border/50 hover:bg-secondary/30 transition-all cursor-pointer"
+                           className="flex flex-col gap-3 group p-3 rounded-xl border border-border/50 hover:bg-secondary/30 transition-all cursor-pointer"
                            onClick={() => setSelectedEvent(event)}
                          >
-                            <div className="flex flex-col items-center min-w-[3.5rem] bg-primary/5 rounded-xl p-2 text-center border border-primary/10">
-                              <span className="text-[10px] text-primary uppercase font-black">{event.time}</span>
-                              <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center mt-1">
-                                {event.type === 'video' ? <Video className="w-4 h-4 text-primary" /> : 
-                                 event.type === 'audio' ? <Mic className="w-4 h-4 text-primary" /> : 
-                                 <Clock className="w-4 h-4 text-primary" />}
+                            <div className="flex gap-4 items-start">
+                              <div className="flex flex-col items-center min-w-[3.5rem] bg-primary/5 rounded-xl p-2 text-center border border-primary/10">
+                                <span className="text-[10px] text-primary uppercase font-black">{event.time}</span>
+                                <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center mt-1">
+                                  {event.type === 'video' ? <Video className="w-4 h-4 text-primary" /> : 
+                                   event.type === 'audio' ? <Mic className="w-4 h-4 text-primary" /> : 
+                                   <Clock className="w-4 h-4 text-primary" />}
+                                </div>
                               </div>
-                            </div>
-                            <div className="space-y-1 flex-1 min-w-0">
-                              <h4 className="font-bold text-sm text-foreground leading-tight group-hover:text-primary transition-colors">{event.title}</h4>
-                              {event.description && (
-                                <p className="text-xs text-muted-foreground line-clamp-1">{event.description}</p>
-                              )}
-                              <div className="flex flex-wrap gap-2 mt-2">
-                                <Badge variant="secondary" className="text-[9px] h-4 px-1.5 uppercase font-bold">
-                                  {event.type}
-                                </Badge>
-                                {event.contact && (
-                                  <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground font-medium">
-                                    <Avatar className="w-3.5 h-3.5">
-                                      <AvatarFallback className="text-[6px]">{event.contact[0]}</AvatarFallback>
-                                    </Avatar>
-                                    {event.contact}
-                                  </div>
+                              <div className="space-y-1 flex-1 min-w-0">
+                                <h4 className="font-bold text-sm text-foreground leading-tight group-hover:text-primary transition-colors">{event.title}</h4>
+                                {event.description && (
+                                  <p className="text-xs text-muted-foreground line-clamp-1">{event.description}</p>
                                 )}
+                                <div className="flex flex-wrap gap-2 mt-2">
+                                  <Badge variant="secondary" className="text-[9px] h-4 px-1.5 uppercase font-bold">
+                                    {event.type}
+                                  </Badge>
+                                  {event.contact && (
+                                    <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground font-medium">
+                                      <Avatar className="w-3.5 h-3.5">
+                                        <AvatarFallback className="text-[6px]">{event.contact[0]}</AvatarFallback>
+                                      </Avatar>
+                                      {event.contact}
+                                    </div>
+                                  )}
+                                </div>
                               </div>
                             </div>
+                            
+                            {(event.type === 'video' || event.type === 'audio' || event.meetingUrl) && (
+                              <Button 
+                                className="w-full h-8 gap-2 bg-primary/90 hover:bg-primary shadow-sm text-xs font-bold"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  toast.success("Подключение к конференции...");
+                                  if (event.meetingUrl) window.open(event.meetingUrl, '_blank');
+                                }}
+                              >
+                                <PhoneCall className="w-3.5 h-3.5" />
+                                Подключиться к звонку
+                              </Button>
+                            )}
                          </div>
                        ))}
                      </div>
                    ) : (
                      <div className="flex flex-col items-center justify-center py-20 text-center">
                        <div className="w-12 h-12 rounded-full bg-secondary/50 flex items-center justify-center mb-3">
-                         <CalendarUI className="w-6 h-6 text-muted-foreground/50" />
+                         <Clock className="w-6 h-6 text-muted-foreground/50" />
                        </div>
                        <p className="text-sm text-muted-foreground font-medium">Нет событий на этот день</p>
                        <Button 
@@ -346,6 +367,17 @@ export default function CalendarPage() {
                 </Select>
               </div>
             </div>
+            {(newEvent.type === 'video' || newEvent.type === 'audio') && (
+              <div className="grid gap-2">
+                <Label htmlFor="meeting-url">Ссылка на звонок</Label>
+                <Input 
+                  id="meeting-url" 
+                  placeholder="https://..." 
+                  value={newEvent.meetingUrl}
+                  onChange={(e) => setNewEvent({...newEvent, meetingUrl: e.target.value})}
+                />
+              </div>
+            )}
             <div className="grid gap-2">
               <Label htmlFor="desc">Описание</Label>
               <Input 
@@ -401,10 +433,18 @@ export default function CalendarPage() {
                     </div>
                   </div>
                 )}
-                <div className="grid grid-cols-2 gap-3">
-                  <Button variant="outline" className="gap-2">
-                    <Video className="w-4 h-4" /> Видеосвязь
-                  </Button>
+                <div className="grid grid-cols-1 gap-3">
+                  {(selectedEvent.type === 'video' || selectedEvent.type === 'audio' || selectedEvent.meetingUrl) && (
+                    <Button 
+                      className="gap-2 w-full h-12 text-sm font-bold shadow-lg shadow-primary/20"
+                      onClick={() => {
+                         toast.success("Подключение...");
+                         if (selectedEvent.meetingUrl) window.open(selectedEvent.meetingUrl, '_blank');
+                      }}
+                    >
+                      <PhoneCall className="w-4 h-4" /> Подключиться к звонку
+                    </Button>
+                  )}
                   <Button variant="outline" className="gap-2">
                     <UsersIcon className="w-4 h-4" /> Участники
                   </Button>
