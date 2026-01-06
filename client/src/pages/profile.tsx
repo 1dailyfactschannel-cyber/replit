@@ -6,7 +6,8 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
-import { Camera, Mail, Phone, Send, Briefcase, User, Save } from "lucide-react";
+import { Camera, Mail, Phone, Send, Briefcase, User, Save, Link, Info } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 export default function Profile() {
   const [profile, setProfile] = useState({
@@ -15,7 +16,8 @@ export default function Profile() {
     telegram: "@juli_dar",
     email: "j.daritskaya@teamsync.ru",
     phone: "+7 (999) 123-45-67",
-    avatar: "https://github.com/shadcn.png"
+    avatar: "https://github.com/shadcn.png",
+    personalRoomUrl: "https://teamsync.ru/room/juli-dar"
   });
 
   return (
@@ -118,6 +120,31 @@ export default function Profile() {
                     value={profile.email} 
                     onChange={(e) => setProfile({...profile, email: e.target.value})}
                     className="bg-secondary/30 border-border/50 focus:bg-background transition-all"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="personalRoom" className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                      <Link className="w-3.5 h-3.5 text-indigo-500" /> Персональный зал
+                    </Label>
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Info className="w-4 h-4 text-muted-foreground cursor-help" />
+                        </TooltipTrigger>
+                        <TooltipContent className="max-w-xs">
+                          <p>Ссылка на ваш персональный зал будет автоматически добавляться во все создаваемые вами приглашения на звонки.</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </div>
+                  <Input 
+                    id="personalRoom" 
+                    value={profile.personalRoomUrl} 
+                    onChange={(e) => setProfile({...profile, personalRoomUrl: e.target.value})}
+                    placeholder="https://teamsync.ru/room/your-name"
+                    className="bg-secondary/30 border-border/50 focus:bg-background transition-all font-mono text-xs"
                   />
                 </div>
               </div>

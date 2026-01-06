@@ -12,7 +12,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Calendar, Clock, Video, Mic, Bell } from "lucide-react";
+import { Calendar, Clock, Video, Mic, Bell, Info } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 interface ScheduleCallDialogProps {
   open: boolean;
@@ -29,6 +30,7 @@ export interface ScheduledCall {
   reminder: boolean;
   reminderMinutes: number;
   description?: string;
+  roomUrl?: string;
 }
 
 export function ScheduleCallDialog({
@@ -45,6 +47,7 @@ export function ScheduleCallDialog({
   const [reminder, setReminder] = useState(true);
   const [reminderMinutes, setReminderMinutes] = useState(15);
   const [description, setDescription] = useState("");
+  const [roomUrl, setRoomUrl] = useState("https://teamsync.ru/room/juli-dar");
 
   const handleSchedule = () => {
     onSchedule?.({
@@ -55,6 +58,7 @@ export function ScheduleCallDialog({
       reminder,
       reminderMinutes,
       description,
+      roomUrl,
     });
     onOpenChange(false);
   };
@@ -161,6 +165,29 @@ export function ScheduleCallDialog({
               placeholder="Добавьте комментарий, тему звонка или повестку дня..."
               className="w-full p-3 rounded-lg border border-border/50 bg-secondary/30 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 resize-none h-20"
               data-testid="textarea-call-description"
+            />
+          </div>
+
+          {/* Personal Room URL */}
+          <div className="space-y-2 border-t border-border pt-4">
+            <div className="flex items-center justify-between">
+              <Label className="font-medium">Ссылка на звонок</Label>
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Info className="w-4 h-4 text-muted-foreground cursor-help" />
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>Используется ваша персональная комната по умолчанию</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </div>
+            <Input
+              value={roomUrl}
+              onChange={(e) => setRoomUrl(e.target.value)}
+              className="bg-secondary/50 font-mono text-xs"
+              data-testid="input-call-room-url"
             />
           </div>
         </div>
