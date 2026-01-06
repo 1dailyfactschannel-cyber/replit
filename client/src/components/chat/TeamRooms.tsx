@@ -59,7 +59,7 @@ const departments = [
 
 export function TeamRooms() {
   return (
-    <div className="p-6 space-y-6 animate-in fade-in duration-500">
+    <div className="p-6 space-y-6 animate-in fade-in duration-500 h-full">
       <div>
         <h2 className="text-2xl font-bold tracking-tight">Командные залы</h2>
         <p className="text-muted-foreground mt-1">
@@ -67,7 +67,7 @@ export function TeamRooms() {
         </p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 pb-20">
         {departments.map((dept) => (
           <Card key={dept.id} className="border-border/50 bg-card/50 backdrop-blur-sm hover:shadow-md transition-all group overflow-hidden">
             <CardHeader className="pb-3 relative">
@@ -155,7 +155,7 @@ export function TeamRooms() {
         </Card>
       </div>
 
-      <div className="mt-8 p-4 bg-primary/5 rounded-xl border border-primary/10 flex items-start gap-4">
+      <div className="mt-8 p-4 bg-primary/5 rounded-xl border border-primary/10 flex items-start gap-4 sticky bottom-6 z-10 backdrop-blur-sm">
         <div className="p-2 rounded-lg bg-primary/10 text-primary shrink-0">
           <ShieldCheck className="w-5 h-5" />
         </div>
