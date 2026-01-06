@@ -76,6 +76,7 @@ const sidebarItems = [
     ]
   },
   { icon: ShoppingBag, label: "Магазин", href: "/shop" },
+  { icon: Settings, label: "Управление", href: "/settings" },
 ];
 
 export function Layout({ children }: { children: React.ReactNode }) {
