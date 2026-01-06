@@ -2,6 +2,7 @@ import { Layout } from "@/components/layout/Layout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Settings, Users, Shield, Bell, CreditCard, Puzzle } from "lucide-react";
+import { RolesManagement } from "@/components/settings/RolesManagement";
 
 export default function SettingsPage() {
   const sections = [
@@ -39,32 +40,36 @@ export default function SettingsPage() {
 
           {sections.map((section) => (
             <TabsContent key={section.id} value={section.id} className="focus-visible:outline-none">
-              <Card className="border-sidebar-border/50 shadow-sm">
-                <CardHeader>
-                  <div className="flex items-center gap-3 mb-1">
-                    <div className="p-2 rounded-lg bg-primary/10 text-primary">
-                      <section.icon className="w-5 h-5" />
+              {section.id === "roles" ? (
+                <RolesManagement />
+              ) : (
+                <Card className="border-sidebar-border/50 shadow-sm">
+                  <CardHeader>
+                    <div className="flex items-center gap-3 mb-1">
+                      <div className="p-2 rounded-lg bg-primary/10 text-primary">
+                        <section.icon className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <CardTitle>{section.label}</CardTitle>
+                        <CardDescription>{section.description}</CardDescription>
+                      </div>
                     </div>
-                    <div>
-                      <CardTitle>{section.label}</CardTitle>
-                      <CardDescription>{section.description}</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-6">
+                    <div className="p-12 border-2 border-dashed rounded-xl flex flex-col items-center justify-center text-center space-y-4">
+                      <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center text-muted-foreground">
+                        <section.icon className="w-6 h-6" />
+                      </div>
+                      <div className="max-w-xs">
+                        <p className="font-medium">Раздел {section.label} находится в разработке</p>
+                        <p className="text-sm text-muted-foreground mt-1">
+                          Скоро здесь появятся расширенные инструменты управления вашим проектом.
+                        </p>
+                      </div>
                     </div>
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-6">
-                  <div className="p-12 border-2 border-dashed rounded-xl flex flex-col items-center justify-center text-center space-y-4">
-                    <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center text-muted-foreground">
-                      <section.icon className="w-6 h-6" />
-                    </div>
-                    <div className="max-w-xs">
-                      <p className="font-medium">Раздел {section.label} находится в разработке</p>
-                      <p className="text-sm text-muted-foreground mt-1">
-                        Скоро здесь появятся расширенные инструменты управления вашим проектом.
-                      </p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
+                  </CardContent>
+                </Card>
+              )}
             </TabsContent>
           ))}
         </Tabs>

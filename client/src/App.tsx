@@ -14,7 +14,6 @@ import Auth from "@/pages/auth";
 import Profile from "@/pages/profile";
 import Team from "@/pages/team";
 import Shop from "@/pages/shop";
-import Roles from "@/pages/roles";
 import SettingsPage from "@/pages/settings";
 
 function Router() {
@@ -24,7 +23,6 @@ function Router() {
       <Route path="/profile" component={Profile} />
       <Route path="/team" component={Team} />
       <Route path="/shop" component={Shop} />
-      <Route path="/roles" component={Roles} />
       <Route path="/settings" component={SettingsPage} />
       <Route path="/" component={Dashboard} />
       <Route path="/projects" component={Projects} />

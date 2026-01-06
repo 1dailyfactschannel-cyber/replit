@@ -71,8 +71,7 @@ const sidebarItems = [
     href: "/team",
     subItems: [
       { label: "Список", href: "/team" },
-      { label: "Аналитика", href: "/team?tab=analytics" },
-      { label: "Роли", href: "/roles" }
+      { label: "Аналитика", href: "/team?tab=analytics" }
     ]
   },
   { icon: ShoppingBag, label: "Магазин", href: "/shop" },
