@@ -279,7 +279,7 @@ export default function Chat() {
                           </div>
                           <div className="space-y-3">
                             <Label>Выберите чаты</Label>
-                            <util.ScrollArea className="h-[200px] pr-4">
+                            <ScrollArea className="h-[200px] pr-4">
                               <div className="space-y-2">
                                 {contacts.map((contact) => (
                                   <div 
@@ -304,7 +304,7 @@ export default function Chat() {
                                   </div>
                                 ))}
                               </div>
-                            </util.ScrollArea>
+                            </ScrollArea>
                           </div>
                         </div>
                         <DialogFooter>
