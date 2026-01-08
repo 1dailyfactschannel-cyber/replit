@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Users, Video, PhoneCall, Clock, ShieldCheck, MessageSquare, Mic, MicOff, VideoOff, PhoneOff, Settings2, Share2 } from "lucide-react";
+import { Users, Video, PhoneCall, Clock, ShieldCheck, MessageSquare, Mic, MicOff, VideoOff, PhoneOff, Settings2, Share2, Plus } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { toast } from "sonner";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
