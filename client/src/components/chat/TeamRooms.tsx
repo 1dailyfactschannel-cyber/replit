@@ -70,13 +70,24 @@ import { useNotifications } from "@/hooks/use-notifications";
 export function TeamRooms() {
   const { notify } = useNotifications();
   const [rooms, setRooms] = useState(INITIAL_DEPARTMENTS);
-  // ... existing code ...
+  const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
+  const [activeRoom, setActiveRoom] = useState<typeof INITIAL_DEPARTMENTS[0] | null>(null);
+  const [isJoined, setIsJoined] = useState(false);
+  const [isMicOn, setIsMicOn] = useState(true);
+  const [isVideoOn, setIsVideoOn] = useState(true);
+  
+  // Create room state
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [newRoomData, setNewRoomData] = useState({
+    name: "",
+    description: ""
+  });
 
   const handleJoin = (dept: typeof INITIAL_DEPARTMENTS[0]) => {
     setActiveRoom(dept);
     setIsJoined(true);
     notify(`Вы присоединились к залу: ${dept.name}`, {
-      body: `Встреча в зале ${dept.name} началась`,
+      body: `Встреча в залю ${dept.name} началась`,
       icon: "/replit.svg"
     });
   };
