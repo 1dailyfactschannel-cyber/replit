@@ -112,36 +112,6 @@ export function TaskDetailsModal({
               <Label htmlFor="title">Название задачи</Label>
               <Input id="title" placeholder="Введите название..." className="h-12 text-lg font-semibold" />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="desc">Описание</Label>
-              <RichTextEditor placeholder="Добавьте детальное описание..." />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Статус</Label>
-                <Select defaultValue="В планах">
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="В планах">В планах</SelectItem>
-                    <SelectItem value="В работе">В работе</SelectItem>
-                    <SelectItem value="На проверке">На проверке</SelectItem>
-                    <SelectItem value="Готово">Готово</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label>Приоритет</Label>
-                <Select defaultValue="Средний">
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Низкий">Низкий</SelectItem>
-                    <SelectItem value="Средний">Средний</SelectItem>
-                    <SelectItem value="Высокий">Высокий</SelectItem>
-                    <SelectItem value="Критический">Критический</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
           </div>
           <DialogFooter className="p-6 border-t bg-card">
             <Button variant="outline" onClick={() => onOpenChange(false)}>Отмена</Button>
