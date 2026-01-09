@@ -339,7 +339,7 @@ export default function Projects() {
           {/* Kanban Columns */}
           <ScrollArea className="flex-1 p-6">
             <div className="flex gap-6 h-full items-start">
-              {Object.entries(kanbanData).map(([column, tasks]) => (
+              {Object.entries(kanbanData).map(([column, tasks]: [string, any]) => (
                 <div key={column} className="w-80 shrink-0 flex flex-col gap-4">
                   <div className="flex items-center justify-between px-1">
                     <div className="flex items-center gap-2">
