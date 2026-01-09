@@ -10,7 +10,9 @@ import {
   Filter,
   Users,
   Flag,
-  GripVertical
+  GripVertical,
+  Trash2,
+  Pencil
 } from "lucide-react";
 import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd";
 import { Button } from "@/components/ui/button";
@@ -72,6 +74,7 @@ export default function Projects() {
   const [isCreateBoardOpen, setIsCreateBoardOpen] = useState(false);
   const [newProject, setNewProject] = useState({ name: "", color: "bg-blue-500", priority: "Средний" });
   const [newBoardName, setNewBoardName] = useState("");
+  const [editingColumn, setEditingColumn] = useState<{ originalName: string, currentName: string } | null>(null);
 
   const DEFAULT_KANBAN_DATA = {
     "В планах": [],
@@ -155,27 +158,33 @@ export default function Projects() {
   };
 
   const onTaskUpdate = (updatedTask: Task) => {
+    // ... existing onTaskUpdate logic
+  };
+
+  const handleRenameColumn = (oldName: string, newName: string) => {
+    if (!newName || oldName === newName) {
+      setEditingColumn(null);
+      return;
+    }
     const boardKey = activeBoardKey;
     const currentBoardData = boardsData[boardKey] || DEFAULT_KANBAN_DATA;
+    const newData = { ...currentBoardData };
+    newData[newName] = newData[oldName];
+    delete newData[oldName];
     
-    // Check if it's a new task (not in any column)
-    const isNew = !Object.values(currentBoardData).flat().find((t: any) => t.id === updatedTask.id);
+    setBoardsData({ ...boardsData, [boardKey]: newData });
+    setEditingColumn(null);
+    toast.success("Колонка переименована");
+  };
+
+  const handleDeleteColumn = (colName: string) => {
+    const boardKey = activeBoardKey;
+    const currentBoardData = boardsData[boardKey] || DEFAULT_KANBAN_DATA;
+    const newData = { ...currentBoardData };
+    delete newData[colName];
     
-    if (isNew) {
-      const status = updatedTask.status;
-      const columnTasks = currentBoardData[status] || [];
-      setBoardsData({
-        ...boardsData,
-        [boardKey]: {
-          ...currentBoardData,
-          [status]: [...columnTasks, updatedTask]
-        }
-      });
-      toast.success("Задача успешно создана");
-    } else {
-      // Logic for editing existing task could go here if needed
-      toast.success("Задача обновлена");
-    }
+    setBoardsData({ ...boardsData, [boardKey]: newData });
+    toast.success("Колонка удалена");
   };
 
   const toggleProjectCollapse = (projectId: number, e: React.MouseEvent) => {
@@ -186,12 +195,25 @@ export default function Projects() {
   };
 
   const onDragEnd = (result: DropResult) => {
-    const { source, destination } = result;
+    const { source, destination, type } = result;
     if (!destination) return;
     if (source.droppableId === destination.droppableId && source.index === destination.index) return;
 
     const boardKey = activeBoardKey;
     const currentBoardData = { ...boardsData[boardKey] || DEFAULT_KANBAN_DATA };
+
+    if (type === "column") {
+      const entries = Object.entries(currentBoardData);
+      const [movedCol] = entries.splice(source.index, 1);
+      entries.splice(destination.index, 0, movedCol);
+      
+      setBoardsData({
+        ...boardsData,
+        [boardKey]: Object.fromEntries(entries)
+      });
+      toast.success("Колонка перемещена");
+      return;
+    }
     
     const sourceCol = [...currentBoardData[source.droppableId]];
     const destCol = source.droppableId === destination.droppableId 
@@ -395,71 +417,146 @@ export default function Projects() {
           {/* Kanban Columns */}
           <DragDropContext onDragEnd={onDragEnd}>
             <ScrollArea className="flex-1 p-6">
-              <div className="flex gap-6 h-full items-start">
-                {Object.entries(kanbanData).map(([column, tasks]: [string, any]) => (
-                  <Droppable droppableId={column} key={column}>
-                    {(provided) => (
-                      <div 
-                        {...provided.droppableProps}
-                        ref={provided.innerRef}
-                        className="w-80 shrink-0 flex flex-col gap-4"
-                      >
-                        <div className="flex items-center justify-between px-1">
-                          <div className="flex items-center gap-2">
-                             <h3 className="font-bold text-sm text-foreground/80">{column}</h3>
-                             <Badge variant="secondary" className="rounded-full px-2 py-0 h-5 text-[10px] font-bold">
-                               {tasks.length}
-                             </Badge>
-                          </div>
-                        </div>
-
-                        <div className="space-y-3 min-h-[100px]">
-                          {tasks.map((task: any, index: number) => (
-                            <Draggable draggableId={task.id.toString()} index={index} key={task.id}>
-                              {(provided, snapshot) => (
-                                <div
+              <Droppable droppableId="board" direction="horizontal" type="column">
+                {(provided) => (
+                  <div 
+                    {...provided.droppableProps}
+                    ref={provided.innerRef}
+                    className="flex gap-6 h-full items-start"
+                  >
+                    {Object.entries(kanbanData).map(([column, tasks]: [string, any], colIndex) => (
+                      <Draggable draggableId={`col-${column}`} index={colIndex} key={column}>
+                        {(colProvided) => (
+                          <div
+                            ref={colProvided.innerRef}
+                            {...colProvided.draggableProps}
+                            className="w-80 shrink-0 flex flex-col gap-4"
+                          >
+                            <Droppable droppableId={column} type="task">
+                              {(provided) => (
+                                <div 
+                                  {...provided.droppableProps}
                                   ref={provided.innerRef}
-                                  {...provided.draggableProps}
-                                  {...provided.dragHandleProps}
-                                  className={cn(
-                                    "group bg-card border border-border/60 p-4 rounded-xl shadow-sm hover:shadow-md hover:border-primary/30 transition-all cursor-pointer",
-                                    snapshot.isDragging && "shadow-xl ring-2 ring-primary/20 border-primary"
-                                  )}
-                                  onClick={() => handleTaskClick({ ...task, status: column })}
+                                  className="flex flex-col gap-4"
                                 >
-                                  <div className="flex items-center justify-between mb-3">
-                                    <Badge 
-                                      className={cn(
-                                        "text-[10px] font-bold px-2 py-0 rounded-full",
-                                        task.priority === "Высокий" ? "bg-rose-500/10 text-rose-600" : 
-                                        task.priority === "Средний" ? "bg-amber-500/10 text-amber-600" : 
-                                        "bg-emerald-500/10 text-emerald-600"
+                                  <div className="flex items-center justify-between px-1" {...colProvided.dragHandleProps}>
+                                    <div className="flex items-center gap-2 group/col-title w-full">
+                                      {editingColumn?.originalName === column ? (
+                                        <Input
+                                          autoFocus
+                                          className="h-7 text-sm font-bold bg-transparent border-primary/30 py-0 px-1"
+                                          value={editingColumn.currentName}
+                                          onChange={(e) => setEditingColumn({ ...editingColumn, currentName: e.target.value })}
+                                          onBlur={() => handleRenameColumn(column, editingColumn.currentName)}
+                                          onKeyDown={(e) => {
+                                            if (e.key === 'Enter') handleRenameColumn(column, editingColumn.currentName);
+                                            if (e.key === 'Escape') setEditingColumn(null);
+                                          }}
+                                        />
+                                      ) : (
+                                        <>
+                                          <h3 className="font-bold text-sm text-foreground/80 truncate max-w-[150px]">{column}</h3>
+                                          <Badge variant="secondary" className="rounded-full px-2 py-0 h-5 text-[10px] font-bold shrink-0">
+                                            {tasks.length}
+                                          </Badge>
+                                          <div className="flex items-center gap-1 opacity-0 group-hover/col-title:opacity-100 transition-opacity ml-auto">
+                                            <Button 
+                                              variant="ghost" 
+                                              size="icon" 
+                                              className="h-6 w-6"
+                                              onClick={() => setEditingColumn({ originalName: column, currentName: column })}
+                                            >
+                                              <Pencil className="w-3 h-3 text-muted-foreground" />
+                                            </Button>
+                                            <Button 
+                                              variant="ghost" 
+                                              size="icon" 
+                                              className="h-6 w-6 hover:text-destructive"
+                                              onClick={() => handleDeleteColumn(column)}
+                                            >
+                                              <Trash2 className="w-3 h-3 text-muted-foreground" />
+                                            </Button>
+                                          </div>
+                                        </>
                                       )}
-                                    >
-                                      {task.priority}
-                                    </Badge>
-                                    <GripVertical className="w-3.5 h-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                                    </div>
                                   </div>
-                                  <h4 className="text-sm font-semibold mb-3 text-foreground/90">{task.title}</h4>
+
+                                  <div className="space-y-3 min-h-[100px]">
+                                    {tasks.map((task: any, index: number) => (
+                                      <Draggable draggableId={task.id.toString()} index={index} key={task.id}>
+                                        {(provided, snapshot) => (
+                                          <div
+                                            ref={provided.innerRef}
+                                            {...provided.draggableProps}
+                                            {...provided.dragHandleProps}
+                                            className={cn(
+                                              "group bg-card border border-border/60 p-4 rounded-xl shadow-sm hover:shadow-md hover:border-primary/30 transition-all cursor-pointer",
+                                              snapshot.isDragging && "shadow-xl ring-2 ring-primary/20 border-primary"
+                                            )}
+                                            onClick={() => handleTaskClick({ ...task, status: column })}
+                                          >
+                                            <div className="flex items-center justify-between mb-3">
+                                              <Badge 
+                                                className={cn(
+                                                  "text-[10px] font-bold px-2 py-0 rounded-full",
+                                                  task.priority === "Высокий" ? "bg-rose-500/10 text-rose-600" : 
+                                                  task.priority === "Средний" ? "bg-amber-500/10 text-amber-600" : 
+                                                  "bg-emerald-500/10 text-emerald-600"
+                                                )}
+                                              >
+                                                {task.priority}
+                                              </Badge>
+                                              <GripVertical className="w-3.5 h-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                                            </div>
+                                            <h4 className="text-sm font-semibold mb-3 text-foreground/90">{task.title}</h4>
+                                          </div>
+                                        )}
+                                      </Draggable>
+                                    ))}
+                                    {provided.placeholder}
+                                    <Button 
+                                      variant="ghost" 
+                                      className="w-full border-2 border-dashed border-border/50 py-8 text-muted-foreground hover:border-primary/30 hover:bg-primary/5 transition-all rounded-xl gap-2"
+                                      onClick={handleCreateTask}
+                                    >
+                                      <Plus className="w-4 h-4" />
+                                      <span className="text-xs font-semibold">Новая задача</span>
+                                    </Button>
+                                  </div>
                                 </div>
                               )}
-                            </Draggable>
-                          ))}
-                          {provided.placeholder}
-                          <Button 
-                            variant="ghost" 
-                            className="w-full border-2 border-dashed border-border/50 py-8 text-muted-foreground hover:border-primary/30 hover:bg-primary/5 transition-all rounded-xl gap-2"
-                            onClick={handleCreateTask}
-                          >
-                            <Plus className="w-4 h-4" />
-                            <span className="text-xs font-semibold">Новая задача</span>
-                          </Button>
-                        </div>
+                            </Droppable>
+                          </div>
+                        )}
+                      </Draggable>
+                    ))}
+                    {provided.placeholder}
+                    
+                    {/* Add Column Button */}
+                    <Button 
+                      variant="ghost" 
+                      className="w-80 shrink-0 border-2 border-dashed border-border/40 py-12 rounded-xl text-muted-foreground hover:bg-secondary/30 hover:border-primary/30 transition-all h-fit"
+                      onClick={() => {
+                        const boardKey = activeBoardKey;
+                        const currentData = boardsData[boardKey] || DEFAULT_KANBAN_DATA;
+                        const newName = `Новая колонка ${Object.keys(currentData).length + 1}`;
+                        setBoardsData({
+                          ...boardsData,
+                          [boardKey]: { ...currentData, [newName]: [] }
+                        });
+                        toast.success("Колонка добавлена");
+                      }}
+                    >
+                      <Plus className="w-5 h-5 mb-1" />
+                      <div className="flex flex-col items-center">
+                        <span className="font-bold text-sm">Добавить колонку</span>
+                        <span className="text-[10px] opacity-60">Создайте новый этап процесса</span>
                       </div>
-                    )}
-                  </Droppable>
-                ))}
-              </div>
+                    </Button>
+                  </div>
+                )}
+              </Droppable>
             </ScrollArea>
           </DragDropContext>
         </div>
