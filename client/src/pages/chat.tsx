@@ -1,5 +1,6 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Layout } from "@/components/layout/Layout";
+import { useNotifications } from "@/hooks/use-notifications";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
@@ -94,6 +95,12 @@ const initialMessages = [
 
 export default function Chat() {
   const [, setLocation] = useLocation();
+  const { notify, requestPermission } = useNotifications();
+  
+  useEffect(() => {
+    requestPermission();
+  }, [requestPermission]);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [scheduleOpen, setScheduleOpen] = useState(false);
   const [scheduledCalls, setScheduledCalls] = useState<ScheduledCall[]>([]);

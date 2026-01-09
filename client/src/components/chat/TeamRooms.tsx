@@ -63,31 +63,28 @@ const INITIAL_DEPARTMENTS = [
   }
 ];
 
+import { useNotifications } from "@/hooks/use-notifications";
+
+// ... existing code ...
+
 export function TeamRooms() {
+  const { notify } = useNotifications();
   const [rooms, setRooms] = useState(INITIAL_DEPARTMENTS);
-  const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
-  const [activeRoom, setActiveRoom] = useState<typeof INITIAL_DEPARTMENTS[0] | null>(null);
-  const [isJoined, setIsJoined] = useState(false);
-  const [isMicOn, setIsMicOn] = useState(true);
-  const [isVideoOn, setIsVideoOn] = useState(true);
-  
-  // Create room state
-  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-  const [newRoomData, setNewRoomData] = useState({
-    name: "",
-    description: ""
-  });
+  // ... existing code ...
 
   const handleJoin = (dept: typeof INITIAL_DEPARTMENTS[0]) => {
     setActiveRoom(dept);
     setIsJoined(true);
-    toast.success(`Вы присоединились к залу: ${dept.name}`);
+    notify(`Вы присоединились к залу: ${dept.name}`, {
+      body: `Встреча в зале ${dept.name} началась`,
+      icon: "/replit.svg"
+    });
   };
 
   const handleLeave = () => {
     setIsJoined(false);
     setActiveRoom(null);
-    toast.info("Вы вышли из командного зала");
+    notify("Вы вышли из командного залу", { internalOnly: true });
   };
 
   const handleCreateRoom = () => {
@@ -109,8 +106,12 @@ export function TeamRooms() {
     setRooms([...rooms, newRoom]);
     setIsCreateModalOpen(false);
     setNewRoomData({ name: "", description: "" });
-    toast.success(`Зал "${newRoom.name}" успешно создан!`);
+    notify("Зал создан", { 
+      body: `Командный зал "${newRoom.name}" теперь доступен для встреч`,
+      icon: "/replit.svg"
+    });
   };
+
 
   return (
     <div className="p-6 space-y-6 animate-in fade-in duration-500 h-full relative">
