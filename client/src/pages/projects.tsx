@@ -168,11 +168,18 @@ export default function Projects() {
     }
     const boardKey = activeBoardKey;
     const currentBoardData = boardsData[boardKey] || DEFAULT_KANBAN_DATA;
-    const newData = { ...currentBoardData };
-    newData[newName] = newData[oldName];
-    delete newData[oldName];
     
-    setBoardsData({ ...boardsData, [boardKey]: newData });
+    // Create a new object with preserved order
+    const newData: Record<string, any> = {};
+    Object.keys(currentBoardData).forEach(key => {
+      if (key === oldName) {
+        newData[newName] = currentBoardData[oldName];
+      } else {
+        newData[key] = currentBoardData[key];
+      }
+    });
+    
+    setBoardsData(prev => ({ ...prev, [boardKey]: newData }));
     setEditingColumn(null);
     toast.success("Колонка переименована");
   };
@@ -183,18 +190,19 @@ export default function Projects() {
     const newData = { ...currentBoardData };
     delete newData[colName];
     
-    setBoardsData({ ...boardsData, [boardKey]: newData });
+    setBoardsData(prev => ({ ...prev, [boardKey]: newData }));
     toast.success("Колонка удалена");
   };
 
   const handleAddColumn = () => {
     const boardKey = activeBoardKey;
-    const currentData = boardsData[boardKey] || DEFAULT_KANBAN_DATA;
+    const currentData = { ...(boardsData[boardKey] || DEFAULT_KANBAN_DATA) };
     const newName = `Новая колонка ${Object.keys(currentData).length + 1}`;
-    setBoardsData({
-      ...boardsData,
+    
+    setBoardsData(prev => ({
+      ...prev,
       [boardKey]: { ...currentData, [newName]: [] }
-    });
+    }));
     toast.success("Колонка добавлена");
   };
 
