@@ -187,6 +187,17 @@ export default function Projects() {
     toast.success("Колонка удалена");
   };
 
+  const handleAddColumn = () => {
+    const boardKey = activeBoardKey;
+    const currentData = boardsData[boardKey] || DEFAULT_KANBAN_DATA;
+    const newName = `Новая колонка ${Object.keys(currentData).length + 1}`;
+    setBoardsData({
+      ...boardsData,
+      [boardKey]: { ...currentData, [newName]: [] }
+    });
+    toast.success("Колонка добавлена");
+  };
+
   const toggleProjectCollapse = (projectId: number, e: React.MouseEvent) => {
     e.stopPropagation();
     setProjects(prev => prev.map(p => 
@@ -465,14 +476,25 @@ export default function Projects() {
                                               size="icon" 
                                               className="h-6 w-6"
                                               onClick={() => setEditingColumn({ originalName: column, currentName: column })}
+                                              title="Переименовать"
                                             >
                                               <Pencil className="w-3 h-3 text-muted-foreground" />
                                             </Button>
                                             <Button 
                                               variant="ghost" 
                                               size="icon" 
+                                              className="h-6 w-6"
+                                              onClick={handleAddColumn}
+                                              title="Добавить колонку"
+                                            >
+                                              <Plus className="w-3 h-3 text-muted-foreground" />
+                                            </Button>
+                                            <Button 
+                                              variant="ghost" 
+                                              size="icon" 
                                               className="h-6 w-6 hover:text-destructive"
                                               onClick={() => handleDeleteColumn(column)}
+                                              title="Удалить"
                                             >
                                               <Trash2 className="w-3 h-3 text-muted-foreground" />
                                             </Button>
@@ -537,16 +559,7 @@ export default function Projects() {
                     <Button 
                       variant="ghost" 
                       className="w-80 shrink-0 border-2 border-dashed border-border/40 py-12 rounded-xl text-muted-foreground hover:bg-secondary/30 hover:border-primary/30 transition-all h-fit"
-                      onClick={() => {
-                        const boardKey = activeBoardKey;
-                        const currentData = boardsData[boardKey] || DEFAULT_KANBAN_DATA;
-                        const newName = `Новая колонка ${Object.keys(currentData).length + 1}`;
-                        setBoardsData({
-                          ...boardsData,
-                          [boardKey]: { ...currentData, [newName]: [] }
-                        });
-                        toast.success("Колонка добавлена");
-                      }}
+                      onClick={handleAddColumn}
                     >
                       <Plus className="w-5 h-5 mb-1" />
                       <div className="flex flex-col items-center">
