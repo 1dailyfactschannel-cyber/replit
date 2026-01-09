@@ -9,8 +9,10 @@ import {
   Hash,
   Filter,
   Users,
-  Flag
+  Flag,
+  GripVertical
 } from "lucide-react";
+import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Input } from "@/components/ui/input";
@@ -181,6 +183,36 @@ export default function Projects() {
     setProjects(prev => prev.map(p => 
       p.id === projectId ? { ...p, collapsed: !p.collapsed } : p
     ));
+  };
+
+  const onDragEnd = (result: DropResult) => {
+    const { source, destination } = result;
+    if (!destination) return;
+    if (source.droppableId === destination.droppableId && source.index === destination.index) return;
+
+    const boardKey = activeBoardKey;
+    const currentBoardData = { ...boardsData[boardKey] || DEFAULT_KANBAN_DATA };
+    
+    const sourceCol = [...currentBoardData[source.droppableId]];
+    const destCol = source.droppableId === destination.droppableId 
+      ? sourceCol 
+      : [...currentBoardData[destination.droppableId]];
+
+    const [movedTask] = sourceCol.splice(source.index, 1);
+    destCol.splice(destination.index, 0, movedTask);
+
+    const newBoardData = {
+      ...currentBoardData,
+      [source.droppableId]: sourceCol,
+      [destination.droppableId]: destCol
+    };
+
+    setBoardsData({
+      ...boardsData,
+      [boardKey]: newBoardData
+    });
+    
+    toast.success("Задача перемещена");
   };
 
   return (
@@ -361,54 +393,75 @@ export default function Projects() {
           </div>
 
           {/* Kanban Columns */}
-          <ScrollArea className="flex-1 p-6">
-            <div className="flex gap-6 h-full items-start">
-              {Object.entries(kanbanData).map(([column, tasks]: [string, any]) => (
-                <div key={column} className="w-80 shrink-0 flex flex-col gap-4">
-                  <div className="flex items-center justify-between px-1">
-                    <div className="flex items-center gap-2">
-                       <h3 className="font-bold text-sm text-foreground/80">{column}</h3>
-                       <Badge variant="secondary" className="rounded-full px-2 py-0 h-5 text-[10px] font-bold">
-                         {tasks.length}
-                       </Badge>
-                    </div>
-                  </div>
-
-                  <div className="space-y-3">
-                    {tasks.map((task: any) => (
-                      <div
-                        key={task.id}
-                        className="group bg-card border border-border/60 p-4 rounded-xl shadow-sm hover:shadow-md hover:border-primary/30 transition-all cursor-pointer"
-                        onClick={() => handleTaskClick({ ...task, status: column })}
+          <DragDropContext onDragEnd={onDragEnd}>
+            <ScrollArea className="flex-1 p-6">
+              <div className="flex gap-6 h-full items-start">
+                {Object.entries(kanbanData).map(([column, tasks]: [string, any]) => (
+                  <Droppable droppableId={column} key={column}>
+                    {(provided) => (
+                      <div 
+                        {...provided.droppableProps}
+                        ref={provided.innerRef}
+                        className="w-80 shrink-0 flex flex-col gap-4"
                       >
-                        <div className="flex items-center justify-between mb-3">
-                          <Badge 
-                            className={cn(
-                              "text-[10px] font-bold px-2 py-0 rounded-full",
-                              task.priority === "Высокий" ? "bg-rose-500/10 text-rose-600" : 
-                              task.priority === "Средний" ? "bg-amber-500/10 text-amber-600" : 
-                              "bg-emerald-500/10 text-emerald-600"
-                            )}
-                          >
-                            {task.priority}
-                          </Badge>
+                        <div className="flex items-center justify-between px-1">
+                          <div className="flex items-center gap-2">
+                             <h3 className="font-bold text-sm text-foreground/80">{column}</h3>
+                             <Badge variant="secondary" className="rounded-full px-2 py-0 h-5 text-[10px] font-bold">
+                               {tasks.length}
+                             </Badge>
+                          </div>
                         </div>
-                        <h4 className="text-sm font-semibold mb-3 text-foreground/90">{task.title}</h4>
+
+                        <div className="space-y-3 min-h-[100px]">
+                          {tasks.map((task: any, index: number) => (
+                            <Draggable draggableId={task.id.toString()} index={index} key={task.id}>
+                              {(provided, snapshot) => (
+                                <div
+                                  ref={provided.innerRef}
+                                  {...provided.draggableProps}
+                                  {...provided.dragHandleProps}
+                                  className={cn(
+                                    "group bg-card border border-border/60 p-4 rounded-xl shadow-sm hover:shadow-md hover:border-primary/30 transition-all cursor-pointer",
+                                    snapshot.isDragging && "shadow-xl ring-2 ring-primary/20 border-primary"
+                                  )}
+                                  onClick={() => handleTaskClick({ ...task, status: column })}
+                                >
+                                  <div className="flex items-center justify-between mb-3">
+                                    <Badge 
+                                      className={cn(
+                                        "text-[10px] font-bold px-2 py-0 rounded-full",
+                                        task.priority === "Высокий" ? "bg-rose-500/10 text-rose-600" : 
+                                        task.priority === "Средний" ? "bg-amber-500/10 text-amber-600" : 
+                                        "bg-emerald-500/10 text-emerald-600"
+                                      )}
+                                    >
+                                      {task.priority}
+                                    </Badge>
+                                    <GripVertical className="w-3.5 h-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                                  </div>
+                                  <h4 className="text-sm font-semibold mb-3 text-foreground/90">{task.title}</h4>
+                                </div>
+                              )}
+                            </Draggable>
+                          ))}
+                          {provided.placeholder}
+                          <Button 
+                            variant="ghost" 
+                            className="w-full border-2 border-dashed border-border/50 py-8 text-muted-foreground hover:border-primary/30 hover:bg-primary/5 transition-all rounded-xl gap-2"
+                            onClick={handleCreateTask}
+                          >
+                            <Plus className="w-4 h-4" />
+                            <span className="text-xs font-semibold">Новая задача</span>
+                          </Button>
+                        </div>
                       </div>
-                    ))}
-                    <Button 
-                      variant="ghost" 
-                      className="w-full border-2 border-dashed border-border/50 py-8 text-muted-foreground hover:border-primary/30 hover:bg-primary/5 transition-all rounded-xl gap-2"
-                      onClick={handleCreateTask}
-                    >
-                      <Plus className="w-4 h-4" />
-                      <span className="text-xs font-semibold">Новая задача</span>
-                    </Button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </ScrollArea>
+                    )}
+                  </Droppable>
+                ))}
+              </div>
+            </ScrollArea>
+          </DragDropContext>
         </div>
       </div>
 
