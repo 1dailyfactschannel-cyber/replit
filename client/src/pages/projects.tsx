@@ -134,6 +134,24 @@ export default function Projects() {
   const activeBoardKey = `${activeProject.id}-${activeBoard}`;
   const kanbanData = boardsData[activeBoardKey] || DEFAULT_KANBAN_DATA;
 
+  const handleTaskClick = (task: any) => {
+    // Fill with mock data for editing
+    setSelectedTask({
+      ...MOCK_TASK_DETAILS,
+      id: task.id,
+      title: task.title,
+      priority: task.priority,
+      type: task.type,
+      status: task.status || "В планах"
+    });
+    setModalOpen(true);
+  };
+
+  const handleCreateTask = () => {
+    setSelectedTask(null);
+    setModalOpen(true);
+  };
+
   const toggleProjectCollapse = (projectId: number, e: React.MouseEvent) => {
     e.stopPropagation();
     setProjects(prev => prev.map(p => 
@@ -307,7 +325,11 @@ export default function Projects() {
                  <span className="hidden sm:inline">Фильтр</span>
                </Button>
                <Separator orientation="vertical" className="h-6 mx-2" />
-               <Button className="gap-2 shadow-lg shadow-primary/20" size="sm">
+               <Button 
+                 className="gap-2 shadow-lg shadow-primary/20" 
+                 size="sm"
+                 onClick={handleCreateTask}
+               >
                  <Plus className="w-4 h-4" />
                  <span className="hidden sm:inline">Добавить задачу</span>
                </Button>
@@ -333,6 +355,7 @@ export default function Projects() {
                       <div
                         key={task.id}
                         className="group bg-card border border-border/60 p-4 rounded-xl shadow-sm hover:shadow-md hover:border-primary/30 transition-all cursor-pointer"
+                        onClick={() => handleTaskClick({ ...task, status: column })}
                       >
                         <div className="flex items-center justify-between mb-3">
                           <Badge 
@@ -352,6 +375,7 @@ export default function Projects() {
                     <Button 
                       variant="ghost" 
                       className="w-full border-2 border-dashed border-border/50 py-8 text-muted-foreground hover:border-primary/30 hover:bg-primary/5 transition-all rounded-xl gap-2"
+                      onClick={handleCreateTask}
                     >
                       <Plus className="w-4 h-4" />
                       <span className="text-xs font-semibold">Новая задача</span>
