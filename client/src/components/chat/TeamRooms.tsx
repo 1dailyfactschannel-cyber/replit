@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Users, Video, PhoneCall, Clock, ShieldCheck, MessageSquare, Mic, MicOff, VideoOff, PhoneOff, Settings2, Share2, Plus } from "lucide-react";
+import { Users, Video, PhoneCall, Clock, ShieldCheck, MessageSquare, Mic, MicOff, VideoOff, PhoneOff, Settings2, Share2, Plus, LayoutGrid, List } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
@@ -65,6 +65,7 @@ const INITIAL_DEPARTMENTS = [
 
 export function TeamRooms() {
   const [rooms, setRooms] = useState(INITIAL_DEPARTMENTS);
+  const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [activeRoom, setActiveRoom] = useState<typeof INITIAL_DEPARTMENTS[0] | null>(null);
   const [isJoined, setIsJoined] = useState(false);
   const [isMicOn, setIsMicOn] = useState(true);
@@ -113,99 +114,178 @@ export function TeamRooms() {
 
   return (
     <div className="p-6 space-y-6 animate-in fade-in duration-500 h-full relative">
-      <div>
-        <h2 className="text-2xl font-bold tracking-tight">Командные залы</h2>
-        <p className="text-muted-foreground mt-1">
-          Постоянные виртуальные комнаты отделов для мгновенных встреч.
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-bold tracking-tight">Командные залы</h2>
+          <p className="text-muted-foreground mt-1 text-sm">
+            Постоянные виртуальные комнаты отделов для мгновенных встреч.
+          </p>
+        </div>
+        <div className="flex items-center bg-secondary/30 p-1 rounded-lg border border-border/50">
+          <Button 
+            variant="ghost" 
+            size="icon" 
+            className={`h-8 w-8 rounded-md transition-all ${viewMode === "grid" ? "bg-background shadow-sm text-primary" : "text-muted-foreground"}`}
+            onClick={() => setViewMode("grid")}
+          >
+            <LayoutGrid className="w-4 h-4" />
+          </Button>
+          <Button 
+            variant="ghost" 
+            size="icon" 
+            className={`h-8 w-8 rounded-md transition-all ${viewMode === "list" ? "bg-background shadow-sm text-primary" : "text-muted-foreground"}`}
+            onClick={() => setViewMode("list")}
+          >
+            <List className="w-4 h-4" />
+          </Button>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 pb-20">
+      <div className={viewMode === "grid" 
+        ? "grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 pb-20" 
+        : "flex flex-col gap-3 pb-20"
+      }>
         {rooms.map((dept) => (
-          <Card key={dept.id} className="border-border/50 bg-card/50 backdrop-blur-sm hover:shadow-md transition-all group overflow-hidden">
-            <CardHeader className="pb-3 relative">
-              <div className={`absolute top-0 left-0 w-1 h-full ${dept.color}`} />
-              <div className="flex justify-between items-start">
-                <div className="space-y-1">
-                  <CardTitle className="text-lg flex items-center gap-2">
-                    {dept.name}
+          viewMode === "grid" ? (
+            <Card key={dept.id} className="border-border/50 bg-card/50 backdrop-blur-sm hover:shadow-md transition-all group overflow-hidden">
+              <CardHeader className="pb-3 relative">
+                <div className={`absolute top-0 left-0 w-1 h-full ${dept.color}`} />
+                <div className="flex justify-between items-start">
+                  <div className="space-y-1">
+                    <CardTitle className="text-lg flex items-center gap-2">
+                      {dept.name}
+                      {dept.activeNow > 0 && (
+                        <Badge variant="secondary" className="bg-emerald-500/10 text-emerald-600 border-emerald-500/20 text-[10px] h-4">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1 animate-pulse" />
+                          Идет встреча
+                        </Badge>
+                      )}
+                    </CardTitle>
+                    <CardDescription className="line-clamp-2 text-xs">
+                      {dept.description}
+                    </CardDescription>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex items-center justify-between text-xs text-muted-foreground">
+                  <div className="flex items-center gap-1.5 font-medium">
+                    <Users className="w-3.5 h-3.5" />
+                    {dept.members} участников
+                  </div>
+                  <div className="flex items-center gap-1.5 font-medium">
+                    <Clock className="w-3.5 h-3.5" />
+                    Доступен 24/7
+                  </div>
+                </div>
+
+                <div className="flex -space-x-2 overflow-hidden h-8 items-center">
+                  {dept.participants.map((p, i) => (
+                    <Avatar key={i} className="w-7 h-7 border-2 border-background ring-1 ring-border/30">
+                      <AvatarImage src={p.avatar} />
+                      <AvatarFallback className="text-[10px]">{p.name[0]}</AvatarFallback>
+                    </Avatar>
+                  ))}
+                  {dept.activeNow > 0 && (
+                    <div className="pl-3 text-[10px] text-muted-foreground font-medium italic">
+                      {dept.activeNow} в сети
+                    </div>
+                  )}
+                  {dept.activeNow === 0 && (
+                    <div className="text-[10px] text-muted-foreground font-medium italic">
+                      Зал пуст
+                    </div>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-2 gap-3 pt-2">
+                  <Button 
+                    size="sm" 
+                    className="gap-2 font-bold shadow-lg shadow-primary/10"
+                    onClick={() => handleJoin(dept)}
+                  >
+                    <Video className="w-3.5 h-3.5" />
+                    Войти
+                  </Button>
+                  <Button 
+                    size="sm" 
+                    variant="outline" 
+                    className="gap-2 font-bold border-border/60 hover:bg-primary/5 hover:text-primary transition-colors"
+                    onClick={() => toast.success(`Уведомление отправлено команде ${dept.name}`)}
+                  >
+                    <PhoneCall className="w-3.5 h-3.5" />
+                    Позвать
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          ) : (
+            <Card key={dept.id} className="border-border/50 bg-card/50 backdrop-blur-sm hover:shadow-md transition-all group overflow-hidden">
+              <div className="flex items-center p-4 gap-4">
+                <div className={`w-1 h-10 rounded-full ${dept.color} shrink-0`} />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <CardTitle className="text-base truncate">{dept.name}</CardTitle>
                     {dept.activeNow > 0 && (
-                      <Badge variant="secondary" className="bg-emerald-500/10 text-emerald-600 border-emerald-500/20 text-[10px] h-4">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1 animate-pulse" />
-                        Идет встреча
+                      <Badge variant="secondary" className="bg-emerald-500/10 text-emerald-600 border-emerald-500/20 text-[9px] h-3.5 px-1.5">
+                        <span className="w-1 h-1 rounded-full bg-emerald-500 mr-1 animate-pulse" />
+                        Live
                       </Badge>
                     )}
-                  </CardTitle>
-                  <CardDescription className="line-clamp-2 text-xs">
+                  </div>
+                  <CardDescription className="truncate text-[11px] mt-0.5">
                     {dept.description}
                   </CardDescription>
                 </div>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex items-center justify-between text-xs text-muted-foreground">
-                <div className="flex items-center gap-1.5 font-medium">
-                  <Users className="w-3.5 h-3.5" />
-                  {dept.members} участников
+                
+                <div className="hidden sm:flex items-center -space-x-1.5 px-2">
+                  {dept.participants.slice(0, 3).map((p, i) => (
+                    <Avatar key={i} className="w-6 h-6 border-2 border-background ring-1 ring-border/30">
+                      <AvatarImage src={p.avatar} />
+                      <AvatarFallback className="text-[9px]">{p.name[0]}</AvatarFallback>
+                    </Avatar>
+                  ))}
+                  {dept.members > 3 && (
+                    <div className="w-6 h-6 rounded-full bg-secondary border-2 border-background ring-1 ring-border/30 flex items-center justify-center text-[8px] font-bold">
+                      +{dept.members - 3}
+                    </div>
+                  )}
                 </div>
-                <div className="flex items-center gap-1.5 font-medium">
-                  <Clock className="w-3.5 h-3.5" />
-                  Доступен 24/7
+
+                <div className="flex items-center gap-2 shrink-0">
+                  <Button 
+                    size="sm" 
+                    variant="outline"
+                    className="h-8 w-8 p-0 sm:w-auto sm:px-3 sm:gap-2 font-bold border-border/60"
+                    onClick={() => toast.success(`Уведомление отправлено команде ${dept.name}`)}
+                  >
+                    <PhoneCall className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">Позвать</span>
+                  </Button>
+                  <Button 
+                    size="sm" 
+                    className="h-8 w-8 p-0 sm:w-auto sm:px-3 sm:gap-2 font-bold shadow-lg shadow-primary/10"
+                    onClick={() => handleJoin(dept)}
+                  >
+                    <Video className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">Войти</span>
+                  </Button>
                 </div>
               </div>
-
-              <div className="flex -space-x-2 overflow-hidden h-8 items-center">
-                {dept.participants.map((p, i) => (
-                  <Avatar key={i} className="w-7 h-7 border-2 border-background ring-1 ring-border/30">
-                    <AvatarImage src={p.avatar} />
-                    <AvatarFallback className="text-[10px]">{p.name[0]}</AvatarFallback>
-                  </Avatar>
-                ))}
-                {dept.activeNow > 0 && (
-                  <div className="pl-3 text-[10px] text-muted-foreground font-medium italic">
-                    {dept.activeNow} в сети
-                  </div>
-                )}
-                {dept.activeNow === 0 && (
-                  <div className="text-[10px] text-muted-foreground font-medium italic">
-                    Зал пуст
-                  </div>
-                )}
-              </div>
-
-              <div className="grid grid-cols-2 gap-3 pt-2">
-                <Button 
-                  size="sm" 
-                  className="gap-2 font-bold shadow-lg shadow-primary/10"
-                  onClick={() => handleJoin(dept)}
-                >
-                  <Video className="w-3.5 h-3.5" />
-                  Войти
-                </Button>
-                <Button 
-                  size="sm" 
-                  variant="outline" 
-                  className="gap-2 font-bold border-border/60 hover:bg-primary/5 hover:text-primary transition-colors"
-                  onClick={() => toast.success(`Уведомление отправлено команде ${dept.name}`)}
-                >
-                  <PhoneCall className="w-3.5 h-3.5" />
-                  Позвать
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+            </Card>
+          )
         ))}
 
         <Card 
-          className="border-2 border-dashed border-border/40 bg-transparent hover:bg-secondary/20 transition-all cursor-pointer flex flex-col items-center justify-center p-6 text-center space-y-3 group"
+          className={`border-2 border-dashed border-border/40 bg-transparent hover:bg-secondary/20 transition-all cursor-pointer flex items-center justify-center group ${viewMode === "grid" ? "flex-col p-6 text-center space-y-3" : "p-3 gap-3"}`}
           onClick={() => setIsCreateModalOpen(true)}
         >
-          <div className="w-12 h-12 rounded-full bg-secondary flex items-center justify-center text-muted-foreground group-hover:bg-primary/10 group-hover:text-primary transition-colors">
-            <Plus className="w-6 h-6" />
+          <div className={`${viewMode === "grid" ? "w-12 h-12" : "w-8 h-8"} rounded-full bg-secondary flex items-center justify-center text-muted-foreground group-hover:bg-primary/10 group-hover:text-primary transition-colors shrink-0`}>
+            <Plus className={viewMode === "grid" ? "w-6 h-6" : "w-4 h-4"} />
           </div>
-          <div>
+          <div className={viewMode === "grid" ? "" : "text-left"}>
             <p className="font-bold text-sm">Создать новый зал</p>
-            <p className="text-xs text-muted-foreground mt-1">Для временных или новых рабочих групп</p>
+            {viewMode === "grid" && <p className="text-xs text-muted-foreground mt-1">Для временных или новых рабочих групп</p>}
           </div>
         </Card>
       </div>
