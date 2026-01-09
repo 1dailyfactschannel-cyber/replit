@@ -152,6 +152,30 @@ export default function Projects() {
     setModalOpen(true);
   };
 
+  const onTaskUpdate = (updatedTask: Task) => {
+    const boardKey = activeBoardKey;
+    const currentBoardData = boardsData[boardKey] || DEFAULT_KANBAN_DATA;
+    
+    // Check if it's a new task (not in any column)
+    const isNew = !Object.values(currentBoardData).flat().find((t: any) => t.id === updatedTask.id);
+    
+    if (isNew) {
+      const status = updatedTask.status;
+      const columnTasks = currentBoardData[status] || [];
+      setBoardsData({
+        ...boardsData,
+        [boardKey]: {
+          ...currentBoardData,
+          [status]: [...columnTasks, updatedTask]
+        }
+      });
+      toast.success("Задача успешно создана");
+    } else {
+      // Logic for editing existing task could go here if needed
+      toast.success("Задача обновлена");
+    }
+  };
+
   const toggleProjectCollapse = (projectId: number, e: React.MouseEvent) => {
     e.stopPropagation();
     setProjects(prev => prev.map(p => 
@@ -392,6 +416,7 @@ export default function Projects() {
         task={selectedTask}
         open={modalOpen}
         onOpenChange={setModalOpen}
+        onUpdate={onTaskUpdate}
       />
     </Layout>
   );

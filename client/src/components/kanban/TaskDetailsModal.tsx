@@ -76,6 +76,7 @@ export function TaskDetailsModal({
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [attachments, setAttachments] = useState<{ name: string; size: string; type: string }[]>([]);
+  const [newTitle, setNewTitle] = useState("");
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -115,14 +116,37 @@ export function TaskDetailsModal({
           <div className="p-6 space-y-6">
             <div className="space-y-2">
               <Label htmlFor="title">Название задачи</Label>
-              <Input id="title" placeholder="Введите название..." className="h-12 text-lg font-semibold" />
+              <Input 
+                id="title" 
+                placeholder="Введите название..." 
+                className="h-12 text-lg font-semibold"
+                value={newTitle}
+                onChange={(e) => setNewTitle(e.target.value)}
+              />
             </div>
           </div>
           <DialogFooter className="p-6 border-t bg-card">
             <Button variant="outline" onClick={() => onOpenChange(false)}>Отмена</Button>
             <Button onClick={() => {
-              toast.success("Задача создана (демо)");
-              onOpenChange(false);
+              if (newTitle.trim()) {
+                onUpdate?.({
+                  id: Date.now(),
+                  title: newTitle,
+                  description: "",
+                  status: "В планах",
+                  priority: "Средний",
+                  type: "Задача",
+                  assignee: { name: "Я" },
+                  creator: { name: "Я", date: new Date().toLocaleDateString('ru-RU') },
+                  dueDate: "Не установлен",
+                  labels: [],
+                  subtasks: [],
+                  comments: [],
+                  history: []
+                });
+                setNewTitle("");
+                onOpenChange(false);
+              }
             }}>Создать задачу</Button>
           </DialogFooter>
         </DialogContent>
