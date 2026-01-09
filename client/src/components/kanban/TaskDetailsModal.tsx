@@ -20,6 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Progress } from "@/components/ui/progress";
 import {
   Clock,
   User,
@@ -34,6 +35,10 @@ import {
   Calendar as CalendarIcon,
   Flag,
   Send,
+  Paperclip,
+  Loader2,
+  FileIcon,
+  X,
 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { RichTextEditor } from "@/components/ui/rich-text-editor";
@@ -101,13 +106,13 @@ export function TaskDetailsModal({
     // Show empty form for new task
     return (
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="max-w-4xl h-[90vh] flex flex-col p-0 gap-0 overflow-hidden">
+        <DialogContent className="max-w-md flex flex-col p-0 gap-0 overflow-hidden">
           <DialogHeader className="p-6 border-b border-border bg-card">
-            <DialogTitle className="text-2xl font-bold leading-tight">
+            <DialogTitle className="text-xl font-bold leading-tight">
               Новая задача
             </DialogTitle>
           </DialogHeader>
-          <div className="flex-1 overflow-y-auto p-6 space-y-6">
+          <div className="p-6 space-y-6">
             <div className="space-y-2">
               <Label htmlFor="title">Название задачи</Label>
               <Input id="title" placeholder="Введите название..." className="h-12 text-lg font-semibold" />
