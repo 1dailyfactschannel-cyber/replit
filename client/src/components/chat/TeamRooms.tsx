@@ -5,10 +5,13 @@ import { Badge } from "@/components/ui/badge";
 import { Users, Video, PhoneCall, Clock, ShieldCheck, MessageSquare, Mic, MicOff, VideoOff, PhoneOff, Settings2, Share2, Plus } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { toast } from "sonner";
-import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
+import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 
-const departments = [
+const INITIAL_DEPARTMENTS = [
   {
     id: "marketing",
     name: "Маркетинг",
@@ -61,12 +64,20 @@ const departments = [
 ];
 
 export function TeamRooms() {
-  const [activeRoom, setActiveRoom] = useState<typeof departments[0] | null>(null);
+  const [rooms, setRooms] = useState(INITIAL_DEPARTMENTS);
+  const [activeRoom, setActiveRoom] = useState<typeof INITIAL_DEPARTMENTS[0] | null>(null);
   const [isJoined, setIsJoined] = useState(false);
   const [isMicOn, setIsMicOn] = useState(true);
   const [isVideoOn, setIsVideoOn] = useState(true);
+  
+  // Create room state
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [newRoomData, setNewRoomData] = useState({
+    name: "",
+    description: ""
+  });
 
-  const handleJoin = (dept: typeof departments[0]) => {
+  const handleJoin = (dept: typeof INITIAL_DEPARTMENTS[0]) => {
     setActiveRoom(dept);
     setIsJoined(true);
     toast.success(`Вы присоединились к залу: ${dept.name}`);
@@ -76,6 +87,28 @@ export function TeamRooms() {
     setIsJoined(false);
     setActiveRoom(null);
     toast.info("Вы вышли из командного зала");
+  };
+
+  const handleCreateRoom = () => {
+    if (!newRoomData.name) {
+      toast.error("Пожалуйста, введите название зала");
+      return;
+    }
+
+    const newRoom = {
+      id: Math.random().toString(36).substr(2, 9),
+      name: newRoomData.name,
+      description: newRoomData.description || "Новый командный зал",
+      members: 1,
+      activeNow: 0,
+      color: "bg-orange-500",
+      participants: []
+    };
+
+    setRooms([...rooms, newRoom]);
+    setIsCreateModalOpen(false);
+    setNewRoomData({ name: "", description: "" });
+    toast.success(`Зал "${newRoom.name}" успешно создан!`);
   };
 
   return (
@@ -88,7 +121,7 @@ export function TeamRooms() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 pb-20">
-        {departments.map((dept) => (
+        {rooms.map((dept) => (
           <Card key={dept.id} className="border-border/50 bg-card/50 backdrop-blur-sm hover:shadow-md transition-all group overflow-hidden">
             <CardHeader className="pb-3 relative">
               <div className={`absolute top-0 left-0 w-1 h-full ${dept.color}`} />
@@ -163,7 +196,10 @@ export function TeamRooms() {
           </Card>
         ))}
 
-        <Card className="border-2 border-dashed border-border/40 bg-transparent hover:bg-secondary/20 transition-all cursor-pointer flex flex-col items-center justify-center p-6 text-center space-y-3 group">
+        <Card 
+          className="border-2 border-dashed border-border/40 bg-transparent hover:bg-secondary/20 transition-all cursor-pointer flex flex-col items-center justify-center p-6 text-center space-y-3 group"
+          onClick={() => setIsCreateModalOpen(true)}
+        >
           <div className="w-12 h-12 rounded-full bg-secondary flex items-center justify-center text-muted-foreground group-hover:bg-primary/10 group-hover:text-primary transition-colors">
             <Plus className="w-6 h-6" />
           </div>
@@ -173,6 +209,43 @@ export function TeamRooms() {
           </div>
         </Card>
       </div>
+
+      {/* Create Room Modal */}
+      <Dialog open={isCreateModalOpen} onOpenChange={setIsCreateModalOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Создать новый зал</DialogTitle>
+            <DialogDescription>
+              Создайте постоянную виртуальную комнату для вашей команды или проекта.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label htmlFor="name">Название зала</Label>
+              <Input 
+                id="name" 
+                placeholder="Например: Архитектура API" 
+                value={newRoomData.name}
+                onChange={(e) => setNewRoomData({...newRoomData, name: e.target.value})}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="description">Описание (необязательно)</Label>
+              <Textarea 
+                id="description" 
+                placeholder="О чем будут встречи в этом зале?" 
+                value={newRoomData.description}
+                onChange={(e) => setNewRoomData({...newRoomData, description: e.target.value})}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsCreateModalOpen(false)}>Отмена</Button>
+            <Button onClick={handleCreateRoom} disabled={!newRoomData.name}>Создать зал</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
 
       <Dialog open={isJoined} onOpenChange={(open) => !open && handleLeave()}>
         <DialogContent className="max-w-4xl h-[80vh] p-0 overflow-hidden bg-slate-950 border-slate-800 flex flex-col">
