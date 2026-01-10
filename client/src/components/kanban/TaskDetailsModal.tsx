@@ -40,6 +40,7 @@ import {
   Loader2,
   FileIcon,
   X,
+  Download,
 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { RichTextEditor } from "@/components/ui/rich-text-editor";
@@ -165,6 +166,20 @@ export function TaskDetailsModal({
     if (task && onUpdate) {
       onUpdate({ ...task, subtasks: updatedSubtasks });
     }
+  };
+
+  const handleDownloadFile = (fileName: string) => {
+    // В реальном приложении здесь был бы URL файла
+    const blob = new Blob(["Mock file content"], { type: "text/plain" });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.setAttribute("download", fileName);
+    document.body.appendChild(link);
+    link.click();
+    link.parentNode?.removeChild(link);
+    window.URL.revokeObjectURL(url);
+    toast.success(`Файл ${fileName} начал скачиваться`);
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -340,14 +355,26 @@ export function TaskDetailsModal({
                         <p className="text-sm font-medium truncate pr-6">{file.name}</p>
                         <p className="text-[10px] text-muted-foreground">{file.size}</p>
                       </div>
-                      <Button 
-                        variant="ghost" 
-                        size="icon" 
-                        className="h-7 w-7 absolute right-2 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity text-destructive"
-                        onClick={() => removeAttachment(idx)}
-                      >
-                        <X className="w-3.5 h-3.5" />
-                      </Button>
+                      <div className="flex items-center gap-1 absolute right-2 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <Button 
+                          variant="ghost" 
+                          size="icon" 
+                          className="h-7 w-7 text-muted-foreground hover:text-primary"
+                          onClick={() => handleDownloadFile(file.name)}
+                          title="Скачать"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                        </Button>
+                        <Button 
+                          variant="ghost" 
+                          size="icon" 
+                          className="h-7 w-7 text-destructive"
+                          onClick={() => removeAttachment(idx)}
+                          title="Удалить"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </Button>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -506,10 +533,19 @@ export function TaskDetailsModal({
                               {comment.attachments && comment.attachments.length > 0 && (
                                 <div className="flex flex-wrap gap-2 mt-2 pt-2 border-t border-border/20">
                                   {comment.attachments.map((file: any, idx: number) => (
-                                    <div key={idx} className="flex items-center gap-2 p-1.5 rounded bg-background/50 border border-border/30 text-[10px] font-medium">
+                                    <div key={idx} className="flex items-center gap-2 p-1.5 rounded bg-background/50 border border-border/30 text-[10px] font-medium group/file">
                                       <FileIcon className="w-3 h-3 text-primary" />
                                       <span className="truncate max-w-[120px]">{file.name}</span>
                                       <span className="text-muted-foreground">({file.size})</span>
+                                      <Button 
+                                        variant="ghost" 
+                                        size="icon" 
+                                        className="h-5 w-5 ml-1 opacity-0 group-hover/file:opacity-100 transition-opacity"
+                                        onClick={() => handleDownloadFile(file.name)}
+                                        title="Скачать"
+                                      >
+                                        <Download className="w-3 h-3" />
+                                      </Button>
                                     </div>
                                   ))}
                                 </div>
