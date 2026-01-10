@@ -18,7 +18,9 @@ import {
   Dialog, 
   DialogContent, 
   DialogHeader, 
-  DialogTitle 
+  DialogTitle,
+  DialogFooter,
+  DialogTrigger,
 } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -36,7 +38,11 @@ import {
   UserCog,
   Search,
   Filter,
-  Calendar as CalendarIcon
+  Calendar as CalendarIcon,
+  Users,
+  Plus,
+  Pencil,
+  Trash2
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useLocation } from "wouter";
@@ -49,14 +55,28 @@ interface Employee {
   status: 'active' | 'blocked' | 'on_leave';
   points: number;
   avatar?: string;
+  departmentId?: string;
 }
 
+interface Department {
+  id: string;
+  name: string;
+  color: string;
+}
+
+const mockDepartments: Department[] = [
+  { id: "1", name: "Разработка", color: "bg-blue-500" },
+  { id: "2", name: "Дизайн", color: "bg-purple-500" },
+  { id: "3", name: "Маркетинг", color: "bg-emerald-500" },
+  { id: "4", name: "HR", color: "bg-amber-500" },
+];
+
 const mockEmployees: Employee[] = [
-  { id: "1", name: "Юлия Дарицкая", position: "Product Manager", email: "j.daritskaya@teamsync.ru", status: "active", points: 1250, avatar: "https://github.com/shadcn.png" },
-  { id: "2", name: "Александр Петров", position: "Senior Frontend Developer", email: "a.petrov@teamsync.ru", status: "active", points: 850 },
-  { id: "3", name: "Елена Сидорова", position: "UI/UX Designer", email: "e.sidorova@teamsync.ru", status: "on_leave", points: 2100 },
-  { id: "4", name: "Максим Иванов", position: "Backend Lead", email: "m.ivanov@teamsync.ru", status: "blocked", points: 450 },
-  { id: "5", name: "Дарья Козлова", position: "Marketing Specialist", email: "d.kozlova@teamsync.ru", status: "active", points: 1100 },
+  { id: "1", name: "Юлия Дарицкая", position: "Product Manager", email: "j.daritskaya@teamsync.ru", status: "active", points: 1250, avatar: "https://github.com/shadcn.png", departmentId: "1" },
+  { id: "2", name: "Александр Петров", position: "Senior Frontend Developer", email: "a.petrov@teamsync.ru", status: "active", points: 850, departmentId: "1" },
+  { id: "3", name: "Елена Сидорова", position: "UI/UX Designer", email: "e.sidorova@teamsync.ru", status: "on_leave", points: 2100, departmentId: "2" },
+  { id: "4", name: "Максим Иванов", position: "Backend Lead", email: "m.ivanov@teamsync.ru", status: "blocked", points: 450, departmentId: "1" },
+  { id: "5", name: "Дарья Козлова", position: "Marketing Specialist", email: "d.kozlova@teamsync.ru", status: "active", points: 1100, departmentId: "3" },
 ];
 
 export default function EmployeesPage() {
@@ -64,14 +84,31 @@ export default function EmployeesPage() {
   const searchParams = new URLSearchParams(window.location.search);
   const initialTab = searchParams.get('tab') || 'list';
   
+  const [employees, setEmployees] = useState<Employee[]>(mockEmployees);
+  const [departments, setDepartments] = useState<Department[]>(mockDepartments);
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
+  const [isCreateDeptOpen, setIsCreateDeptOpen] = useState(false);
+  const [newDeptName, setNewDeptName] = useState("");
   const [activeTab, setActiveTab] = useState(initialTab);
 
   useEffect(() => {
     const tab = new URLSearchParams(window.location.search).get('tab') || 'list';
     setActiveTab(tab);
   }, [window.location.search]);
+
+  const handleCreateDepartment = () => {
+    if (!newDeptName.trim()) return;
+    const colors = ["bg-blue-500", "bg-purple-500", "bg-emerald-500", "bg-amber-500", "bg-rose-500", "bg-indigo-500"];
+    const newDept: Department = {
+      id: Date.now().toString(),
+      name: newDeptName,
+      color: colors[departments.length % colors.length]
+    };
+    setDepartments([...departments, newDept]);
+    setNewDeptName("");
+    setIsCreateDeptOpen(false);
+  };
 
   const getStatusBadge = (status: Employee['status']) => {
     switch (status) {
@@ -92,6 +129,7 @@ export default function EmployeesPage() {
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full sm:w-auto">
             <TabsList className="bg-secondary/50">
               <TabsTrigger value="list">Список</TabsTrigger>
+              <TabsTrigger value="departments">Отделы</TabsTrigger>
               <TabsTrigger value="analytics">Аналитика</TabsTrigger>
               <TabsTrigger value="roles">Роли</TabsTrigger>
             </TabsList>
@@ -120,6 +158,7 @@ export default function EmployeesPage() {
                 <TableHeader className="bg-secondary/20">
                   <TableRow>
                     <TableHead className="w-[300px]">Сотрудник</TableHead>
+                    <TableHead>Отдел</TableHead>
                     <TableHead>Должность</TableHead>
                     <TableHead>Статус</TableHead>
                     <TableHead>Баллы</TableHead>
@@ -127,7 +166,7 @@ export default function EmployeesPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {mockEmployees.map((employee) => (
+                  {employees.map((employee) => (
                     <TableRow 
                       key={employee.id} 
                       className="cursor-pointer hover:bg-secondary/30 transition-colors"
@@ -147,6 +186,15 @@ export default function EmployeesPage() {
                             <span className="text-xs text-muted-foreground">{employee.email}</span>
                           </div>
                         </div>
+                      </TableCell>
+                      <TableCell>
+                        {employee.departmentId ? (
+                          <Badge variant="outline" className={cn("text-[10px] font-bold", departments.find(d => d.id === employee.departmentId)?.color.replace('bg-', 'text-'))}>
+                            {departments.find(d => d.id === employee.departmentId)?.name}
+                          </Badge>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
                       </TableCell>
                       <TableCell className="text-sm text-muted-foreground">{employee.position}</TableCell>
                       <TableCell>{getStatusBadge(employee.status)}</TableCell>
@@ -185,6 +233,88 @@ export default function EmployeesPage() {
               </Table>
             </div>
           </>
+        ) : activeTab === "departments" ? (
+          <div className="space-y-6">
+            <div className="flex items-center justify-between">
+              <div className="relative flex-1 max-w-sm">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <Input placeholder="Поиск отделов..." className="pl-9 bg-secondary/30 border-border/50" />
+              </div>
+              <Dialog open={isCreateDeptOpen} onOpenChange={setIsCreateDeptOpen}>
+                <DialogTrigger asChild>
+                  <Button className="gap-2">
+                    <Plus className="w-4 h-4" />
+                    Создать отдел
+                  </Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Создать новый отдел</DialogTitle>
+                  </DialogHeader>
+                  <div className="space-y-4 py-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="dept-name">Название отдела</Label>
+                      <Input 
+                        id="dept-name" 
+                        placeholder="Напр: Разработка" 
+                        value={newDeptName}
+                        onChange={(e) => setNewDeptName(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && handleCreateDepartment()}
+                      />
+                    </div>
+                  </div>
+                  <DialogFooter>
+                    <Button variant="outline" onClick={() => setIsCreateDeptOpen(false)}>Отмена</Button>
+                    <Button onClick={handleCreateDepartment} disabled={!newDeptName.trim()}>Создать</Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {departments.map((dept) => (
+                <div key={dept.id} className="group p-6 rounded-2xl bg-card border border-border/50 hover:shadow-lg hover:border-primary/30 transition-all">
+                  <div className="flex items-start justify-between mb-4">
+                    <div className={cn("p-3 rounded-xl bg-opacity-10", dept.color.replace('bg-', 'bg-opacity-10 text-'))}>
+                      <Users className="w-6 h-6" />
+                    </div>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="icon" className="h-8 w-8 opacity-0 group-hover:opacity-100">
+                          <MoreVertical className="w-4 h-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem className="gap-2">
+                          <Pencil className="w-3 h-3" /> Переименовать
+                        </DropdownMenuItem>
+                        <DropdownMenuItem className="gap-2 text-rose-500">
+                          <Trash2 className="w-3 h-3" /> Удалить
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+                  <h3 className="text-lg font-bold mb-1">{dept.name}</h3>
+                  <p className="text-sm text-muted-foreground mb-4">
+                    {employees.filter(e => e.departmentId === dept.id).length} сотрудников
+                  </p>
+                  <div className="flex -space-x-2 overflow-hidden">
+                    {employees.filter(e => e.departmentId === dept.id).slice(0, 5).map((e) => (
+                      <Avatar key={e.id} className="inline-block h-8 w-8 rounded-full ring-2 ring-background">
+                        <AvatarImage src={e.avatar} />
+                        <AvatarFallback>{e.name[0]}</AvatarFallback>
+                      </Avatar>
+                    ))}
+                    {employees.filter(e => e.departmentId === dept.id).length > 5 && (
+                      <div className="flex items-center justify-center h-8 w-8 rounded-full bg-secondary text-[10px] font-bold ring-2 ring-background">
+                        +{employees.filter(e => e.departmentId === dept.id).length - 5}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
         ) : activeTab === "analytics" ? (
           <div className="space-y-4">
             <div className="flex items-center gap-4">
