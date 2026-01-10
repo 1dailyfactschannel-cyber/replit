@@ -723,6 +723,35 @@ export default function Projects() {
                                               <GripVertical className="w-3.5 h-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
                                             </div>
                                             <h4 className="text-sm font-semibold mb-3 text-foreground/90">{task.title}</h4>
+                                            
+                                            <div className="flex items-center gap-3">
+                                              <div className="flex items-center -space-x-1.5 overflow-hidden">
+                                                <Avatar className="w-5 h-5 border-2 border-card ring-0">
+                                                  <AvatarImage src="https://github.com/shadcn.png" />
+                                                  <AvatarFallback>ЮД</AvatarFallback>
+                                                </Avatar>
+                                              </div>
+                                              
+                                              {task.subtasks && task.subtasks.length > 0 && (
+                                                <div className="flex items-center gap-1">
+                                                  {task.subtasks.map((sub: any, idx: number) => (
+                                                    <div 
+                                                      key={idx}
+                                                      className={cn(
+                                                        "w-1.5 h-1.5 rounded-full",
+                                                        sub.completed ? "bg-primary shadow-[0_0_4px_rgba(var(--primary),0.5)]" : "bg-muted-foreground/30"
+                                                      )}
+                                                      title={sub.title}
+                                                    />
+                                                  ))}
+                                                </div>
+                                              )}
+
+                                              <div className="flex items-center gap-1.5 ml-auto text-[10px] font-medium text-muted-foreground">
+                                                <Hash className="w-3 h-3" />
+                                                <span>TS-{task.id}</span>
+                                              </div>
+                                            </div>
                                           </div>
                                         )}
                                       </Draggable>
