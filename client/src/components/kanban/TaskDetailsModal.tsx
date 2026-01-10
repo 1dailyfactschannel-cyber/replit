@@ -77,6 +77,47 @@ export function TaskDetailsModal({
   const [uploadProgress, setUploadProgress] = useState(0);
   const [attachments, setAttachments] = useState<{ name: string; size: string; type: string }[]>([]);
   const [newTitle, setNewTitle] = useState("");
+  const [localSubtasks, setLocalSubtasks] = useState<{ id: number; title: string; completed: boolean }[]>(task?.subtasks || []);
+  const [newSubtaskTitle, setNewSubtaskTitle] = useState("");
+
+  React.useEffect(() => {
+    if (task) {
+      setLocalSubtasks(task.subtasks || []);
+    }
+  }, [task]);
+
+  const handleAddSubtask = () => {
+    if (!newSubtaskTitle.trim()) return;
+    const newSub = {
+      id: Date.now(),
+      title: newSubtaskTitle,
+      completed: false
+    };
+    const updatedSubtasks = [...localSubtasks, newSub];
+    setLocalSubtasks(updatedSubtasks);
+    setNewSubtaskTitle("");
+    if (task && onUpdate) {
+      onUpdate({ ...task, subtasks: updatedSubtasks });
+    }
+  };
+
+  const toggleSubtask = (id: number) => {
+    const updatedSubtasks = localSubtasks.map(sub => 
+      sub.id === id ? { ...sub, completed: !sub.completed } : sub
+    );
+    setLocalSubtasks(updatedSubtasks);
+    if (task && onUpdate) {
+      onUpdate({ ...task, subtasks: updatedSubtasks });
+    }
+  };
+
+  const deleteSubtask = (id: number) => {
+    const updatedSubtasks = localSubtasks.filter(sub => sub.id !== id);
+    setLocalSubtasks(updatedSubtasks);
+    if (task && onUpdate) {
+      onUpdate({ ...task, subtasks: updatedSubtasks });
+    }
+  };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -270,30 +311,55 @@ export function TaskDetailsModal({
                   <Label className="text-sm font-semibold text-foreground/70 uppercase tracking-wide">
                     Подзадачи
                   </Label>
-                  <Button variant="ghost" size="sm" className="h-7 text-xs gap-1">
-                    <Plus className="w-3 h-3" /> Добавить
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    <Input 
+                      placeholder="Добавить подзадачу..." 
+                      className="h-7 text-xs w-48"
+                      value={newSubtaskTitle}
+                      onChange={(e) => setNewSubtaskTitle(e.target.value)}
+                      onKeyDown={(e) => e.key === "Enter" && handleAddSubtask()}
+                    />
+                    <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={handleAddSubtask}>
+                      <Plus className="w-3 h-3" /> Добавить
+                    </Button>
+                  </div>
                 </div>
                 <div className="space-y-2">
-                  {task.subtasks.map((sub) => (
+                  {localSubtasks.map((sub) => (
                     <div
                       key={sub.id}
                       className="flex items-center gap-3 p-3 rounded-lg border border-border/40 hover:bg-secondary/20 transition-colors group"
                     >
-                      {sub.completed ? (
-                        <CheckCircle2 className="w-4 h-4 text-primary shrink-0" />
-                      ) : (
-                        <Circle className="w-4 h-4 text-muted-foreground shrink-0" />
-                      )}
+                      <button onClick={() => toggleSubtask(sub.id)}>
+                        {sub.completed ? (
+                          <CheckCircle2 className="w-4 h-4 text-primary shrink-0" />
+                        ) : (
+                          <Circle className="w-4 h-4 text-muted-foreground shrink-0" />
+                        )}
+                      </button>
                       <span className={cn("text-sm flex-1", sub.completed && "line-through text-muted-foreground")}>
                         {sub.title}
                       </span>
-                      <Button variant="ghost" size="icon" className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity text-destructive">
+                      <Button 
+                        variant="ghost" 
+                        size="icon" 
+                        className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity text-destructive"
+                        onClick={() => deleteSubtask(sub.id)}
+                      >
                         <Trash2 className="w-3.5 h-3.5" />
                       </Button>
                     </div>
                   ))}
                 </div>
+                {localSubtasks.length > 0 && (
+                  <div className="space-y-1">
+                    <div className="flex justify-between text-[10px] text-muted-foreground font-medium uppercase tracking-wider">
+                      <span>Прогресс</span>
+                      <span>{Math.round((localSubtasks.filter(s => s.completed).length / localSubtasks.length) * 100)}%</span>
+                    </div>
+                    <Progress value={(localSubtasks.filter(s => s.completed).length / localSubtasks.length) * 100} className="h-1" />
+                  </div>
+                )}
               </div>
 
               {/* Activity Section (Comments & History) */}
