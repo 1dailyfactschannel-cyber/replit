@@ -20,6 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
 import {
   Clock,
@@ -56,8 +57,8 @@ export interface Task {
   dueDate: string;
   labels: string[];
   subtasks: { id: number; title: string; completed: boolean }[];
-  comments: { id: number; user: string; content: string; time: string }[];
-  history: { id: number; action: string; user: string; time: string }[];
+  comments: { id: number; author: { name: string; avatar: string }; text: string; date: string }[];
+  history: { id: number; action: string; user: string; date: string }[];
 }
 
 interface TaskDetailsModalProps {
