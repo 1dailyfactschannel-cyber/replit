@@ -222,7 +222,10 @@ export default function Projects() {
       title: task.title,
       priority: task.priority,
       type: task.type,
-      status: task.status || "В планах"
+      status: task.status || "В планах",
+      subtasks: task.subtasks || [],
+      comments: task.comments || [],
+      history: task.history || []
     });
     setModalOpen(true);
   };
