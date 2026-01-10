@@ -82,6 +82,7 @@ export function TaskDetailsModal({
   const [newSubtaskTitle, setNewSubtaskTitle] = useState("");
   const [localComments, setLocalComments] = useState<{ id: number; author: { name: string; avatar: string }; text: string; date: string }[]>(task?.comments || []);
   const [newComment, setNewComment] = useState("");
+  const [commentAttachments, setCommentAttachments] = useState<{ name: string; size: string; type: string }[]>([]);
 
   React.useEffect(() => {
     if (task) {
@@ -96,14 +97,33 @@ export function TaskDetailsModal({
       id: Date.now(),
       author: { name: "Вы", avatar: "https://github.com/shadcn.png" },
       text: newComment,
-      date: "Только что"
+      date: "Только что",
+      attachments: commentAttachments
     };
     const updatedComments = [comment, ...localComments];
     setLocalComments(updatedComments);
     setNewComment("");
+    setCommentAttachments([]);
     if (task && onUpdate) {
       onUpdate({ ...task, comments: updatedComments });
     }
+  };
+
+  const handleCommentFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files) return;
+
+    const newAttachments = Array.from(files).map(file => ({
+      name: file.name,
+      size: (file.size / 1024).toFixed(1) + " KB",
+      type: file.type
+    }));
+
+    setCommentAttachments(prev => [...prev, ...newAttachments]);
+  };
+
+  const removeCommentAttachment = (index: number) => {
+    setCommentAttachments(prev => prev.filter((_, i) => i !== index));
   };
 
   const deleteComment = (id: number) => {
@@ -417,8 +437,42 @@ export function TaskDetailsModal({
                           value={newComment}
                           onChange={(e) => setNewComment(e.target.value)}
                         />
-                        <div className="flex justify-end">
-                          <Button size="sm" className="h-8" onClick={handleAddComment} disabled={!newComment.trim()}>
+                        
+                        {commentAttachments.length > 0 && (
+                          <div className="flex flex-wrap gap-2 py-2">
+                            {commentAttachments.map((file, idx) => (
+                              <Badge key={idx} variant="secondary" className="gap-1 px-2 py-1">
+                                <FileIcon className="w-3 h-3" />
+                                <span className="max-w-[100px] truncate">{file.name}</span>
+                                <button onClick={() => removeCommentAttachment(idx)} className="hover:text-destructive">
+                                  <X className="w-3 h-3" />
+                                </button>
+                              </Badge>
+                            ))}
+                          </div>
+                        )}
+
+                        <div className="flex justify-between items-center">
+                          <div className="flex items-center gap-1">
+                            <input
+                              type="file"
+                              id="comment-file-input"
+                              className="hidden"
+                              multiple
+                              onChange={handleCommentFileUpload}
+                            />
+                            <Button 
+                              variant="ghost" 
+                              size="icon" 
+                              className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                              asChild
+                            >
+                              <label htmlFor="comment-file-input" className="cursor-pointer">
+                                <Paperclip className="w-4 h-4" />
+                              </label>
+                            </Button>
+                          </div>
+                          <Button size="sm" className="h-8" onClick={handleAddComment} disabled={!newComment.trim() && commentAttachments.length === 0}>
                             Отправить
                           </Button>
                         </div>
@@ -426,7 +480,7 @@ export function TaskDetailsModal({
                     </div>
 
                     <div className="space-y-6">
-                      {localComments.map((comment) => (
+                      {localComments.map((comment: any) => (
                         <div key={comment.id} className="flex gap-4 group">
                           <Avatar className="w-8 h-8 shrink-0">
                             <AvatarImage src={comment.author.avatar} />
@@ -447,8 +501,19 @@ export function TaskDetailsModal({
                                 <Trash2 className="w-3 h-3" />
                               </Button>
                             </div>
-                            <div className="text-sm text-foreground/80 leading-relaxed bg-secondary/20 p-3 rounded-lg border border-border/40">
-                              {comment.text}
+                            <div className="space-y-2 leading-relaxed bg-secondary/20 p-3 rounded-lg border border-border/40">
+                              <div className="text-sm text-foreground/80">{comment.text}</div>
+                              {comment.attachments && comment.attachments.length > 0 && (
+                                <div className="flex flex-wrap gap-2 mt-2 pt-2 border-t border-border/20">
+                                  {comment.attachments.map((file: any, idx: number) => (
+                                    <div key={idx} className="flex items-center gap-2 p-1.5 rounded bg-background/50 border border-border/30 text-[10px] font-medium">
+                                      <FileIcon className="w-3 h-3 text-primary" />
+                                      <span className="truncate max-w-[120px]">{file.name}</span>
+                                      <span className="text-muted-foreground">({file.size})</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
                             </div>
                           </div>
                         </div>
