@@ -117,6 +117,81 @@ export default function Projects() {
     toast.success("Проект успешно создан");
   };
 
+  const [editingBoard, setEditingBoard] = useState<{ originalName: string, currentName: string } | null>(null);
+
+  const handleRenameBoard = (oldName: string, newName: string) => {
+    if (!newName || oldName === newName || !activeProject) {
+      setEditingBoard(null);
+      return;
+    }
+
+    const updatedProjects = projects.map(p => {
+      if (p.id === activeProject.id) {
+        return {
+          ...p,
+          boards: p.boards.map(b => b === oldName ? newName : b)
+        };
+      }
+      return p;
+    });
+
+    setProjects(updatedProjects);
+    
+    // Update boardsData if exists
+    const oldBoardKey = `${activeProject.id}-${oldName}`;
+    const newBoardKey = `${activeProject.id}-${newName}`;
+    
+    setBoardsData(prev => {
+      if (prev[oldBoardKey]) {
+        const newData = { ...prev };
+        newData[newBoardKey] = newData[oldBoardKey];
+        delete newData[oldBoardKey];
+        return newData;
+      }
+      return prev;
+    });
+
+    if (activeBoard === oldName) {
+      setActiveBoard(newName);
+    }
+    
+    setEditingBoard(null);
+    toast.success("Доска переименована");
+  };
+
+  const handleDeleteBoard = (boardName: string) => {
+    if (!activeProject || activeProject.boards.length <= 1) {
+      toast.error("Нельзя удалить последнюю доску");
+      return;
+    }
+
+    const updatedProjects = projects.map(p => {
+      if (p.id === activeProject.id) {
+        return {
+          ...p,
+          boards: p.boards.filter(b => b !== boardName)
+        };
+      }
+      return p;
+    });
+
+    setProjects(updatedProjects);
+    
+    const boardKey = `${activeProject.id}-${boardName}`;
+    setBoardsData(prev => {
+      const newData = { ...prev };
+      delete newData[boardKey];
+      return newData;
+    });
+
+    if (activeBoard === boardName) {
+      const newActive = updatedProjects.find(p => p.id === activeProject.id);
+      if (newActive) setActiveBoard(newActive.boards[0]);
+    }
+    
+    toast.success("Доска удалена");
+  };
+
   const handleCreateBoard = () => {
     if (!newBoardName || !activeProject) return;
     const updatedProjects = projects.map(p => {
@@ -412,20 +487,93 @@ export default function Projects() {
                   {activeProject.id === project.id && !project.collapsed && (
                     <div className="ml-4 pl-3 border-l border-border/60 space-y-1 mt-1">
                       {project.boards.map((board) => (
-                        <button
-                          key={board}
-                          onClick={() => setActiveBoard(board)}
-                          className={cn(
-                            "w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-[13px] transition-colors text-left",
-                            activeBoard === board
-                              ? "bg-secondary text-foreground font-medium"
-                              : "text-muted-foreground hover:bg-secondary/30 hover:text-foreground"
-                          )}
-                        >
-                          <Hash className="w-3.5 h-3.5 shrink-0 opacity-50" />
-                          <span className="truncate">{board}</span>
-                        </button>
+                        <div key={board} className="group/board relative">
+                          <button
+                            onClick={() => setActiveBoard(board)}
+                            className={cn(
+                              "w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-[13px] transition-colors text-left pr-8",
+                              activeBoard === board
+                                ? "bg-secondary text-foreground font-medium"
+                                : "text-muted-foreground hover:bg-secondary/30 hover:text-foreground"
+                            )}
+                          >
+                            <Hash className="w-3.5 h-3.5 shrink-0 opacity-50" />
+                            <span className="truncate">{board}</span>
+                          </button>
+                          
+                          <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5 opacity-0 group-hover/board:opacity-100 transition-opacity">
+                            <Dialog open={editingBoard?.originalName === board} onOpenChange={(open) => !open && setEditingBoard(null)}>
+                              <DialogTrigger asChild>
+                                <Button 
+                                  variant="ghost" 
+                                  size="icon" 
+                                  className="h-6 w-6 text-muted-foreground hover:text-foreground"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setEditingBoard({ originalName: board, currentName: board });
+                                  }}
+                                >
+                                  <Pencil className="w-3 h-3" />
+                                </Button>
+                              </DialogTrigger>
+                              <DialogContent>
+                                <DialogHeader>
+                                  <DialogTitle>Переименовать доску</DialogTitle>
+                                </DialogHeader>
+                                <div className="py-4">
+                                  <Input 
+                                    value={editingBoard?.currentName || ""} 
+                                    onChange={(e) => setEditingBoard(prev => prev ? { ...prev, currentName: e.target.value } : null)}
+                                    autoFocus
+                                  />
+                                </div>
+                                <DialogFooter>
+                                  <Button variant="outline" onClick={() => setEditingBoard(null)}>Отмена</Button>
+                                  <Button onClick={() => handleRenameBoard(board, editingBoard?.currentName || "")}>Сохранить</Button>
+                                </DialogFooter>
+                              </DialogContent>
+                            </Dialog>
+
+                            <Button 
+                              variant="ghost" 
+                              size="icon" 
+                              className="h-6 w-6 text-muted-foreground hover:text-destructive"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeleteBoard(board);
+                              }}
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </Button>
+                          </div>
+                        </div>
                       ))}
+                      
+                      <Dialog open={isCreateBoardOpen} onOpenChange={setIsCreateBoardOpen}>
+                        <DialogTrigger asChild>
+                          <button className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-[13px] text-primary/70 hover:text-primary hover:bg-primary/5 transition-colors text-left mt-1">
+                            <Plus className="w-3.5 h-3.5 shrink-0" />
+                            <span>Добавить доску</span>
+                          </button>
+                        </DialogTrigger>
+                        <DialogContent>
+                          <DialogHeader>
+                            <DialogTitle>Создать новую доску</DialogTitle>
+                          </DialogHeader>
+                          <div className="py-4">
+                            <Input 
+                              placeholder="Название доски" 
+                              value={newBoardName}
+                              onChange={(e) => setNewBoardName(e.target.value)}
+                              onKeyDown={(e) => e.key === "Enter" && handleCreateBoard()}
+                            />
+                          </div>
+                          <DialogFooter>
+                            <Button variant="outline" onClick={() => setIsCreateBoardOpen(false)}>Отмена</Button>
+                            <Button onClick={handleCreateBoard} disabled={!newBoardName.trim()}>Создать</Button>
+                          </DialogFooter>
+                        </DialogContent>
+                      </Dialog>
                     </div>
                   )}
                 </div>
