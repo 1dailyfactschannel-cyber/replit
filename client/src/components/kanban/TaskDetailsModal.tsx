@@ -79,12 +79,39 @@ export function TaskDetailsModal({
   const [newTitle, setNewTitle] = useState("");
   const [localSubtasks, setLocalSubtasks] = useState<{ id: number; title: string; completed: boolean }[]>(task?.subtasks || []);
   const [newSubtaskTitle, setNewSubtaskTitle] = useState("");
+  const [localComments, setLocalComments] = useState<{ id: number; author: { name: string; avatar: string }; text: string; date: string }[]>(task?.comments || []);
+  const [newComment, setNewComment] = useState("");
 
   React.useEffect(() => {
     if (task) {
       setLocalSubtasks(task.subtasks || []);
+      setLocalComments(task.comments || []);
     }
   }, [task]);
+
+  const handleAddComment = () => {
+    if (!newComment.trim()) return;
+    const comment = {
+      id: Date.now(),
+      author: { name: "Вы", avatar: "https://github.com/shadcn.png" },
+      text: newComment,
+      date: "Только что"
+    };
+    const updatedComments = [comment, ...localComments];
+    setLocalComments(updatedComments);
+    setNewComment("");
+    if (task && onUpdate) {
+      onUpdate({ ...task, comments: updatedComments });
+    }
+  };
+
+  const deleteComment = (id: number) => {
+    const updatedComments = localComments.filter(c => c.id !== id);
+    setLocalComments(updatedComments);
+    if (task && onUpdate) {
+      onUpdate({ ...task, comments: updatedComments });
+    }
+  };
 
   const handleAddSubtask = () => {
     if (!newSubtaskTitle.trim()) return;
@@ -376,64 +403,59 @@ export function TaskDetailsModal({
                     </TabsTrigger>
                   </TabsList>
                   
-                  <TabsContent value="comments" className="pt-4 space-y-6">
-                    <div className="flex gap-3 items-center">
+                  <TabsContent value="comments" className="pt-4 space-y-6 mt-0">
+                    <div className="flex gap-4">
                       <Avatar className="w-8 h-8 shrink-0">
-                        <AvatarFallback>JD</AvatarFallback>
+                        <AvatarImage src="https://github.com/shadcn.png" />
+                        <AvatarFallback>ВЫ</AvatarFallback>
                       </Avatar>
-                      <div className="flex-1 flex gap-2 items-center bg-secondary/30 rounded-xl px-2 border border-border/50 focus-within:ring-2 ring-primary/20 transition-all">
-                        <Input 
+                      <div className="flex-1 space-y-2">
+                        <Textarea 
                           placeholder="Напишите комментарий..." 
-                          className="border-0 bg-transparent focus-visible:ring-0 shadow-none h-10 text-sm flex-1" 
+                          className="min-h-[100px] text-sm bg-secondary/30 border-none focus-visible:ring-1 focus-visible:ring-primary/30"
+                          value={newComment}
+                          onChange={(e) => setNewComment(e.target.value)}
                         />
-                        <div className="flex items-center gap-1 shrink-0">
-                          <input
-                            type="file"
-                            id="comment-file-upload"
-                            className="hidden"
-                            onChange={(e) => {
-                              const file = e.target.files?.[0];
-                              if (file) {
-                                console.log('Uploading file for comment:', file.name);
-                              }
-                            }}
-                          />
-                          <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground shrink-0" asChild title="Прикрепить файл">
-                            <label htmlFor="comment-file-upload" className="cursor-pointer">
-                              <Paperclip className="w-4 h-4" />
-                            </label>
-                          </Button>
-                          <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground shrink-0" title="Добавить">
-                            <Plus className="w-4 h-4" />
-                          </Button>
-                          <Button size="sm" className="h-8 w-8 p-0" title="Отправить">
-                            <Send className="w-3.5 h-3.5" />
+                        <div className="flex justify-end">
+                          <Button size="sm" className="h-8" onClick={handleAddComment} disabled={!newComment.trim()}>
+                            Отправить
                           </Button>
                         </div>
                       </div>
                     </div>
-                    
+
                     <div className="space-y-6">
-                      {task.comments.map((comment) => (
-                        <div key={comment.id} className="flex gap-3">
-                          <Avatar className="w-8 h-8">
-                            <AvatarFallback>{comment.user.substring(0, 2).toUpperCase()}</AvatarFallback>
+                      {localComments.map((comment) => (
+                        <div key={comment.id} className="flex gap-4 group">
+                          <Avatar className="w-8 h-8 shrink-0">
+                            <AvatarImage src={comment.author.avatar} />
+                            <AvatarFallback>{comment.author.name[0]}</AvatarFallback>
                           </Avatar>
-                          <div className="space-y-1">
-                            <div className="flex items-center gap-2">
-                              <span className="text-sm font-semibold">{comment.user}</span>
-                              <span className="text-[10px] text-muted-foreground">{comment.time}</span>
+                          <div className="flex-1 space-y-1">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <span className="text-sm font-semibold">{comment.author.name}</span>
+                                <span className="text-[10px] text-muted-foreground uppercase tracking-wider">{comment.date}</span>
+                              </div>
+                              <Button 
+                                variant="ghost" 
+                                size="icon" 
+                                className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity text-destructive"
+                                onClick={() => deleteComment(comment.id)}
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </Button>
                             </div>
-                            <p className="text-sm text-foreground/80 leading-snug">
-                              {comment.content}
-                            </p>
+                            <div className="text-sm text-foreground/80 leading-relaxed bg-secondary/20 p-3 rounded-lg border border-border/40">
+                              {comment.text}
+                            </div>
                           </div>
                         </div>
                       ))}
                     </div>
                   </TabsContent>
-                  
-                  <TabsContent value="history" className="pt-4 space-y-4">
+
+                  <TabsContent value="history" className="pt-4 space-y-4 mt-0">
                     {task.history.map((h) => (
                       <div key={h.id} className="flex gap-3 text-sm">
                         <div className="w-2 h-2 rounded-full bg-primary mt-1.5 shrink-0" />
@@ -441,7 +463,7 @@ export function TaskDetailsModal({
                           <p className="text-foreground/80">
                             <span className="font-semibold">{h.user}</span> {h.action}
                           </p>
-                          <span className="text-[10px] text-muted-foreground">{h.time}</span>
+                          <span className="text-[10px] text-muted-foreground">{h.date}</span>
                         </div>
                       </div>
                     ))}
