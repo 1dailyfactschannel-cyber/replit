@@ -510,13 +510,13 @@ export function TaskDetailsModal({
                       {localComments.map((comment: any) => (
                         <div key={comment.id} className="flex gap-4 group">
                           <Avatar className="w-8 h-8 shrink-0">
-                            <AvatarImage src={comment.author.avatar} />
-                            <AvatarFallback>{comment.author.name[0]}</AvatarFallback>
+                            <AvatarImage src={comment.author?.avatar} />
+                            <AvatarFallback>{comment.author?.name ? comment.author.name[0] : "ВЫ"}</AvatarFallback>
                           </Avatar>
                           <div className="flex-1 space-y-1">
                             <div className="flex items-center justify-between">
                               <div className="flex items-center gap-2">
-                                <span className="text-sm font-semibold">{comment.author.name}</span>
+                                <span className="text-sm font-semibold">{comment.author?.name || "Вы"}</span>
                                 <span className="text-[10px] text-muted-foreground uppercase tracking-wider">{comment.date}</span>
                               </div>
                               <Button 
