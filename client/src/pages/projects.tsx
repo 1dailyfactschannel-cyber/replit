@@ -158,7 +158,41 @@ export default function Projects() {
   };
 
   const onTaskUpdate = (updatedTask: Task) => {
-    // ... existing onTaskUpdate logic
+    const boardKey = activeBoardKey;
+    
+    setBoardsData(prev => {
+      const currentBoardData = prev[boardKey] || DEFAULT_KANBAN_DATA;
+      
+      // Check if it's a new task (not in any column)
+      const isNew = !Object.values(currentBoardData).flat().find((t: any) => t.id === updatedTask.id);
+      
+      if (isNew) {
+        const status = updatedTask.status;
+        const columnTasks = currentBoardData[status] || [];
+        const newState = {
+          ...prev,
+          [boardKey]: {
+            ...currentBoardData,
+            [status]: [...columnTasks, updatedTask]
+          }
+        };
+        return newState;
+      } else {
+        // Find and update existing task
+        const newBoardData = { ...currentBoardData };
+        Object.keys(newBoardData).forEach(col => {
+          newBoardData[col] = newBoardData[col].map((t: any) => 
+            t.id === updatedTask.id ? { ...t, ...updatedTask } : t
+          );
+        });
+        return {
+          ...prev,
+          [boardKey]: newBoardData
+        };
+      }
+    });
+    
+    toast.success(Object.values(boardsData[boardKey] || {}).flat().find((t: any) => t.id === updatedTask.id) ? "Задача обновлена" : "Задача успешно создана");
   };
 
   const handleRenameColumn = (oldName: string, newName: string) => {
@@ -196,13 +230,14 @@ export default function Projects() {
 
   const handleAddColumn = () => {
     const boardKey = activeBoardKey;
-    const currentData = { ...(boardsData[boardKey] || DEFAULT_KANBAN_DATA) };
-    const newName = `Новая колонка ${Object.keys(currentData).length + 1}`;
-    
-    setBoardsData(prev => ({
-      ...prev,
-      [boardKey]: { ...currentData, [newName]: [] }
-    }));
+    setBoardsData(prev => {
+      const currentData = { ...(prev[boardKey] || DEFAULT_KANBAN_DATA) };
+      const newName = `Новая колонка ${Object.keys(currentData).length + 1}`;
+      return {
+        ...prev,
+        [boardKey]: { ...currentData, [newName]: [] }
+      };
+    });
     toast.success("Колонка добавлена");
   };
 
