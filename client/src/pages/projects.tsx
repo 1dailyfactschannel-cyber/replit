@@ -96,6 +96,25 @@ export default function Projects() {
     }
   });
 
+  const [editingProject, setEditingProject] = useState<{ id: number, name: string, priority: string, color: string } | null>(null);
+
+  const handleUpdateProject = () => {
+    if (!editingProject || !editingProject.name) return;
+    
+    const updatedProjects = projects.map(p => 
+      p.id === editingProject.id ? { ...p, name: editingProject.name, priority: editingProject.priority, color: editingProject.color } : p
+    );
+    
+    setProjects(updatedProjects);
+    
+    if (activeProject.id === editingProject.id) {
+      setActiveProject({ ...activeProject, name: editingProject.name, priority: editingProject.priority, color: editingProject.color });
+    }
+    
+    setEditingProject(null);
+    toast.success("Проект успешно обновлен");
+  };
+
   const handleCreateProject = () => {
     if (!newProject.name) return;
     
@@ -456,7 +475,7 @@ export default function Projects() {
                       setActiveBoard(project.boards[0]);
                     }}
                     className={cn(
-                      "w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-all group/project",
+                      "w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-all group/project relative pr-10",
                       activeProject.id === project.id
                         ? "bg-primary/10 text-primary"
                         : "text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
@@ -482,9 +501,25 @@ export default function Projects() {
                       )} />
                       <span className="truncate text-left">{project.name}</span>
                     </div>
-                    <Badge variant="secondary" className="h-5 px-1.5 text-[10px] opacity-70">
-                      {project.boards.length}
-                    </Badge>
+
+                    <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1 opacity-0 group-hover/project:opacity-100 transition-opacity">
+                      <Button 
+                        variant="ghost" 
+                        size="icon" 
+                        className="h-6 w-6 text-muted-foreground hover:text-foreground"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setEditingProject({ 
+                            id: project.id, 
+                            name: project.name, 
+                            priority: project.priority, 
+                            color: project.color 
+                          });
+                        }}
+                      >
+                        <Pencil className="w-3 h-3" />
+                      </Button>
+                    </div>
                   </button>
                   
                   {activeProject.id === project.id && !project.collapsed && (
@@ -804,6 +839,46 @@ export default function Projects() {
         onOpenChange={setModalOpen}
         onUpdate={onTaskUpdate}
       />
+
+      <Dialog open={!!editingProject} onOpenChange={(open) => !open && setEditingProject(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Редактировать проект</DialogTitle>
+            <DialogDescription>Измените параметры и приоритет проекта.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="edit-project-name">Название проекта</Label>
+              <Input 
+                id="edit-project-name" 
+                value={editingProject?.name || ""}
+                onChange={(e) => setEditingProject(prev => prev ? { ...prev, name: e.target.value } : null)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Приоритет проекта</Label>
+              <Select 
+                value={editingProject?.priority || "Средний"} 
+                onValueChange={(val) => setEditingProject(prev => prev ? { ...prev, priority: val } : null)}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Низкий">Низкий</SelectItem>
+                  <SelectItem value="Средний">Средний</SelectItem>
+                  <SelectItem value="Высокий">Высокий</SelectItem>
+                  <SelectItem value="Критический">Критический</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditingProject(null)}>Отмена</Button>
+            <Button onClick={handleUpdateProject} disabled={!editingProject?.name}>Сохранить изменения</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Layout>
   );
 }
