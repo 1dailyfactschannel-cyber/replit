@@ -19,12 +19,12 @@ import SettingsPage from "@/pages/settings";
 function Router() {
   return (
     <Switch>
+      <Route path="/" component={Dashboard} />
       <Route path="/auth" component={Auth} />
       <Route path="/profile" component={Profile} />
       <Route path="/team" component={Team} />
       <Route path="/shop" component={Shop} />
       <Route path="/settings" component={SettingsPage} />
-      <Route path="/" component={Dashboard} />
       <Route path="/projects" component={Projects} />
       <Route path="/tasks" component={Tasks} />
       <Route path="/calendar" component={CalendarPage} />
@@ -35,15 +35,13 @@ function Router() {
   );
 }
 
-function App() {
+export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
-        <Toaster />
         <Router />
+        <Toaster />
       </TooltipProvider>
     </QueryClientProvider>
   );
 }
-
-export default App;
