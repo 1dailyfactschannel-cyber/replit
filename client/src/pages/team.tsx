@@ -105,7 +105,7 @@ export default function EmployeesPage() {
       name: newDeptName,
       color: colors[departments.length % colors.length]
     };
-    setDepartments([...departments, newDept]);
+    setDepartments(prev => [...prev, newDept]);
     setNewDeptName("");
     setIsCreateDeptOpen(false);
   };

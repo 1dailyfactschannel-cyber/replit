@@ -16,7 +16,11 @@ import {
   Search,
   Plus,
   ShoppingBag,
-  Shield
+  Shield,
+  ChevronRight,
+  ChevronDown,
+  Pencil,
+  Trash2
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -37,10 +41,6 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import {
-  ChevronRight,
-  ChevronDown
-} from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -369,6 +369,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
           <div className="grid gap-4 py-4">
             <div className="space-y-2">
               <Label>Выберите статус</Label>
+              <span className="sr-only">Статус</span>
               <Select value={status} onValueChange={setStatus}>
                 <SelectTrigger>
                   <SelectValue />
