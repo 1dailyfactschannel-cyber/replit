@@ -50,13 +50,7 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ThemeToggle } from "./ThemeToggle";
 
 const sidebarItems = [
@@ -76,7 +70,7 @@ const sidebarItems = [
     ]
   },
   { icon: ShoppingBag, label: "Магазин", href: "/shop" },
-  { icon: Settings, label: "Управление", href: "/settings" },
+  { icon: Shield, label: "Управление", href: "/management" },
 ];
 
 export function Layout({ children }: { children: React.ReactNode }) {
@@ -146,13 +140,13 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <div className="space-y-1">
           {!isCollapsed && <p className="text-xs font-medium text-muted-foreground px-2 mb-2 uppercase tracking-wider animate-in fade-in duration-300">Меню</p>}
           {sidebarItems.map((item) => {
-            const isActive = location.startsWith(item.href) && (item.href !== "/" || location === "/");
+            const isActive = item.href ? (location.startsWith(item.href) && (item.href !== "/" || location === "/")) : false;
             const [isOpen, setIsOpen] = useState(isActive);
 
             if (item.subItems && !isCollapsed) {
               return (
                 <Collapsible
-                  key={item.href}
+                  key={item.href || item.id}
                   open={isOpen}
                   onOpenChange={setIsOpen}
                   className="w-full"
@@ -206,7 +200,9 @@ export function Layout({ children }: { children: React.ReactNode }) {
               <div
                 key={item.href}
                 onClick={() => {
-                  setLocation(item.href);
+                  if (item.href) {
+                    setLocation(item.href);
+                  }
                   if (window.innerWidth < 768) {
                     setIsMobileOpen(false);
                   }
@@ -296,7 +292,10 @@ export function Layout({ children }: { children: React.ReactNode }) {
               <User className="w-4 h-4" />
               Профиль
             </DropdownMenuItem>
-            <DropdownMenuItem className="gap-2 cursor-pointer">
+            <DropdownMenuItem 
+              className="gap-2 cursor-pointer" 
+              onClick={() => setLocation("/settings")}
+            >
               <Settings className="w-4 h-4" />
               Настройки
             </DropdownMenuItem>

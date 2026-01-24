@@ -15,6 +15,7 @@ import Profile from "@/pages/profile";
 import Team from "@/pages/team";
 import Shop from "@/pages/shop";
 import SettingsPage from "@/pages/settings";
+import ManagementPage from "@/pages/management";
 
 function Router() {
   return (
@@ -25,6 +26,7 @@ function Router() {
       <Route path="/team" component={Team} />
       <Route path="/shop" component={Shop} />
       <Route path="/settings" component={SettingsPage} />
+      <Route path="/management" component={ManagementPage} />
       <Route path="/projects" component={Projects} />
       <Route path="/tasks" component={Tasks} />
       <Route path="/calendar" component={CalendarPage} />

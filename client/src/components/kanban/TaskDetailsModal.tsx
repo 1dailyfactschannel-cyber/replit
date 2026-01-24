@@ -41,8 +41,23 @@ import {
   FileIcon,
   X,
   Download,
+  Check,
+  Eye,
 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
 import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import { toast } from "sonner";
 
@@ -60,13 +75,26 @@ export interface Task {
   subtasks: { id: number; title: string; completed: boolean }[];
   comments: { id: number; author: { name: string; avatar: string }; text: string; date: string }[];
   history: { id: number; action: string; user: string; date: string }[];
+  observers?: { name: string; avatar?: string }[];
+  timeSpent?: string;
+  isAccepted?: boolean;
+  startTime?: number;
 }
+
+const MOCK_USERS = [
+  { name: "Александр Иванов", avatar: "https://i.pravatar.cc/150?u=1" },
+  { name: "Елена Смирнова", avatar: "https://i.pravatar.cc/150?u=2" },
+  { name: "Дмитрий Петров", avatar: "https://i.pravatar.cc/150?u=3" },
+  { name: "Мария Соколова", avatar: "https://i.pravatar.cc/150?u=4" },
+  { name: "Игорь Кузнецов", avatar: "https://i.pravatar.cc/150?u=5" },
+];
 
 interface TaskDetailsModalProps {
   task: Task | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onUpdate?: (task: Task) => void;
+  onAccept?: (taskId: number) => void;
 }
 
 export function TaskDetailsModal({
@@ -74,6 +102,7 @@ export function TaskDetailsModal({
   open,
   onOpenChange,
   onUpdate,
+  onAccept,
 }: TaskDetailsModalProps) {
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -82,6 +111,7 @@ export function TaskDetailsModal({
   const [localSubtasks, setLocalSubtasks] = useState<{ id: number; title: string; completed: boolean }[]>(task?.subtasks || []);
   const [newSubtaskTitle, setNewSubtaskTitle] = useState("");
   const [localComments, setLocalComments] = useState<{ id: number; author: { name: string; avatar: string }; text: string; date: string }[]>(task?.comments || []);
+  const [localObservers, setLocalObservers] = useState<{ name: string; avatar?: string }[]>(task?.observers || []);
   const [newComment, setNewComment] = useState("");
   const [commentAttachments, setCommentAttachments] = useState<{ name: string; size: string; type: string }[]>([]);
 
@@ -89,6 +119,7 @@ export function TaskDetailsModal({
     if (task) {
       setLocalSubtasks(task.subtasks || []);
       setLocalComments(task.comments || []);
+      setLocalObservers(task.observers || []);
     }
   }, [task]);
 
@@ -165,6 +196,20 @@ export function TaskDetailsModal({
     setLocalSubtasks(updatedSubtasks);
     if (task && onUpdate) {
       onUpdate({ ...task, subtasks: updatedSubtasks });
+    }
+  };
+
+  const toggleObserver = (user: { name: string; avatar?: string }) => {
+    const isObserver = localObservers.some(o => o.name === user.name);
+    let updatedObservers;
+    if (isObserver) {
+      updatedObservers = localObservers.filter(o => o.name !== user.name);
+    } else {
+      updatedObservers = [...localObservers, user];
+    }
+    setLocalObservers(updatedObservers);
+    if (task && onUpdate) {
+      onUpdate({ ...task, observers: updatedObservers });
     }
   };
 
@@ -271,6 +316,15 @@ export function TaskDetailsModal({
               <span className="text-muted-foreground text-xs">{task.type}</span>
             </div>
             <div className="flex items-center gap-2">
+              {!task.isAccepted && (
+                <Button 
+                  size="sm" 
+                  className="h-8 gap-2 bg-primary text-primary-foreground hover:bg-primary/90 shadow-lg shadow-primary/20 animate-pulse mr-2"
+                  onClick={() => onAccept?.(task.id)}
+                >
+                  <Check className="w-3.5 h-3.5" /> Принять
+                </Button>
+              )}
               <Button variant="ghost" size="icon" className="h-8 w-8">
                 <MoreVertical className="w-4 h-4" />
               </Button>
@@ -581,7 +635,10 @@ export function TaskDetailsModal({
               {/* Status */}
               <div className="space-y-2">
                 <Label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Статус</Label>
-                <Select defaultValue={task.status}>
+                <Select 
+                  defaultValue={task.status} 
+                  onValueChange={(value) => onUpdate?.({ ...task, status: value })}
+                >
                   <SelectTrigger className="w-full h-10 border-none bg-secondary/50">
                     <SelectValue />
                   </SelectTrigger>
@@ -606,10 +663,83 @@ export function TaskDetailsModal({
                 </div>
               </div>
 
+              {/* Observers */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Наблюдатели</Label>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button variant="ghost" size="icon" className="h-6 w-6 rounded-full bg-secondary/50">
+                        <Plus className="w-3 h-3" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="p-0 w-64" align="end">
+                      <Command>
+                        <CommandInput placeholder="Поиск пользователя..." />
+                        <CommandList>
+                          <CommandEmpty>Пользователь не найден</CommandEmpty>
+                          <CommandGroup>
+                            {MOCK_USERS.map((user) => {
+                              const isObserver = localObservers.some(o => o.name === user.name);
+                              return (
+                                <CommandItem
+                                  key={user.name}
+                                  onSelect={() => toggleObserver(user)}
+                                  className="flex items-center gap-2"
+                                >
+                                  <div className={cn(
+                                    "flex h-4 w-4 items-center justify-center rounded-sm border border-primary",
+                                    isObserver ? "bg-primary text-primary-foreground" : "opacity-50 [&_svg]:invisible"
+                                  )}>
+                                    <Check className="h-3 w-3" />
+                                  </div>
+                                  <Avatar className="h-6 w-6">
+                                    <AvatarImage src={user.avatar} />
+                                    <AvatarFallback>{user.name[0]}</AvatarFallback>
+                                  </Avatar>
+                                  <span className="flex-1 truncate">{user.name}</span>
+                                </CommandItem>
+                              );
+                            })}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {localObservers.length > 0 ? (
+                    localObservers.map((observer, idx) => (
+                      <div key={idx} className="flex items-center gap-2 p-1.5 pr-2 rounded-full bg-secondary/50 group border border-transparent hover:border-border transition-colors">
+                        <Avatar className="w-5 h-5">
+                          <AvatarImage src={observer.avatar} />
+                          <AvatarFallback>{observer.name[0]}</AvatarFallback>
+                        </Avatar>
+                        <span className="text-[11px] font-medium">{observer.name.split(' ')[0]}</span>
+                        <button 
+                          onClick={() => toggleObserver(observer)}
+                          className="opacity-0 group-hover:opacity-100 hover:text-destructive transition-all"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="flex items-center gap-2 text-muted-foreground text-[11px] py-1">
+                      <Eye className="w-3.5 h-3.5" />
+                      <span>Нет наблюдателей</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
               {/* Priority */}
               <div className="space-y-2">
                 <Label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Приоритет</Label>
-                <Select defaultValue={task.priority}>
+                <Select 
+                  defaultValue={task.priority}
+                  onValueChange={(value: Task["priority"]) => onUpdate?.({ ...task, priority: value })}
+                >
                   <SelectTrigger className="w-full h-10 border-none bg-secondary/50">
                     <div className="flex items-center gap-2">
                       <Flag className={cn("w-4 h-4", 
@@ -637,6 +767,17 @@ export function TaskDetailsModal({
                   {task.dueDate}
                 </Button>
               </div>
+
+              {/* Time Spent */}
+              {task.timeSpent && (
+                <div className="space-y-2">
+                  <Label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Затрачено времени</Label>
+                  <div className="flex items-center gap-2 p-3 rounded-lg bg-primary/5 border border-primary/10">
+                    <Clock className="w-4 h-4 text-primary" />
+                    <span className="text-sm font-bold text-primary tracking-tight">{task.timeSpent}</span>
+                  </div>
+                </div>
+              )}
 
               {/* Labels */}
               <div className="space-y-2">

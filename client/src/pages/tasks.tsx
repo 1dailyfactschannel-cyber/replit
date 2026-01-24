@@ -4,12 +4,13 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import { MoreHorizontal, Calendar, ArrowUpDown, Filter, Layout as LayoutIcon, Briefcase } from "lucide-react";
-import { useState } from "react";
+import { MoreHorizontal, Calendar, ArrowUpDown, Filter, Layout as LayoutIcon, Briefcase, Play, Clock } from "lucide-react";
+import { useState, useEffect } from "react";
 import { TaskDetailsModal, Task } from "@/components/kanban/TaskDetailsModal";
+import { toast } from "sonner";
 
 // Mock tasks that look like real project tasks
-const initialTasks: (Task & { project: string; board: string })[] = [
+const initialTasksData: (Task & { project: string; board: string; isAccepted?: boolean; startTime?: number })[] = [
   { 
     id: 872, 
     title: "Создать новые токены дизайн-системы", 
@@ -27,12 +28,10 @@ const initialTasks: (Task & { project: string; board: string })[] = [
       { id: 1, title: "Выбрать палитру", completed: true },
       { id: 2, title: "Настроить переменные", completed: false }
     ],
-    comments: [
-      { id: 1, user: "Юлия", content: "Жду макеты к среде", time: "2 часа назад" }
-    ],
-    history: [
-      { id: 1, action: "создал задачу", user: "Юлия", time: "Вчера" }
-    ]
+    comments: [],
+    history: [],
+    isAccepted: true,
+    startTime: Date.now() - 3600000 // 1 hour ago
   },
   { 
     id: 873, 
@@ -49,7 +48,8 @@ const initialTasks: (Task & { project: string; board: string })[] = [
     labels: ["Баг", "Мобайл"],
     subtasks: [],
     comments: [],
-    history: []
+    history: [],
+    isAccepted: false
   },
   { 
     id: 874, 
@@ -66,7 +66,9 @@ const initialTasks: (Task & { project: string; board: string })[] = [
     labels: ["Maintenance"],
     subtasks: [],
     comments: [],
-    history: []
+    history: [],
+    isAccepted: true,
+    timeSpent: "02:15"
   },
   { 
     id: 875, 
@@ -83,17 +85,87 @@ const initialTasks: (Task & { project: string; board: string })[] = [
     labels: ["Документация"],
     subtasks: [],
     comments: [],
-    history: []
+    history: [],
+    isAccepted: false
   }
 ];
 
 export default function Tasks() {
+  const [tasks, setTasks] = useState(initialTasksData);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [currentTime, setCurrentTime] = useState(Date.now());
 
-  const handleTaskClick = (task: Task) => {
-    setSelectedTask(task);
+  useEffect(() => {
+    // Mock notification for a new task
+    const timer = setTimeout(() => {
+      toast("Новая задача назначена вам", {
+        description: "Исправить баг навигации на мобильных",
+        action: {
+          label: "Принять",
+          onClick: () => {
+            const task = tasks.find(t => t.id === 873);
+            if (task) handleTaskClick(task);
+          },
+        },
+      });
+    }, 2000);
+
+    const interval = setInterval(() => {
+      setCurrentTime(Date.now());
+    }, 1000);
+    return () => {
+      clearTimeout(timer);
+      clearInterval(interval);
+    };
+  }, []);
+
+  const formatDuration = (start: number) => {
+    const diff = currentTime - start;
+    const hours = Math.floor(diff / 3600000);
+    const minutes = Math.floor((diff % 3600000) / 60000);
+    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+  };
+
+  const handleTakeTask = (e: React.MouseEvent | null, taskId: number) => {
+    if (e) e.stopPropagation();
+    let updatedTask: any = null;
+    setTasks(prev => prev.map(task => {
+      if (task.id === taskId) {
+        updatedTask = { ...task, isAccepted: true, startTime: Date.now(), status: "В работе" };
+        return updatedTask;
+      }
+      return task;
+    }));
+    if (selectedTask && selectedTask.id === taskId && updatedTask) {
+      setSelectedTask(updatedTask);
+    }
+    toast.success("Задача принята в работу");
+  };
+
+  const handleTaskClick = (task: any) => {
+    // If task is in progress, update timeSpent for the modal
+    const displayTask = { ...task };
+    if (task.startTime && task.status === "В работе") {
+      displayTask.timeSpent = formatDuration(task.startTime);
+    }
+    setSelectedTask(displayTask);
     setIsModalOpen(true);
+  };
+
+  const handleUpdateTask = (updatedTask: Task) => {
+    setTasks(prev => prev.map(t => {
+      if (t.id === updatedTask.id) {
+        // If status changed from "В работе" to something else, freeze the time
+        if (t.status === "В работе" && updatedTask.status !== "В работе" && t.startTime) {
+          const finalTime = formatDuration(t.startTime);
+          return { ...t, ...updatedTask, timeSpent: finalTime, startTime: undefined };
+        }
+        return { ...t, ...updatedTask };
+      }
+      return t;
+    }));
+    setSelectedTask(updatedTask);
   };
 
   return (
@@ -125,11 +197,12 @@ export default function Tasks() {
                     Срок <ArrowUpDown className="w-3 h-3" />
                   </div>
                 </TableHead>
+                <TableHead className="w-[140px]">Подтверждение</TableHead>
                 <TableHead className="w-[50px]"></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {initialTasks.map((task) => (
+              {tasks.map((task) => (
                 <TableRow 
                   key={task.id} 
                   className="group cursor-pointer hover:bg-secondary/20 transition-colors"
@@ -181,6 +254,31 @@ export default function Tasks() {
                      </div>
                   </TableCell>
                   <TableCell>
+                    {task.isAccepted ? (
+                      <div className="flex items-center gap-2 text-primary font-mono text-sm font-bold bg-primary/5 px-3 py-1.5 rounded-lg border border-primary/10 w-fit">
+                        {task.status === "В работе" && task.startTime ? (
+                          <>
+                            <div className="w-2 h-2 rounded-full bg-primary animate-pulse" />
+                            {formatDuration(task.startTime)}
+                          </>
+                        ) : (
+                          <>
+                            <Clock className="w-3.5 h-3.5" />
+                            {task.timeSpent || "00:00"}
+                          </>
+                        )}
+                      </div>
+                    ) : (
+                      <Button 
+                        size="sm" 
+                        className="h-8 gap-2 bg-primary text-primary-foreground hover:bg-primary/90 shadow-lg shadow-primary/20 animate-pulse"
+                        onClick={(e) => handleTakeTask(e, task.id)}
+                      >
+                        <Play className="w-3 h-3 fill-current" /> Принять
+                      </Button>
+                    )}
+                  </TableCell>
+                  <TableCell>
                     <Button variant="ghost" size="icon" className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity">
                       <MoreHorizontal className="w-4 h-4 text-muted-foreground" />
                     </Button>
@@ -196,6 +294,8 @@ export default function Tasks() {
         task={selectedTask}
         open={isModalOpen}
         onOpenChange={setIsModalOpen}
+        onUpdate={handleUpdateTask}
+        onAccept={(id) => handleTakeTask(null, id)}
       />
     </Layout>
   );
