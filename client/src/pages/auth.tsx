@@ -12,11 +12,42 @@ export default function Auth() {
   const [, setLocation] = useLocation();
   const [showPassword, setShowPassword] = useState(false);
   const [isForgotPassword, setIsForgotPassword] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
     // Тестовая учетная запись: admin@example.com / admin123
     setLocation("/");
+  };
+
+  const handleRegister = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    setError(null);
+
+    const formData = new FormData(e.currentTarget);
+    const username = formData.get("username") as string;
+    const email = formData.get("reg-email") as string;
+    const password = formData.get("reg-password") as string;
+
+    try {
+      const response = await fetch("/api/users", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ username, email, password }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.message || "Ошибка регистрации");
+      }
+
+      // После успешной регистрации перенаправляем на главную
+      setLocation("/");
+    } catch (err: any) {
+      setError(err.message);
+    }
   };
 
   if (isForgotPassword) {
@@ -118,7 +149,7 @@ export default function Auth() {
                   <Label htmlFor="email">Email</Label>
                   <div className="relative">
                     <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                    <Input id="email" placeholder="name@example.com" className="pl-10 h-11" type="email" required />
+                    <Input id="email" name="email" placeholder="name@example.com" className="pl-10 h-11" type="email" required />
                   </div>
                 </div>
                 <div className="space-y-2">
@@ -136,6 +167,7 @@ export default function Auth() {
                     <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                     <Input 
                       id="password" 
+                      name="password"
                       type={showPassword ? "text" : "password"} 
                       className="pl-10 pr-10 h-11" 
                       required 
@@ -156,19 +188,20 @@ export default function Auth() {
             </TabsContent>
 
             <TabsContent value="register">
-              <form onSubmit={handleLogin} className="space-y-4">
+              <form onSubmit={handleRegister} className="space-y-4">
+                {error && <p className="text-red-500 text-sm">{error}</p>}
                 <div className="space-y-2">
-                  <Label htmlFor="name">Полное имя</Label>
+                  <Label htmlFor="username">Имя пользователя</Label>
                   <div className="relative">
                     <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                    <Input id="name" placeholder="Иван Иванов" className="pl-10 h-11" required />
+                    <Input id="username" name="username" placeholder="ivanov" className="pl-10 h-11" required />
                   </div>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="reg-email">Email</Label>
                   <div className="relative">
                     <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                    <Input id="reg-email" placeholder="name@example.com" className="pl-10 h-11" type="email" required />
+                    <Input id="reg-email" name="reg-email" placeholder="name@example.com" className="pl-10 h-11" type="email" required />
                   </div>
                 </div>
                 <div className="space-y-2">
@@ -177,6 +210,7 @@ export default function Auth() {
                     <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                     <Input 
                       id="reg-password" 
+                      name="reg-password"
                       type={showPassword ? "text" : "password"} 
                       className="pl-10 pr-10 h-11" 
                       required 
@@ -214,9 +248,7 @@ export default function Auth() {
           </div>
 
           <p className="text-center text-xs text-muted-foreground px-8 leading-relaxed">
-            Нажимая "Продолжить", вы соглашаетесь с нашими{" "}
-            <a href="#" className="underline hover:text-primary transition-colors">Условиями использования</a> и{" "}
-            <a href="#" className="underline hover:text-primary transition-colors">Политикой конфиденциальности</a>.
+            Нажимая "Продолжить", вы соглашаетесь с нашими{" "}<a href="#" className="underline hover:text-primary transition-colors">Условиями использования</a> и{" "}<a href="#" className="underline hover:text-primary transition-colors">Политикой конфиденциальности</a>.
           </p>
         </div>
       </div>
