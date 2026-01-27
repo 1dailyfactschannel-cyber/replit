@@ -1,0 +1,19 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "server/vercel-adapter.ts",
+      "use": "@vercel/node"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/api/(.*)",
+      "dest": "server/vercel-adapter.ts"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "server/vercel-adapter.ts"
+    }
+  ]
+}
