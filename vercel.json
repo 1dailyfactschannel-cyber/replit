@@ -2,18 +2,18 @@
   "version": 2,
   "builds": [
     {
-      "src": "server/vercel-adapter.ts",
+      "src": "server/ultra-simple-vercel.ts",
       "use": "@vercel/node"
     }
   ],
   "routes": [
     {
       "src": "/api/(.*)",
-      "dest": "server/vercel-adapter.ts"
+      "dest": "server/ultra-simple-vercel.ts"
     },
     {
       "src": "/(.*)",
-      "dest": "server/vercel-adapter.ts"
+      "dest": "server/ultra-simple-vercel.ts"
     }
   ]
 }
