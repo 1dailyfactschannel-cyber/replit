@@ -2,18 +2,18 @@
   "version": 2,
   "builds": [
     {
-      "src": "server/vercel-adapter.ts",
+      "src": "server/minimal-vercel-function.ts",
       "use": "@vercel/node"
     }
   ],
   "routes": [
     {
       "src": "/api/(.*)",
-      "dest": "server/vercel-adapter.ts"
+      "dest": "server/minimal-vercel-function.ts"
     },
     {
       "src": "/(.*)",
-      "dest": "server/vercel-adapter.ts"
+      "dest": "server/minimal-vercel-function.ts"
     }
   ]
 }
