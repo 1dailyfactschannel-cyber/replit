@@ -14,10 +14,34 @@ export default function Auth() {
   const [isForgotPassword, setIsForgotPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Тестовая учетная запись: admin@example.com / admin123
-    setLocation("/");
+    
+    const formData = new FormData(e.target as HTMLFormElement);
+    const email = formData.get("email") as string;
+    const password = formData.get("password") as string;
+
+    try {
+      const response = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ email, password }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.message || "Ошибка входа");
+      }
+
+      const result = await response.json();
+      console.log("Login successful:", result.user);
+      // Здесь можно сохранить данные пользователя в состояние приложения
+      setLocation("/");
+    } catch (err: any) {
+      setError(err.message);
+    }
   };
 
   const handleRegister = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -28,6 +52,8 @@ export default function Auth() {
     const username = formData.get("username") as string;
     const email = formData.get("reg-email") as string;
     const password = formData.get("reg-password") as string;
+    const firstName = formData.get("first-name") as string || "";
+    const lastName = formData.get("last-name") as string || "";
 
     try {
       const response = await fetch("/api/users", {
@@ -35,7 +61,7 @@ export default function Auth() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ username, email, password }),
+        body: JSON.stringify({ username, email, password, firstName, lastName }),
       });
 
       if (!response.ok) {
@@ -43,8 +69,22 @@ export default function Auth() {
         throw new Error(data.message || "Ошибка регистрации");
       }
 
-      // После успешной регистрации перенаправляем на главную
-      setLocation("/");
+      // После успешной регистрации сразу выполняем вход
+      const loginResponse = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ email, password }),
+      });
+
+      if (loginResponse.ok) {
+        const result = await loginResponse.json();
+        console.log("Registration and login successful:", result.user);
+        setLocation("/");
+      } else {
+        throw new Error("Ошибка автоматического входа после регистрации");
+      }
     } catch (err: any) {
       setError(err.message);
     }
@@ -139,12 +179,8 @@ export default function Auth() {
             </TabsList>
 
             <TabsContent value="login">
-              <div className="mb-4 p-3 bg-primary/10 border border-primary/20 rounded-lg text-xs">
-                <p className="font-bold text-primary mb-1">Тестовый доступ:</p>
-                <p>Email: <span className="font-mono">admin@teamsync.ru</span></p>
-                <p>Пароль: <span className="font-mono">admin123</span></p>
-              </div>
               <form onSubmit={handleLogin} className="space-y-4">
+                {error && <p className="text-red-500 text-sm">{error}</p>}
                 <div className="space-y-2">
                   <Label htmlFor="email">Email</Label>
                   <div className="relative">
@@ -190,6 +226,16 @@ export default function Auth() {
             <TabsContent value="register">
               <form onSubmit={handleRegister} className="space-y-4">
                 {error && <p className="text-red-500 text-sm">{error}</p>}
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="first-name">Имя</Label>
+                    <Input id="first-name" name="first-name" placeholder="Иван" className="h-11" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="last-name">Фамилия</Label>
+                    <Input id="last-name" name="last-name" placeholder="Иванов" className="h-11" />
+                  </div>
+                </div>
                 <div className="space-y-2">
                   <Label htmlFor="username">Имя пользователя</Label>
                   <div className="relative">
@@ -230,26 +276,6 @@ export default function Auth() {
               </form>
             </TabsContent>
           </Tabs>
-
-          <div className="relative">
-            <div className="absolute inset-0 flex items-center">
-              <Separator className="w-full" />
-            </div>
-            <div className="relative flex justify-center text-xs uppercase">
-              <span className="bg-background px-2 text-muted-foreground">Или продолжить через</span>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 gap-3">
-            <Button variant="outline" className="h-11 gap-2 border-border/60 hover:bg-secondary/50">
-              <Github className="h-4 w-4" />
-              GitHub
-            </Button>
-          </div>
-
-          <p className="text-center text-xs text-muted-foreground px-8 leading-relaxed">
-            Нажимая "Продолжить", вы соглашаетесь с нашими{" "}<a href="#" className="underline hover:text-primary transition-colors">Условиями использования</a> и{" "}<a href="#" className="underline hover:text-primary transition-colors">Политикой конфиденциальности</a>.
-          </p>
         </div>
       </div>
     </div>
