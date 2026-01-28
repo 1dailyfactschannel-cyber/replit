@@ -69,7 +69,32 @@ export class PostgresStorage {
 
   async updateUser(id: string, update: Partial<User>): Promise<User> {
     try {
-      const [user] = await this.db.update(schema.users).set(update).where(eq(schema.users.id, id)).returning();
+      const [user] = await this.db
+        .update(schema.users)
+        .set(update)
+        .where(eq(schema.users.id, id))
+        .returning({
+          id: schema.users.id,
+          username: schema.users.username,
+          email: schema.users.email,
+          password: schema.users.password,
+          firstName: schema.users.firstName,
+          lastName: schema.users.lastName,
+          avatar: schema.users.avatar,
+          department: schema.users.department,
+          position: schema.users.position,
+          phone: schema.users.phone,
+          timezone: schema.users.timezone,
+          language: schema.users.language,
+          isActive: schema.users.isActive,
+          isOnline: schema.users.isOnline,
+          lastSeen: schema.users.lastSeen,
+          createdAt: schema.users.createdAt,
+          updatedAt: schema.users.updatedAt,
+          telegramConnected: schema.users.telegramConnected,
+          telegramId: schema.users.telegramId,
+          notes: schema.users.notes
+        });
       if (!user) throw new Error("User not found");
       return user;
     } catch (error) {

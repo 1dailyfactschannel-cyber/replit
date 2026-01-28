@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { cn } from "@/lib/utils";
+import { useUser } from "@/contexts/UserContext";
 import {
   LayoutDashboard,
   Kanban,
@@ -75,6 +76,7 @@ const sidebarItems = [
 
 export function Layout({ children }: { children: React.ReactNode }) {
   const [location, setLocation] = useLocation();
+  const { user, logout } = useUser();
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isStatusDialogOpen, setIsStatusDialogOpen] = useState(false);
@@ -146,7 +148,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
             if (item.subItems && !isCollapsed) {
               return (
                 <Collapsible
-                  key={item.href || item.id}
+                  key={item.href || item.label}
                   open={isOpen}
                   onOpenChange={setIsOpen}
                   className="w-full"
@@ -264,13 +266,13 @@ export function Layout({ children }: { children: React.ReactNode }) {
               )}
             >
               <Avatar className="w-9 h-9 border border-border shrink-0">
-                <AvatarImage src="https://github.com/shadcn.png" />
-                <AvatarFallback>ЮД</AvatarFallback>
+                <AvatarImage src={user?.avatar || "https://github.com/shadcn.png"} />
+                <AvatarFallback>{user ? `${user.firstName[0]}${user.lastName[0]}` : "Г"}</AvatarFallback>
               </Avatar>
-              {!isCollapsed && (
+              {!isCollapsed && user && (
                 <div className="flex-1 min-w-0 animate-in fade-in duration-300">
-                  <p className="text-sm font-medium truncate">Юлия Дарицкая</p>
-                  <p className="text-xs text-muted-foreground truncate">Руководитель продукта</p>
+                  <p className="text-sm font-medium truncate">{user.firstName} {user.lastName}</p>
+                  <p className="text-xs text-muted-foreground truncate">{user.position || "Пользователь"}</p>
                 </div>
               )}
             </div>
@@ -302,7 +304,10 @@ export function Layout({ children }: { children: React.ReactNode }) {
             <DropdownMenuSeparator />
             <DropdownMenuItem 
               className="gap-2 cursor-pointer text-rose-500 focus:text-rose-500"
-              onClick={() => setLocation("/auth")}
+              onClick={async () => {
+                await logout();
+                setLocation("/auth");
+              }}
             >
               <LogOut className="w-4 h-4" />
               Выход

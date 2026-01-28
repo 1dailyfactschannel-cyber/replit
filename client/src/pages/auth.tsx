@@ -7,9 +7,13 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
 import { Eye, EyeOff, Lock, Mail, User, ArrowRight, Github } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+import { useUser } from "@/contexts/UserContext";
 
 export default function Auth() {
   const [, setLocation] = useLocation();
+  const { login } = useUser();
+  const { toast } = useToast();
   const [showPassword, setShowPassword] = useState(false);
   const [isForgotPassword, setIsForgotPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -37,10 +41,23 @@ export default function Auth() {
 
       const result = await response.json();
       console.log("Login successful:", result.user);
-      // Здесь можно сохранить данные пользователя в состояние приложения
+      
+      // Сохраняем данные пользователя в контекст
+      await login(result.user);
+      
+      toast({
+        title: "Успешный вход",
+        description: `Добро пожаловать, ${result.user.firstName}!`,
+      });
+      
       setLocation("/");
     } catch (err: any) {
       setError(err.message);
+      toast({
+        title: "Ошибка входа",
+        description: err.message,
+        variant: "destructive",
+      });
     }
   };
 
@@ -81,12 +98,26 @@ export default function Auth() {
       if (loginResponse.ok) {
         const result = await loginResponse.json();
         console.log("Registration and login successful:", result.user);
+        
+        // Сохраняем данные пользователя в контекст
+        await login(result.user);
+        
+        toast({
+          title: "Регистрация успешна",
+          description: `Добро пожаловать, ${result.user.firstName}!`,
+        });
+        
         setLocation("/");
       } else {
         throw new Error("Ошибка автоматического входа после регистрации");
       }
     } catch (err: any) {
       setError(err.message);
+      toast({
+        title: "Ошибка регистрации",
+        description: err.message,
+        variant: "destructive",
+      });
     }
   };
 
