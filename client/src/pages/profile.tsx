@@ -13,46 +13,77 @@ import { useUser } from "@/contexts/UserContext";
 
 export default function Profile() {
   const { toast } = useToast();
-  const { user, setUser, updateUser } = useUser();
+  const { user, setUser, updateUser, loading } = useUser();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isUploading, setIsUploading] = useState(false);
   
   // Проверка авторизации
   useEffect(() => {
-    if (!user) {
+    if (!loading && !user) {
       console.log('No user in context, redirecting to auth');
       // Здесь можно добавить редирект на страницу авторизации
     }
-  }, [user]);
+  }, [user, loading]);
   
   const [profile, setProfile] = useState({
-    firstName: user?.firstName || "",
-    lastName: user?.lastName || "",
-    username: user?.username || "",
+    firstName: "",
+    lastName: "",
+    username: "",
     position: "",
     department: "",
     telegram: "",
-    email: user?.email || "",
+    email: "",
     phone: "",
-    avatar: user?.avatar || "https://github.com/shadcn.png",
+    avatar: "https://github.com/shadcn.png",
     notes: "",
     telegramConnected: false
   });
 
-  // Обновляем состояние профиля при изменении данных пользователя
+  // Инициализация и обновление состояния профиля
   useEffect(() => {
     console.log('User context updated:', user);
     if (user) {
-      setProfile(prev => ({
-        ...prev,
-        firstName: user.firstName || "",
-        lastName: user.lastName || "",
-        username: user.username || "",
-        email: user.email || "",
-        avatar: user.avatar || prev.avatar
-      }));
+      setProfile(prev => {
+        // Проверяем, изменились ли данные, чтобы избежать лишних обновлений
+        const newData = {
+          firstName: user.firstName || "",
+          lastName: user.lastName || "",
+          username: user.username || "",
+          position: user.position || "",
+          department: user.department || "",
+          telegram: user.telegram || "",
+          email: user.email || "",
+          phone: user.phone || "",
+          avatar: user.avatar || prev.avatar,
+          notes: user.notes || "",
+          telegramConnected: user.telegramConnected || false
+        };
+
+        // Сравниваем с текущим состоянием (поверхностное сравнение основных полей)
+        const isDifferent = 
+          prev.firstName !== newData.firstName ||
+          prev.lastName !== newData.lastName ||
+          prev.username !== newData.username ||
+          prev.position !== newData.position ||
+          prev.department !== newData.department ||
+          prev.telegram !== newData.telegram ||
+          prev.email !== newData.email ||
+          prev.phone !== newData.phone ||
+          prev.notes !== newData.notes;
+
+        // Обновляем только если данные реально отличаются и мы не в процессе редактирования (хотя здесь мы доверяем серверу)
+        // В идеале, если форма "грязная" (пользователь что-то ввел), мы не должны перезаписывать её данными с сервера,
+        // если только это не первоначальная загрузка.
+        // Но пока оставим так, с проверкой на изменения.
+        
+        return isDifferent ? { ...prev, ...newData } : prev;
+      });
     }
   }, [user]);
+
+  if (loading) {
+    return <div className="flex items-center justify-center h-screen">Загрузка...</div>;
+  }
 
   const handleAvatarUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -145,12 +176,15 @@ export default function Profile() {
       email: profile.email,
       phone: profile.phone,
       position: profile.position,
-      department: profile.department
+      department: profile.department,
+      telegram: profile.telegram,
+      notes: profile.notes
     });
 
-    // Специальная проверка для поля position
+    // Специальная проверка для полей
     console.log('Position field value:', profile.position);
-    console.log('Position field type:', typeof profile.position);
+    console.log('Telegram field value:', profile.telegram);
+    console.log('Notes field value:', profile.notes);
 
     try {
       const response = await fetch(`/api/users/${user.id}`, {
@@ -165,7 +199,9 @@ export default function Profile() {
           email: profile.email,
           phone: profile.phone,
           position: profile.position,
-          department: profile.department
+          department: profile.department,
+          telegram: profile.telegram,
+          notes: profile.notes
         }),
       });
 
@@ -180,6 +216,8 @@ export default function Profile() {
       const updatedUser = await response.json();
       console.log('Server response:', updatedUser);
       console.log('Server response position:', updatedUser.position);
+      console.log('Server response telegram:', updatedUser.telegram);
+      console.log('Server response notes:', updatedUser.notes);
       
       // Проверка, есть ли position в ответе
       if (updatedUser.position === undefined) {
@@ -194,6 +232,8 @@ export default function Profile() {
           username: updatedUser.username,
           email: updatedUser.email,
           phone: updatedUser.phone,
+          telegram: updatedUser.telegram,
+          notes: updatedUser.notes,
           position: updatedUser.position,
           department: updatedUser.department
         };
@@ -293,10 +333,6 @@ export default function Profile() {
               <h2 className="text-xl font-bold text-center mb-1">{profile.firstName} {profile.lastName}</h2>
               <p className="text-sm text-muted-foreground text-center mb-1">{profile.position}</p>
               <p className="text-xs text-muted-foreground/70 text-center mb-6">{profile.department}</p>
-              <Button variant="outline" size="sm" className="w-full gap-2 border-border/60">
-                <Camera className="w-4 h-4" />
-                Изменить фото
-              </Button>
             </CardContent>
           </Card>
 
