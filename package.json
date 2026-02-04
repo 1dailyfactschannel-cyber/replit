@@ -23,6 +23,7 @@
     "db:minimal": "tsx script/create-minimal-schema.ts",
     "db:test-api": "tsx script/test-api.ts",
     "db:health": "tsx script/check-db-health.ts",
+    "db:apply-columns": "tsx script/apply-missing-columns.ts",
     "ngrok": "ngrok http 5000"
   },
   "dependencies": {
@@ -98,9 +99,7 @@
     "wouter": "^3.3.5",
     "ws": "^8.18.0",
     "zod": "^3.25.76",
-    "zod-validation-error": "^3.4.0"
-  },
-  "devDependencies": {
+    "zod-validation-error": "^3.4.0",
     "@replit/vite-plugin-cartographer": "^0.4.4",
     "@replit/vite-plugin-dev-banner": "^0.1.1",
     "@replit/vite-plugin-runtime-error-modal": "^0.0.4",
@@ -126,6 +125,8 @@
     "tsx": "^4.20.5",
     "typescript": "5.6.3",
     "vite": "^7.1.9"
+  },
+  "devDependencies": {
   },
   "optionalDependencies": {
     "bufferutil": "^4.0.8"
