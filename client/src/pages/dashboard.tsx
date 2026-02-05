@@ -6,6 +6,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { MoreHorizontal, ArrowUpRight, CheckCircle2, Circle, Clock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { useUser } from "@/contexts/UserContext";
 import {
   Area,
   AreaChart,
@@ -27,13 +28,16 @@ const performanceData = [
 ];
 
 export default function Dashboard() {
+  const { user } = useUser();
+  const userName = user ? `${user.firstName} ${user.lastName}` : "Пользователь";
+  
   return (
     <Layout>
       <div className="space-y-8 animate-in fade-in duration-500">
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-bold tracking-tight text-foreground">Обзор</h1>
-            <p className="text-muted-foreground mt-1">Доброе утро, Юлия! Вот что происходит сегодня.</p>
+            <p className="text-muted-foreground mt-1">Доброе утро, {user?.firstName || "Пользователь"}! Вот что происходит сегодня.</p>
           </div>
           <div className="flex gap-3">
              <Button variant="outline" className="hidden sm:flex">Экспортировать отчёт</Button>

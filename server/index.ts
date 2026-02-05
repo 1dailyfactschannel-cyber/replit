@@ -1,14 +1,41 @@
 import express, { type Request, Response, NextFunction } from "express";
+import session from "express-session";
+import pgSession from "connect-pg-simple";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
+import dotenv from "dotenv";
+import { join } from "path";
+
+// Load environment variables
+dotenv.config();
 
 const app = express();
 const httpServer = createServer(app);
 
+// Serve uploaded files - должно быть до других middleware
+app.use('/uploads', express.static(join(process.cwd(), 'uploads')));
+
+// Configure PostgreSQL session store
+const PgStore = pgSession(session);
+const pgStore = new PgStore({
+  conObject: {
+    connectionString: process.env.DATABASE_URL,
+  },
+  tableName: 'sessions',
+  createTableIfMissing: true,
+});
+
 declare module "http" {
   interface IncomingMessage {
     rawBody: unknown;
+    session: session.Session & Partial<session.SessionData> & { userId?: string };
+  }
+}
+
+declare module "express-session" {
+  interface SessionData {
+    userId: string;
   }
 }
 
@@ -21,6 +48,21 @@ app.use(
 );
 
 app.use(express.urlencoded({ extended: false }));
+
+// Session middleware
+app.use(session({
+  store: pgStore,
+  secret: process.env.SESSION_SECRET || 'teamsync_secure_session_key_2024',
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    secure: process.env.NODE_ENV === 'production',
+    httpOnly: true,
+    maxAge: 24 * 60 * 60 * 1000, // 24 hours
+    sameSite: 'lax'
+  },
+  name: 'teamsync.sid'
+}));
 
 export function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {

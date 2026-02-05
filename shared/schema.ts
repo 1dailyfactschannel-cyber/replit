@@ -11,7 +11,7 @@ export const users = pgTable("users", {
   password: text("password").notNull(),
   firstName: text("first_name"),
   lastName: text("last_name"),
-  avatar: text("avatar"),
+  avatar: text("avatar"), // Will store base64 encoded avatar data
   department: text("department"),
   position: text("position"),
   phone: text("phone"),

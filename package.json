@@ -5,7 +5,7 @@
   "license": "MIT",
   "scripts": {
     "dev:client": "vite dev --port 5000",
-    "dev": "NODE_ENV=development tsx server/index.ts",
+    "dev": "cross-env NODE_ENV=development tsx server/index.ts",
     "build": "tsx script/build.ts",
     "build:client": "vite build",
     "build:server": "tsc -p tsconfig.json",
@@ -22,7 +22,9 @@
     "db:adapt": "tsx script/adapt-schema.ts",
     "db:minimal": "tsx script/create-minimal-schema.ts",
     "db:test-api": "tsx script/test-api.ts",
-    "db:health": "tsx script/check-db-health.ts"
+    "db:health": "tsx script/check-db-health.ts",
+    "db:apply-columns": "tsx script/apply-missing-columns.ts",
+    "ngrok": "ngrok http 5000"
   },
   "dependencies": {
     "@hello-pangea/dnd": "^18.0.1",
@@ -61,6 +63,7 @@
     "@tiptap/extension-underline": "^3.14.0",
     "@tiptap/react": "^3.14.0",
     "@tiptap/starter-kit": "^3.14.0",
+    "@types/multer": "^2.0.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
@@ -76,6 +79,7 @@
     "input-otp": "^1.4.2",
     "lucide-react": "^0.545.0",
     "memorystore": "^1.6.7",
+    "multer": "^2.0.2",
     "next-themes": "^0.4.6",
     "passport": "^0.7.0",
     "passport-local": "^1.0.0",
@@ -95,10 +99,7 @@
     "wouter": "^3.3.5",
     "ws": "^8.18.0",
     "zod": "^3.25.76",
-    "zod-validation-error": "^3.4.0"
-  },
-  "devDependencies": {
-    "@vercel/node": "^3.0.0",
+    "zod-validation-error": "^3.4.0",
     "@replit/vite-plugin-cartographer": "^0.4.4",
     "@replit/vite-plugin-dev-banner": "^0.1.1",
     "@replit/vite-plugin-runtime-error-modal": "^0.0.4",
@@ -112,15 +113,20 @@
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "@types/ws": "^8.5.13",
+    "@vercel/node": "^3.0.0",
     "@vitejs/plugin-react": "^5.0.4",
     "autoprefixer": "^10.4.21",
+    "cross-env": "^10.1.0",
     "drizzle-kit": "^0.31.4",
     "esbuild": "^0.25.0",
+    "ngrok": "^5.0.0-beta.2",
     "postcss": "^8.5.6",
     "tailwindcss": "^4.1.14",
     "tsx": "^4.20.5",
     "typescript": "5.6.3",
     "vite": "^7.1.9"
+  },
+  "devDependencies": {
   },
   "optionalDependencies": {
     "bufferutil": "^4.0.8"

@@ -1,5 +1,5 @@
 import { Layout } from "@/components/layout/Layout";
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -9,20 +9,265 @@ import { Separator } from "@/components/ui/separator";
 import { Camera, Mail, Phone, Send, Briefcase, User, Save, FileText, Bell, ExternalLink, CheckCircle2, Building2 } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
+import { useUser } from "@/contexts/UserContext";
 
 export default function Profile() {
   const { toast } = useToast();
+  const { user, setUser, updateUser, loading } = useUser();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  
+  // Проверка авторизации
+  useEffect(() => {
+    if (!loading && !user) {
+      console.log('No user in context, redirecting to auth');
+      // Здесь можно добавить редирект на страницу авторизации
+    }
+  }, [user, loading]);
+  
   const [profile, setProfile] = useState({
-    fullName: "Юлия Дарицкая",
-    position: "Руководитель продукта",
-    department: "Департамент разработки",
-    telegram: "@juli_dar",
-    email: "j.daritskaya@teamsync.ru",
-    phone: "+7 (999) 123-45-67",
+    firstName: "",
+    lastName: "",
+    username: "",
+    position: "",
+    department: "",
+    telegram: "",
+    email: "",
+    phone: "",
     avatar: "https://github.com/shadcn.png",
     notes: "",
     telegramConnected: false
   });
+
+  // Инициализация и обновление состояния профиля
+  useEffect(() => {
+    console.log('User context updated:', user);
+    if (user) {
+      setProfile(prev => {
+        // Проверяем, изменились ли данные, чтобы избежать лишних обновлений
+        const newData = {
+          firstName: user.firstName || "",
+          lastName: user.lastName || "",
+          username: user.username || "",
+          position: user.position || "",
+          department: user.department || "",
+          telegram: user.telegram || "",
+          email: user.email || "",
+          phone: user.phone || "",
+          avatar: user.avatar || prev.avatar,
+          notes: user.notes || "",
+          telegramConnected: user.telegramConnected || false
+        };
+
+        // Сравниваем с текущим состоянием (поверхностное сравнение основных полей)
+        const isDifferent = 
+          prev.firstName !== newData.firstName ||
+          prev.lastName !== newData.lastName ||
+          prev.username !== newData.username ||
+          prev.position !== newData.position ||
+          prev.department !== newData.department ||
+          prev.telegram !== newData.telegram ||
+          prev.email !== newData.email ||
+          prev.phone !== newData.phone ||
+          prev.notes !== newData.notes;
+
+        // Обновляем только если данные реально отличаются и мы не в процессе редактирования (хотя здесь мы доверяем серверу)
+        // В идеале, если форма "грязная" (пользователь что-то ввел), мы не должны перезаписывать её данными с сервера,
+        // если только это не первоначальная загрузка.
+        // Но пока оставим так, с проверкой на изменения.
+        
+        return isDifferent ? { ...prev, ...newData } : prev;
+      });
+    }
+  }, [user]);
+
+  if (loading) {
+    return <div className="flex items-center justify-center h-screen">Загрузка...</div>;
+  }
+
+  const handleAvatarUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    // Проверяем тип файла
+    if (!file.type.startsWith('image/')) {
+      toast({
+        title: "Ошибка",
+        description: "Пожалуйста, выберите изображение",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    // Проверяем размер файла (5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      toast({
+        title: "Ошибка",
+        description: "Размер файла не должен превышать 5MB",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    setIsUploading(true);
+    
+    try {
+      const formData = new FormData();
+      formData.append('avatar', file);
+
+      console.log('Uploading avatar for user:', user?.id);
+      
+      const response = await fetch(`/api/users/${user?.id}/avatar`, {
+        method: 'POST',
+        body: formData,
+      });
+
+      console.log('Avatar upload response status:', response.status);
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Ошибка загрузки аватара');
+      }
+
+      const result = await response.json();
+      console.log('Avatar upload result:', result);
+      
+      // Обновляем аватар в состоянии и контексте
+      setProfile(prev => ({ ...prev, avatar: result.avatar }));
+      if (user) {
+        updateUser({ avatar: result.avatar });
+      }
+
+      toast({
+        title: "Успешно",
+        description: "Аватар успешно загружен"
+      });
+    } catch (error: any) {
+      console.error('Avatar upload error:', error);
+      toast({
+        title: "Ошибка",
+        description: error.message,
+        variant: "destructive"
+      });
+    } finally {
+      setIsUploading(false);
+      // Очищаем input, чтобы можно было загрузить тот же файл снова
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  };
+
+  const handleSaveProfile = async () => {
+    if (!user?.id) {
+      toast({
+        title: "Ошибка",
+        description: "Пользователь не авторизован",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    console.log('Saving profile for user:', user.id);
+    console.log('Profile data to save:', {
+      firstName: profile.firstName,
+      lastName: profile.lastName,
+      username: profile.username,
+      email: profile.email,
+      phone: profile.phone,
+      position: profile.position,
+      department: profile.department,
+      telegram: profile.telegram,
+      notes: profile.notes
+    });
+
+    // Специальная проверка для полей
+    console.log('Position field value:', profile.position);
+    console.log('Telegram field value:', profile.telegram);
+    console.log('Notes field value:', profile.notes);
+
+    try {
+      const response = await fetch(`/api/users/${user.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          firstName: profile.firstName,
+          lastName: profile.lastName,
+          username: profile.username,
+          email: profile.email,
+          phone: profile.phone,
+          position: profile.position,
+          department: profile.department,
+          telegram: profile.telegram,
+          notes: profile.notes
+        }),
+      });
+
+      console.log('Save response status:', response.status);
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error('Save error response:', errorData);
+        throw new Error(errorData.message || 'Ошибка сохранения профиля');
+      }
+
+      const updatedUser = await response.json();
+      console.log('Server response:', updatedUser);
+      console.log('Server response position:', updatedUser.position);
+      console.log('Server response telegram:', updatedUser.telegram);
+      console.log('Server response notes:', updatedUser.notes);
+      
+      // Проверка, есть ли position в ответе
+      if (updatedUser.position === undefined) {
+        console.warn('WARNING: Position field is missing from server response!');
+      }
+      
+      // Обновляем контекст пользователя
+      if (updatedUser) {
+        const updateData = {
+          firstName: updatedUser.firstName,
+          lastName: updatedUser.lastName,
+          username: updatedUser.username,
+          email: updatedUser.email,
+          phone: updatedUser.phone,
+          telegram: updatedUser.telegram,
+          notes: updatedUser.notes,
+          position: updatedUser.position,
+          department: updatedUser.department
+        };
+        
+        console.log('Updating context with:', updateData);
+        updateUser(updateData);
+      }
+
+      toast({
+        title: "Успешно",
+        description: "Профиль успешно сохранен"
+      });
+    } catch (error: any) {
+      console.error('Profile save error:', error);
+      toast({
+        title: "Ошибка",
+        description: error.message,
+        variant: "destructive"
+      });
+    }
+  };
+
+  const triggerFileInput = () => {
+    console.log('Clicking avatar, user:', user);
+    if (!user?.id) {
+      toast({
+        title: "Ошибка",
+        description: "Пользователь не авторизован",
+        variant: "destructive"
+      });
+      return;
+    }
+    fileInputRef.current?.click();
+  };
 
   const handleConnectTelegram = () => {
     // В реальном приложении здесь была бы ссылка на ваш бот с уникальным токеном
@@ -52,22 +297,42 @@ export default function Profile() {
           {/* Avatar Section */}
           <Card className="md:col-span-4 border-border/50 shadow-sm overflow-hidden h-fit">
             <CardContent className="pt-8 pb-8 flex flex-col items-center">
-              <div className="relative group cursor-pointer mb-6">
+              <div className="relative group cursor-pointer mb-6" onClick={!isUploading ? triggerFileInput : undefined}>
                 <Avatar className="w-32 h-32 border-4 border-background shadow-xl">
-                  <AvatarImage src={profile.avatar} />
-                  <AvatarFallback className="text-2xl bg-primary/10 text-primary font-bold">ЮД</AvatarFallback>
+                  <AvatarImage 
+                    src={profile.avatar || undefined} 
+                    className="object-contain"
+                  />
+                  <AvatarFallback className="text-2xl bg-primary/10 text-primary font-bold">
+                    {profile.firstName && profile.lastName 
+                      ? `${profile.firstName[0]}${profile.lastName[0]}` 
+                      : "П"}
+                  </AvatarFallback>
                 </Avatar>
                 <div className="absolute inset-0 rounded-full bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                  <Camera className="text-white w-8 h-8" />
+                  {isUploading ? (
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white"></div>
+                  ) : (
+                    <Camera className="text-white w-8 h-8" />
+                  )}
                 </div>
+                {isUploading && (
+                  <div className="absolute inset-0 rounded-full bg-black/60 flex items-center justify-center">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white"></div>
+                  </div>
+                )}
+                <input 
+                  type="file" 
+                  ref={fileInputRef} 
+                  className="hidden" 
+                  accept="image/*"
+                  onChange={handleAvatarUpload}
+                  disabled={isUploading}
+                />
               </div>
-              <h2 className="text-xl font-bold text-center mb-1">{profile.fullName}</h2>
+              <h2 className="text-xl font-bold text-center mb-1">{profile.firstName} {profile.lastName}</h2>
               <p className="text-sm text-muted-foreground text-center mb-1">{profile.position}</p>
               <p className="text-xs text-muted-foreground/70 text-center mb-6">{profile.department}</p>
-              <Button variant="outline" size="sm" className="w-full gap-2 border-border/60">
-                <Camera className="w-4 h-4" />
-                Изменить фото
-              </Button>
             </CardContent>
           </Card>
 
@@ -80,29 +345,53 @@ export default function Profile() {
             <CardContent className="space-y-6">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                 <div className="space-y-2">
-                  <Label htmlFor="fullName" className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
-                    <User className="w-3.5 h-3.5" /> Имя и Фамилия
+                  <Label htmlFor="firstName" className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                    <User className="w-3.5 h-3.5" /> Имя
                   </Label>
                   <Input 
-                    id="fullName" 
-                    value={profile.fullName} 
-                    onChange={(e) => setProfile({...profile, fullName: e.target.value})}
+                    id="firstName" 
+                    value={profile.firstName} 
+                    onChange={(e) => setProfile({...profile, firstName: e.target.value})}
                     className="bg-secondary/30 border-border/50 focus:bg-background transition-all"
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="position" className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
-                    <Briefcase className="w-3.5 h-3.5" /> Должность
+                  <Label htmlFor="lastName" className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                    <User className="w-3.5 h-3.5" /> Фамилия
                   </Label>
                   <Input 
-                    id="position" 
-                    value={profile.position} 
-                    onChange={(e) => setProfile({...profile, position: e.target.value})}
+                    id="lastName" 
+                    value={profile.lastName} 
+                    onChange={(e) => setProfile({...profile, lastName: e.target.value})}
                     className="bg-secondary/30 border-border/50 focus:bg-background transition-all"
                   />
                 </div>
               </div>
-
+                            
+              <div className="space-y-2">
+                <Label htmlFor="username" className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                  <User className="w-3.5 h-3.5" /> Логин
+                </Label>
+                <Input 
+                  id="username" 
+                  value={profile.username} 
+                  onChange={(e) => setProfile({...profile, username: e.target.value})}
+                  className="bg-secondary/30 border-border/50 focus:bg-background transition-all"
+                />
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="position" className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                  <Briefcase className="w-3.5 h-3.5" /> Должность
+                </Label>
+                <Input 
+                  id="position" 
+                  value={profile.position} 
+                  onChange={(e) => setProfile({...profile, position: e.target.value})}
+                  className="bg-secondary/30 border-border/50 focus:bg-background transition-all"
+                />
+              </div>
+              
               <div className="space-y-2">
                 <Label htmlFor="department" className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
                   <Building2 className="w-3.5 h-3.5" /> Отдел
@@ -189,7 +478,7 @@ export default function Profile() {
               </div>
             </CardContent>
             <CardFooter className="bg-secondary/5 border-t border-border/50 px-6 py-4 flex justify-end">
-              <Button className="gap-2 shadow-lg shadow-primary/20">
+              <Button onClick={handleSaveProfile} className="gap-2 shadow-lg shadow-primary/20">
                 <Save className="w-4 h-4" />
                 Сохранить изменения
               </Button>
