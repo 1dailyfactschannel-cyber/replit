@@ -249,7 +249,7 @@ export default function Projects() {
     type: "feature"
   });
 
-  // Функция для загрузки проектов
+  // Функция для загрузки проектов с оптимизацией
   const { data: projectsData, isLoading: projectsLoading } = useQuery({
     queryKey: ['projects'],
     queryFn: async () => {
@@ -258,9 +258,11 @@ export default function Projects() {
       return response.json();
     },
     staleTime: 1000 * 60 * 5, // 5 минут
+    refetchOnWindowFocus: false, // Отключаем автоматическое обновление при фокусе
+    refetchOnMount: false, // Отключаем повторную загрузку при монтировании
   });
 
-  // Функция для загрузки досок проекта
+  // Функция для загрузки досок проекта с оптимизацией
   const { data: boardsDataResponse, isLoading: boardsLoading } = useQuery({
     queryKey: ['boards', activeProject?.id],
     queryFn: async () => {
@@ -271,6 +273,8 @@ export default function Projects() {
     },
     enabled: !!activeProject?.id,
     staleTime: 1000 * 60 * 5,
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
   });
 
   // Эффект для обновления списка проектов
@@ -340,7 +344,7 @@ export default function Projects() {
             "Готово": []
           };
 
-          kanbanTasks.forEach(task => {
+          kanbanTasks.forEach((task: any) => {
             // Конвертируем статус из БД в название колонки
             let columnName = "В планах"; // дефолт
             if (task.status === 'todo') columnName = "В планах";

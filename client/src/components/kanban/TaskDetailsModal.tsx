@@ -256,18 +256,29 @@ export function TaskDetailsModal({
     }
   };
 
+  // Используем useRef для отслеживания уже загруженных задач
+  const loadedTaskIds = React.useRef<Set<string>>(new Set());
+  
   React.useEffect(() => {
     console.log('=== USE EFFECT TRIGGERED ===');
     console.log('Task dependency:', task?.dbId);
     console.log('Task object in effect:', task);
     
-    if (task) {
-      console.log('Updating local states with task data...');
+    if (task && task.dbId) {
+      // Проверяем, загружали ли мы уже эту задачу
+      if (loadedTaskIds.current.has(task.dbId)) {
+        console.log('Task already loaded, skipping...');
+        return;
+      }
+      
+      console.log('Loading new task data...');
+      loadedTaskIds.current.add(task.dbId);
+      
+      // Обновляем локальные состояния только один раз
       setLocalSubtasks(task.subtasks || []);
       setLocalComments(task.comments || []);
       setLocalObservers(task.observers || []);
-      setTaskDbId(task.dbId || null);
-      // localLabels теперь вычисляется через useMemo
+      setTaskDbId(task.dbId);
       setLocalAssignee(task.assignee || { name: "" });
       setLocalPriority(task.priority || "Средний");
       setLocalStatus(task.status || "В планах");
@@ -275,129 +286,112 @@ export function TaskDetailsModal({
       
       console.log('Local states updated');
       
-      // Загружаем подзадачи из БД
-      if (task.dbId) {
-        const loadSubtasks = async () => {
-          try {
-            const response = await fetch(`/api/tasks/${task.dbId}/subtasks`);
-            if (response.ok) {
-              const subtasks = await response.json();
-              const formattedSubtasks = subtasks.map((sub: any) => ({
+      // Асинхронные загрузки данных
+      const loadAllDataTask = async () => {
+        try {
+          // Параллельная загрузка всех данных
+          const [
+            subtasksResponse,
+            commentsResponse, 
+            observersResponse,
+            historyResponse,
+            attachmentsResponse
+          ] = await Promise.all([
+            fetch(`/api/tasks/${task.dbId}/subtasks`),
+            fetch(`/api/tasks/${task.dbId}/comments`),
+            fetch(`/api/tasks/${task.dbId}/observers`),
+            fetch(`/api/tasks/${task.dbId}/history`),
+            fetch(`/api/tasks/${task.dbId}/attachments`)
+          ]);
+
+          // Обработка подзадач
+          if (subtasksResponse.ok) {
+            const subtasks = await subtasksResponse.json();
+            const formattedSubtasks = subtasks.map((sub: any) => ({
+              id: Date.now() + Math.random(),
+              dbId: sub.id,
+              title: sub.title,
+              completed: sub.isCompleted || false
+            }));
+            setLocalSubtasks(formattedSubtasks);
+          }
+
+          // Обработка комментариев
+          if (commentsResponse.ok) {
+            const comments = await commentsResponse.json();
+            const formattedComments = comments.map((comment: any) => {
+              const authorName = `${comment.authorFirstName || ''} ${comment.authorLastName || ''}`.trim() || comment.authorUsername;
+              const timeAgo = getTimeAgo(new Date(comment.createdAt));
+              
+              return {
                 id: Date.now() + Math.random(),
-                dbId: sub.id,
-                title: sub.title,
-                completed: sub.isCompleted || false
-              }));
-              setLocalSubtasks(formattedSubtasks);
-            }
-          } catch (error) {
-            console.error('Error loading subtasks:', error);
+                dbId: comment.id,
+                author: {
+                  name: authorName,
+                  avatar: comment.authorAvatar
+                },
+                text: comment.content,
+                date: timeAgo
+              };
+            });
+            setLocalComments(formattedComments);
           }
-        };
-        loadSubtasks();
-        
-        // Загружаем комментарии из БД
-        const loadComments = async () => {
-          try {
-            const response = await fetch(`/api/tasks/${task.dbId}/comments`);
-            if (response.ok) {
-              const comments = await response.json();
-              const formattedComments = comments.map((comment: any) => {
-                const authorName = `${comment.authorFirstName || ''} ${comment.authorLastName || ''}`.trim() || comment.authorUsername;
-                const timeAgo = getTimeAgo(new Date(comment.createdAt));
-                
-                return {
-                  id: Date.now() + Math.random(),
-                  dbId: comment.id,
-                  author: {
-                    name: authorName,
-                    avatar: comment.authorAvatar
-                  },
-                  text: comment.content,
-                  date: timeAgo
-                };
-              });
-              setLocalComments(formattedComments);
-            }
-          } catch (error) {
-            console.error('Error loading comments:', error);
+
+          // Обработка наблюдателей
+          if (observersResponse.ok) {
+            const observers = await observersResponse.json();
+            const formattedObservers = observers.map((obs: any) => {
+              const name = `${obs.firstName || ''} ${obs.lastName || ''}`.trim() || obs.username;
+              return {
+                userId: obs.userId,
+                name: name,
+                avatar: obs.avatar
+              };
+            });
+            setLocalObservers(formattedObservers);
           }
-        };
-        loadComments();
-        
-        // Загружаем наблюдателей из БД
-        const loadObservers = async () => {
-          try {
-            const response = await fetch(`/api/tasks/${task.dbId}/observers`);
-            if (response.ok) {
-              const observers = await response.json();
-              const formattedObservers = observers.map((obs: any) => {
-                const name = `${obs.firstName || ''} ${obs.lastName || ''}`.trim() || obs.username;
-                return {
-                  userId: obs.userId,
-                  name: name,
-                  avatar: obs.avatar
-                };
-              });
-              setLocalObservers(formattedObservers);
-              // НЕ вызываем onUpdate() здесь, чтобы избежать цикличной перезагрузки
-              // onUpdate вызывается только в toggleObserver после изменений
-            }
-          } catch (error) {
-            console.error('Error loading observers:', error);
+
+          // Обработка истории
+          if (historyResponse.ok) {
+            const history = await historyResponse.json();
+            setTaskHistory(history);
           }
-        };
-        loadObservers();
-        
-        // Загружаем историю изменений из БД
-        const loadHistory = async () => {
-          try {
-            const response = await fetch(`/api/tasks/${task.dbId}/history`);
-            if (response.ok) {
-              const history = await response.json();
-              setTaskHistory(history);
-            }
-          } catch (error) {
-            console.error('Error loading history:', error);
+
+          // Обработка вложений
+          if (attachmentsResponse.ok) {
+            const attachmentsData = await attachmentsResponse.json();
+            setAttachments(attachmentsData);
           }
-        };
-        loadHistory();
-        
-        // Загружаем вложения из БД
-        const loadAttachments = async () => {
-          try {
-            const response = await fetch(`/api/tasks/${task.dbId}/attachments`);
-            if (response.ok) {
-              const attachmentsData = await response.json();
-              setAttachments(attachmentsData);
-            }
-          } catch (error) {
-            console.error('Error loading attachments:', error);
-          }
-        };
-        loadAttachments();
-      }
+        } catch (error) {
+          console.error('Error loading task data:', error);
+        }
+      };
+      
+      loadAllDataTask();
     }
     
-    // Загружаем список всех пользователей
-    const loadUsers = async () => {
-      try {
-        const response = await fetch('/api/users');
-        if (response.ok) {
-          const users = await response.json();
-          setAvailableUsers(users);
-        } else {
-          console.error('Failed to load users:', response.status, response.statusText);
-          toast.error('Не удалось загрузить список пользователей');
+    // Загружаем список всех пользователей (один раз)
+    if (availableUsers.length === 0) {
+      const loadUsers = async () => {
+        try {
+          const response = await fetch('/api/users');
+          if (response.ok) {
+            const users = await response.json();
+            setAvailableUsers(users);
+          } else {
+            console.error('Failed to load users:', response.status, response.statusText);
+            toast.error('Не удалось загрузить список пользователей');
+          }
+        } catch (error) {
+          console.error('Error loading users:', error);
+          toast.error('Ошибка загрузки списка исполнителей');
         }
-      } catch (error) {
-        console.error('Error loading users:', error);
-        toast.error('Ошибка загрузки списка исполнителей');
-      }
-    };
-    loadUsers();
+      };
+      loadUsers();
+    }
+    
     console.log('=== USE EFFECT COMPLETED ===');
-  }, [task?.dbId]);
+  }, [task?.dbId, availableUsers.length]);
 
   // Вспомогательная функция для форматирования времени
   const getTimeAgo = (date: Date) => {
