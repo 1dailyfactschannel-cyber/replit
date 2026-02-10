@@ -269,5 +269,124 @@ export async function registerRoutes(
     }
   });
 
+  // Task routes
+  app.get("/api/boards/:boardId/tasks", async (req, res) => {
+    try {
+      const tasks = await storage.getTasksByBoard(req.params.boardId);
+      res.json(tasks);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch tasks" });
+    }
+  });
+
+  app.post("/api/boards/:boardId/tasks", async (req, res) => {
+    try {
+      const user = await storage.getFirstUser();
+      if (!user) return res.status(404).json({ message: "User not found" });
+
+      const columns = await storage.getColumnsByBoard(req.params.boardId);
+      if (columns.length === 0) return res.status(400).json({ message: "Board has no columns" });
+
+      const taskData = {
+        ...req.body,
+        boardId: req.params.boardId,
+        columnId: req.body.columnId || columns[0].id,
+        reporterId: user.id,
+        status: req.body.status || "todo"
+      };
+
+      const task = await storage.createTask(taskData);
+      res.status(201).json(task);
+    } catch (error) {
+      console.error("Error creating task:", error);
+      res.status(500).json({ message: "Failed to create task" });
+    }
+  });
+
+  app.get("/api/boards/:boardId/columns", async (req, res) => {
+    try {
+      const columns = await storage.getColumnsByBoard(req.params.boardId);
+      res.json(columns);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch columns" });
+    }
+  });
+
+  // Chat routes
+  app.get("/api/chats", async (_req, res) => {
+    try {
+      const user = await storage.getFirstUser();
+      if (!user) return res.status(404).json({ message: "User not found" });
+      const chats = await storage.getChatsForUser(user.id);
+      res.json(chats);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch chats" });
+    }
+  });
+
+  app.get("/api/chats/:chatId/messages", async (req, res) => {
+    try {
+      const messages = await storage.getMessages(req.params.chatId);
+      res.json(messages);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch messages" });
+    }
+  });
+
+  app.post("/api/chats", async (req, res) => {
+    try {
+      const user = await storage.getFirstUser();
+      if (!user) return res.status(404).json({ message: "User not found" });
+      
+      const { name, type, participantIds, description, avatar } = req.body;
+      
+      // Ensure name is provided for group chats
+      if (type === "group" && !name) {
+        return res.status(400).json({ message: "Group name is required" });
+      }
+
+      // Ensure participants are provided (at least the owner)
+      const allParticipants = Array.from(new Set([...(participantIds || []), user.id]));
+      
+      const chat = await storage.createChat({
+        name: type === "group" ? name : null,
+        type: type || "direct",
+        description,
+        avatar,
+        ownerId: user.id
+      }, allParticipants);
+      
+      // Return chat with participants for immediate UI update
+      const chatWithDetails = {
+        ...chat,
+        participants: await Promise.all(allParticipants.map(id => storage.getUser(id))),
+        lastMessage: null
+      };
+
+      res.status(201).json(chatWithDetails);
+    } catch (error) {
+      console.error("Error creating chat:", error);
+      res.status(500).json({ message: "Failed to create chat" });
+    }
+  });
+
+  app.post("/api/chats/:chatId/messages", async (req, res) => {
+    try {
+      const user = await storage.getFirstUser();
+      if (!user) return res.status(404).json({ message: "User not found" });
+      
+      const message = await storage.createMessage({
+        chatId: req.params.chatId,
+        senderId: user.id,
+        content: req.body.content,
+        attachments: req.body.attachments || []
+      });
+      
+      res.status(201).json(message);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to send message" });
+    }
+  });
+
   return httpServer;
 }

@@ -17,10 +17,13 @@ export class PostgresStorage {
       throw new Error("DATABASE_URL environment variable is required");
     }
     
+    console.log("Connecting to database:", process.env.DATABASE_URL.split('@')[1] || "local");
+
     const client = postgres(process.env.DATABASE_URL, {
       max: 10,
       idle_timeout: 20,
       connect_timeout: 10,
+      onnotice: (notice) => console.log("Postgres Notice:", notice),
     });
     
     this.db = drizzle(client, { schema });
@@ -84,6 +87,112 @@ export class PostgresStorage {
     } catch (error) {
       console.error("Error getting all users:", error);
       return [];
+    }
+  }
+
+  // Chat methods
+  async getChatsForUser(userId: string) {
+    try {
+      const results = await this.db
+        .select({
+          id: schema.chats.id,
+          name: schema.chats.name,
+          type: schema.chats.type,
+          avatar: schema.chats.avatar,
+          description: schema.chats.description,
+          ownerId: schema.chats.ownerId,
+          createdAt: schema.chats.createdAt,
+          updatedAt: schema.chats.updatedAt,
+        })
+        .from(schema.chats)
+        .innerJoin(
+          schema.chatParticipants,
+          eq(schema.chats.id, schema.chatParticipants.chatId)
+        )
+        .where(eq(schema.chatParticipants.userId, userId))
+        .orderBy(desc(schema.chats.updatedAt));
+      
+      // For each chat, get participants and last message
+      const chatsWithDetails = await Promise.all(results.map(async (chat) => {
+        const participants = await this.db
+          .select({
+            id: schema.users.id,
+            username: schema.users.username,
+            avatar: schema.users.avatar,
+          })
+          .from(schema.users)
+          .innerJoin(
+            schema.chatParticipants,
+            eq(schema.users.id, schema.chatParticipants.userId)
+          )
+          .where(eq(schema.chatParticipants.chatId, chat.id));
+
+        const [lastMessage] = await this.db
+          .select()
+          .from(schema.messages)
+          .where(eq(schema.messages.chatId, chat.id))
+          .orderBy(desc(schema.messages.createdAt))
+          .limit(1);
+
+        return {
+          ...chat,
+          participants,
+          lastMessage,
+        };
+      }));
+
+      return chatsWithDetails;
+    } catch (error) {
+      console.error("Error getting chats for user:", error);
+      return [];
+    }
+  }
+
+  async getMessages(chatId: string) {
+    try {
+      return await this.db
+        .select()
+        .from(schema.messages)
+        .where(eq(schema.messages.chatId, chatId))
+        .orderBy(schema.messages.createdAt);
+    } catch (error) {
+      console.error("Error getting messages:", error);
+      return [];
+    }
+  }
+
+  async createChat(insertChat: schema.InsertChat, participantIds: string[]) {
+    try {
+      const [chat] = await this.db.insert(schema.chats).values(insertChat).returning();
+      
+      if (participantIds.length > 0) {
+        const participants = participantIds.map(userId => ({
+          chatId: chat.id,
+          userId: userId,
+        }));
+        await this.db.insert(schema.chatParticipants).values(participants);
+      }
+      
+      return chat;
+    } catch (error) {
+      console.error("Error creating chat:", error);
+      throw error;
+    }
+  }
+
+  async createMessage(insertMessage: schema.InsertMessage) {
+    try {
+      const [message] = await this.db.insert(schema.messages).values(insertMessage).returning();
+      
+      // Update chat's updatedAt timestamp
+      await this.db.update(schema.chats)
+        .set({ updatedAt: new Date() })
+        .where(eq(schema.chats.id, message.chatId));
+        
+      return message;
+    } catch (error) {
+      console.error("Error creating message:", error);
+      throw error;
     }
   }
 

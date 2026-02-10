@@ -305,6 +305,62 @@ export const insertBoardColumnSchema = createInsertSchema(boardColumns).pick({
   color: true,
 });
 
+// Chats table
+export const chats = pgTable("chats", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  name: text("name"), // For group chats
+  type: text("type").notNull().default("direct"), // direct, group
+  avatar: text("avatar"),
+  description: text("description"),
+  ownerId: uuid("owner_id").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Chat participants junction table
+export const chatParticipants = pgTable("chat_participants", {
+  chatId: uuid("chat_id").notNull().references(() => chats.id, { onDelete: "cascade" }),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  joinedAt: timestamp("joined_at").defaultNow(),
+  lastReadAt: timestamp("last_read_at").defaultNow(),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.chatId, table.userId] }),
+}));
+
+// Messages table
+export const messages = pgTable("messages", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  chatId: uuid("chat_id").notNull().references(() => chats.id, { onDelete: "cascade" }),
+  senderId: uuid("sender_id").notNull().references(() => users.id),
+  content: text("content").notNull(),
+  attachments: jsonb("attachments").default(sql`'[]'::jsonb`),
+  isRead: boolean("is_read").default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Export types
+export type Chat = typeof chats.$inferSelect;
+export type ChatParticipant = typeof chatParticipants.$inferSelect;
+export type Message = typeof messages.$inferSelect;
+
+export const insertChatSchema = createInsertSchema(chats).pick({
+  name: true,
+  type: true,
+  avatar: true,
+  description: true,
+  ownerId: true,
+});
+
+export const insertMessageSchema = createInsertSchema(messages).pick({
+  chatId: true,
+  senderId: true,
+  content: true,
+  attachments: true,
+});
+
+export type InsertChat = z.infer<typeof insertChatSchema>;
+export type InsertMessage = z.infer<typeof insertMessageSchema>;
+
 // Export types
 export type User = typeof users.$inferSelect;
 export type InsertUser = z.infer<typeof insertUserSchema>;
@@ -329,3 +385,4 @@ export type InsertTask = z.infer<typeof insertTaskSchema>;
 
 export type SiteSettings = typeof siteSettings.$inferSelect;
 export type InsertSiteSettings = z.infer<typeof insertSiteSettingsSchema>;
+

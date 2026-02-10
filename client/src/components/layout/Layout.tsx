@@ -18,6 +18,7 @@ import {
   ShoppingBag,
   Shield,
   ChevronRight,
+  ChevronLeft,
   ChevronDown,
   Pencil,
   Trash2
@@ -139,22 +140,57 @@ const SidebarContentComponent = React.memo(({
 }: any) => {
   return (
     <div className={cn(
-      "flex flex-col h-full bg-sidebar text-sidebar-foreground border-r border-sidebar-border transition-all duration-300 ease-in-out",
+      "flex flex-col h-full bg-sidebar text-sidebar-foreground border-r border-sidebar-border transition-all duration-300 ease-in-out relative group/sidebar",
       isCollapsed ? "w-20" : "w-64"
     )}>
-      <div className={cn("p-6", isCollapsed && "px-4 flex justify-center")}>
-        <div className="flex items-center gap-2 mb-8">
-          <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center text-primary-foreground font-bold text-xl shrink-0">
-            T
+      {/* Collapse Toggle Button */}
+      <Button
+        variant="ghost"
+        size="icon"
+        onClick={() => setIsCollapsed(!isCollapsed)}
+        className={cn(
+          "absolute -right-4 top-10 z-50 h-8 w-8 rounded-full border border-sidebar-border bg-sidebar shadow-xl hover:bg-sidebar-accent hover:scale-110 transition-all hidden md:flex items-center justify-center group/collapse",
+          isCollapsed && "rotate-180"
+        )}
+        title={isCollapsed ? "Развернуть меню" : "Свернуть меню"}
+      >
+        <ChevronLeft className="h-5 w-5 text-sidebar-foreground group-hover/collapse:text-primary transition-colors" />
+      </Button>
+
+      <div className={cn("p-6", isCollapsed && "px-4 flex flex-col items-center")}>
+        <div className={cn("flex items-center gap-2 mb-8 w-full", isCollapsed ? "justify-center" : "justify-between")}>
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center text-primary-foreground font-bold text-xl shrink-0">
+              T
+            </div>
+            {!isCollapsed && <span className="font-sans font-bold text-lg animate-in fade-in duration-300">TeamSync</span>}
           </div>
-          {!isCollapsed && <span className="font-sans font-bold text-lg animate-in fade-in duration-300">TeamSync</span>}
+          {!isCollapsed && (
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              className="h-8 w-8 rounded-lg text-muted-foreground hover:bg-sidebar-accent hover:text-foreground"
+              onClick={() => setIsCollapsed(true)}
+            >
+              <ChevronLeft className="h-5 w-5" />
+            </Button>
+          )}
+          {isCollapsed && (
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              className="h-8 w-8 rounded-lg text-muted-foreground hover:bg-sidebar-accent hover:text-foreground md:hidden"
+              onClick={() => setIsCollapsed(false)}
+            >
+              <ChevronRight className="h-5 w-5" />
+            </Button>
+          )}
         </div>
 
         <div className="mb-4">
           <Button 
             variant="outline" 
             onClick={() => {
-              if (window.innerWidth >= 768) setIsCollapsed(true);
               if (location !== "/projects") setLocation("/projects");
             }}
             className={cn(
@@ -196,7 +232,7 @@ const SidebarContentComponent = React.memo(({
                   isActive
                     ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-sm"
                     : "text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
-                  isCollapsed && "px-2 justify-center"
+                  isCollapsed && "px-0 justify-center w-10 h-10 mx-auto rounded-xl hover:scale-105"
                 )}
                 title={isCollapsed ? item.label : ""}
               >
@@ -218,11 +254,10 @@ const SidebarContentComponent = React.memo(({
               key={i} 
               onClick={() => {
                 setLocation("/projects");
-                if (window.innerWidth >= 768) setIsCollapsed(true);
               }}
               className={cn(
-                "w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors text-left overflow-hidden whitespace-nowrap",
-                isCollapsed && "px-2 justify-center"
+                "w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-all text-left overflow-hidden whitespace-nowrap",
+                isCollapsed && "px-0 justify-center w-10 h-10 mx-auto rounded-xl hover:scale-105"
               )}
               title={isCollapsed ? project.name : ""}
             >
@@ -319,15 +354,16 @@ export function Layout({ children }: { children: React.ReactNode }) {
     sick: "Больничный",
   };
 
+  // Убираем авто-сворачивание, чтобы пользователь сам решал, в каком состоянии должно быть меню
+  /*
   useEffect(() => {
     if (window.innerWidth >= 768) {
       if (location.startsWith("/projects") || location.startsWith("/shop") || location.startsWith("/chat")) {
         setIsCollapsed(true);
-      } else {
-        setIsCollapsed(false);
       }
     }
   }, [location]);
+  */
 
   return (
     <div className="min-h-screen bg-background flex overflow-hidden">
@@ -373,6 +409,17 @@ export function Layout({ children }: { children: React.ReactNode }) {
                 />
               </SheetContent>
             </Sheet>
+
+            {/* Desktop Toggle Button in Header */}
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              className="hidden md:flex h-9 w-9 text-muted-foreground hover:text-foreground hover:bg-secondary rounded-lg transition-colors"
+              onClick={() => setIsCollapsed(!isCollapsed)}
+              title={isCollapsed ? "Развернуть меню" : "Свернуть меню"}
+            >
+              <Menu className="w-5 h-5" />
+            </Button>
             <div className="relative hidden sm:block w-96">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input

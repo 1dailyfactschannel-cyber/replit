@@ -1,5 +1,5 @@
 import { Layout } from "@/components/layout/Layout";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { 
   ChevronRight, 
@@ -74,6 +74,13 @@ export default function Projects() {
     boards.find(b => b.id === activeBoardId) || boards[0],
     [boards, activeBoardId]
   );
+
+  // Auto-select first board when activeProject changes
+  useEffect(() => {
+    if (boards.length > 0 && !activeBoardId) {
+      setActiveBoardId(boards[0].id);
+    }
+  }, [boards, activeBoardId]);
 
   // Mutations
   const createProjectMutation = useMutation({
@@ -187,31 +194,56 @@ export default function Projects() {
     "Готово": [],
   };
 
-  const kanbanData = DEFAULT_KANBAN_DATA; // TODO: Fetch tasks per board
+  const [isCreateTaskOpen, setIsCreateTaskOpen] = useState(false);
+  const [newTask, setNewTask] = useState({ title: "", description: "", priority: "medium", type: "task" });
+
+  const { data: columns = [], isLoading: isLoadingColumns } = useQuery<any[]>({
+    queryKey: ["/api/boards", activeBoard?.id, "columns"],
+    enabled: !!activeBoard?.id,
+  });
+
+  const { data: tasks = [], isLoading: isLoadingTasks } = useQuery<any[]>({
+    queryKey: ["/api/boards", activeBoard?.id, "tasks"],
+    enabled: !!activeBoard?.id,
+  });
+
+  const createTaskMutation = useMutation({
+    mutationFn: async (task: any) => {
+      const res = await apiRequest("POST", `/api/boards/${activeBoard?.id}/tasks`, task);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/boards", activeBoard?.id, "tasks"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects"] }); // Для обновления прогресса
+      setIsCreateTaskOpen(false);
+      setNewTask({ title: "", description: "", priority: "medium", type: "task" });
+      toast.success("Задача успешно создана");
+    }
+  });
+
+  const kanbanData = useMemo(() => {
+    if (!columns.length) return {};
+    
+    const data: Record<string, any[]> = {};
+    columns.forEach(col => {
+      data[col.name] = tasks.filter(t => t.columnId === col.id);
+    });
+    return data;
+  }, [columns, tasks]);
 
   const handleTaskClick = (task: any) => {
-    toast.info("Просмотр задач будет доступен после интеграции с БД");
+    // В будущем здесь будет открытие TaskDetailsModal
+    toast.info(`Задача: ${task.title}`);
   };
 
   const handleCreateTask = () => {
-    toast.info("Создание задач будет доступно после интеграции с БД");
+    if (!newTask.title.trim() || !activeBoard) return;
+    createTaskMutation.mutate(newTask);
   };
 
   const onTaskUpdate = (updatedTask: Task) => {
-    toast.info("Функционал задач в разработке");
-  };
-
-  const handleRenameColumn = (oldName: string, newName: string) => {
-    toast.info("Функционал колонок в разработке");
-    setEditingColumn(null);
-  };
-
-  const handleDeleteColumn = (colName: string) => {
-    toast.info("Функционал колонок в разработке");
-  };
-
-  const handleAddColumn = () => {
-    toast.info("Функционал колонок в разработке");
+    // В будущем здесь будет PATCH запрос
+    toast.info("Обновление задачи будет реализовано позже");
   };
 
   const toggleProjectCollapse = (projectId: string, e: React.MouseEvent) => {
@@ -447,15 +479,87 @@ export default function Projects() {
                  <span className="hidden sm:inline">Фильтр</span>
                </Button>
                <Separator orientation="vertical" className="h-6 mx-2" />
-               <Button 
-                 className="gap-2 shadow-lg shadow-primary/20" 
-                 size="sm"
-                 onClick={handleCreateTask}
-                 disabled={!activeBoard}
-               >
-                 <Plus className="w-4 h-4" />
-                 <span className="hidden sm:inline">Добавить задачу</span>
-               </Button>
+               <Dialog open={isCreateTaskOpen} onOpenChange={setIsCreateTaskOpen}>
+                 <DialogTrigger asChild>
+                   <Button 
+                     className="gap-2 shadow-lg shadow-primary/20" 
+                     size="sm"
+                     disabled={!activeBoard}
+                   >
+                     <Plus className="w-4 h-4" />
+                     <span className="hidden sm:inline">Добавить задачу</span>
+                   </Button>
+                 </DialogTrigger>
+                 <DialogContent>
+                   <DialogHeader>
+                     <DialogTitle>Создать новую задачу</DialogTitle>
+                     <DialogDescription>Добавьте детали задачи для текущей доски.</DialogDescription>
+                   </DialogHeader>
+                   <div className="space-y-4 py-4">
+                     <div className="space-y-2">
+                       <Label htmlFor="task-title">Название задачи</Label>
+                       <Input 
+                         id="task-title" 
+                         placeholder="Что нужно сделать?" 
+                         value={newTask.title}
+                         onChange={(e) => setNewTask({ ...newTask, title: e.target.value })}
+                       />
+                     </div>
+                     <div className="space-y-2">
+                       <Label htmlFor="task-desc">Описание</Label>
+                       <Input 
+                         id="task-desc" 
+                         placeholder="Добавьте описание (необязательно)" 
+                         value={newTask.description}
+                         onChange={(e) => setNewTask({ ...newTask, description: e.target.value })}
+                       />
+                     </div>
+                     <div className="grid grid-cols-2 gap-4">
+                       <div className="space-y-2">
+                         <Label>Приоритет</Label>
+                         <Select 
+                           value={newTask.priority} 
+                           onValueChange={(val) => setNewTask({ ...newTask, priority: val })}
+                         >
+                           <SelectTrigger>
+                             <SelectValue />
+                           </SelectTrigger>
+                           <SelectContent>
+                             <SelectItem value="low">Низкий</SelectItem>
+                             <SelectItem value="medium">Средний</SelectItem>
+                             <SelectItem value="high">Высокий</SelectItem>
+                             <SelectItem value="critical">Критический</SelectItem>
+                           </SelectContent>
+                         </Select>
+                       </div>
+                       <div className="space-y-2">
+                         <Label>Тип</Label>
+                         <Select 
+                           value={newTask.type} 
+                           onValueChange={(val) => setNewTask({ ...newTask, type: val })}
+                         >
+                           <SelectTrigger>
+                             <SelectValue />
+                           </SelectTrigger>
+                           <SelectContent>
+                             <SelectItem value="task">Задача</SelectItem>
+                             <SelectItem value="bug">Баг</SelectItem>
+                             <SelectItem value="feature">Фича</SelectItem>
+                             <SelectItem value="story">История</SelectItem>
+                           </SelectContent>
+                         </Select>
+                       </div>
+                     </div>
+                   </div>
+                   <DialogFooter>
+                     <Button variant="outline" onClick={() => setIsCreateTaskOpen(false)}>Отмена</Button>
+                     <Button onClick={handleCreateTask} disabled={createTaskMutation.isPending || !newTask.title.trim()}>
+                       {createTaskMutation.isPending && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
+                       Создать задачу
+                     </Button>
+                   </DialogFooter>
+                 </DialogContent>
+               </Dialog>
             </div>
           </div>
 
@@ -504,7 +608,33 @@ export default function Projects() {
                                           snapshot.isDragging ? "shadow-xl ring-2 ring-primary/20 rotate-1" : ""
                                         )}
                                       >
+                                        <div className="flex items-start justify-between gap-2 mb-2">
+                                          <Badge variant="outline" className={cn(
+                                            "text-[10px] font-bold uppercase px-1.5 h-5 border-none",
+                                            task.priority === "high" || task.priority === "critical" ? "bg-rose-500/10 text-rose-600" :
+                                            task.priority === "medium" ? "bg-amber-500/10 text-amber-600" : "bg-emerald-500/10 text-emerald-600"
+                                          )}>
+                                            {task.priority === "low" ? "Низкий" : 
+                                             task.priority === "medium" ? "Средний" : 
+                                             task.priority === "high" ? "Высокий" : "Критич."}
+                                          </Badge>
+                                          <Badge variant="secondary" className="text-[10px] font-bold uppercase px-1.5 h-5">
+                                            {task.type === "bug" ? "Баг" : 
+                                             task.type === "feature" ? "Фича" : 
+                                             task.type === "story" ? "История" : "Задача"}
+                                          </Badge>
+                                        </div>
                                         <h4 className="text-sm font-medium mb-3 leading-snug">{task.title}</h4>
+                                        {task.description && (
+                                          <p className="text-xs text-muted-foreground line-clamp-2 mb-3">{task.description}</p>
+                                        )}
+                                        <div className="flex items-center justify-between">
+                                          <div className="flex -space-x-2">
+                                            <Avatar className="w-6 h-6 border-2 border-background">
+                                              <AvatarFallback className="text-[10px]">UN</AvatarFallback>
+                                            </Avatar>
+                                          </div>
+                                        </div>
                                       </div>
                                     )}
                                   </Draggable>
