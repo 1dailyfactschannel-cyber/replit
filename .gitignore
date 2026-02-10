@@ -1,0 +1,11 @@
+node_modules
+.replit
+.env
+dist
+.cache
+*.log
+.DS_Store
+.vscode
+.trae
+client/dist
+server/dist
