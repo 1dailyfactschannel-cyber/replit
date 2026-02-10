@@ -35,6 +35,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import type { Chat, Message, User as DBUser } from "@shared/schema";
 import { io, Socket } from "socket.io-client";
+import { CallOverlay } from "@/components/call/CallOverlay";
 
 interface Contact extends Chat {
   lastMessage?: Message;
@@ -65,8 +66,16 @@ export default function ChatPage() {
     queryKey: ["/api/chats"],
   });
 
-  const { data: allUsers = [] } = useQuery<DBUser>({
+  const { data: allUsers = [] } = useQuery<DBUser[]>({
     queryKey: ["/api/users"],
+  });
+
+  const { data: folders = [], isLoading: foldersLoading } = useQuery<ChatFolder[]>({
+    queryKey: ["/api/chat-folders"],
+  });
+
+  const { data: calls = [], isLoading: callsLoading } = useQuery<Call[]>({
+    queryKey: ["/api/calls"],
   });
 
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
@@ -177,6 +186,18 @@ export default function ChatPage() {
         }, 3000);
       });
 
+      socket.on("call-made", (data: { from: string, name: string, signal: any, type: 'audio' | 'video', chatId: string, callId?: string }) => {
+        setActiveCall({
+          isReceiving: true,
+          from: data.from,
+          name: data.name,
+          signal: data.signal,
+          type: data.type,
+          chatId: data.chatId,
+          callId: data.callId
+        });
+      });
+
       return () => {
         socket.disconnect();
       };
@@ -230,11 +251,27 @@ export default function ChatPage() {
   const [isCreateFolderOpen, setIsCreateFolderOpen] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
   const [selectedChatIdsForFolder, setSelectedChatIdsForFolder] = useState<string[]>([]);
-  const [folders, setFolders] = useState<ChatFolder[]>([]);
   const [activeFolderId, setActiveFolderId] = useState<string | null>(null);
 
   const [isInfoOpen, setIsInfoOpen] = useState(false);
   
+  const [activeCall, setActiveCall] = useState<{
+    isReceiving: boolean;
+    from: string;
+    name: string;
+    signal: any;
+    type: 'audio' | 'video';
+    chatId: string;
+    callId?: string;
+  } | null>(null);
+
+  const [outboundCall, setOutboundCall] = useState<{
+    to: string;
+    name: string;
+    type: 'audio' | 'video';
+    chatId: string;
+  } | null>(null);
+
   const [editName, setEditName] = useState("");
   const [editDescription, setEditDescription] = useState("");
   const [editAvatar, setEditAvatar] = useState<string | null>(null);
@@ -288,6 +325,31 @@ export default function ChatPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/chats"] });
       setIsInfoOpen(false);
       toast.success("Настройки чата обновлены");
+    }
+  });
+
+  const createFolderMutation = useMutation({
+    mutationFn: async (data: { name: string, chatIds: string[] }) => {
+      const res = await apiRequest("POST", "/api/chat-folders", data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/chat-folders"] });
+      setIsCreateFolderOpen(false);
+      setNewFolderName("");
+      setSelectedChatIdsForFolder([]);
+      toast.success("Папка создана");
+    }
+  });
+
+  const deleteFolderMutation = useMutation({
+    mutationFn: async (id: string) => {
+      await apiRequest("DELETE", `/api/chat-folders/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/chat-folders"] });
+      setActiveFolderId(null);
+      toast.success("Папка удалена");
     }
   });
 
@@ -377,17 +439,11 @@ export default function ChatPage() {
       toast.error("Введите название папки");
       return;
     }
-    const newFolder: ChatFolder = {
-      id: Date.now().toString(),
+    
+    createFolderMutation.mutate({
       name: newFolderName.trim(),
       chatIds: selectedChatIdsForFolder
-    };
-    setFolders([...folders, newFolder]);
-    setActiveFolderId(newFolder.id);
-    setNewFolderName("");
-    setSelectedChatIdsForFolder([]);
-    setIsCreateFolderOpen(false);
-    toast.success(`Папка "${newFolderName}" создана`);
+    });
   };
 
   const toggleMember = (memberId: string) => {
@@ -400,6 +456,25 @@ export default function ChatPage() {
     setSelectedChatIdsForFolder(prev => 
       prev.includes(chatId) ? prev.filter(id => id !== chatId) : [...prev, chatId]
     );
+  };
+
+  const startCall = (type: 'audio' | 'video') => {
+    if (!activeChat || !currentUser) return;
+    
+    // In direct chat, call the other participant
+    if (activeChat.type === "direct") {
+      const otherParticipant = activeChat.participants.find(p => p.id !== currentUser.id);
+      if (otherParticipant) {
+        setOutboundCall({
+          to: otherParticipant.id,
+          name: otherParticipant.username,
+          type,
+          chatId: activeChat.id
+        });
+      }
+    } else {
+      toast.error("Звонки в группах пока не поддерживаются");
+    }
   };
 
   const filteredContacts = activeFolderId 
@@ -432,6 +507,10 @@ export default function ChatPage() {
             <TabsTrigger value="chats" className="gap-2 px-6 rounded-lg">
               <MessageSquare className="w-4 h-4" />
               Чаты
+            </TabsTrigger>
+            <TabsTrigger value="calls" className="gap-2 px-6 rounded-lg">
+              <Phone className="w-4 h-4" />
+              Звонки
             </TabsTrigger>
             <TabsTrigger value="rooms" className="gap-2 px-6 rounded-lg">
               <Video className="w-4 h-4" />
@@ -598,16 +677,31 @@ export default function ChatPage() {
                       Все
                     </Button>
                     {folders.map(folder => (
-                      <Button 
-                        key={folder.id}
-                        variant={activeFolderId === folder.id ? "default" : "secondary"} 
-                        size="sm" 
-                        className="h-7 text-[10px] uppercase tracking-wider font-bold px-3 rounded-full shrink-0 flex items-center gap-1.5"
-                        onClick={() => setActiveFolderId(folder.id)}
-                      >
-                        <Folder className="w-3 h-3" />
-                        {folder.name}
-                      </Button>
+                      <DropdownMenu key={folder.id}>
+                        <DropdownMenuTrigger asChild>
+                          <Button 
+                            variant={activeFolderId === folder.id ? "default" : "secondary"} 
+                            size="sm" 
+                            className="h-7 text-[10px] uppercase tracking-wider font-bold px-3 rounded-full shrink-0 flex items-center gap-1.5"
+                            onClick={() => setActiveFolderId(folder.id)}
+                          >
+                            <Folder className="w-3 h-3" />
+                            {folder.name}
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="start">
+                          <DropdownMenuItem 
+                            className="text-destructive focus:text-destructive"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              deleteFolderMutation.mutate(folder.id);
+                            }}
+                          >
+                            <Trash className="w-4 h-4 mr-2" />
+                            Удалить папку
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     ))}
                   </div>
                 )}
@@ -708,10 +802,10 @@ export default function ChatPage() {
                             onChange={(e) => setMessageSearchQuery(e.target.value)}
                           />
                         </div>
-                        <Button variant="ghost" size="icon" className="h-9 w-9 hover:bg-secondary rounded-lg" onClick={() => setLocation("/call")} title="Аудио звонок">
+                        <Button variant="ghost" size="icon" className="h-9 w-9 hover:bg-secondary rounded-lg" onClick={() => startCall('audio')} title="Аудио звонок">
                           <Phone className="w-4 h-4 text-muted-foreground" />
                         </Button>
-                        <Button variant="ghost" size="icon" className="h-9 w-9 hover:bg-secondary rounded-lg" onClick={() => setLocation("/call")} title="Видео звонок">
+                        <Button variant="ghost" size="icon" className="h-9 w-9 hover:bg-secondary rounded-lg" onClick={() => startCall('video')} title="Видео звонок">
                           <Video className="w-4 h-4 text-muted-foreground" />
                         </Button>
                         <Button variant="ghost" size="icon" className="h-9 w-9 hover:bg-secondary rounded-lg" onClick={() => setScheduleOpen(true)} title="Запланировать звонок">
@@ -1067,6 +1161,92 @@ export default function ChatPage() {
           </div>
         </TabsContent>
 
+        <TabsContent value="calls" className="flex-1 m-0 focus-visible:outline-none overflow-hidden relative">
+          <div className="absolute inset-0 rounded-xl border border-border/50 shadow-sm bg-card overflow-hidden flex flex-col animate-in fade-in duration-500 m-6">
+            <div className="p-6 border-b border-border bg-card/50">
+              <h2 className="text-xl font-bold">История звонков</h2>
+              <p className="text-sm text-muted-foreground">Список ваших последних аудио и видео вызовов</p>
+            </div>
+            <ScrollArea className="flex-1">
+              <div className="p-6">
+                {callsLoading ? (
+                  <div className="flex items-center justify-center py-12 text-muted-foreground">Загрузка истории...</div>
+                ) : calls.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-20 text-muted-foreground bg-secondary/10 rounded-2xl border-2 border-dashed border-border/50">
+                    <Phone className="w-12 h-12 mb-4 opacity-20" />
+                    <p className="font-medium">История звонков пуста</p>
+                    <p className="text-xs">Ваши будущие звонки появятся здесь</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {calls.map((call) => {
+                      const isOutgoing = call.callerId === currentUser?.id;
+                      const otherUser = isOutgoing 
+                        ? allUsers.find(u => u.id === call.receiverId)
+                        : allUsers.find(u => u.id === call.callerId);
+                      
+                      return (
+                        <div key={call.id} className="flex items-center justify-between p-4 rounded-xl bg-secondary/20 hover:bg-secondary/30 transition-all border border-transparent hover:border-border/50 group">
+                          <div className="flex items-center gap-4">
+                            <div className={cn(
+                              "w-10 h-10 rounded-full flex items-center justify-center shadow-sm",
+                              call.status === 'missed' ? "bg-rose-500/10 text-rose-500" : "bg-emerald-500/10 text-emerald-500"
+                            )}>
+                              {call.type === 'video' ? <Video className="w-5 h-5" /> : <Phone className="w-5 h-5" />}
+                            </div>
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className="font-bold text-sm">{otherUser?.username || "Пользователь"}</span>
+                                <Badge variant="outline" className="text-[10px] h-4 px-1 bg-background/50">
+                                  {isOutgoing ? "Исходящий" : "Входящий"}
+                                </Badge>
+                              </div>
+                              <div className="flex items-center gap-2 text-[10px] text-muted-foreground mt-0.5">
+                                <span>{new Date(call.startedAt!).toLocaleString()}</span>
+                                {call.duration && (
+                                  <>
+                                    <span className="w-1 h-1 bg-muted-foreground/30 rounded-full" />
+                                    <span>{Math.floor(call.duration / 60)}м {call.duration % 60}с</span>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-4">
+                            <span className={cn(
+                              "text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md",
+                              call.status === 'completed' ? "text-emerald-500 bg-emerald-500/10" :
+                              call.status === 'missed' ? "text-rose-500 bg-rose-500/10" :
+                              call.status === 'rejected' ? "text-slate-500 bg-slate-500/10" : "text-amber-500 bg-amber-500/10"
+                            )}>
+                              {call.status === 'completed' ? "Завершен" :
+                               call.status === 'missed' ? "Пропущен" :
+                               call.status === 'rejected' ? "Отклонен" : "Занят"}
+                            </span>
+                            <Button 
+                              variant="ghost" 
+                              size="icon" 
+                              className="h-8 w-8 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity"
+                              onClick={() => {
+                                setActiveChatId(call.chatId);
+                                // switch to chats tab
+                                const chatsTrigger = document.querySelector('[value="chats"]') as HTMLButtonElement;
+                                chatsTrigger?.click();
+                              }}
+                            >
+                              <MessageSquare className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </ScrollArea>
+          </div>
+        </TabsContent>
+
         <TabsContent value="rooms" className="flex-1 m-0 focus-visible:outline-none overflow-y-auto">
           <TeamRooms />
         </TabsContent>
@@ -1078,6 +1258,19 @@ export default function ChatPage() {
         contactName={activeChat?.name || "Участник"}
         onSchedule={handleScheduleCall}
       />
+
+      {(activeCall || outboundCall) && currentUser && socketRef.current && (
+        <CallOverlay 
+          socket={socketRef.current}
+          currentUser={currentUser}
+          activeCall={activeCall}
+          outboundCall={outboundCall}
+          onClose={() => {
+            setActiveCall(null);
+            setOutboundCall(null);
+          }}
+        />
+      )}
     </Layout>
   );
 }

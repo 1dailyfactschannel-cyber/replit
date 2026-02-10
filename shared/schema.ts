@@ -305,6 +305,23 @@ export const insertBoardColumnSchema = createInsertSchema(boardColumns).pick({
   color: true,
 });
 
+// Chat folders table
+export const chatFolders = pgTable("chat_folders", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  icon: text("icon"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Chat folder items junction table
+export const chatFolderItems = pgTable("chat_folder_items", {
+  folderId: uuid("folder_id").notNull().references(() => chatFolders.id, { onDelete: "cascade" }),
+  chatId: uuid("chat_id").notNull().references(() => chats.id, { onDelete: "cascade" }),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.folderId, table.chatId] }),
+}));
+
 // Chats table
 export const chats = pgTable("chats", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -338,10 +355,37 @@ export const messages = pgTable("messages", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+// Message attachments table
+export const messageAttachments = pgTable("message_attachments", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  messageId: uuid("message_id").references(() => messages.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  url: text("url").notNull(),
+  type: text("type"), // image, document, etc.
+  size: integer("size"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Calls table
+export const calls = pgTable("calls", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  chatId: uuid("chat_id").notNull().references(() => chats.id, { onDelete: "cascade" }),
+  callerId: uuid("caller_id").notNull().references(() => users.id),
+  receiverId: uuid("receiver_id").notNull().references(() => users.id),
+  type: text("type").notNull().default("audio"), // audio, video
+  status: text("status").notNull().default("missed"), // completed, missed, rejected, busy
+  duration: integer("duration"), // in seconds
+  startedAt: timestamp("started_at").defaultNow(),
+  endedAt: timestamp("ended_at"),
+});
+
 // Export types
 export type Chat = typeof chats.$inferSelect;
 export type ChatParticipant = typeof chatParticipants.$inferSelect;
 export type Message = typeof messages.$inferSelect;
+export type ChatFolder = typeof chatFolders.$inferSelect;
+export type MessageAttachment = typeof messageAttachments.$inferSelect;
+export type Call = typeof calls.$inferSelect;
 
 export const insertChatSchema = createInsertSchema(chats).pick({
   name: true,
@@ -358,8 +402,36 @@ export const insertMessageSchema = createInsertSchema(messages).pick({
   attachments: true,
 });
 
+export const insertChatFolderSchema = createInsertSchema(chatFolders).pick({
+  userId: true,
+  name: true,
+  icon: true,
+});
+
+export const insertCallSchema = createInsertSchema(calls).pick({
+  chatId: true,
+  callerId: true,
+  receiverId: true,
+  type: true,
+  status: true,
+  duration: true,
+  startedAt: true,
+  endedAt: true,
+});
+
+export const insertMessageAttachmentSchema = createInsertSchema(messageAttachments).pick({
+  messageId: true,
+  name: true,
+  url: true,
+  type: true,
+  size: true,
+});
+
 export type InsertChat = z.infer<typeof insertChatSchema>;
 export type InsertMessage = z.infer<typeof insertMessageSchema>;
+export type InsertChatFolder = z.infer<typeof insertChatFolderSchema>;
+export type InsertCall = z.infer<typeof insertCallSchema>;
+export type InsertMessageAttachment = z.infer<typeof insertMessageAttachmentSchema>;
 
 // Export types
 export type User = typeof users.$inferSelect;

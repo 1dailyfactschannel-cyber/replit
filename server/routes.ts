@@ -540,5 +540,110 @@ export async function registerRoutes(
     }
   });
 
+  // Chat Folder routes
+  app.get("/api/chat-folders", async (_req, res) => {
+    try {
+      const user = await storage.getFirstUser();
+      if (!user) return res.status(404).json({ message: "User not found" });
+      
+      const folders = await storage.getChatFolders(user.id);
+      const foldersWithItems = await Promise.all(folders.map(async (folder) => {
+        const chatIds = await storage.getChatFolderItems(folder.id);
+        return { ...folder, chatIds };
+      }));
+      
+      res.json(foldersWithItems);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch chat folders" });
+    }
+  });
+
+  app.post("/api/chat-folders", async (req, res) => {
+    try {
+      const user = await storage.getFirstUser();
+      if (!user) return res.status(404).json({ message: "User not found" });
+      
+      const { name, icon, chatIds } = req.body;
+      const folder = await storage.createChatFolder({
+        userId: user.id,
+        name,
+        icon
+      });
+      
+      if (chatIds && Array.isArray(chatIds)) {
+        await storage.setChatFolderItems(folder.id, chatIds);
+      }
+      
+      res.status(201).json({ ...folder, chatIds: chatIds || [] });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to create chat folder" });
+    }
+  });
+
+  app.patch("/api/chat-folders/:id", async (req, res) => {
+    try {
+      const { name, icon, chatIds } = req.body;
+      const folder = await storage.updateChatFolder(req.params.id, { name, icon });
+      
+      if (chatIds && Array.isArray(chatIds)) {
+        await storage.setChatFolderItems(req.params.id, chatIds);
+      }
+      
+      const updatedChatIds = await storage.getChatFolderItems(req.params.id);
+      res.json({ ...folder, chatIds: updatedChatIds });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to update chat folder" });
+    }
+  });
+
+  app.delete("/api/chat-folders/:id", async (req, res) => {
+    try {
+      await storage.deleteChatFolder(req.params.id);
+      res.status(204).end();
+    } catch (error) {
+      res.status(500).json({ message: "Failed to delete chat folder" });
+    }
+  });
+
+  // Call routes
+  app.get("/api/calls", async (_req, res) => {
+    try {
+      const user = await storage.getFirstUser();
+      if (!user) return res.status(404).json({ message: "User not found" });
+      const calls = await storage.getCallsForUser(user.id);
+      res.json(calls);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch call history" });
+    }
+  });
+
+  app.post("/api/calls", async (req, res) => {
+    try {
+      const user = await storage.getFirstUser();
+      if (!user) return res.status(404).json({ message: "User not found" });
+      
+      const call = await storage.createCall({
+        ...req.body,
+        callerId: user.id,
+        startedAt: new Date()
+      });
+      res.status(201).json(call);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to create call record" });
+    }
+  });
+
+  app.patch("/api/calls/:id", async (req, res) => {
+    try {
+      const call = await storage.updateCall(req.params.id, {
+        ...req.body,
+        endedAt: req.body.status !== 'active' ? new Date() : undefined
+      });
+      res.json(call);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to update call record" });
+    }
+  });
+
   return httpServer;
 }

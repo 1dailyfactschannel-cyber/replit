@@ -36,6 +36,39 @@ export function setupWebSockets(httpServer: HttpServer) {
       socket.to(`chat:${data.chatId}`).emit("user-typing", data);
     });
 
+    // Call signaling events
+    socket.on("call-user", (data: { to: string, from: string, name: string, signal: any, type: 'audio' | 'video', chatId: string, callId?: string }) => {
+      log(`Call from ${data.from} to user:${data.to}`, "socket.io");
+      socket.to(`user:${data.to}`).emit("call-made", {
+        signal: data.signal,
+        from: data.from,
+        name: data.name,
+        type: data.type,
+        chatId: data.chatId,
+        callId: data.callId
+      });
+    });
+
+    socket.on("answer-call", (data: { to: string, signal: any }) => {
+      log(`Answer from ${socket.id} to user:${data.to}`, "socket.io");
+      socket.to(`user:${data.to}`).emit("call-answered", {
+        signal: data.signal,
+        from: socket.id
+      });
+    });
+
+    socket.on("reject-call", (data: { to: string }) => {
+      socket.to(`user:${data.to}`).emit("call-rejected");
+    });
+
+    socket.on("end-call", (data: { to: string }) => {
+      socket.to(`user:${data.to}`).emit("call-ended");
+    });
+
+    socket.on("ice-candidate", (data: { to: string, candidate: any }) => {
+      socket.to(`user:${data.to}`).emit("ice-candidate", data.candidate);
+    });
+
     socket.on("disconnect", () => {
       log(`Socket ${socket.id} disconnected`, "socket.io");
     });

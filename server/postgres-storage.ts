@@ -1,6 +1,17 @@
-import { type User, type InsertUser, type SiteSettings, type InsertSiteSettings } from "@shared/schema";
+import { 
+  type User, 
+  type InsertUser, 
+  type SiteSettings, 
+  type InsertSiteSettings,
+  type ChatFolder,
+  type InsertChatFolder,
+  type Call,
+  type InsertCall,
+  type MessageAttachment,
+  type InsertMessageAttachment
+} from "@shared/schema";
 import { drizzle } from "drizzle-orm/postgres-js";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, or, desc, ne } from "drizzle-orm";
 import postgres from "postgres";
 import * as schema from "@shared/schema";
 import dotenv from "dotenv";
@@ -254,6 +265,20 @@ export class PostgresStorage {
       await this.db.update(schema.chats)
         .set({ updatedAt: new Date() })
         .where(eq(schema.chats.id, message.chatId));
+
+      // Handle message attachments if they are in the JSONB field
+      const attachments = insertMessage.attachments as any[];
+      if (attachments && Array.isArray(attachments)) {
+        for (const attachment of attachments) {
+          await this.createMessageAttachment({
+            messageId: message.id,
+            name: attachment.name,
+            url: attachment.url,
+            type: attachment.type,
+            size: attachment.size
+          });
+        }
+      }
         
       return message;
     } catch (error) {
@@ -350,6 +375,122 @@ export class PostgresStorage {
     } catch (error) {
       console.error("Error marking chat messages as read:", error);
       return false;
+    }
+  }
+
+  // Chat Folder methods
+  async getChatFolders(userId: string): Promise<ChatFolder[]> {
+    try {
+      return await this.db.select().from(schema.chatFolders).where(eq(schema.chatFolders.userId, userId));
+    } catch (error) {
+      console.error("Error getting chat folders:", error);
+      return [];
+    }
+  }
+
+  async getChatFolderItems(folderId: string): Promise<string[]> {
+    try {
+      const result = await this.db.select({ chatId: schema.chatFolderItems.chatId })
+        .from(schema.chatFolderItems)
+        .where(eq(schema.chatFolderItems.folderId, folderId));
+      return result.map(r => r.chatId);
+    } catch (error) {
+      console.error("Error getting chat folder items:", error);
+      return [];
+    }
+  }
+
+  async createChatFolder(folder: InsertChatFolder): Promise<ChatFolder> {
+    try {
+      const [newFolder] = await this.db.insert(schema.chatFolders).values(folder).returning();
+      return newFolder;
+    } catch (error) {
+      console.error("Error creating chat folder:", error);
+      throw error;
+    }
+  }
+
+  async updateChatFolder(id: string, update: Partial<ChatFolder>): Promise<ChatFolder> {
+    try {
+      const [folder] = await this.db.update(schema.chatFolders).set(update).where(eq(schema.chatFolders.id, id)).returning();
+      return folder;
+    } catch (error) {
+      console.error("Error updating chat folder:", error);
+      throw error;
+    }
+  }
+
+  async deleteChatFolder(id: string): Promise<void> {
+    try {
+      await this.db.delete(schema.chatFolders).where(eq(schema.chatFolders.id, id));
+    } catch (error) {
+      console.error("Error deleting chat folder:", error);
+      throw error;
+    }
+  }
+
+  async setChatFolderItems(folderId: string, chatIds: string[]): Promise<void> {
+    try {
+      await this.db.delete(schema.chatFolderItems).where(eq(schema.chatFolderItems.folderId, folderId));
+      if (chatIds.length > 0) {
+        await this.db.insert(schema.chatFolderItems).values(chatIds.map(chatId => ({ folderId, chatId })));
+      }
+    } catch (error) {
+      console.error("Error setting chat folder items:", error);
+      throw error;
+    }
+  }
+
+  // Call methods
+  async createCall(call: InsertCall): Promise<Call> {
+    try {
+      const [newCall] = await this.db.insert(schema.calls).values(call).returning();
+      return newCall;
+    } catch (error) {
+      console.error("Error creating call:", error);
+      throw error;
+    }
+  }
+
+  async updateCall(id: string, update: Partial<Call>): Promise<Call> {
+    try {
+      const [updatedCall] = await this.db.update(schema.calls).set(update).where(eq(schema.calls.id, id)).returning();
+      return updatedCall;
+    } catch (error) {
+      console.error("Error updating call:", error);
+      throw error;
+    }
+  }
+
+  async getCallsForUser(userId: string): Promise<Call[]> {
+    try {
+      return await this.db.select()
+        .from(schema.calls)
+        .where(or(eq(schema.calls.callerId, userId), eq(schema.calls.receiverId, userId)))
+        .orderBy(desc(schema.calls.startedAt));
+    } catch (error) {
+      console.error("Error getting calls for user:", error);
+      return [];
+    }
+  }
+
+  // Attachment methods
+  async createMessageAttachment(attachment: InsertMessageAttachment): Promise<MessageAttachment> {
+    try {
+      const [newAttachment] = await this.db.insert(schema.messageAttachments).values(attachment).returning();
+      return newAttachment;
+    } catch (error) {
+      console.error("Error creating message attachment:", error);
+      throw error;
+    }
+  }
+
+  async getMessageAttachments(messageId: string): Promise<MessageAttachment[]> {
+    try {
+      return await this.db.select().from(schema.messageAttachments).where(eq(schema.messageAttachments.messageId, messageId));
+    } catch (error) {
+      console.error("Error getting message attachments:", error);
+      return [];
     }
   }
 
