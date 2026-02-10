@@ -33,7 +33,7 @@ export default function Dashboard() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-bold tracking-tight text-foreground">Обзор</h1>
-            <p className="text-muted-foreground mt-1">Доброе утро, Юлия! Вот что происходит сегодня.</p>
+            <p className="text-muted-foreground mt-1">Добро пожаловать! Вот что происходит сегодня.</p>
           </div>
           <div className="flex gap-3">
              <Button variant="outline" className="hidden sm:flex">Экспортировать отчёт</Button>

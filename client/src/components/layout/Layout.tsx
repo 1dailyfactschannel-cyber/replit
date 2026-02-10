@@ -73,39 +73,71 @@ const sidebarItems = [
   { icon: Shield, label: "Управление", href: "/management" },
 ];
 
-export function Layout({ children }: { children: React.ReactNode }) {
-  const [location, setLocation] = useLocation();
-  const [isMobileOpen, setIsMobileOpen] = useState(false);
-  const [isCollapsed, setIsCollapsed] = useState(false);
-  const [isStatusDialogOpen, setIsStatusDialogOpen] = useState(false);
-  const [status, setStatus] = useState("online");
-  const [statusComment, setStatusComment] = useState("");
+function SidebarCollapsibleItem({ item, isActive, setLocation, setIsMobileOpen, location }: any) {
+  const [isOpen, setIsOpen] = useState(isActive);
+  return (
+    <Collapsible
+      open={isOpen}
+      onOpenChange={setIsOpen}
+      className="w-full"
+    >
+      <CollapsibleTrigger asChild>
+        <div
+          className={cn(
+            "flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 group cursor-pointer",
+            isActive
+              ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-sm"
+              : "text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+          )}
+        >
+          <div className="flex items-center gap-3">
+            <item.icon className={cn("w-5 h-5 shrink-0", isActive ? "text-sidebar-primary-foreground" : "text-muted-foreground group-hover:text-sidebar-accent-foreground")} />
+            <span className="animate-in fade-in duration-300">{item.label}</span>
+          </div>
+          {isOpen ? (
+            <ChevronDown className="w-4 h-4 opacity-50" />
+          ) : (
+            <ChevronRight className="w-4 h-4 opacity-50" />
+          )}
+        </div>
+      </CollapsibleTrigger>
+      <CollapsibleContent className="pl-11 space-y-1 mt-1">
+        {item.subItems.map((subItem: any) => (
+          <div
+            key={subItem.href}
+            onClick={() => {
+              setLocation(subItem.href);
+              if (window.innerWidth < 768) {
+                setIsMobileOpen(false);
+              }
+            }}
+            className={cn(
+              "px-3 py-1.5 rounded-md text-xs font-medium cursor-pointer transition-colors",
+              location === subItem.href
+                ? "text-primary bg-primary/10"
+                : "text-muted-foreground hover:text-foreground hover:bg-sidebar-accent"
+            )}
+          >
+            {subItem.label}
+          </div>
+        ))}
+      </CollapsibleContent>
+    </Collapsible>
+  );
+}
 
-  const statusColors = {
-    online: "bg-emerald-500",
-    offline: "bg-slate-500",
-    vacation: "bg-blue-500",
-    sick: "bg-rose-500",
-  };
-
-  const statusLabels = {
-    online: "В сети",
-    offline: "Не в сети",
-    vacation: "В отпуске",
-    sick: "Больничный",
-  };
-
-  useEffect(() => {
-    if (window.innerWidth >= 768) {
-      if (location.startsWith("/projects") || location.startsWith("/shop") || location.startsWith("/chat")) {
-        setIsCollapsed(true);
-      } else {
-        setIsCollapsed(false);
-      }
-    }
-  }, [location]);
-
-  const SidebarContent = () => (
+const SidebarContentComponent = React.memo(({ 
+  isCollapsed, 
+  location, 
+  status, 
+  isStatusDialogOpen, 
+  setLocation, 
+  setIsMobileOpen,
+  setIsCollapsed,
+  statusColors,
+  statusLabels
+}: any) => {
+  return (
     <div className={cn(
       "flex flex-col h-full bg-sidebar text-sidebar-foreground border-r border-sidebar-border transition-all duration-300 ease-in-out",
       isCollapsed ? "w-20" : "w-64"
@@ -139,60 +171,12 @@ export function Layout({ children }: { children: React.ReactNode }) {
       <ScrollArea className="flex-1 px-4">
         <div className="space-y-1">
           {!isCollapsed && <p className="text-xs font-medium text-muted-foreground px-2 mb-2 uppercase tracking-wider animate-in fade-in duration-300">Меню</p>}
-          {sidebarItems.map((item) => {
+          {sidebarItems.map((item: any) => {
             const isActive = item.href ? (location.startsWith(item.href) && (item.href !== "/" || location === "/")) : false;
-            const [isOpen, setIsOpen] = useState(isActive);
 
             if (item.subItems && !isCollapsed) {
               return (
-                <Collapsible
-                  key={item.href || item.id}
-                  open={isOpen}
-                  onOpenChange={setIsOpen}
-                  className="w-full"
-                >
-                  <CollapsibleTrigger asChild>
-                    <div
-                      className={cn(
-                        "flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 group cursor-pointer",
-                        isActive
-                          ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-sm"
-                          : "text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-                      )}
-                    >
-                      <div className="flex items-center gap-3">
-                        <item.icon className={cn("w-5 h-5 shrink-0", isActive ? "text-sidebar-primary-foreground" : "text-muted-foreground group-hover:text-sidebar-accent-foreground")} />
-                        <span className="animate-in fade-in duration-300">{item.label}</span>
-                      </div>
-                      {isOpen ? (
-                        <ChevronDown className="w-4 h-4 opacity-50" />
-                      ) : (
-                        <ChevronRight className="w-4 h-4 opacity-50" />
-                      )}
-                    </div>
-                  </CollapsibleTrigger>
-                  <CollapsibleContent className="pl-11 space-y-1 mt-1">
-                    {item.subItems.map((subItem) => (
-                      <div
-                        key={subItem.href}
-                        onClick={() => {
-                          setLocation(subItem.href);
-                          if (window.innerWidth < 768) {
-                            setIsMobileOpen(false);
-                          }
-                        }}
-                        className={cn(
-                          "px-3 py-1.5 rounded-md text-xs font-medium cursor-pointer transition-colors",
-                          location === subItem.href
-                            ? "text-primary bg-primary/10"
-                            : "text-muted-foreground hover:text-foreground hover:bg-sidebar-accent"
-                        )}
-                      >
-                        {subItem.label}
-                      </div>
-                    ))}
-                  </CollapsibleContent>
-                </Collapsible>
+                <SidebarCollapsibleItem key={item.href || item.label} item={item} isActive={isActive} setLocation={setLocation} setIsMobileOpen={setIsMobileOpen} location={location} />
               );
             }
 
@@ -230,18 +214,18 @@ export function Layout({ children }: { children: React.ReactNode }) {
             { name: "Mobile App", priority: "Средний" },
             { name: "Internal API", priority: "Низкий" }
           ].map((project, i) => (
-             <button 
-               key={i} 
-               onClick={() => {
-                 setLocation("/projects");
-                 if (window.innerWidth >= 768) setIsCollapsed(true);
-               }}
-               className={cn(
-                 "w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors text-left overflow-hidden whitespace-nowrap",
-                 isCollapsed && "px-2 justify-center"
-               )}
-               title={isCollapsed ? project.name : ""}
-             >
+            <button 
+              key={i} 
+              onClick={() => {
+                setLocation("/projects");
+                if (window.innerWidth >= 768) setIsCollapsed(true);
+              }}
+              className={cn(
+                "w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors text-left overflow-hidden whitespace-nowrap",
+                isCollapsed && "px-2 justify-center"
+              )}
+              title={isCollapsed ? project.name : ""}
+            >
                 <div className={cn(
                   "w-2 h-2 rounded-full shrink-0 shadow-sm",
                   project.priority === "Высокий" ? "bg-rose-500 shadow-rose-500/40" :
@@ -249,7 +233,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
                   "bg-emerald-500 shadow-emerald-500/40"
                 )} />
                 {!isCollapsed && <span className="animate-in fade-in duration-300">{project.name}</span>}
-             </button>
+            </button>
           ))}
         </div>
       </ScrollArea>
@@ -264,13 +248,12 @@ export function Layout({ children }: { children: React.ReactNode }) {
               )}
             >
               <Avatar className="w-9 h-9 border border-border shrink-0">
-                <AvatarImage src="https://github.com/shadcn.png" />
-                <AvatarFallback>ЮД</AvatarFallback>
+                <AvatarFallback>П</AvatarFallback>
               </Avatar>
               {!isCollapsed && (
                 <div className="flex-1 min-w-0 animate-in fade-in duration-300">
-                  <p className="text-sm font-medium truncate">Юлия Дарицкая</p>
-                  <p className="text-xs text-muted-foreground truncate">Руководитель продукта</p>
+                  <p className="text-sm font-medium truncate">Пользователь</p>
+                  <p className="text-xs text-muted-foreground truncate">Сотрудник</p>
                 </div>
               )}
             </div>
@@ -312,6 +295,39 @@ export function Layout({ children }: { children: React.ReactNode }) {
       </div>
     </div>
   );
+});
+
+export function Layout({ children }: { children: React.ReactNode }) {
+  const [location, setLocation] = useLocation();
+  const [isMobileOpen, setIsMobileOpen] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(false);
+  const [isStatusDialogOpen, setIsStatusDialogOpen] = useState(false);
+  const [status, setStatus] = useState("online");
+  const [statusComment, setStatusComment] = useState("");
+
+  const statusColors = {
+    online: "bg-emerald-500",
+    offline: "bg-slate-500",
+    vacation: "bg-blue-500",
+    sick: "bg-rose-500",
+  };
+
+  const statusLabels = {
+    online: "В сети",
+    offline: "Не в сети",
+    vacation: "В отпуске",
+    sick: "Больничный",
+  };
+
+  useEffect(() => {
+    if (window.innerWidth >= 768) {
+      if (location.startsWith("/projects") || location.startsWith("/shop") || location.startsWith("/chat")) {
+        setIsCollapsed(true);
+      } else {
+        setIsCollapsed(false);
+      }
+    }
+  }, [location]);
 
   return (
     <div className="min-h-screen bg-background flex overflow-hidden">
@@ -320,7 +336,17 @@ export function Layout({ children }: { children: React.ReactNode }) {
         "hidden md:block flex-shrink-0 h-screen sticky top-0 transition-all duration-300 ease-in-out",
         isCollapsed ? "w-20" : "w-64"
       )}>
-        <SidebarContent />
+        <SidebarContentComponent 
+          isCollapsed={isCollapsed}
+          location={location}
+          status={status}
+          isStatusDialogOpen={isStatusDialogOpen}
+          setLocation={setLocation}
+          setIsMobileOpen={setIsMobileOpen}
+          setIsCollapsed={setIsCollapsed}
+          statusColors={statusColors}
+          statusLabels={statusLabels}
+        />
       </div>
 
       {/* Main Content */}
@@ -334,7 +360,17 @@ export function Layout({ children }: { children: React.ReactNode }) {
                 </Button>
               </SheetTrigger>
               <SheetContent side="left" className="p-0 w-64 border-r-sidebar-border bg-sidebar text-sidebar-foreground">
-                <SidebarContent />
+                <SidebarContentComponent 
+                  isCollapsed={isCollapsed}
+                  location={location}
+                  status={status}
+                  isStatusDialogOpen={isStatusDialogOpen}
+                  setLocation={setLocation}
+                  setIsMobileOpen={setIsMobileOpen}
+                  setIsCollapsed={setIsCollapsed}
+                  statusColors={statusColors}
+                  statusLabels={statusLabels}
+                />
               </SheetContent>
             </Sheet>
             <div className="relative hidden sm:block w-96">

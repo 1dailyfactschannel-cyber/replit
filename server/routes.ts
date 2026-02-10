@@ -9,6 +9,7 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
+  console.log("Registering API routes...");
   // Health check route
   app.get("/api/health", async (_req, res) => {
     const dbHealthy = await storage.healthCheck();
@@ -20,6 +21,47 @@ export async function registerRoutes(
   });
 
   // User routes
+  app.get("/api/user", async (_req, res) => {
+    console.log("GET /api/user hit!");
+    try {
+      const user = await storage.getFirstUser();
+      if (!user) {
+        console.log("GET /api/user: No user found in database");
+        return res.status(404).json({ message: "User not found" });
+      }
+      console.log("GET /api/user: Returning user", user.id);
+      res.json(user);
+    } catch (error) {
+      console.error("GET /api/user error:", error);
+      res.status(500).json({ message: "Failed to fetch current user" });
+    }
+  });
+
+  app.patch("/api/user", async (req, res) => {
+    console.log("PATCH /api/user hit!");
+    try {
+      console.log("PATCH /api/user request body:", req.body);
+      const user = await storage.getFirstUser();
+      if (!user) {
+        console.error("PATCH /api/user: User not found");
+        return res.status(404).json({ message: "User not found" });
+      }
+      
+      // Маппинг полей из фронтенда (telegram) в поля базы данных (telegram)
+      const updateData = { ...req.body };
+      if (updateData.telegram !== undefined) {
+        console.log("Updating telegram field to:", updateData.telegram);
+      }
+      
+      const updatedUser = await storage.updateUser(user.id, updateData);
+      console.log("PATCH /api/user: User updated successfully", updatedUser.id);
+      res.json(updatedUser);
+    } catch (error: any) {
+      console.error("PATCH /api/user error:", error);
+      res.status(500).json({ message: "Failed to update profile", error: error.message });
+    }
+  });
+
   app.get("/api/users", async (_req, res) => {
     try {
       const users = await storage.getAllUsers();

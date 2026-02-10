@@ -31,7 +31,7 @@ const initialEvents: CalendarEvent[] = [
   { id: "2", date: new Date(), title: "Обеденный перерыв команды", time: "12:30", type: "social" },
   { id: "3", date: new Date(new Date().setDate(new Date().getDate() + 1)), title: "Планирование спринта", time: "11:00", type: "work" },
   { id: "4", date: new Date(new Date().setDate(new Date().getDate() + 2)), title: "Звонок с клиентом", time: "15:00", type: "external" },
-  { id: "5", date: new Date(new Date().setDate(new Date().getDate() + 1)), title: "Встреча с Юлией Дарицкой", time: "14:00", type: "video", contact: "Юлия Дарицкая", meetingUrl: "https://zoom.us/j/123456789" },
+  { id: "5", date: new Date(new Date().setDate(new Date().getDate() + 1)), title: "Встреча с Александром Петровым", time: "14:00", type: "video", contact: "Александр Петров", meetingUrl: "https://zoom.us/j/123456789" },
   { id: "6", date: new Date(new Date().setDate(new Date().getDate() + 2)), title: "Ревью кода - Майк Росс", time: "15:30", type: "audio", contact: "Майк Росс", meetingUrl: "https://meet.google.com/abc-defg-hij" },
 ];
 
@@ -48,7 +48,7 @@ export default function CalendarPage() {
     time: "10:00",
     type: "work",
     description: "",
-    meetingUrl: "https://teamsync.ru/room/juli-dar"
+    meetingUrl: "https://teamsync.ru/room/user"
   });
 
   const calendarDays = useMemo(() => {

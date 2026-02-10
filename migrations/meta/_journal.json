@@ -8,6 +8,13 @@
       "when": 1769514009550,
       "tag": "0000_magenta_fantastic_four",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1770737535671,
+      "tag": "0001_magenta_quasar",
+      "breakpoints": true
     }
   ]
 }

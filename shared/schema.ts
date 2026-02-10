@@ -22,6 +22,7 @@ export const users = pgTable("users", {
   lastSeen: timestamp("last_seen"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
+  telegram: text("telegram"),
   telegramConnected: boolean("telegram_connected").default(false),
   telegramId: text("telegram_id"),
   notes: text("notes"),

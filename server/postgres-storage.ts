@@ -1,6 +1,6 @@
 import { type User, type InsertUser, type SiteSettings, type InsertSiteSettings } from "@shared/schema";
 import { drizzle } from "drizzle-orm/postgres-js";
-import { eq, and } from "drizzle-orm";
+import { eq, and, desc } from "drizzle-orm";
 import postgres from "postgres";
 import * as schema from "@shared/schema";
 import dotenv from "dotenv";
@@ -229,6 +229,18 @@ export class PostgresStorage {
     } catch (error) {
       console.error("Error getting tasks by board:", error);
       return [];
+    }
+  }
+
+  async getFirstUser(): Promise<User | undefined> {
+    try {
+      // Получаем последнего зарегистрированного пользователя, 
+      // чтобы видеть именно того, кто только что создал аккаунт
+      const result = await this.db.select().from(schema.users).orderBy(desc(schema.users.createdAt)).limit(1);
+      return result[0];
+    } catch (error) {
+      console.error("Error getting last user:", error);
+      return undefined;
     }
   }
 

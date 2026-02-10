@@ -347,8 +347,7 @@ function IntegrationsManagement() {
 function TeamManagement() {
   const { toast } = useToast();
   const members = [
-    { id: 1, name: "Юлия Дарицкая", role: "Владелец", email: "yulia@teamsync.com", department: "Продукт", status: "online", lastActive: "Сейчас", avatar: "https://github.com/shadcn.png" },
-    { id: 2, name: "Алексей Иванов", role: "Админ", email: "alex@teamsync.com", department: "IT", status: "offline", lastActive: "2 часа назад", avatar: "" },
+    { id: 2, name: "Алексей Иванов", role: "Владелец", email: "alex@teamsync.com", department: "IT", status: "offline", lastActive: "2 часа назад", avatar: "" },
     { id: 3, name: "Мария Петрова", role: "Разработчик", email: "maria@teamsync.com", department: "Дизайн", status: "online", lastActive: "Сейчас", avatar: "" },
     { id: 4, name: "Дмитрий Сидоров", role: "Менеджер", email: "dima@teamsync.com", department: "Маркетинг", status: "online", lastActive: "15 мин назад", avatar: "" },
     { id: 5, name: "Елена Козлова", role: "Разработчик", email: "elena@teamsync.com", department: "IT", status: "offline", lastActive: "Вчера", avatar: "" },

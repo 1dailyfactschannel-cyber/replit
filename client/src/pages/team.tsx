@@ -72,7 +72,6 @@ const mockDepartments: Department[] = [
 ];
 
 const mockEmployees: Employee[] = [
-  { id: "1", name: "Юлия Дарицкая", position: "Product Manager", email: "j.daritskaya@teamsync.ru", status: "active", points: 1250, avatar: "https://github.com/shadcn.png", departmentId: "1" },
   { id: "2", name: "Александр Петров", position: "Senior Frontend Developer", email: "a.petrov@teamsync.ru", status: "active", points: 850, departmentId: "1" },
   { id: "3", name: "Елена Сидорова", position: "UI/UX Designer", email: "e.sidorova@teamsync.ru", status: "on_leave", points: 2100, departmentId: "2" },
   { id: "4", name: "Максим Иванов", position: "Backend Lead", email: "m.ivanov@teamsync.ru", status: "blocked", points: 450, departmentId: "1" },

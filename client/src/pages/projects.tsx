@@ -55,7 +55,7 @@ const MOCK_TASK_DETAILS: Task = {
   status: "В работе",
   priority: "Высокий",
   type: "UI/UX",
-  assignee: { name: "Юлия Дарицкая", avatar: "https://github.com/shadcn.png" },
+  assignee: { name: "Я" },
   creator: { name: "Майк Росс", date: "24 окт. 2025" },
   dueDate: "15 янв. 2026",
   labels: ["Дизайн", "Frontend"],

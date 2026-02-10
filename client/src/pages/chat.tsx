@@ -55,11 +55,11 @@ const initialContacts: Contact[] = [
     unread: 2, 
     avatar: null, 
     group: true, 
-    members: ["Юлия Дарицкая", "Я", "Елена Сидорова"],
-    owner: "Юлия Дарицкая",
+    members: ["Я", "Елена Сидорова"],
+    owner: "Елена Сидорова",
     description: "Обсуждение UI/UX паттернов, дизайн-системы и новых макетов для TeamSync."
   },
-  { id: 2, name: "Юлия Дарицкая", lastMsg: "Можешь посмотреть PR?", time: "09:30", unread: 0, avatar: "https://github.com/shadcn.png", online: true, group: false },
+  { id: 2, name: "Александр Петров", lastMsg: "Можешь посмотреть PR?", time: "09:30", unread: 0, avatar: null, online: true, group: false },
   { 
     id: 3, 
     name: "Маркетинг", 
@@ -77,7 +77,6 @@ const initialContacts: Contact[] = [
 ];
 
 const teamMembers = [
-  { id: "1", name: "Юлия Дарицкая", position: "Product Manager" },
   { id: "2", name: "Александр Петров", position: "Senior Frontend Developer" },
   { id: "3", name: "Елена Сидорова", position: "UI/UX Designer" },
   { id: "4", name: "Максим Иванов", position: "Backend Lead" },
@@ -85,11 +84,11 @@ const teamMembers = [
 ];
 
 const initialMessages = [
-  { id: 1, sender: "Юлия Дарицкая", content: "Привет команда, как идёт новый дизайн?", time: "10:30", me: false },
+  { id: 1, sender: "Александр Петров", content: "Привет команда, как идёт новый дизайн?", time: "10:30", me: false },
   { id: 2, sender: "Я", content: "Почти готово! Заканчиваю переменные тёмного режима.", time: "10:32", me: true },
-  { id: 3, sender: "Юлия Дарицкая", content: "Отлично! Можем ли мы запланировать ревью позже?", time: "10:33", me: false },
+  { id: 3, sender: "Александр Петров", content: "Отлично! Можем ли мы запланировать ревью позже?", time: "10:33", me: false },
   { id: 4, sender: "Я", content: "Конечно, как насчёт 14:00?", time: "10:35", me: true },
-  { id: 5, sender: "Юлия Дарицкая", content: "Для меня подходит. Сейчас отправлю приглашение.", time: "10:36", me: false },
+  { id: 5, sender: "Александр Петров", content: "Для меня подходит. Сейчас отправлю приглашение.", time: "10:36", me: false },
   { id: 6, sender: "Я", content: "👍", time: "10:36", me: true },
 ];
 

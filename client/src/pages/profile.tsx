@@ -1,28 +1,93 @@
 import { Layout } from "@/components/layout/Layout";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
-import { Camera, Mail, Phone, Send, Briefcase, User, Save, FileText, Bell, ExternalLink, CheckCircle2, Building2 } from "lucide-react";
+import { Camera, Mail, Phone, Send, Briefcase, User, Save, FileText, Bell, ExternalLink, CheckCircle2, Building2, Loader2 } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 
 export default function Profile() {
   const { toast } = useToast();
+  
+  const { data: user, isLoading } = useQuery({
+    queryKey: ["/api/user"],
+  });
+
   const [profile, setProfile] = useState({
-    fullName: "Юлия Дарицкая",
-    position: "Руководитель продукта",
-    department: "Департамент разработки",
-    telegram: "@juli_dar",
-    email: "j.daritskaya@teamsync.ru",
-    phone: "+7 (999) 123-45-67",
-    avatar: "https://github.com/shadcn.png",
+    firstName: "",
+    lastName: "",
+    position: "",
+    department: "",
+    telegram: "",
+    email: "",
+    phone: "",
+    avatar: "",
     notes: "",
     telegramConnected: false
   });
+
+  useEffect(() => {
+    if (user) {
+      setProfile({
+        firstName: user.firstName || "",
+        lastName: user.lastName || "",
+        position: user.position || "",
+        department: user.department || "",
+        telegram: user.telegram || "",
+        email: user.email || "",
+        phone: user.phone || "",
+        avatar: user.avatar || "",
+        notes: user.notes || "",
+        telegramConnected: user.telegramConnected || false
+      });
+    }
+  }, [user]);
+
+  const updateProfileMutation = useMutation({
+    mutationFn: async (updatedData: any) => {
+      console.log("Sending profile update:", updatedData);
+      const res = await apiRequest("PATCH", "/api/user", updatedData);
+      
+      const contentType = res.headers.get("content-type");
+      if (contentType && contentType.includes("application/json")) {
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data.message || "Ошибка при сохранении");
+        }
+        return data;
+      } else {
+        const text = await res.text();
+        console.error("Non-JSON response received:", text);
+        throw new Error("Сервер вернул некорректный ответ");
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/user"] });
+      toast({
+        title: "Профиль обновлен",
+        description: "Ваши данные успешно сохранены в базе данных.",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Ошибка",
+        description: "Не удалось сохранить изменения: " + error.message,
+        variant: "destructive",
+      });
+    }
+  });
+
+  const handleSave = () => {
+    // Исключаем email из данных для обновления, так как он фиксирован
+    const { email, ...updateData } = profile;
+    updateProfileMutation.mutate(updateData);
+  };
 
   const handleConnectTelegram = () => {
     // В реальном приложении здесь была бы ссылка на ваш бот с уникальным токеном
@@ -40,6 +105,39 @@ export default function Profile() {
     }, 3000);
   };
 
+  const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 5 * 1024 * 1024) {
+        toast({
+          title: "Ошибка",
+          description: "Файл слишком большой. Максимальный размер 5МБ.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const base64String = reader.result as string;
+        setProfile(prev => ({ ...prev, avatar: base64String }));
+        // Сразу сохраняем аватар
+        updateProfileMutation.mutate({ avatar: base64String });
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <Layout>
+        <div className="flex items-center justify-center min-h-[60vh]">
+          <Loader2 className="w-8 h-8 animate-spin text-primary" />
+        </div>
+      </Layout>
+    );
+  }
+
   return (
     <Layout>
       <div className="max-w-4xl mx-auto space-y-8 animate-in fade-in duration-500">
@@ -52,20 +150,39 @@ export default function Profile() {
           {/* Avatar Section */}
           <Card className="md:col-span-4 border-border/50 shadow-sm overflow-hidden h-fit">
             <CardContent className="pt-8 pb-8 flex flex-col items-center">
-              <div className="relative group cursor-pointer mb-6">
+              <div 
+                className="relative group cursor-pointer mb-6"
+                onClick={() => document.getElementById('avatar-upload')?.click()}
+              >
                 <Avatar className="w-32 h-32 border-4 border-background shadow-xl">
-                  <AvatarImage src={profile.avatar} />
-                  <AvatarFallback className="text-2xl bg-primary/10 text-primary font-bold">ЮД</AvatarFallback>
+                  <AvatarImage src={profile.avatar} className="object-cover" />
+                  <AvatarFallback className="text-2xl bg-primary/10 text-primary font-bold">
+                    {profile.firstName[0]}{profile.lastName[0] || ""}
+                  </AvatarFallback>
                 </Avatar>
                 <div className="absolute inset-0 rounded-full bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                   <Camera className="text-white w-8 h-8" />
                 </div>
+                <input 
+                  id="avatar-upload"
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleAvatarChange}
+                />
               </div>
-              <h2 className="text-xl font-bold text-center mb-1">{profile.fullName}</h2>
+              <h2 className="text-xl font-bold text-center mb-1">{profile.firstName} {profile.lastName}</h2>
               <p className="text-sm text-muted-foreground text-center mb-1">{profile.position}</p>
               <p className="text-xs text-muted-foreground/70 text-center mb-6">{profile.department}</p>
-              <Button variant="outline" size="sm" className="w-full gap-2 border-border/60">
-                <Camera className="w-4 h-4" />
+              <Button 
+                variant="outline" 
+                size="sm" 
+                className="w-full gap-2 border-border/60"
+                onClick={() => document.getElementById('avatar-upload')?.click()}
+                disabled={updateProfileMutation.isPending}
+              >
+                {updateProfileMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
+                {!updateProfileMutation.isPending && <Camera className="w-4 h-4" />}
                 Изменить фото
               </Button>
             </CardContent>
@@ -80,27 +197,38 @@ export default function Profile() {
             <CardContent className="space-y-6">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                 <div className="space-y-2">
-                  <Label htmlFor="fullName" className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
-                    <User className="w-3.5 h-3.5" /> Имя и Фамилия
+                  <Label htmlFor="firstName" className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                    <User className="w-3.5 h-3.5" /> Имя
                   </Label>
                   <Input 
-                    id="fullName" 
-                    value={profile.fullName} 
-                    onChange={(e) => setProfile({...profile, fullName: e.target.value})}
+                    id="firstName" 
+                    value={profile.firstName || ""} 
+                    onChange={(e) => setProfile({...profile, firstName: e.target.value})}
                     className="bg-secondary/30 border-border/50 focus:bg-background transition-all"
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="position" className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
-                    <Briefcase className="w-3.5 h-3.5" /> Должность
+                  <Label htmlFor="lastName" className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                    <User className="w-3.5 h-3.5" /> Фамилия
                   </Label>
                   <Input 
-                    id="position" 
-                    value={profile.position} 
-                    onChange={(e) => setProfile({...profile, position: e.target.value})}
+                    id="lastName" 
+                    value={profile.lastName || ""} 
+                    onChange={(e) => setProfile({...profile, lastName: e.target.value})}
                     className="bg-secondary/30 border-border/50 focus:bg-background transition-all"
                   />
                 </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="position" className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                  <Briefcase className="w-3.5 h-3.5" /> Должность
+                </Label>
+                <Input 
+                  id="position" 
+                  value={profile.position || ""} 
+                  onChange={(e) => setProfile({...profile, position: e.target.value})}
+                  className="bg-secondary/30 border-border/50 focus:bg-background transition-all"
+                />
               </div>
 
               <div className="space-y-2">
@@ -109,7 +237,7 @@ export default function Profile() {
                 </Label>
                 <Input 
                   id="department" 
-                  value={profile.department} 
+                  value={profile.department || ""} 
                   onChange={(e) => setProfile({...profile, department: e.target.value})}
                   className="bg-secondary/30 border-border/50 focus:bg-background transition-all"
                 />
@@ -125,7 +253,7 @@ export default function Profile() {
                     </Label>
                     <Input 
                       id="telegram" 
-                      value={profile.telegram} 
+                      value={profile.telegram || ""} 
                       onChange={(e) => setProfile({...profile, telegram: e.target.value})}
                       className="bg-secondary/30 border-border/50 focus:bg-background transition-all"
                     />
@@ -155,7 +283,7 @@ export default function Profile() {
                     </Label>
                     <Input 
                       id="phone" 
-                      value={profile.phone} 
+                      value={profile.phone || ""} 
                       onChange={(e) => setProfile({...profile, phone: e.target.value})}
                       className="bg-secondary/30 border-border/50 focus:bg-background transition-all"
                     />
@@ -169,10 +297,11 @@ export default function Profile() {
                   <Input 
                     id="email" 
                     type="email"
-                    value={profile.email} 
-                    onChange={(e) => setProfile({...profile, email: e.target.value})}
-                    className="bg-secondary/30 border-border/50 focus:bg-background transition-all"
+                    value={profile.email || ""} 
+                    readOnly
+                    className="bg-secondary/10 border-border/30 text-muted-foreground cursor-not-allowed transition-all"
                   />
+                  <p className="text-[10px] text-muted-foreground/50 ml-1">Email зафиксирован и не может быть изменен</p>
                 </div>
 
                 <div className="space-y-2">
@@ -181,7 +310,7 @@ export default function Profile() {
                   </Label>
                   <Textarea 
                     id="notes" 
-                    value={profile.notes} 
+                    value={profile.notes || ""} 
                     onChange={(e) => setProfile({...profile, notes: e.target.value})}
                     placeholder="Добавьте краткую информацию о себе..."
                     className="bg-secondary/30 border-border/50 focus:bg-background transition-all min-h-[100px]"
@@ -189,8 +318,16 @@ export default function Profile() {
               </div>
             </CardContent>
             <CardFooter className="bg-secondary/5 border-t border-border/50 px-6 py-4 flex justify-end">
-              <Button className="gap-2 shadow-lg shadow-primary/20">
-                <Save className="w-4 h-4" />
+              <Button 
+                onClick={handleSave} 
+                disabled={updateProfileMutation.isPending}
+                className="gap-2 shadow-lg shadow-primary/20"
+              >
+                {updateProfileMutation.isPending ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Save className="w-4 h-4" />
+                )}
                 Сохранить изменения
               </Button>
             </CardFooter>

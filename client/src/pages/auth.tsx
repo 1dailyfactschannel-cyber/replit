@@ -51,21 +51,6 @@ export default function Auth() {
           <p className="text-xl text-white/70 max-w-md font-medium leading-relaxed">
             Объедините вашу команду в одном цифровом пространстве. Задачи, чаты и календарь под полным контролем.
           </p>
-          
-          <div className="bg-white/5 backdrop-blur-xl border border-white/10 p-6 rounded-3xl max-w-md mt-8 shadow-2xl">
-            <p className="italic text-white/80 mb-4 text-lg">
-              "TeamSync помог нам сократить время на планирование вдвое. Это лучший инструмент для нашей дизайн-студии."
-            </p>
-            <div className="flex items-center gap-3">
-              <Avatar className="w-12 h-12 border-2 border-white/20">
-                <AvatarFallback className="bg-primary/20 text-white">ЮД</AvatarFallback>
-              </Avatar>
-              <div>
-                <p className="font-bold text-base text-white">Юлия Дарицкая</p>
-                <p className="text-sm text-white/50">Product Lead, CreativeFlow</p>
-              </div>
-            </div>
-          </div>
         </div>
 
         {/* Auth Card */}
@@ -139,13 +124,6 @@ export default function Auth() {
                 <TabsContent value="register" className="space-y-5">
                   <form onSubmit={handleLogin} className="space-y-5">
                     <div className="space-y-2">
-                      <Label htmlFor="name" className="text-white/70 ml-1">Полное имя</Label>
-                      <div className="relative">
-                        <User className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-white/40" />
-                        <Input id="name" placeholder="Иван Иванов" className="pl-12 h-12 bg-white/5 border-white/10 text-white placeholder:text-white/20 rounded-xl focus:ring-primary/50" required />
-                      </div>
-                    </div>
-                    <div className="space-y-2">
                       <Label htmlFor="reg-email" className="text-white/70 ml-1">Email</Label>
                       <div className="relative">
                         <Mail className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-white/40" />
@@ -183,21 +161,7 @@ export default function Auth() {
               </div>
             ) : (
               <>
-                <div className="relative w-full">
-                  <div className="absolute inset-0 flex items-center">
-                    <Separator className="w-full bg-white/10" />
-                  </div>
-                  <div className="relative flex justify-center text-xs uppercase">
-                    <span className="bg-transparent px-4 text-white/30 tracking-widest">Или через</span>
-                  </div>
-                </div>
-
-                <Button variant="outline" className="w-full h-12 gap-3 border-white/10 bg-white/5 hover:bg-white/10 text-white rounded-xl transition-all">
-                  <Github className="h-5 w-5" />
-                  GitHub
-                </Button>
-
-                <p className="text-center text-xs text-white/30 leading-relaxed px-4">
+                <p className="text-center text-xs text-white/30 leading-relaxed px-4 mt-4">
                   Нажимая "Продолжить", вы соглашаетесь с{" "}
                   <a href="#" className="underline hover:text-white transition-colors">Условиями</a> и{" "}
                   <a href="#" className="underline hover:text-white transition-colors">Политикой</a>.

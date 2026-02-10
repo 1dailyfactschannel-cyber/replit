@@ -20,7 +20,7 @@ const initialTasksData: (Task & { project: string; board: string; isAccepted?: b
     project: "TeamSync Web",
     board: "UI/UX Design",
     assignee: { name: "Я" },
-    creator: { name: "Юлия Дарицкая", date: "10 янв 2026" },
+    creator: { name: "Система", date: "10 янв 2026" },
     dueDate: "Завтра",
     description: "Необходимо обновить цветовую палитру и шрифтовые пары в соответствии с новым брендингом.",
     labels: ["Дизайн", "Брендинг"],
