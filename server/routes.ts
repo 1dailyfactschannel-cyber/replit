@@ -4,9 +4,36 @@ import { getStorage } from "./postgres-storage";
 import { insertSiteSettingsSchema, insertUserSchema } from "@shared/schema";
 import { setupWebSockets } from "./socket";
 import { Server as SocketIOServer } from "socket.io";
+import multer from "multer";
+import path from "path";
+import fs from "fs";
+import { eq, and, ne } from "drizzle-orm";
 
 const storage = getStorage();
 let io: SocketIOServer;
+
+// Configure multer for file uploads
+const uploadDir = path.join(process.cwd(), "uploads");
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir, { recursive: true });
+}
+
+const multerStorage = multer.diskStorage({
+  destination: (_req, _file, cb) => {
+    cb(null, uploadDir);
+  },
+  filename: (_req, file, cb) => {
+    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
+    cb(null, uniqueSuffix + path.extname(file.originalname));
+  },
+});
+
+const upload = multer({ 
+  storage: multerStorage,
+  limits: {
+    fileSize: 50 * 1024 * 1024, // 50MB limit
+  }
+});
 
 export async function registerRoutes(
   httpServer: Server,
@@ -98,10 +125,29 @@ export async function registerRoutes(
       res.status(201).json(user);
     } catch (error: any) {
       if (error.code === '23505') { // Unique violation
-        res.status(409).json({ message: "User already exists" });
-      } else {
-        res.status(500).json({ message: "Failed to create user" });
+        return res.status(400).json({ message: "User already exists" });
       }
+      res.status(500).json({ message: "Failed to create user" });
+    }
+  });
+
+  // File upload route
+  app.post("/api/upload", upload.single("file"), (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ message: "No file uploaded" });
+      }
+
+      const fileUrl = `/uploads/${req.file.filename}`;
+      res.json({
+        url: fileUrl,
+        name: req.file.originalname,
+        type: req.file.mimetype,
+        size: req.file.size
+      });
+    } catch (error) {
+      console.error("Upload error:", error);
+      res.status(500).json({ message: "Failed to upload file" });
     }
   });
 
@@ -156,34 +202,30 @@ export async function registerRoutes(
     try {
       const projects = await storage.getAllProjects();
       
-      // Для каждого проекта получаем его задачи и считаем прогресс
+      // Добавляем статистику для каждого проекта
       const projectsWithStats = await Promise.all(projects.map(async (project) => {
         const boards = await storage.getBoardsByProject(project.id);
-        let allTasks: any[] = [];
+        let taskCount = 0;
+        let completedTaskCount = 0;
         
         for (const board of boards) {
           const tasks = await storage.getTasksByBoard(board.id);
-          allTasks = [...allTasks, ...tasks];
+          taskCount += tasks.length;
+          completedTaskCount += tasks.filter(t => t.status === "done" || t.status === "completed").length;
         }
         
-        const totalTasks = allTasks.length;
-        const completedTasks = allTasks.filter(t => t.status === "done").length;
-        
-        // Если задач нет, прогресс 100%, иначе процент выполненных
-        const progress = totalTasks === 0 ? 100 : Math.round((completedTasks / totalTasks) * 100);
+        const progress = taskCount > 0 ? Math.round((completedTaskCount / taskCount) * 100) : 100;
         
         return {
           ...project,
-          taskCount: totalTasks,
-          completedTaskCount: completedTasks,
-          progress,
-          boardCount: boards.length
+          boardCount: boards.length,
+          taskCount,
+          progress
         };
       }));
       
       res.json(projectsWithStats);
     } catch (error) {
-      console.error("GET /api/projects error:", error);
       res.status(500).json({ message: "Failed to fetch projects" });
     }
   });
@@ -374,6 +416,29 @@ export async function registerRoutes(
     }
   });
 
+  app.patch("/api/chats/:chatId", async (req, res) => {
+    try {
+      const { participantIds, ...update } = req.body;
+      const chat = await storage.updateChat(req.params.chatId, update);
+      
+      if (participantIds && Array.isArray(participantIds)) {
+        await storage.updateChatParticipants(req.params.chatId, participantIds);
+      }
+      
+      // Notify participants about chat update
+      const updatedChat = await storage.getChat(req.params.chatId);
+      const participants = await storage.getChatParticipants(req.params.chatId);
+      participants.forEach(p => {
+        io.to(`user:${p.userId}`).emit("chat-update", updatedChat);
+      });
+      
+      res.json(updatedChat);
+    } catch (error) {
+      console.error("Error updating chat:", error);
+      res.status(500).json({ message: "Failed to update chat" });
+    }
+  });
+
   app.post("/api/chats/:chatId/messages", async (req, res) => {
     try {
       const user = await storage.getFirstUser();
@@ -396,11 +461,82 @@ export async function registerRoutes(
           chatId: req.params.chatId,
           lastMessage: message
         });
+
+        // Trigger push notification for others
+        if (p.userId !== user.id) {
+          io.to(`user:${p.userId}`).emit("push-notification", {
+            title: `Новое сообщение от ${user.name}`,
+            body: message.content,
+            url: `/chat?id=${req.params.chatId}`
+          });
+        }
       });
       
       res.status(201).json(message);
     } catch (error) {
-      res.status(500).json({ message: "Failed to send message" });
+      console.error("Error creating message:", error);
+      res.status(500).json({ message: "Failed to create message" });
+    }
+  });
+
+  app.patch("/api/messages/:messageId", async (req, res) => {
+    try {
+      const { content } = req.body;
+      const message = await storage.updateMessage(req.params.messageId, content);
+      
+      // Notify participants about message update
+      const participants = await storage.getChatParticipants(message.chatId);
+      participants.forEach(p => {
+        io.to(`user:${p.userId}`).emit("message-updated", message);
+      });
+      
+      res.json(message);
+    } catch (error) {
+      console.error("Error updating message:", error);
+      res.status(500).json({ message: "Failed to update message" });
+    }
+  });
+
+  app.delete("/api/messages/:messageId", async (req, res) => {
+    try {
+      const message = await storage.getMessage(req.params.messageId);
+      if (!message) return res.status(404).json({ message: "Message not found" });
+
+      await storage.deleteMessage(req.params.messageId);
+      
+      // Notify participants about message deletion
+      const participants = await storage.getChatParticipants(message.chatId);
+      participants.forEach(p => {
+        io.to(`user:${p.userId}`).emit("message-deleted", {
+          messageId: req.params.messageId,
+          chatId: message.chatId
+        });
+      });
+      
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting message:", error);
+      res.status(500).json({ message: "Failed to delete message" });
+    }
+  });
+
+  app.post("/api/chats/:chatId/read", async (req, res) => {
+    try {
+      const user = await storage.getFirstUser();
+      if (!user) return res.status(404).json({ message: "User not found" });
+
+      await storage.markChatMessagesAsRead(req.params.chatId, user.id);
+      
+      // Emit read event
+      io.to(`chat:${req.params.chatId}`).emit("messages-read", {
+        chatId: req.params.chatId,
+        userId: user.id
+      });
+      
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error marking messages as read:", error);
+      res.status(500).json({ message: "Failed to mark messages as read" });
     }
   });
 

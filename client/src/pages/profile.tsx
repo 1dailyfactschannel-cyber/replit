@@ -105,7 +105,7 @@ export default function Profile() {
     }, 3000);
   };
 
-  const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       if (file.size > 5 * 1024 * 1024) {
@@ -117,14 +117,32 @@ export default function Profile() {
         return;
       }
 
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        const base64String = reader.result as string;
-        setProfile(prev => ({ ...prev, avatar: base64String }));
-        // Сразу сохраняем аватар
-        updateProfileMutation.mutate({ avatar: base64String });
-      };
-      reader.readAsDataURL(file);
+      const formData = new FormData();
+      formData.append("file", file);
+
+      try {
+        const res = await fetch("/api/upload", {
+          method: "POST",
+          body: formData,
+        });
+
+        if (!res.ok) {
+          throw new Error("Ошибка при загрузке файла");
+        }
+
+        const data = await res.json();
+        const fileUrl = data.url;
+
+        setProfile(prev => ({ ...prev, avatar: fileUrl }));
+        // Сразу сохраняем путь к аватару в профиле пользователя
+        updateProfileMutation.mutate({ avatar: fileUrl });
+      } catch (error: any) {
+        toast({
+          title: "Ошибка",
+          description: "Не удалось загрузить аватар: " + error.message,
+          variant: "destructive",
+        });
+      }
     }
   };
 

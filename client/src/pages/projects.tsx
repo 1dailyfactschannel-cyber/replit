@@ -727,6 +727,65 @@ export default function Projects() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      {/* Project Edit Dialog */}
+      <Dialog open={!!editingProject} onOpenChange={(open) => !open && setEditingProject(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Редактировать проект</DialogTitle>
+            <DialogDescription>Измените параметры проекта.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="edit-project-name">Название проекта</Label>
+              <Input 
+                id="edit-project-name" 
+                value={editingProject?.name || ""} 
+                onChange={(e) => setEditingProject(prev => prev ? { ...prev, name: e.target.value } : null)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Приоритет</Label>
+              <Select 
+                value={editingProject?.priority || "Средний"} 
+                onValueChange={(val) => setEditingProject(prev => prev ? { ...prev, priority: val } : null)}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Выберите приоритет" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Низкий">Низкий</SelectItem>
+                  <SelectItem value="Средний">Средний</SelectItem>
+                  <SelectItem value="Высокий">Высокий</SelectItem>
+                  <SelectItem value="Критический">Критический</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Цвет</Label>
+              <div className="flex gap-2">
+                {["bg-blue-500", "bg-rose-500", "bg-amber-500", "bg-emerald-500", "bg-indigo-500", "bg-slate-500"].map((c) => (
+                  <button
+                    key={c}
+                    onClick={() => setEditingProject(prev => prev ? { ...prev, color: c } : null)}
+                    className={cn(
+                      "w-8 h-8 rounded-full border-2 transition-all",
+                      c,
+                      editingProject?.color === c ? "border-primary scale-110 shadow-lg" : "border-transparent hover:scale-105"
+                    )}
+                  />
+                ))}
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditingProject(null)}>Отмена</Button>
+            <Button onClick={handleUpdateProject} disabled={updateProjectMutation.isPending || !editingProject?.name}>
+              {updateProjectMutation.isPending && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
+              Сохранить изменения
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Layout>
   );
 }

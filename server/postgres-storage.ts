@@ -148,6 +148,62 @@ export class PostgresStorage {
     }
   }
 
+  async getChat(id: string) {
+    try {
+      const [chat] = await this.db.select().from(schema.chats).where(eq(schema.chats.id, id)).limit(1);
+      if (!chat) return undefined;
+
+      const participants = await this.db
+        .select({
+          id: schema.users.id,
+          username: schema.users.username,
+          avatar: schema.users.avatar,
+        })
+        .from(schema.users)
+        .innerJoin(
+          schema.chatParticipants,
+          eq(schema.users.id, schema.chatParticipants.userId)
+        )
+        .where(eq(schema.chatParticipants.chatId, chat.id));
+
+      const [lastMessage] = await this.db
+        .select()
+        .from(schema.messages)
+        .where(eq(schema.messages.chatId, chat.id))
+        .orderBy(desc(schema.messages.createdAt))
+        .limit(1);
+
+      return {
+        ...chat,
+        participants,
+        lastMessage,
+      };
+    } catch (error) {
+      console.error("Error getting chat:", error);
+      return undefined;
+    }
+  }
+
+  async updateChatParticipants(chatId: string, participantIds: string[]) {
+    try {
+      // Remove old participants
+      await this.db.delete(schema.chatParticipants).where(eq(schema.chatParticipants.chatId, chatId));
+      
+      // Add new participants
+      if (participantIds.length > 0) {
+        const participants = participantIds.map(userId => ({
+          chatId,
+          userId,
+        }));
+        await this.db.insert(schema.chatParticipants).values(participants);
+      }
+      return true;
+    } catch (error) {
+      console.error("Error updating chat participants:", error);
+      throw error;
+    }
+  }
+
   async getMessages(chatId: string) {
     try {
       return await this.db
@@ -180,6 +236,16 @@ export class PostgresStorage {
     }
   }
 
+  async getMessage(id: string) {
+    try {
+      const [message] = await this.db.select().from(schema.messages).where(eq(schema.messages.id, id)).limit(1);
+      return message;
+    } catch (error) {
+      console.error("Error getting message:", error);
+      return undefined;
+    }
+  }
+
   async createMessage(insertMessage: schema.InsertMessage) {
     try {
       const [message] = await this.db.insert(schema.messages).values(insertMessage).returning();
@@ -196,6 +262,27 @@ export class PostgresStorage {
     }
   }
 
+  async updateChat(id: string, update: Partial<schema.Chat>) {
+    try {
+      const [chat] = await this.db.update(schema.chats).set({ ...update, updatedAt: new Date() }).where(eq(schema.chats.id, id)).returning();
+      if (!chat) throw new Error("Chat not found");
+      return chat;
+    } catch (error) {
+      console.error("Error updating chat:", error);
+      throw error;
+    }
+  }
+
+  async deleteChat(id: string) {
+    try {
+      await this.db.delete(schema.chats).where(eq(schema.chats.id, id));
+      return true;
+    } catch (error) {
+      console.error("Error deleting chat:", error);
+      throw error;
+    }
+  }
+
   async getChatParticipants(chatId: string) {
     try {
       return await this.db
@@ -205,6 +292,64 @@ export class PostgresStorage {
     } catch (error) {
       console.error("Error getting chat participants:", error);
       return [];
+    }
+  }
+
+  async updateMessage(id: string, content: string) {
+    try {
+      const [message] = await this.db.update(schema.messages)
+        .set({ content, updatedAt: new Date() })
+        .where(eq(schema.messages.id, id))
+        .returning();
+      return message;
+    } catch (error) {
+      console.error("Error updating message:", error);
+      throw error;
+    }
+  }
+
+  async deleteMessage(id: string) {
+    try {
+      await this.db.delete(schema.messages).where(eq(schema.messages.id, id));
+      return true;
+    } catch (error) {
+      console.error("Error deleting message:", error);
+      throw error;
+    }
+  }
+
+  async markMessageAsRead(id: string) {
+    try {
+      await this.db.update(schema.messages)
+        .set({ isRead: true })
+        .where(eq(schema.messages.id, id));
+      return true;
+    } catch (error) {
+      console.error("Error marking message as read:", error);
+      throw error;
+    }
+  }
+
+  async markChatMessagesAsRead(chatId: string, userId: string) {
+    try {
+      await this.db.update(schema.messages)
+        .set({ isRead: true })
+        .where(and(
+          eq(schema.messages.chatId, chatId),
+          ne(schema.messages.senderId, userId),
+          eq(schema.messages.isRead, false)
+        ));
+      
+      await this.db.update(schema.chatParticipants)
+        .set({ lastReadAt: new Date() })
+        .where(and(
+          eq(schema.chatParticipants.chatId, chatId),
+          eq(schema.chatParticipants.userId, userId)
+        ));
+      return true;
+    } catch (error) {
+      console.error("Error marking chat messages as read:", error);
+      return false;
     }
   }
 

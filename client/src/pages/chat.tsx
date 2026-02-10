@@ -5,8 +5,14 @@ import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Search, Phone, Video, Info, Paperclip, Smile, Send, Clock, Plus, Users, Check, FolderPlus, Folder, LogOut, User, Settings, Camera, UserMinus, ShieldAlert, X, MessageSquare, MoreVertical } from "lucide-react";
+import { Search, Phone, Video, Info, Paperclip, Smile, Send, Clock, Plus, Users, Check, FolderPlus, Folder, LogOut, User, Settings, Camera, UserMinus, ShieldAlert, X, MessageSquare, MoreVertical, Edit, Trash } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useLocation } from "wouter";
 import { ScheduleCallDialog, ScheduledCall } from "@/components/call/ScheduleCallDialog";
 import { Badge } from "@/components/ui/badge";
@@ -72,6 +78,38 @@ export default function ChatPage() {
     enabled: !!activeChatId,
   });
 
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const [editContent, setEditContent] = useState("");
+
+  const updateMessageMutation = useMutation({
+    mutationFn: async ({ id, content }: { id: string, content: string }) => {
+      const res = await apiRequest("PATCH", `/api/messages/${id}`, { content });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/chats", activeChatId, "messages"] });
+      setEditingMessageId(null);
+      setEditContent("");
+      toast.success("Сообщение обновлено");
+    }
+  });
+
+  const deleteMessageMutation = useMutation({
+    mutationFn: async (id: string) => {
+      await apiRequest("DELETE", `/api/messages/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/chats", activeChatId, "messages"] });
+      toast.success("Сообщение удалено");
+    }
+  });
+
+  const markReadMutation = useMutation({
+    mutationFn: async (chatId: string) => {
+      await apiRequest("POST", `/api/chats/${chatId}/read`);
+    }
+  });
+
   // Socket.io initialization
   useEffect(() => {
     if (currentUser) {
@@ -92,11 +130,36 @@ export default function ChatPage() {
         // Notify if not active chat
         if (message.chatId !== activeChatId) {
           notify("Новое сообщение", { body: message.content });
+        } else {
+          // If active chat, mark as read
+          markReadMutation.mutate(message.chatId);
         }
+      });
+
+      socket.on("message-updated", () => {
+        queryClient.invalidateQueries({ queryKey: ["/api/chats", activeChatId, "messages"] });
+      });
+
+      socket.on("message-deleted", ({ messageId, chatId }: { messageId: string, chatId: string }) => {
+        queryClient.setQueryData(["/api/chats", chatId, "messages"], (old: Message[] = []) => {
+          return old.filter(m => m.id !== messageId);
+        });
+        queryClient.invalidateQueries({ queryKey: ["/api/chats"] });
+      });
+
+      socket.on("messages-read", () => {
+        queryClient.invalidateQueries({ queryKey: ["/api/chats", activeChatId, "messages"] });
       });
 
       socket.on("chat-update", () => {
         queryClient.invalidateQueries({ queryKey: ["/api/chats"] });
+      });
+
+      socket.on("push-notification", (data: { title: string, body: string, url: string }) => {
+        notify(data.title, {
+          body: data.body,
+          data: data.url
+        });
       });
 
       socket.on("user-typing", (data: { chatId: string, username: string }) => {
@@ -141,14 +204,28 @@ export default function ChatPage() {
   }, [requestPermission]);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const avatarInputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [messageInput, setMessageInput] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const [attachments, setAttachments] = useState<{ url: string, name: string, type: string, size: number }[]>([]);
   const [scheduleOpen, setScheduleOpen] = useState(false);
   const [scheduledCalls, setScheduledCalls] = useState<ScheduledCall[]>([]);
   
   const [isCreateGroupOpen, setIsCreateGroupOpen] = useState(false);
   const [newGroupName, setNewGroupName] = useState("");
   const [selectedMembers, setSelectedMembers] = useState<string[]>([]);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [messageSearchQuery, setMessageSearchQuery] = useState("");
+
+  const filteredChats = chats.filter(chat => {
+    const name = getChatName(chat).toLowerCase();
+    return name.includes(searchQuery.toLowerCase());
+  });
+
+  const filteredMessages = messages.filter(msg => 
+    msg.content.toLowerCase().includes(messageSearchQuery.toLowerCase())
+  );
 
   const [isCreateFolderOpen, setIsCreateFolderOpen] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
@@ -172,7 +249,10 @@ export default function ChatPage() {
   const sendMessageMutation = useMutation({
     mutationFn: async (content: string) => {
       if (!activeChatId) return;
-      return apiRequest("POST", `/api/chats/${activeChatId}/messages`, { content });
+      return apiRequest("POST", `/api/chats/${activeChatId}/messages`, { 
+        content,
+        attachments: attachments 
+      });
     },
     onSuccess: (newMessage) => {
       setMessageInput("");
@@ -199,9 +279,69 @@ export default function ChatPage() {
     }
   });
 
+  const updateChatMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string, data: any }) => {
+      const res = await apiRequest("PATCH", `/api/chats/${id}`, data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/chats"] });
+      setIsInfoOpen(false);
+      toast.success("Настройки чата обновлены");
+    }
+  });
+
+  const [selectedGroupParticipants, setSelectedGroupParticipants] = useState<string[]>([]);
+
+  const handleSaveEdit = () => {
+    if (!activeChatId || !editName.trim()) return;
+    updateChatMutation.mutate({
+      id: activeChatId,
+      data: {
+        name: editName,
+        description: editDescription,
+        avatar: editAvatar,
+        participantIds: selectedGroupParticipants
+      }
+    });
+  };
+
   const handleSendMessage = () => {
-    if (!messageInput.trim() || sendMessageMutation.isPending) return;
+    if ((!messageInput.trim() && attachments.length === 0) || sendMessageMutation.isPending) return;
     sendMessageMutation.mutate(messageInput);
+    setAttachments([]);
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>, isAvatar: boolean = false) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setUploading(true);
+    const formData = new FormData();
+    formData.append("file", file);
+
+    try {
+      const response = await fetch("/api/upload", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!response.ok) throw new Error("Upload failed");
+
+      const data = await response.json();
+      if (isAvatar) {
+        setEditAvatar(data.url);
+      } else {
+        setAttachments(prev => [...prev, data]);
+        toast.success(`Файл "${file.name}" загружен`);
+      }
+    } catch (error) {
+      console.error("Upload error:", error);
+      toast.error(isAvatar ? "Ошибка при загрузке аватара" : "Ошибка при загрузке файла");
+    } finally {
+      setUploading(false);
+      if (!isAvatar && fileInputRef.current) fileInputRef.current.value = "";
+    }
   };
 
   const handleTyping = () => {
@@ -250,17 +390,6 @@ export default function ChatPage() {
     toast.success(`Папка "${newFolderName}" создана`);
   };
 
-  const handleAvatarUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setEditAvatar(reader.result as string);
-      };
-      reader.readAsDataURL(file);
-    }
-  };
-
   const toggleMember = (memberId: string) => {
     setSelectedMembers(prev => 
       prev.includes(memberId) ? prev.filter(id => id !== memberId) : [...prev, memberId]
@@ -274,8 +403,8 @@ export default function ChatPage() {
   };
 
   const filteredContacts = activeFolderId 
-    ? chats.filter(c => folders.find(f => f.id === activeFolderId)?.chatIds.includes(c.id))
-    : chats;
+    ? filteredChats.filter(c => folders.find(f => f.id === activeFolderId)?.chatIds.includes(c.id))
+    : filteredChats;
 
   const getChatName = (chat: Contact) => {
     if (chat.type === "group") return chat.name;
@@ -446,6 +575,16 @@ export default function ChatPage() {
                     </Dialog>
                   </div>
                 </div>
+
+                <div className="relative mb-4">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  <Input 
+                    placeholder="Поиск чатов..." 
+                    className="pl-9 h-9 rounded-xl bg-secondary/30 border-none focus-visible:ring-1 focus-visible:ring-primary/20"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                  />
+                </div>
                 
                 {/* Folder Tabs */}
                 {folders.length > 0 && (
@@ -560,6 +699,15 @@ export default function ChatPage() {
                         </div>
                       </div>
                       <div className="flex items-center gap-1">
+                        <div className="relative mr-2">
+                          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
+                          <Input 
+                            placeholder="Поиск..." 
+                            className="pl-8 h-8 w-32 text-[10px] rounded-lg bg-secondary/30 border-none focus-visible:ring-1 focus-visible:ring-primary/20"
+                            value={messageSearchQuery}
+                            onChange={(e) => setMessageSearchQuery(e.target.value)}
+                          />
+                        </div>
                         <Button variant="ghost" size="icon" className="h-9 w-9 hover:bg-secondary rounded-lg" onClick={() => setLocation("/call")} title="Аудио звонок">
                           <Phone className="w-4 h-4 text-muted-foreground" />
                         </Button>
@@ -577,6 +725,7 @@ export default function ChatPage() {
                             setEditName(getChatName(activeChat));
                             setEditDescription(activeChat.description || "");
                             setEditAvatar(getChatAvatar(activeChat) || null);
+                            setSelectedGroupParticipants(activeChat.participants.map((p: any) => p.id));
                           }
                         }}>
                           <DialogTrigger asChild>
@@ -647,7 +796,7 @@ export default function ChatPage() {
                                 </DialogHeader>
                                 <div className="space-y-6 py-6">
                                    <div className="flex flex-col items-center gap-4">
-                                      <div className="relative group cursor-pointer" onClick={() => fileInputRef.current?.click()}>
+                                      <div className="relative group cursor-pointer" onClick={() => avatarInputRef.current?.click()}>
                                          <Avatar className="w-24 h-24 rounded-2xl shadow-lg border-2 border-primary/20 transition-all group-hover:opacity-80">
                                            <AvatarImage src={editAvatar || undefined} />
                                            <AvatarFallback className="text-2xl bg-primary/10 text-primary font-bold">
@@ -659,10 +808,10 @@ export default function ChatPage() {
                                          </div>
                                          <input 
                                            type="file" 
-                                           ref={fileInputRef} 
+                                           ref={avatarInputRef} 
                                            className="hidden" 
                                            accept="image/*"
-                                           onChange={handleAvatarUpload}
+                                           onChange={(e) => handleFileUpload(e, true)}
                                          />
                                       </div>
                                    </div>
@@ -685,11 +834,43 @@ export default function ChatPage() {
                                           className="bg-secondary/30 border-none resize-none min-h-[100px]"
                                         />
                                       </div>
+                                      <div className="space-y-2">
+                                        <Label>Участники</Label>
+                                        <ScrollArea className="h-[200px] rounded-xl border border-border/50 p-2">
+                                          <div className="space-y-1">
+                                            {allUsers.map((user) => (
+                                              <div 
+                                                key={user.id} 
+                                                className="flex items-center justify-between p-2 rounded-lg hover:bg-secondary/50 cursor-pointer transition-colors"
+                                                onClick={() => {
+                                                  setSelectedGroupParticipants(prev => 
+                                                    prev.includes(user.id) ? prev.filter(id => id !== user.id) : [...prev, user.id]
+                                                  );
+                                                }}
+                                              >
+                                                <div className="flex items-center gap-2">
+                                                  <Avatar className="w-6 h-6">
+                                                    <AvatarImage src={user.avatar || undefined} />
+                                                    <AvatarFallback>{user.username.substring(0,2).toUpperCase()}</AvatarFallback>
+                                                  </Avatar>
+                                                  <span className="text-xs">{user.username}</span>
+                                                </div>
+                                                <div className={cn(
+                                                  "w-4 h-4 rounded-full border flex items-center justify-center transition-all",
+                                                  selectedGroupParticipants.includes(user.id) ? "bg-primary border-primary text-primary-foreground" : "border-muted-foreground/30"
+                                                )}>
+                                                  {selectedGroupParticipants.includes(user.id) && <Check className="w-2.5 h-2.5" />}
+                                                </div>
+                                              </div>
+                                            ))}
+                                          </div>
+                                        </ScrollArea>
+                                      </div>
                                    </div>
                                 </div>
                                 <DialogFooter>
                                   <Button variant="outline" onClick={() => setIsInfoOpen(false)}>Отмена</Button>
-                                  <Button>Сохранить изменения</Button>
+                                  <Button onClick={handleSaveEdit} disabled={updateChatMutation.isPending}>Сохранить изменения</Button>
                                 </DialogFooter>
                               </TabsContent>
                             </Tabs>
@@ -703,21 +884,97 @@ export default function ChatPage() {
                       <div className="space-y-6 max-w-4xl mx-auto">
                         {messagesLoading ? (
                           <div className="text-center text-muted-foreground">Загрузка сообщений...</div>
-                        ) : messages.map((msg, i) => {
+                        ) : filteredMessages.map((msg, i) => {
                           const sender = activeChat.participants.find(p => p.id === msg.senderId);
                           const isMe = msg.senderId === currentUser?.id;
                           
                           return (
-                            <div key={msg.id} className={cn("flex flex-col max-w-[80%]", isMe ? "ml-auto items-end" : "items-start")}>
-                              <div className="flex items-center gap-2 mb-1.5">
+                            <div key={msg.id} className={cn(
+                              "flex flex-col gap-1 mb-4 animate-in fade-in slide-in-from-bottom-2 duration-300 group",
+                              isMe ? "ml-auto items-end" : "items-start"
+                            )}>
+                              <div className="flex items-center gap-2 px-1">
                                 {!isMe && <span className="text-[10px] font-bold text-muted-foreground">{sender?.username}</span>}
-                                <span className="text-[9px] font-medium text-muted-foreground/50">{formatTime(msg.createdAt)}</span>
+                                <span className="text-[10px] text-muted-foreground opacity-50">
+                                  {formatTime(msg.createdAt)}
+                                </span>
+                                {isMe && (
+                                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <DropdownMenu>
+                                      <DropdownMenuTrigger asChild>
+                                        <Button variant="ghost" size="icon" className="h-4 w-4 rounded-full">
+                                          <MoreVertical className="w-3 h-3" />
+                                        </Button>
+                                      </DropdownMenuTrigger>
+                                      <DropdownMenuContent align="end">
+                                        <DropdownMenuItem onClick={() => {
+                                          setEditingMessageId(msg.id);
+                                          setEditContent(msg.content);
+                                        }}>
+                                          <Edit className="w-3 h-3 mr-2" />
+                                          Изменить
+                                        </DropdownMenuItem>
+                                        <DropdownMenuItem 
+                                          className="text-destructive"
+                                          onClick={() => deleteMessageMutation.mutate(msg.id)}
+                                        >
+                                          <Trash className="w-3 h-3 mr-2" />
+                                          Удалить
+                                        </DropdownMenuItem>
+                                      </DropdownMenuContent>
+                                    </DropdownMenu>
+                                  </div>
+                                )}
                               </div>
                               <div className={cn(
-                                "px-4 py-2.5 rounded-2xl text-sm shadow-sm transition-all hover:shadow-md",
+                                "max-w-[80%] px-4 py-2.5 rounded-2xl text-sm shadow-sm transition-all hover:shadow-md relative",
                                 isMe ? "bg-primary text-primary-foreground rounded-tr-none" : "bg-card text-foreground border border-border/50 rounded-tl-none"
                               )}>
-                                {msg.content}
+                                {editingMessageId === msg.id ? (
+                                  <div className="flex flex-col gap-2 min-w-[200px]">
+                                    <textarea 
+                                      className="bg-transparent border-none focus:ring-0 text-sm w-full resize-none p-0"
+                                      value={editContent}
+                                      onChange={(e) => setEditContent(e.target.value)}
+                                      autoFocus
+                                    />
+                                    <div className="flex justify-end gap-1">
+                                      <Button size="sm" variant="ghost" className="h-6 text-[10px]" onClick={() => setEditingMessageId(null)}>Отмена</Button>
+                                      <Button size="sm" className="h-6 text-[10px]" onClick={() => updateMessageMutation.mutate({ id: msg.id, content: editContent })}>Сохранить</Button>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <>
+                                    {msg.content}
+                                    {isMe && (
+                                      <div className="absolute bottom-1 right-2 flex gap-0.5">
+                                        <Check className={cn("w-3 h-3", (msg as any).isRead ? "text-blue-400" : "opacity-30")} />
+                                        {(msg as any).isRead && <Check className="w-3 h-3 -ml-2 text-blue-400" />}
+                                      </div>
+                                    )}
+                                  </>
+                                )}
+                                
+                                {msg.attachments && Array.isArray(msg.attachments) && msg.attachments.length > 0 && (
+                                  <div className="mt-2 space-y-1">
+                                    {msg.attachments.map((file: any, idx: number) => (
+                                      <a 
+                                        key={idx} 
+                                        href={file.url} 
+                                        target="_blank" 
+                                        rel="noopener noreferrer"
+                                        className={cn(
+                                          "flex items-center gap-2 p-2 rounded-lg text-[10px] hover:bg-black/5 transition-colors",
+                                          isMe ? "bg-white/10" : "bg-secondary/50"
+                                        )}
+                                      >
+                                        <Paperclip className="w-3 h-3 shrink-0" />
+                                        <span className="truncate">{file.name}</span>
+                                        <span className="opacity-50 shrink-0">({(file.size / 1024).toFixed(1)} KB)</span>
+                                      </a>
+                                    ))}
+                                  </div>
+                                )}
                               </div>
                             </div>
                           );
@@ -730,16 +987,32 @@ export default function ChatPage() {
 
                   {/* Input Area */}
                   <div className="p-4 border-t border-border bg-card/80 backdrop-blur-md shrink-0">
+                      {activeChatId && typingUsers[activeChatId]?.length > 0 && (
+                        <div className="max-w-4xl mx-auto mb-2 px-2 text-[10px] text-muted-foreground animate-pulse flex items-center gap-2">
+                          <div className="flex gap-1">
+                            <span className="w-1 h-1 bg-muted-foreground rounded-full animate-bounce [animation-delay:-0.3s]"></span>
+                            <span className="w-1 h-1 bg-muted-foreground rounded-full animate-bounce [animation-delay:-0.15s]"></span>
+                            <span className="w-1 h-1 bg-muted-foreground rounded-full animate-bounce"></span>
+                          </div>
+                          {typingUsers[activeChatId].join(", ")} {typingUsers[activeChatId].length === 1 ? "печатает..." : "печатают..."}
+                        </div>
+                      )}
                       <div className="flex items-center gap-2 max-w-4xl mx-auto bg-secondary/30 p-2 rounded-2xl border border-border/50 focus-within:bg-background focus-within:ring-2 focus-within:ring-primary/20 transition-all">
                         <div className="flex gap-1">
                           <input 
                             type="file" 
                             ref={fileInputRef} 
                             className="hidden" 
-                            onChange={(e) => toast.success(`Файл "${e.target.files?.[0]?.name}" прикреплен`)}
+                            onChange={handleFileUpload}
                           />
-                          <Button variant="ghost" size="icon" className="h-9 w-9 rounded-xl hover:bg-secondary" onClick={() => fileInputRef.current?.click()}>
-                            <Paperclip className="w-4 h-4 text-muted-foreground" />
+                          <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            className="h-9 w-9 rounded-xl hover:bg-secondary" 
+                            onClick={() => fileInputRef.current?.click()}
+                            disabled={uploading}
+                          >
+                            <Paperclip className={cn("w-4 h-4 text-muted-foreground", uploading && "animate-pulse")} />
                           </Button>
                           <Button variant="ghost" size="icon" className="h-9 w-9 rounded-xl hover:bg-secondary">
                             <Smile className="w-4 h-4 text-muted-foreground" />
@@ -749,7 +1022,10 @@ export default function ChatPage() {
                           placeholder="Напишите сообщение..." 
                           className="border-none bg-transparent h-9 focus-visible:ring-0 text-sm"
                           value={messageInput}
-                          onChange={(e) => setMessageInput(e.target.value)}
+                          onChange={(e) => {
+                            setMessageInput(e.target.value);
+                            handleTyping();
+                          }}
                           onKeyDown={(e) => {
                             if (e.key === "Enter") handleSendMessage();
                           }}
@@ -758,11 +1034,27 @@ export default function ChatPage() {
                           size="icon" 
                           className="h-9 w-9 rounded-xl shadow-lg shadow-primary/20 bg-primary hover:bg-primary/90"
                           onClick={handleSendMessage}
-                          disabled={!messageInput.trim() || sendMessageMutation.isPending}
+                          disabled={(!messageInput.trim() && attachments.length === 0) || sendMessageMutation.isPending || uploading}
                         >
                           <Send className="w-4 h-4" />
                         </Button>
                       </div>
+                      
+                      {attachments.length > 0 && (
+                        <div className="flex flex-wrap gap-2 mt-2 max-w-4xl mx-auto">
+                          {attachments.map((file, idx) => (
+                            <div key={idx} className="flex items-center gap-2 bg-primary/10 text-primary text-[10px] px-2 py-1 rounded-lg border border-primary/20 group relative">
+                              <span className="truncate max-w-[100px]">{file.name}</span>
+                              <button 
+                                onClick={() => setAttachments(prev => prev.filter((_, i) => i !== idx))}
+                                className="hover:text-destructive transition-colors"
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                   </div>
                 </>
               ) : (
