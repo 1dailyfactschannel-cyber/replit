@@ -28,6 +28,7 @@ import { TeamRooms } from "@/components/chat/TeamRooms";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import type { Chat, Message, User as DBUser } from "@shared/schema";
+import { io, Socket } from "socket.io-client";
 
 interface Contact extends Chat {
   lastMessage?: Message;
@@ -47,6 +48,8 @@ export default function ChatPage() {
   const [, setLocation] = useLocation();
   const queryClient = useQueryClient();
   const { notify, requestPermission } = useNotifications();
+  const socketRef = useRef<Socket | null>(null);
+  const [typingUsers, setTypingUsers] = useState<Record<string, string[]>>({});
   
   const { data: currentUser } = useQuery<DBUser>({
     queryKey: ["/api/user"],
@@ -68,6 +71,64 @@ export default function ChatPage() {
     queryKey: ["/api/chats", activeChatId, "messages"],
     enabled: !!activeChatId,
   });
+
+  // Socket.io initialization
+  useEffect(() => {
+    if (currentUser) {
+      const socket = io({
+        query: { userId: currentUser.id }
+      });
+      socketRef.current = socket;
+
+      socket.on("new-message", (message: Message) => {
+        queryClient.setQueryData(["/api/chats", message.chatId, "messages"], (old: Message[] = []) => {
+          if (old.some(m => m.id === message.id)) return old;
+          return [...old, message];
+        });
+        
+        // Update chat list for last message
+        queryClient.invalidateQueries({ queryKey: ["/api/chats"] });
+        
+        // Notify if not active chat
+        if (message.chatId !== activeChatId) {
+          notify("Новое сообщение", { body: message.content });
+        }
+      });
+
+      socket.on("chat-update", () => {
+        queryClient.invalidateQueries({ queryKey: ["/api/chats"] });
+      });
+
+      socket.on("user-typing", (data: { chatId: string, username: string }) => {
+        setTypingUsers(prev => {
+          const current = prev[data.chatId] || [];
+          if (current.includes(data.username)) return prev;
+          return { ...prev, [data.chatId]: [...current, data.username] };
+        });
+
+        setTimeout(() => {
+          setTypingUsers(prev => {
+            const current = prev[data.chatId] || [];
+            return { ...prev, [data.chatId]: current.filter(u => u !== data.username) };
+          });
+        }, 3000);
+      });
+
+      return () => {
+        socket.disconnect();
+      };
+    }
+  }, [currentUser, queryClient, activeChatId, notify]);
+
+  // Join/Leave chat rooms
+  useEffect(() => {
+    if (socketRef.current && activeChatId) {
+      socketRef.current.emit("join-chat", activeChatId);
+      return () => {
+        socketRef.current?.emit("leave-chat", activeChatId);
+      };
+    }
+  }, [activeChatId]);
 
   useEffect(() => {
     if (chats.length > 0 && !activeChatId) {
@@ -113,9 +174,13 @@ export default function ChatPage() {
       if (!activeChatId) return;
       return apiRequest("POST", `/api/chats/${activeChatId}/messages`, { content });
     },
-    onSuccess: () => {
+    onSuccess: (newMessage) => {
       setMessageInput("");
-      queryClient.invalidateQueries({ queryKey: ["/api/chats", activeChatId, "messages"] });
+      // Update local cache immediately for better UX
+      queryClient.setQueryData(["/api/chats", activeChatId, "messages"], (old: Message[] = []) => {
+        if (old.some(m => m.id === newMessage.id)) return old;
+        return [...old, newMessage];
+      });
       queryClient.invalidateQueries({ queryKey: ["/api/chats"] });
     }
   });
@@ -137,6 +202,16 @@ export default function ChatPage() {
   const handleSendMessage = () => {
     if (!messageInput.trim() || sendMessageMutation.isPending) return;
     sendMessageMutation.mutate(messageInput);
+  };
+
+  const handleTyping = () => {
+    if (socketRef.current && activeChatId && currentUser) {
+      socketRef.current.emit("typing", {
+        chatId: activeChatId,
+        userId: currentUser.id,
+        username: currentUser.username
+      });
+    }
   };
 
   const handleCreateGroup = () => {

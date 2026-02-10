@@ -2,13 +2,17 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { getStorage } from "./postgres-storage";
 import { insertSiteSettingsSchema, insertUserSchema } from "@shared/schema";
+import { setupWebSockets } from "./socket";
+import { Server as SocketIOServer } from "socket.io";
 
 const storage = getStorage();
+let io: SocketIOServer;
 
 export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
+  io = setupWebSockets(httpServer);
   console.log("Registering API routes...");
   // Health check route
   app.get("/api/health", async (_req, res) => {
@@ -380,6 +384,18 @@ export async function registerRoutes(
         senderId: user.id,
         content: req.body.content,
         attachments: req.body.attachments || []
+      });
+      
+      // Emit to all users in the chat room
+      io.to(`chat:${req.params.chatId}`).emit("new-message", message);
+      
+      // Also notify each participant individually (for chat list updates)
+      const participants = await storage.getChatParticipants(req.params.chatId);
+      participants.forEach(p => {
+        io.to(`user:${p.userId}`).emit("chat-update", {
+          chatId: req.params.chatId,
+          lastMessage: message
+        });
       });
       
       res.status(201).json(message);

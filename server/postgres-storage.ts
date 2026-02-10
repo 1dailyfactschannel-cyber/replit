@@ -196,6 +196,18 @@ export class PostgresStorage {
     }
   }
 
+  async getChatParticipants(chatId: string) {
+    try {
+      return await this.db
+        .select()
+        .from(schema.chatParticipants)
+        .where(eq(schema.chatParticipants.chatId, chatId));
+    } catch (error) {
+      console.error("Error getting chat participants:", error);
+      return [];
+    }
+  }
+
   // Site Settings methods
   async getSiteSetting(key: string): Promise<SiteSettings | undefined> {
     try {
