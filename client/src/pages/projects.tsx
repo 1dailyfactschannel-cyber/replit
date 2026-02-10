@@ -1,8 +1,7 @@
 import { Layout } from "@/components/layout/Layout";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { cn } from "@/lib/utils";
 import { 
-  Plus, 
   ChevronRight, 
   MoreVertical,
   Search,
@@ -12,7 +11,9 @@ import {
   Flag,
   GripVertical,
   Trash2,
-  Pencil
+  Pencil,
+  Loader2,
+  Plus
 } from "lucide-react";
 import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd";
 import { Button } from "@/components/ui/button";
@@ -40,45 +41,144 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toast } from "sonner";
-
-// Mock Data
-const INITIAL_PROJECTS = [
-  { id: 1, name: "Ребрендинг TeamSync", boards: ["Основная доска", "Маркетинг"], priority: "Высокий", color: "bg-purple-500", members: 12, collapsed: false },
-  { id: 2, name: "Мобильное приложение", boards: ["iOS Разработка", "Android Разработка", "Дизайн"], priority: "Средний", color: "bg-blue-500", members: 8, collapsed: false },
-  { id: 3, name: "API Интеграция", boards: ["Техзадание"], priority: "Низкий", color: "bg-emerald-500", members: 4, collapsed: false },
-];
-
-const MOCK_TASK_DETAILS: Task = {
-  id: 3,
-  title: "Разработка темной темы",
-  description: "Необходимо реализовать поддержку темной темы во всех основных компонентах системы.",
-  status: "В работе",
-  priority: "Высокий",
-  type: "UI/UX",
-  assignee: { name: "Я" },
-  creator: { name: "Майк Росс", date: "24 окт. 2025" },
-  dueDate: "15 янв. 2026",
-  labels: ["Дизайн", "Frontend"],
-  subtasks: [],
-  comments: [],
-  history: [],
-  observers: [
-    { name: "Александр Иванов", avatar: "https://i.pravatar.cc/150?u=1" },
-    { name: "Елена Смирнова", avatar: "https://i.pravatar.cc/150?u=2" }
-  ]
-};
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 
 export default function Projects() {
-  const [projects, setProjects] = useState(INITIAL_PROJECTS);
-  const [activeProject, setActiveProject] = useState(projects[0]);
-  const [activeBoard, setActiveBoard] = useState(projects[0].boards[0]);
-  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
+  const [activeBoardId, setActiveBoardId] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [isCreateProjectOpen, setIsCreateProjectOpen] = useState(false);
   const [isCreateBoardOpen, setIsCreateBoardOpen] = useState(false);
   const [newProject, setNewProject] = useState({ name: "", color: "bg-blue-500", priority: "Средний" });
   const [newBoardName, setNewBoardName] = useState("");
   const [editingColumn, setEditingColumn] = useState<{ originalName: string, currentName: string } | null>(null);
+  const [collapsedProjects, setCollapsedProjects] = useState<Record<string, boolean>>({});
+
+  // Queries
+  const { data: projects = [], isLoading: isLoadingProjects } = useQuery<any[]>({
+    queryKey: ["/api/projects"],
+  });
+
+  const activeProject = useMemo(() => 
+    projects.find(p => p.id === activeProjectId) || projects[0],
+    [projects, activeProjectId]
+  );
+
+  const { data: boards = [], isLoading: isLoadingBoards } = useQuery<any[]>({
+    queryKey: ["/api/projects", activeProject?.id, "boards"],
+    enabled: !!activeProject?.id,
+  });
+
+  const activeBoard = useMemo(() => 
+    boards.find(b => b.id === activeBoardId) || boards[0],
+    [boards, activeBoardId]
+  );
+
+  // Mutations
+  const createProjectMutation = useMutation({
+    mutationFn: async (project: any) => {
+      const res = await apiRequest("POST", "/api/projects", project);
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+      setIsCreateProjectOpen(false);
+      setNewProject({ name: "", color: "bg-blue-500", priority: "Средний" });
+      setActiveProjectId(data.id);
+      toast.success("Проект успешно создан");
+    }
+  });
+
+  const updateProjectMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string, data: any }) => {
+      const res = await apiRequest("PATCH", `/api/projects/${id}`, data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+      setEditingProject(null);
+      toast.success("Проект успешно обновлен");
+    }
+  });
+
+  const createBoardMutation = useMutation({
+    mutationFn: async ({ projectId, name }: { projectId: string, name: string }) => {
+      const res = await apiRequest("POST", `/api/projects/${projectId}/boards`, { name });
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", activeProject?.id, "boards"] });
+      setIsCreateBoardOpen(false);
+      setNewBoardName("");
+      setActiveBoardId(data.id);
+      toast.success("Доска успешно создана");
+    }
+  });
+
+  const updateBoardMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string, data: any }) => {
+      const res = await apiRequest("PATCH", `/api/boards/${id}`, data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", activeProject?.id, "boards"] });
+      setEditingBoard(null);
+      toast.success("Доска успешно обновлена");
+    }
+  });
+
+  const deleteBoardMutation = useMutation({
+    mutationFn: async (id: string) => {
+      await apiRequest("DELETE", `/api/boards/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", activeProject?.id, "boards"] });
+      toast.success("Доска удалена");
+    }
+  });
+
+  const [editingProject, setEditingProject] = useState<{ id: string, name: string, priority: string, color: string } | null>(null);
+
+  const handleUpdateProject = () => {
+    if (!editingProject || !editingProject.name) return;
+    updateProjectMutation.mutate({ 
+      id: editingProject.id, 
+      data: { 
+        name: editingProject.name, 
+        priority: editingProject.priority, 
+        color: editingProject.color 
+      } 
+    });
+  };
+
+  const handleCreateProject = () => {
+    if (!newProject.name) return;
+    createProjectMutation.mutate(newProject);
+  };
+
+  const [editingBoard, setEditingBoard] = useState<{ id: string, currentName: string } | null>(null);
+
+  const handleRenameBoard = (id: string, newName: string) => {
+    if (!newName) {
+      setEditingBoard(null);
+      return;
+    }
+    updateBoardMutation.mutate({ id, data: { name: newName } });
+  };
+
+  const handleDeleteBoard = (id: string) => {
+    if (boards.length <= 1) {
+      toast.error("Нельзя удалить последнюю доску");
+      return;
+    }
+    deleteBoardMutation.mutate(id);
+  };
+
+  const handleCreateBoard = () => {
+    if (!newBoardName || !activeProject) return;
+    createBoardMutation.mutate({ projectId: activeProject.id, name: newBoardName });
+  };
 
   const DEFAULT_KANBAN_DATA = {
     "В планах": [],
@@ -87,310 +187,52 @@ export default function Projects() {
     "Готово": [],
   };
 
-  const [boardsData, setBoardsData] = useState<Record<string, any>>({
-    "1-Основная доска": {
-      "В планах": [
-        { id: 1, title: "Ревью дизайн-системы", priority: "Высокий", type: "Дизайн" },
-      ],
-      "В работе": [
-        { id: 3, title: "Разработка темной темы", priority: "Высокий", type: "UI/UX" },
-      ],
-      "На проверке": [],
-      "Готово": [],
-    }
-  });
-
-  const [editingProject, setEditingProject] = useState<{ id: number, name: string, priority: string, color: string } | null>(null);
-
-  const handleUpdateProject = () => {
-    if (!editingProject || !editingProject.name) return;
-    
-    const updatedProjects = projects.map(p => 
-      p.id === editingProject.id ? { ...p, name: editingProject.name, priority: editingProject.priority, color: editingProject.color } : p
-    );
-    
-    setProjects(updatedProjects);
-    
-    if (activeProject.id === editingProject.id) {
-      setActiveProject({ ...activeProject, name: editingProject.name, priority: editingProject.priority, color: editingProject.color });
-    }
-    
-    setEditingProject(null);
-    toast.success("Проект успешно обновлен");
-  };
-
-  const handleCreateProject = () => {
-    if (!newProject.name) return;
-    
-    const project = {
-      id: Date.now(),
-      name: newProject.name,
-      boards: ["Основная доска"],
-      color: newProject.color,
-      priority: newProject.priority,
-      members: 1,
-      collapsed: false
-    };
-    
-    setProjects([...projects, project]);
-    setIsCreateProjectOpen(false);
-    setNewProject({ name: "", color: "bg-blue-500", priority: "Средний" });
-    setActiveProject(project);
-    setActiveBoard(project.boards[0]);
-    toast.success("Проект успешно создан");
-  };
-
-  const [editingBoard, setEditingBoard] = useState<{ originalName: string, currentName: string } | null>(null);
-
-  const handleRenameBoard = (oldName: string, newName: string) => {
-    if (!newName || oldName === newName || !activeProject) {
-      setEditingBoard(null);
-      return;
-    }
-
-    const updatedProjects = projects.map(p => {
-      if (p.id === activeProject.id) {
-        return {
-          ...p,
-          boards: p.boards.map(b => b === oldName ? newName : b)
-        };
-      }
-      return p;
-    });
-
-    setProjects(updatedProjects);
-    
-    // Update boardsData if exists
-    const oldBoardKey = `${activeProject.id}-${oldName}`;
-    const newBoardKey = `${activeProject.id}-${newName}`;
-    
-    setBoardsData(prev => {
-      if (prev[oldBoardKey]) {
-        const newData = { ...prev };
-        newData[newBoardKey] = newData[oldBoardKey];
-        delete newData[oldBoardKey];
-        return newData;
-      }
-      return prev;
-    });
-
-    if (activeBoard === oldName) {
-      setActiveBoard(newName);
-    }
-    
-    setEditingBoard(null);
-    toast.success("Доска переименована");
-  };
-
-  const handleDeleteBoard = (boardName: string) => {
-    if (!activeProject || activeProject.boards.length <= 1) {
-      toast.error("Нельзя удалить последнюю доску");
-      return;
-    }
-
-    const updatedProjects = projects.map(p => {
-      if (p.id === activeProject.id) {
-        return {
-          ...p,
-          boards: p.boards.filter(b => b !== boardName)
-        };
-      }
-      return p;
-    });
-
-    setProjects(updatedProjects);
-    
-    const boardKey = `${activeProject.id}-${boardName}`;
-    setBoardsData(prev => {
-      const newData = { ...prev };
-      delete newData[boardKey];
-      return newData;
-    });
-
-    if (activeBoard === boardName) {
-      const newActive = updatedProjects.find(p => p.id === activeProject.id);
-      if (newActive) setActiveBoard(newActive.boards[0]);
-    }
-    
-    toast.success("Доска удалена");
-  };
-
-  const handleCreateBoard = () => {
-    if (!newBoardName || !activeProject) return;
-    const updatedProjects = projects.map(p => {
-      if (p.id === activeProject.id) {
-        return { ...p, boards: [...p.boards, newBoardName] };
-      }
-      return p;
-    });
-    setProjects(updatedProjects);
-    const newActive = updatedProjects.find(p => p.id === activeProject.id);
-    if (newActive) {
-      setActiveProject(newActive);
-      setActiveBoard(newBoardName);
-    }
-    setIsCreateBoardOpen(false);
-    setNewBoardName("");
-    toast.success("Доска успешно создана");
-  };
-
-  const activeBoardKey = `${activeProject.id}-${activeBoard}`;
-  const kanbanData = boardsData[activeBoardKey] || DEFAULT_KANBAN_DATA;
+  const kanbanData = DEFAULT_KANBAN_DATA; // TODO: Fetch tasks per board
 
   const handleTaskClick = (task: any) => {
-    // Fill with mock data for editing
-    setSelectedTask({
-      ...MOCK_TASK_DETAILS,
-      id: task.id,
-      title: task.title,
-      priority: task.priority,
-      type: task.type,
-      status: task.status || "В планах",
-      subtasks: task.subtasks || [],
-      comments: task.comments || [],
-      history: task.history || []
-    });
-    setModalOpen(true);
+    toast.info("Просмотр задач будет доступен после интеграции с БД");
   };
 
   const handleCreateTask = () => {
-    setSelectedTask(null);
-    setModalOpen(true);
+    toast.info("Создание задач будет доступно после интеграции с БД");
   };
 
   const onTaskUpdate = (updatedTask: Task) => {
-    const boardKey = activeBoardKey;
-    
-    setBoardsData(prev => {
-      const currentBoardData = prev[boardKey] || DEFAULT_KANBAN_DATA;
-      
-      // Check if it's a new task (not in any column)
-      const isNew = !Object.values(currentBoardData).flat().find((t: any) => t.id === updatedTask.id);
-      
-      if (isNew) {
-        const status = updatedTask.status;
-        const columnTasks = currentBoardData[status] || [];
-        const newState = {
-          ...prev,
-          [boardKey]: {
-            ...currentBoardData,
-            [status]: [...columnTasks, updatedTask]
-          }
-        };
-        return newState;
-      } else {
-        // Find and update existing task
-        const newBoardData = { ...currentBoardData };
-        Object.keys(newBoardData).forEach(col => {
-          newBoardData[col] = newBoardData[col].map((t: any) => 
-            t.id === updatedTask.id ? { ...t, ...updatedTask } : t
-          );
-        });
-        return {
-          ...prev,
-          [boardKey]: newBoardData
-        };
-      }
-    });
-    
-    toast.success(Object.values(boardsData[boardKey] || {}).flat().find((t: any) => t.id === updatedTask.id) ? "Задача обновлена" : "Задача успешно создана");
+    toast.info("Функционал задач в разработке");
   };
 
   const handleRenameColumn = (oldName: string, newName: string) => {
-    if (!newName || oldName === newName) {
-      setEditingColumn(null);
-      return;
-    }
-    const boardKey = activeBoardKey;
-    const currentBoardData = boardsData[boardKey] || DEFAULT_KANBAN_DATA;
-    
-    // Create a new object with preserved order
-    const newData: Record<string, any> = {};
-    Object.keys(currentBoardData).forEach(key => {
-      if (key === oldName) {
-        newData[newName] = currentBoardData[oldName];
-      } else {
-        newData[key] = currentBoardData[key];
-      }
-    });
-    
-    setBoardsData(prev => ({ ...prev, [boardKey]: newData }));
+    toast.info("Функционал колонок в разработке");
     setEditingColumn(null);
-    toast.success("Колонка переименована");
   };
 
   const handleDeleteColumn = (colName: string) => {
-    const boardKey = activeBoardKey;
-    const currentBoardData = boardsData[boardKey] || DEFAULT_KANBAN_DATA;
-    const newData = { ...currentBoardData };
-    delete newData[colName];
-    
-    setBoardsData(prev => ({ ...prev, [boardKey]: newData }));
-    toast.success("Колонка удалена");
+    toast.info("Функционал колонок в разработке");
   };
 
   const handleAddColumn = () => {
-    const boardKey = activeBoardKey;
-    setBoardsData(prev => {
-      const currentData = { ...(prev[boardKey] || DEFAULT_KANBAN_DATA) };
-      const newName = `Новая колонка ${Object.keys(currentData).length + 1}`;
-      return {
-        ...prev,
-        [boardKey]: { ...currentData, [newName]: [] }
-      };
-    });
-    toast.success("Колонка добавлена");
+    toast.info("Функционал колонок в разработке");
   };
 
-  const toggleProjectCollapse = (projectId: number, e: React.MouseEvent) => {
+  const toggleProjectCollapse = (projectId: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    setProjects(prev => prev.map(p => 
-      p.id === projectId ? { ...p, collapsed: !p.collapsed } : p
-    ));
+    setCollapsedProjects(prev => ({ ...prev, [projectId]: !prev[projectId] }));
   };
 
   const onDragEnd = (result: DropResult) => {
-    const { source, destination, type } = result;
-    if (!destination) return;
-    if (source.droppableId === destination.droppableId && source.index === destination.index) return;
-
-    const boardKey = activeBoardKey;
-    const currentBoardData = { ...boardsData[boardKey] || DEFAULT_KANBAN_DATA };
-
-    if (type === "column") {
-      const entries = Object.entries(currentBoardData);
-      const [movedCol] = entries.splice(source.index, 1);
-      entries.splice(destination.index, 0, movedCol);
-      
-      setBoardsData({
-        ...boardsData,
-        [boardKey]: Object.fromEntries(entries)
-      });
-      toast.success("Колонка перемещена");
-      return;
-    }
-    
-    const sourceCol = [...currentBoardData[source.droppableId]];
-    const destCol = source.droppableId === destination.droppableId 
-      ? sourceCol 
-      : [...currentBoardData[destination.droppableId]];
-
-    const [movedTask] = sourceCol.splice(source.index, 1);
-    destCol.splice(destination.index, 0, movedTask);
-
-    const newBoardData = {
-      ...currentBoardData,
-      [source.droppableId]: sourceCol,
-      [destination.droppableId]: destCol
-    };
-
-    setBoardsData({
-      ...boardsData,
-      [boardKey]: newBoardData
-    });
-    
-    toast.success("Задача перемещена");
+    // Implement task moving later
+    toast.info("Перемещение задач будет реализовано позже");
   };
+
+  if (isLoadingProjects) {
+    return (
+      <Layout>
+        <div className="flex items-center justify-center h-full">
+          <Loader2 className="w-8 h-8 animate-spin" />
+        </div>
+      </Layout>
+    );
+  }
 
   return (
     <Layout>
@@ -399,67 +241,6 @@ export default function Projects() {
         <div className="w-72 bg-card border-r border-border flex flex-col">
           <div className="p-4 border-b border-border flex items-center justify-between">
             <h2 className="font-semibold text-lg">Проекты</h2>
-            <Dialog open={isCreateProjectOpen} onOpenChange={setIsCreateProjectOpen}>
-              <DialogTrigger asChild>
-                <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg">
-                  <Plus className="w-4 h-4" />
-                </Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Создать новый проект</DialogTitle>
-                  <DialogDescription>Установите параметры и приоритет проекта.</DialogDescription>
-                </DialogHeader>
-                <div className="space-y-4 py-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="project-name">Название проекта</Label>
-                    <Input 
-                      id="project-name" 
-                      placeholder="Напр: Редизайн сайта" 
-                      value={newProject.name}
-                      onChange={(e) => setNewProject({ ...newProject, name: e.target.value })}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Приоритет проекта</Label>
-                    <Select 
-                      value={newProject.priority} 
-                      onValueChange={(val) => setNewProject({ ...newProject, priority: val })}
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="Низкий">Низкий</SelectItem>
-                        <SelectItem value="Средний">Средний</SelectItem>
-                        <SelectItem value="Высокий">Высокий</SelectItem>
-                        <SelectItem value="Критический">Критический</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Цвет метки</Label>
-                    <div className="flex flex-wrap gap-2">
-                      {["bg-purple-500", "bg-blue-500", "bg-emerald-500", "bg-rose-500", "bg-amber-500", "bg-indigo-500"].map((color) => (
-                        <button
-                          key={color}
-                          onClick={() => setNewProject({ ...newProject, color: color })}
-                          className={cn(
-                            "w-8 h-8 rounded-full transition-all ring-offset-background",
-                            color,
-                            newProject.color === color ? "ring-2 ring-primary ring-offset-2 scale-110" : "hover:scale-105"
-                          )}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                </div>
-                <DialogFooter>
-                  <Button variant="outline" onClick={() => setIsCreateProjectOpen(false)}>Отмена</Button>
-                  <Button onClick={handleCreateProject} disabled={!newProject.name}>Создать проект</Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
           </div>
 
           <div className="p-3">
@@ -471,16 +252,16 @@ export default function Projects() {
 
           <ScrollArea className="flex-1">
             <div className="px-2 space-y-1 py-2">
-              {projects.map((project) => (
+              {projects.map((project: any) => (
                 <div key={project.id} className="space-y-1">
                   <div
                     onClick={() => {
-                      setActiveProject(project);
-                      setActiveBoard(project.boards[0]);
+                      setActiveProjectId(project.id);
+                      setActiveBoardId(null);
                     }}
                     className={cn(
                       "w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-all group/project relative pr-10 cursor-pointer",
-                      activeProject.id === project.id
+                      activeProject?.id === project.id
                         ? "bg-primary/10 text-primary"
                         : "text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
                     )}
@@ -488,14 +269,14 @@ export default function Projects() {
                     <div 
                       className="flex items-center gap-2 flex-1 min-w-0"
                       onClick={(e) => {
-                        if (activeProject.id === project.id) {
+                        if (activeProject?.id === project.id) {
                           toggleProjectCollapse(project.id, e);
                         }
                       }}
                     >
                       <ChevronRight className={cn(
                         "w-3.5 h-3.5 shrink-0 transition-transform duration-200 opacity-50",
-                        !project.collapsed && "rotate-90"
+                        !collapsedProjects[project.id] && "rotate-90"
                       )} />
                       <div className={cn(
                         "w-2 h-2 rounded-full shrink-0 shadow-[0_0_8px_rgba(0,0,0,0.1)]",
@@ -516,8 +297,8 @@ export default function Projects() {
                           setEditingProject({ 
                             id: project.id, 
                             name: project.name, 
-                            priority: project.priority, 
-                            color: project.color 
+                            priority: project.priority || "Средний", 
+                            color: project.color || "bg-blue-500"
                           });
                         }}
                       >
@@ -526,70 +307,78 @@ export default function Projects() {
                     </div>
                   </div>
                   
-                  {activeProject.id === project.id && !project.collapsed && (
+                  {activeProject?.id === project.id && !collapsedProjects[project.id] && (
                     <div className="ml-4 pl-3 border-l border-border/60 space-y-1 mt-1">
-                      {project.boards.map((board) => (
-                        <div key={board} className="group/board relative">
-                          <div
-                            onClick={() => setActiveBoard(board)}
-                            className={cn(
-                              "w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-[13px] transition-colors text-left pr-8 cursor-pointer",
-                              activeBoard === board
-                                ? "bg-secondary text-foreground font-medium"
-                                : "text-muted-foreground hover:bg-secondary/30 hover:text-foreground"
-                            )}
-                          >
-                            <Hash className="w-3.5 h-3.5 shrink-0 opacity-50" />
-                            <span className="truncate">{board}</span>
-                          </div>
-                          
-                          <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5 opacity-0 group-hover/board:opacity-100 transition-opacity">
-                            <Dialog open={editingBoard?.originalName === board} onOpenChange={(open) => !open && setEditingBoard(null)}>
-                              <DialogTrigger asChild>
-                                <Button 
-                                  variant="ghost" 
-                                  size="icon" 
-                                  className="h-6 w-6 text-muted-foreground hover:text-foreground"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setEditingBoard({ originalName: board, currentName: board });
-                                  }}
-                                >
-                                  <Pencil className="w-3 h-3" />
-                                </Button>
-                              </DialogTrigger>
-                              <DialogContent>
-                                <DialogHeader>
-                                  <DialogTitle>Переименовать доску</DialogTitle>
-                                </DialogHeader>
-                                <div className="py-4">
-                                  <Input 
-                                    value={editingBoard?.currentName || ""} 
-                                    onChange={(e) => setEditingBoard(prev => prev ? { ...prev, currentName: e.target.value } : null)}
-                                    autoFocus
-                                  />
-                                </div>
-                                <DialogFooter>
-                                  <Button variant="outline" onClick={() => setEditingBoard(null)}>Отмена</Button>
-                                  <Button onClick={() => handleRenameBoard(board, editingBoard?.currentName || "")}>Сохранить</Button>
-                                </DialogFooter>
-                              </DialogContent>
-                            </Dialog>
-
-                            <Button 
-                              variant="ghost" 
-                              size="icon" 
-                              className="h-6 w-6 text-muted-foreground hover:text-destructive"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleDeleteBoard(board);
-                              }}
+                      {isLoadingBoards ? (
+                        <div className="p-2 text-xs text-muted-foreground">Загрузка...</div>
+                      ) : (
+                        boards.map((board: any) => (
+                          <div key={board.id} className="group/board relative">
+                            <div
+                              onClick={() => setActiveBoardId(board.id)}
+                              className={cn(
+                                "w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-[13px] transition-colors text-left pr-8 cursor-pointer",
+                                activeBoard?.id === board.id
+                                  ? "bg-secondary text-foreground font-medium"
+                                  : "text-muted-foreground hover:bg-secondary/30 hover:text-foreground"
+                              )}
                             >
-                              <Trash2 className="w-3 h-3" />
-                            </Button>
+                              <Hash className="w-3.5 h-3.5 shrink-0 opacity-50" />
+                              <span className="truncate">{board.name}</span>
+                            </div>
+                            
+                            <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5 opacity-0 group-hover/board:opacity-100 transition-opacity">
+                              <Dialog open={editingBoard?.id === board.id} onOpenChange={(open) => !open && setEditingBoard(null)}>
+                                <DialogTrigger asChild>
+                                  <Button 
+                                    variant="ghost" 
+                                    size="icon" 
+                                    className="h-6 w-6 text-muted-foreground hover:text-foreground"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setEditingBoard({ id: board.id, currentName: board.name });
+                                    }}
+                                  >
+                                    <Pencil className="w-3 h-3" />
+                                  </Button>
+                                </DialogTrigger>
+                                <DialogContent>
+                                  <DialogHeader>
+                                    <DialogTitle>Переименовать доску</DialogTitle>
+                                  </DialogHeader>
+                                  <div className="py-4">
+                                    <Input 
+                                      value={editingBoard?.currentName || ""} 
+                                      onChange={(e) => setEditingBoard(prev => prev ? { ...prev, currentName: e.target.value } : null)}
+                                      autoFocus
+                                    />
+                                  </div>
+                                  <DialogFooter>
+                                    <Button variant="outline" onClick={() => setEditingBoard(null)}>Отмена</Button>
+                                    <Button onClick={() => handleRenameBoard(board.id, editingBoard?.currentName || "")} disabled={updateBoardMutation.isPending}>
+                                      {updateBoardMutation.isPending && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
+                                      Сохранить
+                                    </Button>
+                                  </DialogFooter>
+                                </DialogContent>
+                              </Dialog>
+
+                              <Button 
+                                variant="ghost" 
+                                size="icon" 
+                                className="h-6 w-6 text-muted-foreground hover:text-destructive"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDeleteBoard(board.id);
+                                }}
+                                disabled={deleteBoardMutation.isPending}
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </Button>
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        ))
+                      )}
                       
                       <Dialog open={isCreateBoardOpen} onOpenChange={setIsCreateBoardOpen}>
                         <DialogTrigger asChild>
@@ -612,7 +401,10 @@ export default function Projects() {
                           </div>
                           <DialogFooter>
                             <Button variant="outline" onClick={() => setIsCreateBoardOpen(false)}>Отмена</Button>
-                            <Button onClick={handleCreateBoard} disabled={!newBoardName.trim()}>Создать</Button>
+                            <Button onClick={handleCreateBoard} disabled={!newBoardName.trim() || createBoardMutation.isPending}>
+                              {createBoardMutation.isPending && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
+                              Создать
+                            </Button>
                           </DialogFooter>
                         </DialogContent>
                       </Dialog>
@@ -628,18 +420,26 @@ export default function Projects() {
         <div className="flex-1 flex flex-col min-w-0 bg-secondary/20">
           {/* Board Header */}
           <div className="h-16 px-6 border-b border-border bg-card flex items-center justify-between">
-            <div className="flex items-center gap-3 overflow-hidden">
-               <div className={cn(
-                 "w-3 h-3 rounded-full shadow-sm",
-                 activeProject.priority === "Высокий" || activeProject.priority === "Критический" ? "bg-rose-500" :
-                 activeProject.priority === "Средний" ? "bg-amber-500" : "bg-emerald-500"
-               )} />
-               <h1 className="text-xl font-bold truncate">{activeProject.name}</h1>
-               <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
-               <Badge variant="outline" className="text-xs font-semibold px-2 py-0.5 whitespace-nowrap uppercase tracking-wider">
-                 {activeBoard}
-               </Badge>
-            </div>
+            {activeProject ? (
+              <div className="flex items-center gap-3 overflow-hidden">
+                <div className={cn(
+                  "w-3 h-3 rounded-full shadow-sm",
+                  activeProject.priority === "Высокий" || activeProject.priority === "Критический" ? "bg-rose-500" :
+                  activeProject.priority === "Средний" ? "bg-amber-500" : "bg-emerald-500"
+                )} />
+                <h1 className="text-xl font-bold truncate">{activeProject.name}</h1>
+                {activeBoard && (
+                  <>
+                    <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
+                    <Badge variant="outline" className="text-xs font-semibold px-2 py-0.5 whitespace-nowrap uppercase tracking-wider">
+                      {activeBoard.name}
+                    </Badge>
+                  </>
+                )}
+              </div>
+            ) : (
+              <div className="text-muted-foreground italic px-6">Выберите проект</div>
+            )}
             
             <div className="flex items-center gap-2">
                <Button variant="ghost" size="sm" className="gap-2 text-muted-foreground">
@@ -651,6 +451,7 @@ export default function Projects() {
                  className="gap-2 shadow-lg shadow-primary/20" 
                  size="sm"
                  onClick={handleCreateTask}
+                 disabled={!activeBoard}
                >
                  <Plus className="w-4 h-4" />
                  <span className="hidden sm:inline">Добавить задачу</span>
@@ -661,189 +462,99 @@ export default function Projects() {
           {/* Kanban Columns */}
           <DragDropContext onDragEnd={onDragEnd}>
             <ScrollArea className="flex-1 p-6">
-              <Droppable droppableId="board" direction="horizontal" type="column">
-                {(provided) => (
-                  <div 
-                    {...provided.droppableProps}
-                    ref={provided.innerRef}
-                    className="flex gap-6 h-full items-start"
-                  >
-                    {Object.entries(kanbanData).map(([column, tasks]: [string, any], colIndex) => (
-                      <Draggable draggableId={`col-${column}`} index={colIndex} key={column}>
-                        {(colProvided) => (
-                          <div
-                            ref={colProvided.innerRef}
-                            {...colProvided.draggableProps}
-                            className="w-80 shrink-0 flex flex-col gap-4"
-                          >
-                            <Droppable droppableId={column} type="task">
-                              {(provided) => (
-                                <div 
-                                  {...provided.droppableProps}
-                                  ref={provided.innerRef}
-                                  className="flex flex-col gap-4"
-                                >
-                                  <div className="flex items-center justify-between px-1" {...colProvided.dragHandleProps}>
-                                    <div className="flex items-center gap-2 group/col-title w-full">
-                                      {editingColumn?.originalName === column ? (
-                                        <Input
-                                          autoFocus
-                                          className="h-7 text-sm font-bold bg-transparent border-primary/30 py-0 px-1"
-                                          value={editingColumn.currentName}
-                                          onChange={(e) => setEditingColumn({ ...editingColumn, currentName: e.target.value })}
-                                          onBlur={() => handleRenameColumn(column, editingColumn.currentName)}
-                                          onKeyDown={(e) => {
-                                            if (e.key === 'Enter') handleRenameColumn(column, editingColumn.currentName);
-                                            if (e.key === 'Escape') setEditingColumn(null);
-                                          }}
-                                        />
-                                      ) : (
-                                        <>
-                                          <h3 className="font-bold text-sm text-foreground/80 truncate max-w-[150px]">{column}</h3>
-                                          <Badge variant="secondary" className="rounded-full px-2 py-0 h-5 text-[10px] font-bold shrink-0">
-                                            {tasks.length}
-                                          </Badge>
-                                          <div className="flex items-center gap-1 opacity-0 group-hover/col-title:opacity-100 transition-opacity ml-auto">
-                                            <Button 
-                                              variant="ghost" 
-                                              size="icon" 
-                                              className="h-6 w-6"
-                                              onClick={() => setEditingColumn({ originalName: column, currentName: column })}
-                                              title="Переименовать"
-                                            >
-                                              <Pencil className="w-3 h-3 text-muted-foreground" />
-                                            </Button>
-                                            <Button 
-                                              variant="ghost" 
-                                              size="icon" 
-                                              className="h-6 w-6"
-                                              onClick={handleAddColumn}
-                                              title="Добавить колонку"
-                                            >
-                                              <Plus className="w-3 h-3 text-muted-foreground" />
-                                            </Button>
-                                            <Button 
-                                              variant="ghost" 
-                                              size="icon" 
-                                              className="h-6 w-6 hover:text-destructive"
-                                              onClick={() => handleDeleteColumn(column)}
-                                              title="Удалить"
-                                            >
-                                              <Trash2 className="w-3 h-3 text-muted-foreground" />
-                                            </Button>
-                                          </div>
-                                        </>
-                                      )}
-                                    </div>
-                                  </div>
-
-                                  <div className="space-y-3 min-h-[100px]">
-                                    {tasks.map((task: any, index: number) => (
-                                      <Draggable draggableId={task.id.toString()} index={index} key={task.id}>
-                                        {(provided, snapshot) => (
-                                          <div
-                                            ref={provided.innerRef}
-                                            {...provided.draggableProps}
-                                            {...provided.dragHandleProps}
-                                            className={cn(
-                                              "group bg-card border border-border/60 p-4 rounded-xl shadow-sm hover:shadow-md hover:border-primary/30 transition-all cursor-pointer",
-                                              snapshot.isDragging && "shadow-xl ring-2 ring-primary/20 border-primary"
-                                            )}
-                                            onClick={() => handleTaskClick({ ...task, status: column })}
-                                          >
-                                            <div className="flex items-center justify-between mb-3">
-                                              <Badge 
-                                                className={cn(
-                                                  "text-[10px] font-bold px-2 py-0 rounded-full",
-                                                  task.priority === "Высокий" ? "bg-rose-500/10 text-rose-600" : 
-                                                  task.priority === "Средний" ? "bg-amber-500/10 text-amber-600" : 
-                                                  "bg-emerald-500/10 text-emerald-600"
-                                                )}
-                                              >
-                                                {task.priority}
-                                              </Badge>
-                                              <GripVertical className="w-3.5 h-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
-                                            </div>
-                                            <h4 className="text-sm font-semibold mb-3 text-foreground/90">{task.title}</h4>
-                                            
-                                            <div className="flex items-center gap-3">
-                                              <div className="flex items-center -space-x-1.5 overflow-hidden">
-                                                <Avatar className="w-5 h-5 border-2 border-card ring-0">
-                                                  <AvatarImage src="https://github.com/shadcn.png" />
-                                                  <AvatarFallback>ЮД</AvatarFallback>
-                                                </Avatar>
-                                              </div>
-                                              
-                                              {task.subtasks && task.subtasks.length > 0 && (
-                                                <div className="flex items-center gap-1">
-                                                  {task.subtasks.map((sub: any, idx: number) => (
-                                                    <div 
-                                                      key={idx}
-                                                      className={cn(
-                                                        "w-1.5 h-1.5 rounded-full",
-                                                        sub.completed ? "bg-primary shadow-[0_0_4px_rgba(var(--primary),0.5)]" : "bg-muted-foreground/30"
-                                                      )}
-                                                      title={sub.title}
-                                                    />
-                                                  ))}
-                                                </div>
-                                              )}
-
-                                              <div className="flex items-center gap-1.5 ml-auto text-[10px] font-medium text-muted-foreground">
-                                                <Hash className="w-3 h-3" />
-                                                <span>TS-{task.id}</span>
-                                              </div>
-                                            </div>
-                                          </div>
-                                        )}
-                                      </Draggable>
-                                    ))}
-                                    {provided.placeholder}
-                                    <Button 
-                                      variant="ghost" 
-                                      className="w-full border-2 border-dashed border-border/50 py-8 text-muted-foreground hover:border-primary/30 hover:bg-primary/5 transition-all rounded-xl gap-2"
-                                      onClick={handleCreateTask}
-                                    >
-                                      <Plus className="w-4 h-4" />
-                                      <span className="text-xs font-semibold">Новая задача</span>
-                                    </Button>
-                                  </div>
-                                </div>
-                              )}
-                            </Droppable>
-                          </div>
-                        )}
-                      </Draggable>
-                    ))}
-                    {provided.placeholder}
-                    
-                    {/* Add Column Button */}
-                    <Button 
-                      variant="ghost" 
-                      className="w-80 shrink-0 border-2 border-dashed border-border/40 py-12 rounded-xl text-muted-foreground hover:bg-secondary/30 hover:border-primary/30 transition-all h-fit"
-                      onClick={handleAddColumn}
+              {activeBoard ? (
+                <Droppable droppableId="board" direction="horizontal" type="column">
+                  {(provided) => (
+                    <div 
+                      {...provided.droppableProps}
+                      ref={provided.innerRef}
+                      className="flex gap-6 h-full items-start"
                     >
-                      <Plus className="w-5 h-5 mb-1" />
-                      <div className="flex flex-col items-center">
-                        <span className="font-bold text-sm">Добавить колонку</span>
-                        <span className="text-[10px] opacity-60">Создайте новый этап процесса</span>
-                      </div>
-                    </Button>
+                      {Object.entries(kanbanData).map(([column, tasks]: [string, any], colIndex) => (
+                        <div key={column} className="w-80 shrink-0 flex flex-col gap-4">
+                          <div className="flex items-center justify-between px-1">
+                            <div className="flex items-center gap-2 group/col-title w-full">
+                              <h3 className="font-bold text-sm text-foreground/80 truncate max-w-[150px]">{column}</h3>
+                              <Badge variant="secondary" className="rounded-full px-2 py-0 h-5 text-[10px] font-bold shrink-0">
+                                {tasks.length}
+                              </Badge>
+                            </div>
+                          </div>
+
+                          <Droppable droppableId={column} type="task">
+                            {(taskProvided, snapshot) => (
+                              <div
+                                {...taskProvided.droppableProps}
+                                ref={taskProvided.innerRef}
+                                className={cn(
+                                  "flex flex-col gap-3 min-h-[150px] rounded-xl transition-colors p-1",
+                                  snapshot.isDraggingOver ? "bg-primary/5 ring-1 ring-primary/20" : ""
+                                )}
+                              >
+                                {tasks.map((task: any, index: number) => (
+                                  <Draggable key={task.id} draggableId={task.id.toString()} index={index}>
+                                    {(provided, snapshot) => (
+                                      <div
+                                        ref={provided.innerRef}
+                                        {...provided.draggableProps}
+                                        {...provided.dragHandleProps}
+                                        onClick={() => handleTaskClick(task)}
+                                        className={cn(
+                                          "bg-card border border-border/50 p-4 rounded-xl shadow-sm hover:shadow-md hover:border-primary/30 transition-all group/task",
+                                          snapshot.isDragging ? "shadow-xl ring-2 ring-primary/20 rotate-1" : ""
+                                        )}
+                                      >
+                                        <h4 className="text-sm font-medium mb-3 leading-snug">{task.title}</h4>
+                                      </div>
+                                    )}
+                                  </Draggable>
+                                ))}
+                                {taskProvided.placeholder}
+                                <Button 
+                                  variant="ghost" 
+                                  size="sm" 
+                                  className="w-full justify-start gap-2 text-muted-foreground hover:text-primary hover:bg-primary/5 mt-1 h-9 rounded-lg"
+                                  onClick={handleCreateTask}
+                                >
+                                  <Plus className="w-4 h-4" />
+                                  <span className="text-xs font-medium">Добавить задачу</span>
+                                </Button>
+                              </div>
+                            )}
+                          </Droppable>
+                        </div>
+                      ))}
+                      {provided.placeholder}
+                    </div>
+                  )}
+                </Droppable>
+              ) : (
+                <div className="flex flex-col items-center justify-center h-[60vh] text-center">
+                  <div className="w-16 h-16 bg-secondary/30 rounded-full flex items-center justify-center mb-4">
+                    <Hash className="w-8 h-8 text-muted-foreground/50" />
                   </div>
-                )}
-              </Droppable>
+                  <h3 className="text-lg font-semibold mb-1">Доска не выбрана</h3>
+                  <p className="text-sm text-muted-foreground max-w-xs">
+                    Выберите проект и доску в левом меню, чтобы начать работу над задачами.
+                  </p>
+                </div>
+              )}
             </ScrollArea>
           </DragDropContext>
         </div>
       </div>
 
-      <TaskDetailsModal
-        task={selectedTask}
-        open={modalOpen}
-        onOpenChange={setModalOpen}
-        onUpdate={onTaskUpdate}
-      />
+      {/* Task Details Modal */}
+      {modalOpen && (
+        <TaskDetailsModal
+          task={null}
+          open={modalOpen}
+          onOpenChange={setModalOpen}
+          onUpdate={onTaskUpdate}
+        />
+      )}
 
+      {/* Edit Project Dialog */}
       <Dialog open={!!editingProject} onOpenChange={(open) => !open && setEditingProject(null)}>
         <DialogContent>
           <DialogHeader>
@@ -879,7 +590,10 @@ export default function Projects() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditingProject(null)}>Отмена</Button>
-            <Button onClick={handleUpdateProject} disabled={!editingProject?.name}>Сохранить изменения</Button>
+            <Button onClick={handleUpdateProject} disabled={updateProjectMutation.isPending || !editingProject?.name}>
+              {updateProjectMutation.isPending && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
+              Сохранить изменения
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

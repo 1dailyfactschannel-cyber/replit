@@ -202,6 +202,95 @@ export class PostgresStorage {
     }
   }
 
+  async getAllProjects(): Promise<schema.Project[]> {
+    try {
+      return await this.db.select().from(schema.projects);
+    } catch (error) {
+      console.error("Error getting all projects:", error);
+      return [];
+    }
+  }
+
+  async updateProject(id: string, update: Partial<schema.Project>): Promise<schema.Project> {
+    try {
+      const [project] = await this.db.update(schema.projects).set(update).where(eq(schema.projects.id, id)).returning();
+      if (!project) throw new Error("Project not found");
+      return project;
+    } catch (error) {
+      console.error("Error updating project:", error);
+      throw error;
+    }
+  }
+
+  async deleteProject(id: string): Promise<void> {
+    try {
+      await this.db.delete(schema.projects).where(eq(schema.projects.id, id));
+    } catch (error) {
+      console.error("Error deleting project:", error);
+      throw error;
+    }
+  }
+
+  // Board methods
+  async getBoardsByProject(projectId: string): Promise<schema.Board[]> {
+    try {
+      return await this.db.select().from(schema.boards).where(eq(schema.boards.projectId, projectId));
+    } catch (error) {
+      console.error("Error getting boards by project:", error);
+      return [];
+    }
+  }
+
+  async createBoard(board: schema.InsertBoard): Promise<schema.Board> {
+    try {
+      const [newBoard] = await this.db.insert(schema.boards).values(board).returning();
+      return newBoard;
+    } catch (error) {
+      console.error("Error creating board:", error);
+      throw error;
+    }
+  }
+
+  async updateBoard(id: string, update: Partial<schema.Board>): Promise<schema.Board> {
+    try {
+      const [board] = await this.db.update(schema.boards).set(update).where(eq(schema.boards.id, id)).returning();
+      if (!board) throw new Error("Board not found");
+      return board;
+    } catch (error) {
+      console.error("Error updating board:", error);
+      throw error;
+    }
+  }
+
+  async deleteBoard(id: string): Promise<void> {
+    try {
+      await this.db.delete(schema.boards).where(eq(schema.boards.id, id));
+    } catch (error) {
+      console.error("Error deleting board:", error);
+      throw error;
+    }
+  }
+
+  // Board Column methods
+  async getColumnsByBoard(boardId: string): Promise<schema.BoardColumn[]> {
+    try {
+      return await this.db.select().from(schema.boardColumns).where(eq(schema.boardColumns.boardId, boardId)).orderBy(schema.boardColumns.order);
+    } catch (error) {
+      console.error("Error getting columns by board:", error);
+      return [];
+    }
+  }
+
+  async createColumn(column: schema.InsertBoardColumn): Promise<schema.BoardColumn> {
+    try {
+      const [newColumn] = await this.db.insert(schema.boardColumns).values(column).returning();
+      return newColumn;
+    } catch (error) {
+      console.error("Error creating column:", error);
+      throw error;
+    }
+  }
+
   // Task methods
   async getTask(id: string): Promise<schema.Task | undefined> {
     try {

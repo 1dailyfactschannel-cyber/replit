@@ -150,19 +150,122 @@ export async function registerRoutes(
   // Project routes
   app.get("/api/projects", async (_req, res) => {
     try {
-      // This would typically require authentication
-      res.json([]);
+      const projects = await storage.getAllProjects();
+      
+      // Для каждого проекта получаем его задачи и считаем прогресс
+      const projectsWithStats = await Promise.all(projects.map(async (project) => {
+        const boards = await storage.getBoardsByProject(project.id);
+        let allTasks: any[] = [];
+        
+        for (const board of boards) {
+          const tasks = await storage.getTasksByBoard(board.id);
+          allTasks = [...allTasks, ...tasks];
+        }
+        
+        const totalTasks = allTasks.length;
+        const completedTasks = allTasks.filter(t => t.status === "done").length;
+        
+        // Если задач нет, прогресс 100%, иначе процент выполненных
+        const progress = totalTasks === 0 ? 100 : Math.round((completedTasks / totalTasks) * 100);
+        
+        return {
+          ...project,
+          taskCount: totalTasks,
+          completedTaskCount: completedTasks,
+          progress,
+          boardCount: boards.length
+        };
+      }));
+      
+      res.json(projectsWithStats);
     } catch (error) {
+      console.error("GET /api/projects error:", error);
       res.status(500).json({ message: "Failed to fetch projects" });
     }
   });
 
   app.post("/api/projects", async (req, res) => {
+    console.log("POST /api/projects hit with body:", req.body);
     try {
-      // This would typically require authentication and validation
-      res.status(201).json({ message: "Project created" });
+      const user = await storage.getFirstUser();
+      if (!user) {
+        console.error("POST /api/projects: User not found");
+        return res.status(404).json({ message: "User not found" });
+      }
+      
+      const projectData = { 
+        name: req.body.name,
+        priority: req.body.priority?.toLowerCase() || "medium",
+        color: req.body.color || "#3b82f6",
+        ownerId: user.id,
+        status: "active"
+      };
+      
+      console.log("POST /api/projects: Creating project with data:", projectData);
+      const project = await storage.createProject(projectData);
+      console.log("POST /api/projects: Project created successfully:", project.id);
+      res.status(201).json(project);
     } catch (error) {
-      res.status(500).json({ message: "Failed to create project" });
+      console.error("POST /api/projects error:", error);
+      res.status(500).json({ message: "Failed to create project", error: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
+  app.patch("/api/projects/:id", async (req, res) => {
+    try {
+      const project = await storage.updateProject(req.params.id, req.body);
+      res.json(project);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to update project" });
+    }
+  });
+
+  // Board routes
+  app.get("/api/projects/:projectId/boards", async (req, res) => {
+    try {
+      const boards = await storage.getBoardsByProject(req.params.projectId);
+      res.json(boards);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch boards" });
+    }
+  });
+
+  app.post("/api/projects/:projectId/boards", async (req, res) => {
+    try {
+      const board = await storage.createBoard({ ...req.body, projectId: req.params.projectId });
+      
+      // Создаем стандартные колонки для новой доски
+      const defaultColumns = ["В планах", "В работе", "На проверке", "Готово"];
+      for (let i = 0; i < defaultColumns.length; i++) {
+        await storage.createColumn({
+          boardId: board.id,
+          name: defaultColumns[i],
+          order: i,
+          color: "#3b82f6"
+        });
+      }
+      
+      res.status(201).json(board);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to create board" });
+    }
+  });
+
+  app.patch("/api/boards/:id", async (req, res) => {
+    try {
+      const board = await storage.updateBoard(req.params.id, req.body);
+      res.json(board);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to update board" });
+    }
+  });
+
+  app.delete("/api/boards/:id", async (req, res) => {
+    try {
+      await storage.deleteBoard(req.params.id);
+      res.status(204).end();
+    } catch (error) {
+      res.status(500).json({ message: "Failed to delete board" });
     }
   });
 

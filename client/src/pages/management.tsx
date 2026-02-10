@@ -56,6 +56,23 @@ import {
   DropdownMenuSeparator
 } from "@/components/ui/dropdown-menu";
 
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogTrigger,
+  DialogDescription
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+
 export default function ManagementPage() {
   const [activeSection, setActiveSection] = useState("team");
 
@@ -623,6 +640,50 @@ function TelegramSettings() {
 }
 
 function ProjectsManagement() {
+  const { toast } = useToast();
+  const [isCreateProjectOpen, setIsCreateProjectOpen] = useState(false);
+  const [newProject, setNewProject] = useState({ name: "", color: "bg-blue-500", priority: "Средний" });
+
+  const { data: projects = [], isLoading: isLoadingProjects } = useQuery<any[]>({
+    queryKey: ["/api/projects"],
+  });
+
+  const createProjectMutation = useMutation({
+    mutationFn: async (project: any) => {
+      const res = await apiRequest("POST", "/api/projects", project);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+      setIsCreateProjectOpen(false);
+      setNewProject({ name: "", color: "bg-blue-500", priority: "Средний" });
+      toast({
+        title: "Проект создан",
+        description: "Новый проект успешно добавлен в систему.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Ошибка",
+        description: error.message || "Не удалось создать проект.",
+        variant: "destructive",
+      });
+    }
+  });
+
+  const deleteProjectMutation = useMutation({
+    mutationFn: async (id: string) => {
+      await apiRequest("DELETE", `/api/projects/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+      toast({
+        title: "Проект удален",
+        description: "Проект был успешно удален.",
+      });
+    }
+  });
+
   const [priorities, setPriorities] = useState([
     { id: 1, name: "Критический", color: "bg-rose-600", textColor: "text-rose-600", level: 10 },
     { id: 2, name: "Высокий", color: "bg-rose-400", textColor: "text-rose-400", level: 7 },
@@ -630,14 +691,35 @@ function ProjectsManagement() {
     { id: 4, name: "Низкий", color: "bg-emerald-500", textColor: "text-emerald-500", level: 2 },
   ]);
 
-  const [projects, setProjects] = useState([
-    { id: 1, name: "Ребрендинг TeamSync", status: "Активен", members: 12, boards: 2, progress: 65 },
-    { id: 2, name: "Мобильное приложение", status: "Активен", members: 8, boards: 3, progress: 42 },
-    { id: 3, name: "API Интеграция", status: "Пауза", members: 4, boards: 1, progress: 15 },
-  ]);
-
   const [editingPriority, setEditingPriority] = useState<any>(null);
   const [newPriority, setNewPriority] = useState({ name: "", color: "bg-blue-500", level: 1 });
+
+  const handleCreateProject = () => {
+    if (!newProject.name.trim()) {
+      toast({
+        title: "Ошибка",
+        description: "Название проекта не может быть пустым.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    // Преобразуем приоритет в английский формат для базы данных, если нужно
+    const priorityMap: Record<string, string> = {
+      "Низкий": "low",
+      "Средний": "medium",
+      "Высокий": "high",
+      "Критический": "critical"
+    };
+
+    const projectToCreate = {
+      ...newProject,
+      priority: priorityMap[newProject.priority] || "medium"
+    };
+
+    console.log("Creating project with data:", projectToCreate);
+    createProjectMutation.mutate(projectToCreate);
+  };
 
   const handleAddPriority = () => {
     if (!newPriority.name) return;
@@ -732,63 +814,130 @@ function ProjectsManagement() {
             <LayoutGrid className="w-3.5 h-3.5" />
             Список проектов ({projects.length})
           </h4>
-          <Button size="sm" variant="outline" className="h-8 gap-2 text-[10px] font-bold uppercase tracking-wider border-border/50">
-            <Plus className="w-3 h-3" /> Создать проект
-          </Button>
+          <Dialog open={isCreateProjectOpen} onOpenChange={setIsCreateProjectOpen}>
+            <DialogTrigger asChild>
+              <Button size="sm" variant="outline" className="h-8 gap-2 text-[10px] font-bold uppercase tracking-wider border-border/50">
+                <Plus className="w-3 h-3" /> Создать проект
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Создать новый проект</DialogTitle>
+                <DialogDescription>Введите название и выберите приоритет для нового проекта.</DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 py-4">
+                <div className="space-y-2">
+                  <Label htmlFor="project-name">Название проекта</Label>
+                  <Input 
+                    id="project-name" 
+                    placeholder="Введите название проекта" 
+                    value={newProject.name}
+                    onChange={(e) => setNewProject({ ...newProject, name: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Приоритет проекта</Label>
+                  <Select 
+                    value={newProject.priority} 
+                    onValueChange={(val) => setNewProject({ ...newProject, priority: val })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Низкий">Низкий</SelectItem>
+                      <SelectItem value="Средний">Средний</SelectItem>
+                      <SelectItem value="Высокий">Высокий</SelectItem>
+                      <SelectItem value="Критический">Критический</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setIsCreateProjectOpen(false)}>Отмена</Button>
+                <Button onClick={handleCreateProject} disabled={createProjectMutation.isPending || !newProject.name}>
+                  {createProjectMutation.isPending && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
+                  Создать проект
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </div>
 
         <Card className="border-border/50 shadow-sm overflow-hidden bg-card/50">
           <div className="divide-y divide-border/50">
-            {projects.map((project) => (
-              <div key={project.id} className="p-5 flex items-center justify-between hover:bg-muted/30 transition-colors group">
-                <div className="flex items-center gap-5">
-                  <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center shadow-inner group-hover:scale-110 transition-transform duration-300">
-                    <LayoutGrid className="w-6 h-6 text-primary" />
-                  </div>
-                  <div className="flex flex-col gap-1">
-                    <span className="text-sm font-bold tracking-tight group-hover:text-primary transition-colors">{project.name}</span>
-                    <div className="flex items-center gap-3">
-                      <div className="flex items-center gap-1.5">
-                        <Users className="w-3 h-3 text-muted-foreground/60" />
-                        <span className="text-[11px] text-muted-foreground font-medium">{project.members} участников</span>
-                      </div>
-                      <span className="text-[11px] text-muted-foreground/40">•</span>
-                      <div className="flex items-center gap-1.5">
-                        <LayoutGrid className="w-3 h-3 text-muted-foreground/60" />
-                        <span className="text-[11px] text-muted-foreground font-medium">{project.boards} доски</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                
-                <div className="flex items-center gap-8">
-                  <div className="hidden md:flex flex-col w-32 gap-1.5">
-                    <div className="flex justify-between text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">
-                      <span>Прогресс</span>
-                      <span>{project.progress}%</span>
-                    </div>
-                    <Progress value={project.progress} className="h-1.5 bg-muted" />
-                  </div>
-
-                  <div className="flex items-center gap-4">
-                    <Badge variant="outline" className={cn(
-                      "text-[10px] font-bold uppercase px-3 h-6 border-none shadow-sm",
-                      project.status === "Активен" ? "bg-emerald-500/10 text-emerald-600" : "bg-amber-500/10 text-amber-600"
-                    )}>
-                      {project.status}
-                    </Badge>
-                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all transform translate-x-2 group-hover:translate-x-0">
-                      <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-background border border-transparent hover:border-border/50">
-                        <Pencil className="w-3.5 h-3.5" />
-                      </Button>
-                      <Button variant="ghost" size="icon" className="h-8 w-8 text-rose-500 hover:text-rose-600 hover:bg-rose-50 border border-transparent hover:border-rose-100">
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </Button>
-                    </div>
-                  </div>
-                </div>
+            {isLoadingProjects ? (
+              <div className="p-8 flex items-center justify-center">
+                <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
               </div>
-            ))}
+            ) : projects.length === 0 ? (
+              <div className="p-8 text-center text-sm text-muted-foreground italic">
+                Проектов пока нет. Создайте первый проект!
+              </div>
+            ) : (
+              projects.map((project) => (
+                <div key={project.id} className="p-5 flex items-center justify-between hover:bg-muted/30 transition-colors group">
+                  <div className="flex items-center gap-5">
+                    <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center shadow-inner group-hover:scale-110 transition-transform duration-300">
+                      <LayoutGrid className="w-6 h-6 text-primary" />
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <span className="text-sm font-bold tracking-tight group-hover:text-primary transition-colors">{project.name}</span>
+                      <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-1.5">
+                          <Users className="w-3 h-3 text-muted-foreground/60" />
+                          <span className="text-[11px] text-muted-foreground font-medium">0 участников</span>
+                        </div>
+                        <span className="text-[11px] text-muted-foreground/40">•</span>
+                        <div className="flex items-center gap-1.5">
+                          <LayoutGrid className="w-3 h-3 text-muted-foreground/60" />
+                          <span className="text-[11px] text-muted-foreground font-medium">{project.boardCount || 0} досок</span>
+                        </div>
+                        <span className="text-[11px] text-muted-foreground/40">•</span>
+                        <div className="flex items-center gap-1.5">
+                          <Hash className="w-3 h-3 text-muted-foreground/60" />
+                          <span className="text-[11px] text-muted-foreground font-medium">{project.taskCount || 0} задач</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-center gap-8">
+                    <div className="hidden md:flex flex-col w-32 gap-1.5">
+                      <div className="flex justify-between text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">
+                        <span>Прогресс</span>
+                        <span>{project.progress ?? 100}%</span>
+                      </div>
+                      <Progress value={project.progress ?? 100} className="h-1.5 bg-muted" />
+                    </div>
+
+                    <div className="flex items-center gap-4">
+                      <Badge variant="outline" className={cn(
+                        "text-[10px] font-bold uppercase px-3 h-6 border-none shadow-sm",
+                        project.priority === "Высокий" || project.priority === "Критический" ? "bg-rose-500/10 text-rose-600" :
+                        project.priority === "Средний" ? "bg-amber-500/10 text-amber-600" : "bg-emerald-500/10 text-emerald-600"
+                      )}>
+                        {project.priority || "Средний"}
+                      </Badge>
+                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all transform translate-x-2 group-hover:translate-x-0">
+                        <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-background border border-transparent hover:border-border/50">
+                          <Pencil className="w-3.5 h-3.5" />
+                        </Button>
+                        <Button 
+                          variant="ghost" 
+                          size="icon" 
+                          className="h-8 w-8 text-rose-500 hover:text-rose-600 hover:bg-rose-50 border border-transparent hover:border-rose-100"
+                          onClick={() => deleteProjectMutation.mutate(project.id)}
+                          disabled={deleteProjectMutation.isPending}
+                        >
+                          {deleteProjectMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         </Card>
       </section>

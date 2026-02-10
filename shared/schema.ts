@@ -290,6 +290,21 @@ export const insertSiteSettingsSchema = createInsertSchema(siteSettings).pick({
   category: true,
 });
 
+export const insertBoardSchema = createInsertSchema(boards).pick({
+  name: true,
+  description: true,
+  projectId: true,
+  isTemplate: true,
+  templateId: true,
+});
+
+export const insertBoardColumnSchema = createInsertSchema(boardColumns).pick({
+  boardId: true,
+  name: true,
+  order: true,
+  color: true,
+});
+
 // Export types
 export type User = typeof users.$inferSelect;
 export type InsertUser = z.infer<typeof insertUserSchema>;
@@ -302,6 +317,12 @@ export type InsertDepartment = z.infer<typeof insertDepartmentSchema>;
 
 export type Project = typeof projects.$inferSelect;
 export type InsertProject = z.infer<typeof insertProjectSchema>;
+
+export type Board = typeof boards.$inferSelect;
+export type InsertBoard = z.infer<typeof insertBoardSchema>;
+
+export type BoardColumn = typeof boardColumns.$inferSelect;
+export type InsertBoardColumn = z.infer<typeof insertBoardColumnSchema>;
 
 export type Task = typeof tasks.$inferSelect;
 export type InsertTask = z.infer<typeof insertTaskSchema>;
