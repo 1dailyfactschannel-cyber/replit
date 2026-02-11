@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, integer, boolean, timestamp, uuid, jsonb, primaryKey } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, boolean, timestamp, uuid, jsonb, primaryKey, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -26,7 +26,10 @@ export const users = pgTable("users", {
   telegramConnected: boolean("telegram_connected").default(false),
   telegramId: text("telegram_id"),
   notes: text("notes"),
-});
+}, (table) => ({
+  usernameIdx: index("users_username_idx").on(table.username),
+  emailIdx: index("users_email_idx").on(table.email),
+}));
 
 // Roles table
 export const roles = pgTable("roles", {
@@ -154,7 +157,11 @@ export const tasks = pgTable("tasks", {
   attachments: jsonb("attachments").default(sql`'[]'::jsonb`),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-});
+}, (table) => ({
+  boardIdIdx: index("tasks_board_id_idx").on(table.boardId),
+  columnIdIdx: index("tasks_column_id_idx").on(table.columnId),
+  assigneeIdIdx: index("tasks_assignee_id_idx").on(table.assigneeId),
+}));
 
 // Subtasks table
 export const subtasks = pgTable("subtasks", {
@@ -353,7 +360,11 @@ export const messages = pgTable("messages", {
   attachments: jsonb("attachments").default(sql`'[]'::jsonb`),
   isRead: boolean("is_read").default(false),
   createdAt: timestamp("created_at").defaultNow(),
-});
+}, (table) => ({
+  chatIdIdx: index("messages_chat_id_idx").on(table.chatId),
+  senderIdIdx: index("messages_sender_id_idx").on(table.senderId),
+  createdAtIdx: index("messages_created_at_idx").on(table.createdAt),
+}));
 
 // Message attachments table
 export const messageAttachments = pgTable("message_attachments", {

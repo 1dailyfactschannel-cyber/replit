@@ -1,23 +1,33 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, lazy, Suspense } from "react";
 import { Switch, Route, useLocation } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Loader2 } from "lucide-react";
-import NotFound from "@/pages/not-found";
-import Dashboard from "@/pages/dashboard";
-import Projects from "@/pages/projects";
-import Tasks from "@/pages/tasks";
-import CalendarPage from "@/pages/calendar";
-import Chat from "@/pages/chat";
-import Call from "@/pages/call";
-import Auth from "@/pages/auth";
-import Profile from "@/pages/profile";
-import Team from "@/pages/team";
-import Shop from "@/pages/shop";
-import SettingsPage from "@/pages/settings";
-import ManagementPage from "@/pages/management";
+
+// Lazy load pages
+const NotFound = lazy(() => import("@/pages/not-found"));
+const Dashboard = lazy(() => import("@/pages/dashboard"));
+const Projects = lazy(() => import("@/pages/projects"));
+const Tasks = lazy(() => import("@/pages/tasks"));
+const CalendarPage = lazy(() => import("@/pages/calendar"));
+const Chat = lazy(() => import("@/pages/chat"));
+const Call = lazy(() => import("@/pages/call"));
+const Auth = lazy(() => import("@/pages/auth"));
+const Profile = lazy(() => import("@/pages/profile"));
+const Team = lazy(() => import("@/pages/team"));
+const Shop = lazy(() => import("@/pages/shop"));
+const SettingsPage = lazy(() => import("@/pages/settings"));
+const ManagementPage = lazy(() => import("@/pages/management"));
+
+function PageLoader() {
+  return (
+    <div className="flex items-center justify-center min-h-screen">
+      <Loader2 className="h-8 w-8 animate-spin text-primary" />
+    </div>
+  );
+}
 
 function ProtectedRoute({ component: Component, path }: { component: React.ComponentType<any>, path: string }) {
   const { data: user, isLoading } = useQuery({
@@ -33,37 +43,47 @@ function ProtectedRoute({ component: Component, path }: { component: React.Compo
   }, [user, isLoading, setLocation]);
 
   if (isLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-      </div>
-    );
+    return <PageLoader />;
   }
 
   if (!user) {
     return null;
   }
 
-  return <Route path={path} component={Component as any} />;
+  return (
+    <Route path={path}>
+      {(params) => (
+        <Suspense fallback={<PageLoader />}>
+          <Component {...params} />
+        </Suspense>
+      )}
+    </Route>
+  );
 }
 
 function Router() {
   return (
-    <Switch>
-      <Route path="/auth" component={Auth} />
-      <ProtectedRoute path="/" component={Dashboard} />
-      <ProtectedRoute path="/profile" component={Profile} />
-      <ProtectedRoute path="/team" component={Team} />
-      <ProtectedRoute path="/shop" component={Shop} />
-      <ProtectedRoute path="/settings" component={SettingsPage} />
-      <ProtectedRoute path="/management" component={ManagementPage} />
-      <ProtectedRoute path="/projects" component={Projects} />
-      <ProtectedRoute path="/tasks" component={Tasks} />
-      <ProtectedRoute path="/calendar" component={CalendarPage} />
-      <ProtectedRoute path="/chat" component={Chat} />
-      <ProtectedRoute path="/call" component={Call} />
-      <Route component={NotFound} />
-    </Switch>
+    <Suspense fallback={<PageLoader />}>
+      <Switch>
+        <Route path="/auth">
+          {(params) => <Auth {...params} />}
+        </Route>
+        <ProtectedRoute path="/" component={Dashboard} />
+        <ProtectedRoute path="/profile" component={Profile} />
+        <ProtectedRoute path="/team" component={Team} />
+        <ProtectedRoute path="/shop" component={Shop} />
+        <ProtectedRoute path="/settings" component={SettingsPage} />
+        <ProtectedRoute path="/management" component={ManagementPage} />
+        <ProtectedRoute path="/projects" component={Projects} />
+        <ProtectedRoute path="/tasks" component={Tasks} />
+        <ProtectedRoute path="/calendar" component={CalendarPage} />
+        <ProtectedRoute path="/chat" component={Chat} />
+        <ProtectedRoute path="/call" component={Call} />
+        <Route>
+          {(params) => <NotFound {...params} />}
+        </Route>
+      </Switch>
+    </Suspense>
   );
 }
 

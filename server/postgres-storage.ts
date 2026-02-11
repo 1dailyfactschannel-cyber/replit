@@ -399,9 +399,32 @@ export class PostgresStorage {
   }
 
   // Chat Folder methods
-  async getChatFolders(userId: string): Promise<ChatFolder[]> {
+  async getChatFolders(userId: string): Promise<any[]> {
     try {
-      return await this.db.select().from(schema.chatFolders).where(eq(schema.chatFolders.userId, userId));
+      const cacheKey = `user:${userId}:chat_folders`;
+      const cached = await getCache<any[]>(cacheKey);
+      if (cached) return cached;
+
+      const folders = await this.db
+        .select()
+        .from(schema.chatFolders)
+        .where(eq(schema.chatFolders.userId, userId));
+
+      if (folders.length === 0) return [];
+
+      const folderIds = folders.map(f => f.id);
+      const items = await this.db
+        .select()
+        .from(schema.chatFolderItems)
+        .where(sql`${schema.chatFolderItems.folderId} IN ${folderIds}`);
+
+      const foldersWithItems = folders.map(folder => ({
+        ...folder,
+        chatIds: items.filter(item => item.folderId === folder.id).map(item => item.chatId)
+      }));
+
+      await setCache(cacheKey, foldersWithItems, 300);
+      return foldersWithItems;
     } catch (error) {
       console.error("Error getting chat folders:", error);
       return [];
@@ -636,6 +659,45 @@ export class PostgresStorage {
       return await this.db.select().from(schema.projects);
     } catch (error) {
       console.error("Error getting all projects:", error);
+      return [];
+    }
+  }
+
+  async getProjectsWithStats(): Promise<any[]> {
+    try {
+      const cacheKey = "projects:stats:all";
+      const cached = await getCache<any[]>(cacheKey);
+      if (cached) return cached;
+
+      const result = await this.db
+        .select({
+          project: schema.projects,
+          boardCount: sql<number>`count(distinct ${schema.boards.id})`,
+          taskCount: sql<number>`count(distinct ${schema.tasks.id})`,
+          completedTaskCount: sql<number>`count(distinct ${schema.tasks.id}) filter (where ${schema.tasks.status} in ('done', 'completed'))`,
+        })
+        .from(schema.projects)
+        .leftJoin(schema.boards, eq(schema.projects.id, schema.boards.projectId))
+        .leftJoin(schema.tasks, eq(schema.boards.id, schema.tasks.boardId))
+        .groupBy(schema.projects.id);
+
+      const projectsWithStats = result.map((row) => {
+        const taskCount = Number(row.taskCount || 0);
+        const completedTaskCount = Number(row.completedTaskCount || 0);
+        const progress = taskCount > 0 ? Math.round((completedTaskCount / taskCount) * 100) : 100;
+
+        return {
+          ...row.project,
+          boardCount: Number(row.boardCount || 0),
+          taskCount,
+          progress,
+        };
+      });
+
+      await setCache(cacheKey, projectsWithStats, 60); // Cache for 1 minute
+      return projectsWithStats;
+    } catch (error) {
+      console.error("Error getting projects with stats:", error);
       return [];
     }
   }

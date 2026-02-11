@@ -181,30 +181,7 @@ export async function registerRoutes(
   // Project routes
   app.get("/api/projects", async (_req, res) => {
     try {
-      const projects = await storage.getAllProjects();
-      
-      // Добавляем статистику для каждого проекта
-      const projectsWithStats = await Promise.all(projects.map(async (project) => {
-        const boards = await storage.getBoardsByProject(project.id);
-        let taskCount = 0;
-        let completedTaskCount = 0;
-        
-        for (const board of boards) {
-          const tasks = await storage.getTasksByBoard(board.id);
-          taskCount += tasks.length;
-          completedTaskCount += tasks.filter(t => t.status === "done" || t.status === "completed").length;
-        }
-        
-        const progress = taskCount > 0 ? Math.round((completedTaskCount / taskCount) * 100) : 100;
-        
-        return {
-          ...project,
-          boardCount: boards.length,
-          taskCount,
-          progress
-        };
-      }));
-      
+      const projectsWithStats = await storage.getProjectsWithStats();
       res.json(projectsWithStats);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch projects" });
@@ -579,13 +556,7 @@ export async function registerRoutes(
     if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
     try {
       const user = req.user;
-      
-      const folders = await storage.getChatFolders(user.id);
-      const foldersWithItems = await Promise.all(folders.map(async (folder) => {
-        const chatIds = await storage.getChatFolderItems(folder.id);
-        return { ...folder, chatIds };
-      }));
-      
+      const foldersWithItems = await storage.getChatFolders(user.id);
       res.json(foldersWithItems);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch chat folders" });
