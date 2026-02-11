@@ -163,12 +163,48 @@ export default function Projects() {
       const res = await apiRequest("POST", `/api/projects/${projectId}/boards`, { name });
       return res.json();
     },
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/projects", activeProject?.id, "boards"] });
+    onMutate: async ({ name }) => {
+      // Мгновенно закрываем окно и очищаем форму
       setIsCreateBoardOpen(false);
+      const currentBoardName = newBoardName;
       setNewBoardName("");
+
+      // Отменяем текущие запросы
+      await queryClient.cancelQueries({ queryKey: ["/api/projects", activeProject?.id, "boards"] });
+
+      // Сохраняем предыдущее состояние
+      const previousBoards = queryClient.getQueryData<any[]>(["/api/projects", activeProject?.id, "boards"]);
+
+      // Оптимистично добавляем новую доску
+      if (previousBoards) {
+        const optimisticBoard = {
+          id: `temp-board-${Date.now()}`,
+          name: name,
+          projectId: activeProject?.id,
+          createdAt: new Date().toISOString()
+        };
+        queryClient.setQueryData(["/api/projects", activeProject?.id, "boards"], [...previousBoards, optimisticBoard]);
+      }
+
+      return { previousBoards, currentBoardName };
+    },
+    onError: (err, variables, context) => {
+      // Откатываем при ошибке
+      if (context?.previousBoards) {
+        queryClient.setQueryData(["/api/projects", activeProject?.id, "boards"], context.previousBoards);
+      }
+      if (context?.currentBoardName) {
+        setNewBoardName(context.currentBoardName);
+        setIsCreateBoardOpen(true);
+      }
+      toast.error("Не удалось создать доску");
+    },
+    onSuccess: (data) => {
       setActiveBoardId(data.id);
       toast.success("Доска успешно создана");
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", activeProject?.id, "boards"] });
     }
   });
 
