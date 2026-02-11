@@ -355,6 +355,11 @@ export default function Projects() {
 
   const updateTaskMutation = useMutation({
     mutationFn: async ({ id, data }: { id: string, data: any }) => {
+      // Если это временный ID (начинается с temp-), не отправляем запрос на сервер,
+      // так как задача еще создается. Реальный PATCH уйдет после синхронизации.
+      if (id.startsWith("temp-")) {
+        return null;
+      }
       const res = await apiRequest("PATCH", `/api/tasks/${id}`, data);
       return res.json();
     },
@@ -401,12 +406,18 @@ export default function Projects() {
       return { previousData };
     },
     onError: (err, variables, context) => {
+      // Игнорируем ошибку для временных ID, так как мы сами отменили запрос
+      if (variables.id.startsWith("temp-")) return;
+      
       if (context?.previousData) {
         queryClient.setQueryData(["/api/boards", activeBoard?.id, "full"], context.previousData);
       }
       toast.error("Не удалось переместить задачу");
     },
-    onSettled: () => {
+    onSettled: (data, error, variables) => {
+      // Не инвалидируем, если это была временная задача, чтобы не мешать процессу создания
+      if (variables.id.startsWith("temp-")) return;
+
       // Инвалидируем без принудительного рефетча, чтобы не мерцало
       queryClient.invalidateQueries({ 
         queryKey: ["/api/boards", activeBoard?.id, "full"],

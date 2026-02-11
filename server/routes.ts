@@ -317,6 +317,12 @@ export async function registerRoutes(
   app.patch("/api/tasks/:id", async (req, res) => {
     try {
       const taskId = req.params.id;
+      
+      // Проверка на временный ID (temp-...), который может прийти из-за оптимистичных обновлений
+      if (taskId.startsWith("temp-")) {
+        return res.status(400).json({ message: "Cannot update task with temporary ID" });
+      }
+
       const updateData = req.body;
       
       const task = await storage.updateTask(taskId, updateData);
