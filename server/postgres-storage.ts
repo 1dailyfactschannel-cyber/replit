@@ -883,6 +883,14 @@ export class PostgresStorage {
 
   async createTask(task: schema.InsertTask): Promise<schema.Task> {
     try {
+      // Если исполнитель не указан, берем последнего зарегистрированного пользователя по умолчанию
+      if (!task.assigneeId) {
+        const lastUser = await this.getFirstUser();
+        if (lastUser) {
+          task.assigneeId = lastUser.id;
+        }
+      }
+
       const [newTask] = await this.db.insert(schema.tasks).values(task).returning();
       return newTask;
     } catch (error) {
@@ -943,6 +951,143 @@ export class PostgresStorage {
     } catch (error) {
       console.error("Error getting last user:", error);
       return undefined;
+    }
+  }
+
+  // Subtask methods
+  async getSubtasksByTask(taskId: string): Promise<schema.Subtask[]> {
+    try {
+      return await this.db.select()
+        .from(schema.subtasks)
+        .where(eq(schema.subtasks.taskId, taskId))
+        .orderBy(schema.subtasks.order);
+    } catch (error) {
+      console.error("Error getting subtasks:", error);
+      return [];
+    }
+  }
+
+  async createSubtask(subtask: schema.InsertSubtask): Promise<schema.Subtask> {
+    try {
+      const [newSubtask] = await this.db.insert(schema.subtasks).values(subtask).returning();
+      return newSubtask;
+    } catch (error) {
+      console.error("Error creating subtask:", error);
+      throw error;
+    }
+  }
+
+  async updateSubtask(id: string, update: Partial<schema.Subtask>): Promise<schema.Subtask> {
+    try {
+      const [updatedSubtask] = await this.db.update(schema.subtasks)
+        .set({ ...update, updatedAt: new Date() })
+        .where(eq(schema.subtasks.id, id))
+        .returning();
+      if (!updatedSubtask) throw new Error("Subtask not found");
+      return updatedSubtask;
+    } catch (error) {
+      console.error("Error updating subtask:", error);
+      throw error;
+    }
+  }
+
+  async deleteSubtask(id: string): Promise<void> {
+    try {
+      await this.db.delete(schema.subtasks).where(eq(schema.subtasks.id, id));
+    } catch (error) {
+      console.error("Error deleting subtask:", error);
+      throw error;
+    }
+  }
+
+  // Comment methods
+  async getCommentsByTask(taskId: string): Promise<schema.Comment[]> {
+    try {
+      return await this.db.select()
+        .from(schema.comments)
+        .where(eq(schema.comments.taskId, taskId))
+        .orderBy(desc(schema.comments.createdAt));
+    } catch (error) {
+      console.error("Error getting comments:", error);
+      return [];
+    }
+  }
+
+  async createComment(comment: schema.InsertComment): Promise<schema.Comment> {
+    try {
+      const [newComment] = await this.db.insert(schema.comments).values(comment).returning();
+      return newComment;
+    } catch (error) {
+      console.error("Error creating comment:", error);
+      throw error;
+    }
+  }
+
+  async deleteComment(id: string): Promise<void> {
+    try {
+      await this.db.delete(schema.comments).where(eq(schema.comments.id, id));
+    } catch (error) {
+      console.error("Error deleting comment:", error);
+      throw error;
+    }
+  }
+
+  // Task Observer methods
+  async getObserversByTask(taskId: string): Promise<User[]> {
+    try {
+      const result = await this.db.select({
+        user: schema.users
+      })
+        .from(schema.users)
+        .innerJoin(schema.taskObservers, eq(schema.users.id, schema.taskObservers.userId))
+        .where(eq(schema.taskObservers.taskId, taskId));
+      
+      return result.map(r => r.user);
+    } catch (error) {
+      console.error("Error getting task observers:", error);
+      return [];
+    }
+  }
+
+  async addTaskObserver(taskId: string, userId: string): Promise<void> {
+    try {
+      await this.db.insert(schema.taskObservers)
+        .values({ taskId, userId })
+        .onConflictDoNothing();
+    } catch (error) {
+      console.error("Error adding task observer:", error);
+      throw error;
+    }
+  }
+
+  async removeTaskObserver(taskId: string, userId: string): Promise<void> {
+    try {
+      await this.db.delete(schema.taskObservers)
+        .where(and(
+          eq(schema.taskObservers.taskId, taskId),
+          eq(schema.taskObservers.userId, userId)
+        ));
+    } catch (error) {
+      console.error("Error removing task observer:", error);
+      throw error;
+    }
+  }
+
+  async updateTaskObservers(taskId: string, userIds: string[]): Promise<void> {
+    try {
+      await this.db.transaction(async (tx) => {
+        // Remove all current observers
+        await tx.delete(schema.taskObservers).where(eq(schema.taskObservers.taskId, taskId));
+        
+        // Add new observers
+        if (userIds.length > 0) {
+          const values = userIds.map(userId => ({ taskId, userId }));
+          await tx.insert(schema.taskObservers).values(values);
+        }
+      });
+    } catch (error) {
+      console.error("Error updating task observers:", error);
+      throw error;
     }
   }
 

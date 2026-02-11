@@ -9,6 +9,7 @@ import path from "path";
 import fs from "fs";
 import { eq, and, ne } from "drizzle-orm";
 import { getCache, setCache, invalidatePattern } from "./redis";
+import { format } from "date-fns";
 
 const storage = getStorage();
 let io: SocketIOServer;
@@ -234,10 +235,61 @@ export async function registerRoutes(
         return res.json(cachedData);
       }
 
-      const [columns, tasks] = await Promise.all([
+      const [columns, rawTasks] = await Promise.all([
         storage.getColumnsByBoard(boardId),
         storage.getTasksByBoard(boardId)
       ]);
+
+      // Обогащаем задачи данными об исполнителях и репортерах
+      const tasks = await Promise.all(rawTasks.map(async (task) => {
+        try {
+          // Fetch assignee and reporter in parallel for performance
+          const [assignee, reporter] = await Promise.all([
+            task.assigneeId ? storage.getUser(task.assigneeId) : null,
+            task.reporterId ? storage.getUser(task.reporterId) : null
+          ]);
+
+          if (!reporter && task.reporterId) {
+            console.warn(`Reporter not found for task ${task.id}, reporterId: ${task.reporterId}`);
+          }
+
+          // Use a helper for name formatting to ensure consistency
+          const formatName = (user: any) => {
+            if (!user) return null;
+            const fullName = `${user.firstName || ""} ${user.lastName || ""}`.trim();
+            return fullName || user.username || "Пользователь";
+          };
+
+          // Format creation date
+          let creationDate = "";
+          if (task.createdAt) {
+            const dateObj = new Date(task.createdAt);
+            if (!isNaN(dateObj.getTime())) {
+              creationDate = format(dateObj, "dd.MM.yyyy HH:mm");
+            }
+          }
+
+          return {
+            ...task,
+            assignee: assignee ? { 
+              name: formatName(assignee), 
+              avatar: assignee.avatar 
+            } : null,
+            creator: { 
+               name: formatName(reporter) || "Система", 
+               avatar: reporter?.avatar || null,
+               date: creationDate || "Дата не указана"
+             }
+          };
+        } catch (err) {
+          console.error(`Error enriching task ${task.id}:`, err);
+          return {
+            ...task,
+            assignee: null,
+            creator: { name: "Ошибка загрузки", date: "", avatar: null }
+          };
+        }
+      }));
       
       const boardData = { columns, tasks };
       
@@ -763,6 +815,126 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error deleting notification:", error);
       res.status(500).json({ message: "Failed to delete notification" });
+    }
+  });
+
+  // Subtask routes
+  app.get("/api/tasks/:taskId/subtasks", async (req, res) => {
+    try {
+      const subtasks = await storage.getSubtasksByTask(req.params.taskId);
+      res.json(subtasks);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch subtasks" });
+    }
+  });
+
+  app.post("/api/tasks/:taskId/subtasks", async (req, res) => {
+    try {
+      const subtask = await storage.createSubtask({
+        ...req.body,
+        taskId: req.params.taskId
+      });
+      res.status(201).json(subtask);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to create subtask" });
+    }
+  });
+
+  app.patch("/api/subtasks/:id", async (req, res) => {
+    try {
+      const subtask = await storage.updateSubtask(req.params.id, req.body);
+      res.json(subtask);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to update subtask" });
+    }
+  });
+
+  app.delete("/api/subtasks/:id", async (req, res) => {
+    try {
+      await storage.deleteSubtask(req.params.id);
+      res.status(204).end();
+    } catch (error) {
+      res.status(500).json({ message: "Failed to delete subtask" });
+    }
+  });
+
+  // Comment routes
+  app.get("/api/tasks/:taskId/comments", async (req, res) => {
+    try {
+      const rawComments = await storage.getCommentsByTask(req.params.taskId);
+      
+      // Обогащаем комментарии данными об авторах
+      const comments = await Promise.all(rawComments.map(async (comment) => {
+        const author = await storage.getUser(comment.authorId);
+        return {
+          ...comment,
+          author: author ? { 
+            name: `${author.firstName || ""} ${author.lastName || ""}`.trim() || author.username, 
+            avatar: author.avatar 
+          } : { name: "Неизвестно" }
+        };
+      }));
+      
+      res.json(comments);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch comments" });
+    }
+  });
+
+  app.post("/api/tasks/:taskId/comments", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
+    try {
+      const comment = await storage.createComment({
+        ...req.body,
+        taskId: req.params.taskId,
+        authorId: req.user.id
+      });
+      
+      // Возвращаем обогащенный комментарий
+      const author = req.user;
+      res.status(201).json({
+        ...comment,
+        author: { 
+          name: `${author.firstName || ""} ${author.lastName || ""}`.trim() || author.username, 
+          avatar: author.avatar 
+        }
+      });
+    } catch (error) {
+      console.error("Error creating comment:", error);
+      res.status(500).json({ message: "Failed to create comment" });
+    }
+  });
+
+  app.delete("/api/comments/:id", async (req, res) => {
+    try {
+      await storage.deleteComment(req.params.id);
+      res.status(204).end();
+    } catch (error) {
+      res.status(500).json({ message: "Failed to delete comment" });
+    }
+  });
+
+  // Task Observer routes
+  app.get("/api/tasks/:taskId/observers", async (req, res) => {
+    try {
+      const observers = await storage.getObserversByTask(req.params.taskId);
+      res.json(observers);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch observers" });
+    }
+  });
+
+  app.post("/api/tasks/:taskId/observers", async (req, res) => {
+    try {
+      const { userIds } = req.body;
+      if (!Array.isArray(userIds)) {
+        return res.status(400).json({ message: "userIds must be an array" });
+      }
+      await storage.updateTaskObservers(req.params.taskId, userIds);
+      const updatedObservers = await storage.getObserversByTask(req.params.taskId);
+      res.json(updatedObservers);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to update observers" });
     }
   });
 

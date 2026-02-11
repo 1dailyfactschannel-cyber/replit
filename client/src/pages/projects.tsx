@@ -54,10 +54,17 @@ const TaskCard = React.memo(({ task, index, onClick }: { task: any, index: numbe
           {...provided.dragHandleProps}
           onClick={() => onClick(task)}
           className={cn(
-            "bg-card border border-border/50 p-4 rounded-xl shadow-sm hover:shadow-md hover:border-primary/30 transition-[box-shadow,border-color,background-color] group/task",
+            "bg-card border border-border/50 p-4 rounded-xl shadow-sm hover:shadow-md hover:border-primary/30 transition-[box-shadow,border-color,background-color] group/task relative overflow-hidden",
             snapshot.isDragging ? "shadow-xl ring-2 ring-primary/20 rotate-1 z-50" : ""
           )}
         >
+          {/* Bottom border indicator for priority */}
+          <div className={cn(
+            "absolute bottom-0 left-0 right-0 h-1",
+            task.priority === "high" || task.priority === "critical" ? "bg-rose-500" :
+            task.priority === "medium" ? "bg-amber-500" : "bg-emerald-500"
+          )} />
+          
           <div className="flex items-start justify-between gap-2 mb-2">
             <Badge variant="outline" className={cn(
               "text-[10px] font-bold uppercase px-1.5 h-5 border-none",
@@ -74,16 +81,30 @@ const TaskCard = React.memo(({ task, index, onClick }: { task: any, index: numbe
                task.type === "story" ? "История" : "Задача"}
             </Badge>
           </div>
-          <h4 className="text-sm font-medium mb-3 leading-snug">{task.title}</h4>
+          <h4 className="text-sm font-semibold mb-3 leading-snug text-foreground/90">{task.title}</h4>
           {task.description && (
-            <p className="text-xs text-muted-foreground line-clamp-2 mb-3">{task.description}</p>
+            <p className="text-xs text-muted-foreground/80 line-clamp-2 mb-3">{task.description}</p>
           )}
           <div className="flex items-center justify-between">
             <div className="flex -space-x-2">
-              <Avatar className="w-6 h-6 border-2 border-background">
-                <AvatarFallback className="text-[10px]">UN</AvatarFallback>
-              </Avatar>
+              {task.assignee ? (
+                <Avatar className="w-6 h-6 border-2 border-background">
+                  {task.assignee.avatar && <AvatarImage src={task.assignee.avatar} />}
+                  <AvatarFallback className="text-[8px]">
+                    {task.assignee.name.substring(0, 2).toUpperCase()}
+                  </AvatarFallback>
+                </Avatar>
+              ) : (
+                <Avatar className="w-6 h-6 border-2 border-background">
+                  <AvatarFallback className="text-[8px]">?</AvatarFallback>
+                </Avatar>
+              )}
             </div>
+            {task.creator && (
+              <div className="text-[10px] text-muted-foreground font-medium">
+                {task.creator.date.split(' ')[0]}
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -439,9 +460,11 @@ export default function Projects() {
     return data;
   }, [columns, tasks]);
 
+  const [selectedTask, setSelectedTask] = useState<any>(null);
+
   const handleTaskClick = useCallback((task: any) => {
-    // В будущем здесь будет открытие TaskDetailsModal
-    toast.info(`Задача: ${task.title}`);
+    setSelectedTask(task);
+    setModalOpen(true);
   }, []);
 
   const handleCreateTask = (columnName?: string) => {
@@ -466,9 +489,11 @@ export default function Projects() {
     createTaskMutation.mutate(newTask);
   };
 
-  const onTaskUpdate = (updatedTask: Task) => {
-    // В будущем здесь будет PATCH запрос
-    toast.info("Обновление задачи будет реализовано позже");
+  const onTaskUpdate = (updatedTask: any) => {
+    updateTaskMutation.mutate({
+      id: updatedTask.id.toString(),
+      data: updatedTask
+    });
   };
 
   const toggleProjectCollapse = (projectId: string, e: React.MouseEvent) => {
@@ -914,7 +939,7 @@ export default function Projects() {
       {/* Task Details Modal */}
       {modalOpen && (
         <TaskDetailsModal
-          task={null}
+          task={selectedTask}
           open={modalOpen}
           onOpenChange={setModalOpen}
           onUpdate={onTaskUpdate}

@@ -1,4 +1,5 @@
 import { useEditor, EditorContent } from '@tiptap/react';
+import { useEffect } from 'react';
 import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
 import Link from '@tiptap/extension-link';
@@ -21,6 +22,7 @@ import { cn } from '@/lib/utils';
 interface RichTextEditorProps {
   content: string;
   onChange: (content: string) => void;
+  onBlur?: (content: string) => void;
   placeholder?: string;
 }
 
@@ -130,12 +132,22 @@ export function RichTextEditor({ content, onChange, placeholder }: RichTextEdito
     onUpdate: ({ editor }) => {
       onChange(editor.getHTML());
     },
+    onBlur: ({ editor }) => {
+      if (onBlur) onBlur(editor.getHTML());
+    },
     editorProps: {
       attributes: {
         class: 'prose prose-sm dark:prose-invert max-w-none min-h-[150px] p-4 focus:outline-none',
       },
     },
   });
+
+  // Sync content if it changes externally
+  useEffect(() => {
+    if (editor && content !== editor.getHTML()) {
+      editor.commands.setContent(content);
+    }
+  }, [content, editor]);
 
   return (
     <div className="rounded-xl border border-border/50 bg-card overflow-hidden focus-within:ring-2 ring-primary/20 transition-all">
