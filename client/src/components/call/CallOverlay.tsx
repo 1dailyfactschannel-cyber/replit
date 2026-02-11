@@ -35,31 +35,41 @@ export function CallOverlay({ socket, currentUser, activeCall, outboundCall, onC
   const [isMicMuted, setIsMicMuted] = useState(false);
   const [isVideoOff, setIsVideoOff] = useState(false);
   const [callId, setCallId] = useState<string | null>(activeCall?.callId || null);
+  const callIdRef = useRef<string | null>(null);
   const startTimeRef = useRef<number>(Date.now());
   
   const myVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
   const connectionRef = useRef<Peer.Instance | null>(null);
 
+  // Sync ref with state
+  useEffect(() => {
+    callIdRef.current = callId;
+  }, [callId]);
+
   const isVideo = (activeCall?.type === 'video') || (outboundCall?.type === 'video');
   const otherPartyName = activeCall?.name || outboundCall?.name || "Собеседник";
 
   useEffect(() => {
+    console.log("CallOverlay mounted. ActiveCall:", activeCall, "OutboundCall:", outboundCall);
     // Get user media
     navigator.mediaDevices.getUserMedia({ 
       video: isVideo, 
       audio: true 
     }).then((currentStream) => {
+      console.log("Local stream obtained");
       setStream(currentStream);
       if (myVideoRef.current) {
         myVideoRef.current.srcObject = currentStream;
       }
 
       if (outboundCall) {
+        console.log("Initiating outbound call to:", outboundCall.to);
         callUser(currentStream);
       }
     }).catch(err => {
       console.error("Failed to get local stream", err);
+      toast.error("Не удалось получить доступ к камере или микрофону");
     });
 
     // Socket listeners for call events
@@ -70,8 +80,9 @@ export function CallOverlay({ socket, currentUser, activeCall, outboundCall, onC
         connectionRef.current.signal(data.signal);
       }
       // Update call status to active in DB
-      if (callId) {
-        apiRequest("PATCH", `/api/calls/${callId}`, { status: 'active' });
+      const currentCallId = callIdRef.current;
+      if (currentCallId) {
+        apiRequest("PATCH", `/api/calls/${currentCallId}`, { status: 'active' });
       }
     });
 
@@ -91,7 +102,7 @@ export function CallOverlay({ socket, currentUser, activeCall, outboundCall, onC
       socket.off("call-rejected");
       socket.off("call-ended");
     };
-  }, [callId]);
+  }, []); // Remove callId from dependencies to avoid cleanup on ID receipt
 
   const cleanup = () => {
     if (stream) {
@@ -197,9 +208,10 @@ export function CallOverlay({ socket, currentUser, activeCall, outboundCall, onC
     }
 
     // Update call record with duration and status
-    if (callId) {
+    const currentCallId = callIdRef.current;
+    if (currentCallId) {
       const duration = callAccepted ? Math.floor((Date.now() - startTimeRef.current) / 1000) : 0;
-      await apiRequest("PATCH", `/api/calls/${callId}`, { 
+      await apiRequest("PATCH", `/api/calls/${currentCallId}`, { 
         status: callAccepted ? 'completed' : 'missed',
         duration 
       });

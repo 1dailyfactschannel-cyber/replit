@@ -16,10 +16,13 @@ export function setupWebSockets(httpServer: HttpServer) {
 
   io.on("connection", (socket) => {
     const userId = socket.handshake.query.userId as string;
+    log(`New socket connection: ${socket.id}, userId from query: ${userId}`, "socket.io");
     
     if (userId) {
       socket.join(`user:${userId}`);
-      log(`User ${userId} connected and joined room user:${userId}`, "socket.io");
+      log(`Socket ${socket.id} joined room user:${userId}`, "socket.io");
+    } else {
+      log(`Socket ${socket.id} connected without userId`, "socket.io");
     }
 
     socket.on("join-chat", (chatId: string) => {
@@ -38,22 +41,31 @@ export function setupWebSockets(httpServer: HttpServer) {
 
     // Call signaling events
     socket.on("call-user", (data: { to: string, from: string, name: string, signal: any, type: 'audio' | 'video', chatId: string, callId?: string }) => {
-      log(`Call from ${data.from} to user:${data.to}`, "socket.io");
-      socket.to(`user:${data.to}`).emit("call-made", {
-        signal: data.signal,
-        from: data.from,
-        name: data.name,
-        type: data.type,
-        chatId: data.chatId,
-        callId: data.callId
-      });
+      log(`Call request from ${data.from} to user:${data.to} (socket ${socket.id})`, "socket.io");
+      const roomName = `user:${data.to}`;
+      const rooms = io.sockets.adapter.rooms;
+      const targetRoom = rooms.get(roomName);
+      
+      if (targetRoom) {
+        log(`Emitting call-made to room ${roomName} (${targetRoom.size} sockets)`, "socket.io");
+        socket.to(roomName).emit("call-made", {
+          signal: data.signal,
+          from: data.from,
+          name: data.name,
+          type: data.type,
+          chatId: data.chatId,
+          callId: data.callId
+        });
+      } else {
+        log(`Target room ${roomName} is empty! User ${data.to} is offline or not connected.`, "socket.io");
+      }
     });
 
     socket.on("answer-call", (data: { to: string, signal: any }) => {
-      log(`Answer from ${socket.id} to user:${data.to}`, "socket.io");
+      log(`Answer from ${socket.id} (user ${userId}) to user:${data.to}`, "socket.io");
       socket.to(`user:${data.to}`).emit("call-answered", {
         signal: data.signal,
-        from: socket.id
+        from: userId || socket.id
       });
     });
 

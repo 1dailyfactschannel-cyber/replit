@@ -51,32 +51,12 @@ export async function registerRoutes(
     });
   });
 
-  // User routes
-  app.get("/api/user", async (_req, res) => {
-    console.log("GET /api/user hit!");
-    try {
-      const user = await storage.getFirstUser();
-      if (!user) {
-        console.log("GET /api/user: No user found in database");
-        return res.status(404).json({ message: "User not found" });
-      }
-      console.log("GET /api/user: Returning user", user.id);
-      res.json(user);
-    } catch (error) {
-      console.error("GET /api/user error:", error);
-      res.status(500).json({ message: "Failed to fetch current user" });
-    }
-  });
-
   app.patch("/api/user", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
     console.log("PATCH /api/user hit!");
     try {
       console.log("PATCH /api/user request body:", req.body);
-      const user = await storage.getFirstUser();
-      if (!user) {
-        console.error("PATCH /api/user: User not found");
-        return res.status(404).json({ message: "User not found" });
-      }
+      const user = req.user;
       
       // Маппинг полей из фронтенда (telegram) в поля базы данных (telegram)
       const updateData = { ...req.body };
@@ -114,22 +94,23 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/users", async (req, res) => {
-    try {
-      const parsed = insertUserSchema.safeParse(req.body);
-      if (!parsed.success) {
-        return res.status(400).json({ message: "Invalid user data", errors: parsed.error.errors });
-      }
-      
-      const user = await storage.createUser(parsed.data);
-      res.status(201).json(user);
-    } catch (error: any) {
-      if (error.code === '23505') { // Unique violation
-        return res.status(400).json({ message: "User already exists" });
-      }
-      res.status(500).json({ message: "Failed to create user" });
-    }
-  });
+  // REMOVE THIS ROUTE - Using /api/register from auth.ts instead
+  // app.post("/api/users", async (req, res) => {
+  //   try {
+  //     const parsed = insertUserSchema.safeParse(req.body);
+  //     if (!parsed.success) {
+  //       return res.status(400).json({ message: "Invalid user data", errors: parsed.error.errors });
+  //     }
+  //     
+  //     const user = await storage.createUser(parsed.data);
+  //     res.status(201).json(user);
+  //   } catch (error: any) {
+  //     if (error.code === '23505') { // Unique violation
+  //       return res.status(400).json({ message: "User already exists" });
+  //     }
+  //     res.status(500).json({ message: "Failed to create user" });
+  //   }
+  // });
 
   // File upload route
   app.post("/api/upload", upload.single("file"), (req, res) => {
@@ -231,13 +212,10 @@ export async function registerRoutes(
   });
 
   app.post("/api/projects", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
     console.log("POST /api/projects hit with body:", req.body);
     try {
-      const user = await storage.getFirstUser();
-      if (!user) {
-        console.error("POST /api/projects: User not found");
-        return res.status(404).json({ message: "User not found" });
-      }
+      const user = req.user;
       
       const projectData = { 
         name: req.body.name,
@@ -325,10 +303,19 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/boards/:boardId/tasks", async (req, res) => {
+  app.patch("/api/tasks/:id", async (req, res) => {
     try {
-      const user = await storage.getFirstUser();
-      if (!user) return res.status(404).json({ message: "User not found" });
+      const task = await storage.updateTask(req.params.id, req.body);
+      res.json(task);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to update task" });
+    }
+  });
+
+  app.post("/api/boards/:boardId/tasks", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
+    try {
+      const user = req.user;
 
       const columns = await storage.getColumnsByBoard(req.params.boardId);
       if (columns.length === 0) return res.status(400).json({ message: "Board has no columns" });
@@ -359,10 +346,10 @@ export async function registerRoutes(
   });
 
   // Chat routes
-  app.get("/api/chats", async (_req, res) => {
+  app.get("/api/chats", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
     try {
-      const user = await storage.getFirstUser();
-      if (!user) return res.status(404).json({ message: "User not found" });
+      const user = req.user;
       const chats = await storage.getChatsForUser(user.id);
       res.json(chats);
     } catch (error) {
@@ -380,9 +367,9 @@ export async function registerRoutes(
   });
 
   app.post("/api/chats", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
     try {
-      const user = await storage.getFirstUser();
-      if (!user) return res.status(404).json({ message: "User not found" });
+      const user = req.user;
       
       const { name, type, participantIds, description, avatar } = req.body;
       
@@ -403,9 +390,13 @@ export async function registerRoutes(
       }, allParticipants);
       
       // Return chat with participants for immediate UI update
+      const participants = (await Promise.all(
+        allParticipants.map(id => storage.getUser(id))
+      )).filter(Boolean);
+
       const chatWithDetails = {
         ...chat,
-        participants: await Promise.all(allParticipants.map(id => storage.getUser(id))),
+        participants,
         lastMessage: null
       };
 
@@ -440,9 +431,9 @@ export async function registerRoutes(
   });
 
   app.post("/api/chats/:chatId/messages", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
     try {
-      const user = await storage.getFirstUser();
-      if (!user) return res.status(404).json({ message: "User not found" });
+      const user = req.user;
       
       const message = await storage.createMessage({
         chatId: req.params.chatId,
@@ -521,9 +512,9 @@ export async function registerRoutes(
   });
 
   app.post("/api/chats/:chatId/read", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
     try {
-      const user = await storage.getFirstUser();
-      if (!user) return res.status(404).json({ message: "User not found" });
+      const user = req.user;
 
       await storage.markChatMessagesAsRead(req.params.chatId, user.id);
       
@@ -541,10 +532,10 @@ export async function registerRoutes(
   });
 
   // Chat Folder routes
-  app.get("/api/chat-folders", async (_req, res) => {
+  app.get("/api/chat-folders", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
     try {
-      const user = await storage.getFirstUser();
-      if (!user) return res.status(404).json({ message: "User not found" });
+      const user = req.user;
       
       const folders = await storage.getChatFolders(user.id);
       const foldersWithItems = await Promise.all(folders.map(async (folder) => {
@@ -559,9 +550,9 @@ export async function registerRoutes(
   });
 
   app.post("/api/chat-folders", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
     try {
-      const user = await storage.getFirstUser();
-      if (!user) return res.status(404).json({ message: "User not found" });
+      const user = req.user;
       
       const { name, icon, chatIds } = req.body;
       const folder = await storage.createChatFolder({
@@ -606,10 +597,10 @@ export async function registerRoutes(
   });
 
   // Call routes
-  app.get("/api/calls", async (_req, res) => {
+  app.get("/api/calls", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
     try {
-      const user = await storage.getFirstUser();
-      if (!user) return res.status(404).json({ message: "User not found" });
+      const user = req.user;
       const calls = await storage.getCallsForUser(user.id);
       res.json(calls);
     } catch (error) {
@@ -618,9 +609,9 @@ export async function registerRoutes(
   });
 
   app.post("/api/calls", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
     try {
-      const user = await storage.getFirstUser();
-      if (!user) return res.status(404).json({ message: "User not found" });
+      const user = req.user;
       
       const call = await storage.createCall({
         ...req.body,

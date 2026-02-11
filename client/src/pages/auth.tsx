@@ -7,18 +7,64 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Eye, EyeOff, Lock, Mail, User, ArrowRight, Github } from "lucide-react";
+import { Eye, EyeOff, Lock, Mail, User, ArrowRight, Github, Loader2 } from "lucide-react";
 import DarkVeil from "@/components/DarkVeil";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 
 export default function Auth() {
   const [, setLocation] = useLocation();
   const [showPassword, setShowPassword] = useState(false);
   const [isForgotPassword, setIsForgotPassword] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const { toast } = useToast();
 
-  const handleLogin = (e: React.FormEvent) => {
+  const [loginEmail, setLoginEmail] = useState("");
+  const [loginPassword, setLoginPassword] = useState("");
+  
+  const [regEmail, setRegEmail] = useState("");
+  const [regPassword, setRegPassword] = useState("");
+
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Тестовая учетная запись: admin@example.com / admin123
-    setLocation("/");
+    setIsLoading(true);
+    try {
+      const res = await apiRequest("POST", "/api/login", { email: loginEmail, password: loginPassword });
+      if (res.ok) {
+        const user = await res.json();
+        queryClient.setQueryData(["/api/user"], user);
+        toast({ title: "Успешный вход", description: `Добро пожаловать, ${user.firstName || user.username}!` });
+        setLocation("/");
+      } else {
+        const error = await res.json();
+        toast({ title: "Ошибка входа", description: error.message, variant: "destructive" });
+      }
+    } catch (error: any) {
+      toast({ title: "Ошибка", description: "Не удалось войти в систему", variant: "destructive" });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleRegister = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsLoading(true);
+    try {
+      const res = await apiRequest("POST", "/api/register", { email: regEmail, password: regPassword });
+      if (res.ok) {
+        const user = await res.json();
+        queryClient.setQueryData(["/api/user"], user);
+        toast({ title: "Аккаунт создан", description: "Добро пожаловать в TeamSync!" });
+        setLocation("/");
+      } else {
+        const error = await res.json();
+        toast({ title: "Ошибка регистрации", description: error.message, variant: "destructive" });
+      }
+    } catch (error: any) {
+      toast({ title: "Ошибка", description: "Не удалось создать аккаунт", variant: "destructive" });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -97,7 +143,15 @@ export default function Auth() {
                       <Label htmlFor="email" className="text-white/70 ml-1">Email</Label>
                       <div className="relative">
                         <Mail className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-white/40" />
-                        <Input id="email" placeholder="admin@teamsync.ru" className="pl-12 h-12 bg-white/5 border-white/10 text-white placeholder:text-white/20 rounded-xl focus:ring-primary/50" type="email" required />
+                        <Input 
+                          id="email" 
+                          placeholder="admin@teamsync.ru" 
+                          className="pl-12 h-12 bg-white/5 border-white/10 text-white placeholder:text-white/20 rounded-xl focus:ring-primary/50" 
+                          type="email" 
+                          required 
+                          value={loginEmail}
+                          onChange={(e) => setLoginEmail(e.target.value)}
+                        />
                       </div>
                     </div>
                     <div className="space-y-2">
@@ -109,39 +163,69 @@ export default function Auth() {
                       </div>
                       <div className="relative">
                         <Lock className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-white/40" />
-                        <Input id="password" type={showPassword ? "text" : "password"} className="pl-12 pr-12 h-12 bg-white/5 border-white/10 text-white placeholder:text-white/20 rounded-xl focus:ring-primary/50" required />
+                        <Input 
+                          id="password" 
+                          type={showPassword ? "text" : "password"} 
+                          className="pl-12 pr-12 h-12 bg-white/5 border-white/10 text-white placeholder:text-white/20 rounded-xl focus:ring-primary/50" 
+                          required 
+                          value={loginPassword}
+                          onChange={(e) => setLoginPassword(e.target.value)}
+                        />
                         <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-4 top-1/2 -translate-y-1/2 text-white/40 hover:text-white transition-colors">
                           {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
                         </button>
                       </div>
                     </div>
-                    <Button className="w-full h-12 font-bold text-base bg-white text-black hover:bg-white/90 rounded-xl transition-all shadow-xl shadow-white/5" type="submit">
-                      Войти
+                    <Button 
+                      className="w-full h-12 font-bold text-base bg-white text-black hover:bg-white/90 rounded-xl transition-all shadow-xl shadow-white/5" 
+                      type="submit"
+                      disabled={isLoading}
+                    >
+                      {isLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : "Войти"}
                     </Button>
                   </form>
                 </TabsContent>
 
                 <TabsContent value="register" className="space-y-5">
-                  <form onSubmit={handleLogin} className="space-y-5">
+                  <form onSubmit={handleRegister} className="space-y-5">
                     <div className="space-y-2">
                       <Label htmlFor="reg-email" className="text-white/70 ml-1">Email</Label>
                       <div className="relative">
                         <Mail className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-white/40" />
-                        <Input id="reg-email" placeholder="name@example.com" className="pl-12 h-12 bg-white/5 border-white/10 text-white placeholder:text-white/20 rounded-xl focus:ring-primary/50" type="email" required />
+                        <Input 
+                          id="reg-email" 
+                          placeholder="name@example.com" 
+                          className="pl-12 h-12 bg-white/5 border-white/10 text-white placeholder:text-white/20 rounded-xl focus:ring-primary/50" 
+                          type="email" 
+                          required 
+                          value={regEmail}
+                          onChange={(e) => setRegEmail(e.target.value)}
+                        />
                       </div>
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="reg-password" className="text-white/70 ml-1">Пароль</Label>
                       <div className="relative">
                         <Lock className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-white/40" />
-                        <Input id="reg-password" type={showPassword ? "text" : "password"} className="pl-12 pr-12 h-12 bg-white/5 border-white/10 text-white placeholder:text-white/20 rounded-xl focus:ring-primary/50" required />
+                        <Input 
+                          id="reg-password" 
+                          type={showPassword ? "text" : "password"} 
+                          className="pl-12 pr-12 h-12 bg-white/5 border-white/10 text-white placeholder:text-white/20 rounded-xl focus:ring-primary/50" 
+                          required 
+                          value={regPassword}
+                          onChange={(e) => setRegPassword(e.target.value)}
+                        />
                         <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-4 top-1/2 -translate-y-1/2 text-white/40 hover:text-white transition-colors">
                           {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
                         </button>
                       </div>
                     </div>
-                    <Button className="w-full h-12 font-bold text-base bg-white text-black hover:bg-white/90 rounded-xl transition-all shadow-xl shadow-white/5" type="submit">
-                      Создать аккаунт
+                    <Button 
+                      className="w-full h-12 font-bold text-base bg-white text-black hover:bg-white/90 rounded-xl transition-all shadow-xl shadow-white/5" 
+                      type="submit"
+                      disabled={isLoading}
+                    >
+                      {isLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : "Создать аккаунт"}
                     </Button>
                   </form>
                 </TabsContent>

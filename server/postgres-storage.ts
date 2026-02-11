@@ -719,6 +719,20 @@ export class PostgresStorage {
     }
   }
 
+  async updateTask(id: string, update: Partial<schema.Task>): Promise<schema.Task> {
+    try {
+      const [updatedTask] = await this.db.update(schema.tasks)
+        .set({ ...update, updatedAt: new Date() })
+        .where(eq(schema.tasks.id, id))
+        .returning();
+      if (!updatedTask) throw new Error("Task not found");
+      return updatedTask;
+    } catch (error) {
+      console.error("Error updating task:", error);
+      throw error;
+    }
+  }
+
   async getTasksByBoard(boardId: string): Promise<schema.Task[]> {
     try {
       return await this.db.select().from(schema.tasks).where(eq(schema.tasks.boardId, boardId));

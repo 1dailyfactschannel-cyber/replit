@@ -221,6 +221,17 @@ export default function Projects() {
     }
   });
 
+  const updateTaskMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string, data: any }) => {
+      const res = await apiRequest("PATCH", `/api/tasks/${id}`, data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/boards", activeBoard?.id, "tasks"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+    }
+  });
+
   const kanbanData = useMemo(() => {
     if (!columns.length) return {};
     
@@ -252,13 +263,34 @@ export default function Projects() {
   };
 
   const onDragEnd = (result: DropResult) => {
-    // Implement task moving later
-    toast.info("Перемещение задач будет реализовано позже");
+    const { destination, source, draggableId } = result;
+
+    if (!destination) return;
+
+    if (
+      destination.droppableId === source.droppableId &&
+      destination.index === source.index
+    ) {
+      return;
+    }
+
+    // Find the target column
+    const targetColumn = columns.find(col => col.name === destination.droppableId);
+    if (!targetColumn) return;
+
+    // Optimistically update the UI or just call the mutation
+    updateTaskMutation.mutate({
+      id: draggableId,
+      data: {
+        columnId: targetColumn.id,
+        order: destination.index
+      }
+    });
   };
 
   if (isLoadingProjects) {
     return (
-      <Layout>
+      <Layout className="overflow-hidden">
         <div className="flex items-center justify-center h-full">
           <Loader2 className="w-8 h-8 animate-spin" />
         </div>
@@ -267,7 +299,7 @@ export default function Projects() {
   }
 
   return (
-    <Layout>
+    <Layout className="overflow-hidden">
       <div className="flex h-[calc(100vh-4rem)] overflow-hidden">
         {/* Secondary Projects Sidebar */}
         <div className="w-72 bg-card border-r border-border flex flex-col">
@@ -565,7 +597,7 @@ export default function Projects() {
 
           {/* Kanban Columns */}
           <DragDropContext onDragEnd={onDragEnd}>
-            <ScrollArea className="flex-1 p-6">
+            <div className="flex-1 overflow-x-auto p-6 custom-scrollbar">
               {activeBoard ? (
                 <Droppable droppableId="board" direction="horizontal" type="column">
                   {(provided) => (
@@ -591,7 +623,7 @@ export default function Projects() {
                                 {...taskProvided.droppableProps}
                                 ref={taskProvided.innerRef}
                                 className={cn(
-                                  "flex flex-col gap-3 min-h-[150px] rounded-xl transition-colors p-1",
+                                  "flex flex-col gap-3 min-h-[150px] rounded-xl transition-colors p-1 overflow-y-auto max-h-[calc(100vh-12rem)] custom-scrollbar",
                                   snapshot.isDraggingOver ? "bg-primary/5 ring-1 ring-primary/20" : ""
                                 )}
                               >
@@ -669,7 +701,7 @@ export default function Projects() {
                   </p>
                 </div>
               )}
-            </ScrollArea>
+            </div>
           </DragDropContext>
         </div>
       </div>

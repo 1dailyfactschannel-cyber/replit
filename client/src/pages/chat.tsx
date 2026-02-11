@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Search, Phone, Video, Info, Paperclip, Smile, Send, Clock, Plus, Users, Check, FolderPlus, Folder, LogOut, User, Settings, Camera, UserMinus, ShieldAlert, X, MessageSquare, MoreVertical, Edit, Trash } from "lucide-react";
+import { Search, Phone, Video, Info, Paperclip, Smile, Send, Clock, Plus, Users, UserPlus, Check, FolderPlus, Folder, LogOut, User, Settings, Camera, UserMinus, ShieldAlert, X, MessageSquare, MoreVertical, Edit, Trash } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import {
   DropdownMenu,
@@ -121,11 +121,20 @@ export default function ChatPage() {
 
   // Socket.io initialization
   useEffect(() => {
-    if (currentUser) {
+    if (currentUser && !socketRef.current) {
+      console.log("Initializing socket for user:", currentUser.id);
       const socket = io({
         query: { userId: currentUser.id }
       });
       socketRef.current = socket;
+
+      socket.on("connect", () => {
+        console.log("Socket connected with ID:", socket.id);
+      });
+
+      socket.on("connect_error", (error) => {
+        console.error("Socket connection error:", error);
+      });
 
       socket.on("new-message", (message: Message) => {
         queryClient.setQueryData(["/api/chats", message.chatId, "messages"], (old: Message[] = []) => {
@@ -137,16 +146,14 @@ export default function ChatPage() {
         queryClient.invalidateQueries({ queryKey: ["/api/chats"] });
         
         // Notify if not active chat
-        if (message.chatId !== activeChatId) {
-          notify("Новое сообщение", { body: message.content });
-        } else {
-          // If active chat, mark as read
-          markReadMutation.mutate(message.chatId);
-        }
+        // We use a ref-like check for activeChatId to avoid dependency cycle
+        // But since this is inside useEffect, we can't easily get the latest activeChatId without adding it to deps
+        // or using a ref for activeChatId.
       });
 
       socket.on("message-updated", () => {
-        queryClient.invalidateQueries({ queryKey: ["/api/chats", activeChatId, "messages"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/chats"] });
+        // We'll invalidate messages in the join-chat effect or via another mechanism
       });
 
       socket.on("message-deleted", ({ messageId, chatId }: { messageId: string, chatId: string }) => {
@@ -157,7 +164,7 @@ export default function ChatPage() {
       });
 
       socket.on("messages-read", () => {
-        queryClient.invalidateQueries({ queryKey: ["/api/chats", activeChatId, "messages"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/chats"] });
       });
 
       socket.on("chat-update", () => {
@@ -187,6 +194,7 @@ export default function ChatPage() {
       });
 
       socket.on("call-made", (data: { from: string, name: string, signal: any, type: 'audio' | 'video', chatId: string, callId?: string }) => {
+        console.log("INCOMING CALL RECEIVED!", data);
         setActiveCall({
           isReceiving: true,
           from: data.from,
@@ -198,21 +206,56 @@ export default function ChatPage() {
         });
       });
 
-      return () => {
-        socket.disconnect();
-      };
-    }
-  }, [currentUser, queryClient, activeChatId, notify]);
+      socket.on("call-answered", (data) => {
+        console.log("CALL ANSWERED by recipient:", data);
+      });
 
-  // Join/Leave chat rooms
-  useEffect(() => {
-    if (socketRef.current && activeChatId) {
-      socketRef.current.emit("join-chat", activeChatId);
+      socket.on("call-rejected", () => {
+        console.log("CALL REJECTED by recipient");
+      });
+
       return () => {
-        socketRef.current?.emit("leave-chat", activeChatId);
+        console.log("Disconnecting socket");
+        socket.disconnect();
+        socketRef.current = null;
       };
     }
-  }, [activeChatId]);
+  }, [currentUser, queryClient, notify]);
+
+  // Handle active chat specific socket events
+  useEffect(() => {
+    if (!socketRef.current || !activeChatId) return;
+
+    const socket = socketRef.current;
+    socket.emit("join-chat", activeChatId);
+
+    const handleNewMessage = (message: Message) => {
+      if (message.chatId === activeChatId) {
+        markReadMutation.mutate(message.chatId);
+      } else {
+        notify("Новое сообщение", { body: message.content });
+      }
+    };
+
+    const handleMessageUpdated = () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/chats", activeChatId, "messages"] });
+    };
+
+    const handleMessagesRead = () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/chats", activeChatId, "messages"] });
+    };
+
+    socket.on("new-message", handleNewMessage);
+    socket.on("message-updated", handleMessageUpdated);
+    socket.on("messages-read", handleMessagesRead);
+
+    return () => {
+      socket.emit("leave-chat", activeChatId);
+      socket.off("new-message", handleNewMessage);
+      socket.off("message-updated", handleMessageUpdated);
+      socket.off("messages-read", handleMessagesRead);
+    };
+  }, [activeChatId, queryClient, notify]);
 
   useEffect(() => {
     if (chats.length > 0 && !activeChatId) {
@@ -239,6 +282,12 @@ export default function ChatPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [messageSearchQuery, setMessageSearchQuery] = useState("");
 
+  const getChatName = (chat: Contact) => {
+    if (chat.type === "group") return chat.name;
+    const otherParticipant = chat.participants?.find(p => p && p.id !== currentUser?.id);
+    return otherParticipant?.username || "Чат";
+  };
+
   const filteredChats = chats.filter(chat => {
     const name = getChatName(chat).toLowerCase();
     return name.includes(searchQuery.toLowerCase());
@@ -249,6 +298,7 @@ export default function ChatPage() {
   );
 
   const [isCreateFolderOpen, setIsCreateFolderOpen] = useState(false);
+  const [isCreateChatOpen, setIsCreateChatOpen] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
   const [selectedChatIdsForFolder, setSelectedChatIdsForFolder] = useState<string[]>([]);
   const [activeFolderId, setActiveFolderId] = useState<string | null>(null);
@@ -286,10 +336,11 @@ export default function ChatPage() {
   const sendMessageMutation = useMutation({
     mutationFn: async (content: string) => {
       if (!activeChatId) return;
-      return apiRequest("POST", `/api/chats/${activeChatId}/messages`, { 
+      const res = await apiRequest("POST", `/api/chats/${activeChatId}/messages`, { 
         content,
         attachments: attachments 
       });
+      return res.json();
     },
     onSuccess: (newMessage) => {
       setMessageInput("");
@@ -304,7 +355,8 @@ export default function ChatPage() {
 
   const createChatMutation = useMutation({
     mutationFn: async (data: any) => {
-      return apiRequest("POST", "/api/chats", data);
+      const res = await apiRequest("POST", "/api/chats", data);
+      return res.json();
     },
     onSuccess: (newChat) => {
       queryClient.invalidateQueries({ queryKey: ["/api/chats"] });
@@ -430,6 +482,19 @@ export default function ChatPage() {
     });
   };
 
+  const handleCreateDirectChat = (userId: string) => {
+    createChatMutation.mutate({
+      type: "direct",
+      participantIds: [userId],
+    }, {
+      onSuccess: (newChat) => {
+        setIsCreateChatOpen(false);
+        setActiveChatId(newChat.id);
+        toast.success("Чат открыт");
+      }
+    });
+  };
+
   const handleScheduleCall = (callData: ScheduledCall) => {
     setScheduledCalls([...scheduledCalls, callData]);
   };
@@ -481,15 +546,9 @@ export default function ChatPage() {
     ? filteredChats.filter(c => folders.find(f => f.id === activeFolderId)?.chatIds.includes(c.id))
     : filteredChats;
 
-  const getChatName = (chat: Contact) => {
-    if (chat.type === "group") return chat.name;
-    const otherParticipant = chat.participants.find(p => p.id !== currentUser?.id);
-    return otherParticipant?.username || "Чат";
-  };
-
   const getChatAvatar = (chat: Contact) => {
     if (chat.type === "group") return chat.avatar;
-    const otherParticipant = chat.participants.find(p => p.id !== currentUser?.id);
+    const otherParticipant = chat.participants?.find(p => p && p.id !== currentUser?.id);
     return otherParticipant?.avatar;
   };
 
@@ -527,6 +586,62 @@ export default function ChatPage() {
                 <div className="flex items-center justify-between mb-4">
                   <h2 className="font-semibold text-lg">Общение</h2>
                   <div className="flex gap-1">
+                    <Dialog open={isCreateChatOpen} onOpenChange={setIsCreateChatOpen}>
+                      <DialogTrigger asChild>
+                        <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg hover:bg-primary/10 hover:text-primary transition-colors" title="Начать чат">
+                          <MessageSquare className="w-4 h-4" />
+                        </Button>
+                      </DialogTrigger>
+                      <DialogContent className="sm:max-w-[425px]">
+                        <DialogHeader>
+                          <DialogTitle>Начать чат</DialogTitle>
+                          <DialogDescription>Выберите пользователя, чтобы начать общение.</DialogDescription>
+                        </DialogHeader>
+                        <div className="space-y-4 py-4">
+                          <div className="relative">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                            <Input 
+                              placeholder="Поиск пользователей..." 
+                              className="pl-9 bg-secondary/30"
+                              value={searchQuery}
+                              onChange={(e) => setSearchQuery(e.target.value)}
+                            />
+                          </div>
+                          <ScrollArea className="h-[300px] pr-4">
+                            <div className="space-y-2">
+                              {allUsers
+                                .filter(u => u.id !== currentUser?.id && u.username.toLowerCase().includes(searchQuery.toLowerCase()))
+                                .map((user) => (
+                                  <div 
+                                    key={user.id} 
+                                    className="flex items-center justify-between p-3 rounded-xl hover:bg-secondary/50 transition-all cursor-pointer group border border-transparent hover:border-border/50"
+                                    onClick={() => handleCreateDirectChat(user.id)}
+                                  >
+                                    <div className="flex items-center gap-3">
+                                      <Avatar className="h-10 w-10 ring-2 ring-transparent group-hover:ring-primary/20 transition-all">
+                                        <AvatarImage src={user.avatar || undefined} />
+                                        <AvatarFallback className="bg-primary/10 text-primary text-xs font-bold">
+                                          {user.username.substring(0,2).toUpperCase()}
+                                        </AvatarFallback>
+                                      </Avatar>
+                                      <div className="flex flex-col">
+                                        <span className="text-sm font-semibold text-foreground/90">
+                                          {user.firstName && user.lastName ? `${user.firstName} ${user.lastName}` : user.username}
+                                        </span>
+                                        <span className="text-[10px] text-muted-foreground">{user.email || 'Пользователь TeamSync'}</span>
+                                      </div>
+                                    </div>
+                                    <Button size="sm" variant="ghost" className="opacity-0 group-hover:opacity-100 transition-opacity rounded-full h-8 w-8 p-0">
+                                      <Plus className="w-4 h-4 text-primary" />
+                                    </Button>
+                                  </div>
+                                ))}
+                            </div>
+                          </ScrollArea>
+                        </div>
+                      </DialogContent>
+                    </Dialog>
+
                     <Dialog open={isCreateFolderOpen} onOpenChange={setIsCreateFolderOpen}>
                       <DialogTrigger asChild>
                         <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg hover:bg-primary/10 hover:text-primary transition-colors" title="Создать папку">
@@ -585,6 +700,43 @@ export default function ChatPage() {
                             Создать папку
                           </Button>
                         </DialogFooter>
+                      </DialogContent>
+                    </Dialog>
+
+                    <Dialog open={isCreateChatOpen} onOpenChange={setIsCreateChatOpen}>
+                      <DialogTrigger asChild>
+                        <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg hover:bg-primary/10 hover:text-primary transition-colors" title="Начать чат">
+                          <UserPlus className="w-4 h-4" />
+                        </Button>
+                      </DialogTrigger>
+                      <DialogContent className="sm:max-w-[425px]">
+                        <DialogHeader>
+                          <DialogTitle>Начать новый чат</DialogTitle>
+                          <DialogDescription>Выберите пользователя, чтобы начать диалог.</DialogDescription>
+                        </DialogHeader>
+                        <div className="space-y-4 py-4">
+                          <ScrollArea className="h-[300px] pr-4">
+                            <div className="space-y-2">
+                              {allUsers.filter(u => u.id !== currentUser?.id).map((user) => (
+                                <div 
+                                  key={user.id} 
+                                  className="flex items-center gap-3 p-3 rounded-xl hover:bg-secondary/50 transition-colors cursor-pointer group"
+                                  onClick={() => handleCreateDirectChat(user.id)}
+                                >
+                                  <Avatar className="h-10 w-10">
+                                    <AvatarImage src={user.avatar || undefined} />
+                                    <AvatarFallback>{user.username.substring(0,2).toUpperCase()}</AvatarFallback>
+                                  </Avatar>
+                                  <div className="flex-1 min-w-0">
+                                    <p className="text-sm font-semibold truncate group-hover:text-primary transition-colors">{user.username}</p>
+                                    <p className="text-xs text-muted-foreground truncate">{user.email}</p>
+                                  </div>
+                                  <Send className="w-4 h-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                                </div>
+                              ))}
+                            </div>
+                          </ScrollArea>
+                        </div>
                       </DialogContent>
                     </Dialog>
 
@@ -1196,7 +1348,11 @@ export default function ChatPage() {
                             </div>
                             <div>
                               <div className="flex items-center gap-2">
-                                <span className="font-bold text-sm">{otherUser?.username || "Пользователь"}</span>
+                                <span className="font-bold text-sm">
+                                  {otherUser 
+                                    ? (otherUser.firstName && otherUser.lastName ? `${otherUser.firstName} ${otherUser.lastName}` : otherUser.username)
+                                    : "Пользователь"}
+                                </span>
                                 <Badge variant="outline" className="text-[10px] h-4 px-1 bg-background/50">
                                   {isOutgoing ? "Исходящий" : "Входящий"}
                                 </Badge>

@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from "react";
 import { useLocation } from "wouter";
+import { useQuery } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 import {
   LayoutDashboard,
   Kanban,
@@ -136,8 +139,12 @@ const SidebarContentComponent = React.memo(({
   setIsMobileOpen,
   setIsCollapsed,
   statusColors,
-  statusLabels
+  statusLabels,
+  user
 }: any) => {
+  const displayName = user ? `${user.firstName || ""} ${user.lastName || ""}`.trim() || user.username : "Пользователь";
+  const initials = user ? (user.firstName && user.lastName ? `${user.firstName[0]}${user.lastName[0]}` : user.username.substring(0, 2).toUpperCase()) : "П";
+
   return (
     <div className={cn(
       "flex flex-col h-full bg-sidebar text-sidebar-foreground border-r border-sidebar-border transition-all duration-300 ease-in-out relative group/sidebar",
@@ -283,12 +290,13 @@ const SidebarContentComponent = React.memo(({
               )}
             >
               <Avatar className="w-9 h-9 border border-border shrink-0">
-                <AvatarFallback>П</AvatarFallback>
+                <AvatarImage src={user?.avatar || ""} alt={displayName} />
+                <AvatarFallback>{initials}</AvatarFallback>
               </Avatar>
               {!isCollapsed && (
                 <div className="flex-1 min-w-0 animate-in fade-in duration-300">
-                  <p className="text-sm font-medium truncate">Пользователь</p>
-                  <p className="text-xs text-muted-foreground truncate">Сотрудник</p>
+                  <p className="text-sm font-medium truncate">{displayName}</p>
+                  <p className="text-xs text-muted-foreground truncate">{user?.position || "Сотрудник"}</p>
                 </div>
               )}
             </div>
@@ -320,7 +328,16 @@ const SidebarContentComponent = React.memo(({
             <DropdownMenuSeparator />
             <DropdownMenuItem 
               className="gap-2 cursor-pointer text-rose-500 focus:text-rose-500"
-              onClick={() => setLocation("/auth")}
+              onClick={async () => {
+                try {
+                  await apiRequest("POST", "/api/logout");
+                  queryClient.setQueryData(["/api/user"], null);
+                  setLocation("/auth");
+                } catch (error) {
+                  console.error("Logout failed:", error);
+                  setLocation("/auth");
+                }
+              }}
             >
               <LogOut className="w-4 h-4" />
               Выход
@@ -332,7 +349,10 @@ const SidebarContentComponent = React.memo(({
   );
 });
 
-export function Layout({ children }: { children: React.ReactNode }) {
+export function Layout({ children, className }: { children: React.ReactNode, className?: string }) {
+  const { data: user } = useQuery({
+    queryKey: ["/api/user"],
+  });
   const [location, setLocation] = useLocation();
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
@@ -382,6 +402,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
           setIsCollapsed={setIsCollapsed}
           statusColors={statusColors}
           statusLabels={statusLabels}
+          user={user}
         />
       </div>
 
@@ -406,6 +427,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
                   setIsCollapsed={setIsCollapsed}
                   statusColors={statusColors}
                   statusLabels={statusLabels}
+                  user={user}
                 />
               </SheetContent>
             </Sheet>
@@ -438,7 +460,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
           </div>
         </header>
 
-        <main className="flex-1 overflow-y-auto">
+        <main className={cn("flex-1 overflow-y-auto", className)}>
           {children}
         </main>
       </div>
