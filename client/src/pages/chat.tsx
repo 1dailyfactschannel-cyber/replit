@@ -1,11 +1,12 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
+import { Virtuoso } from "react-virtuoso";
 import { Layout } from "@/components/layout/Layout";
 import { useNotifications } from "@/hooks/use-notifications";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Search, Phone, Video, Info, Paperclip, Smile, Send, Clock, Plus, Users, UserPlus, Check, FolderPlus, Folder, LogOut, User, Settings, Camera, UserMinus, ShieldAlert, X, MessageSquare, MoreVertical, Edit, Trash } from "lucide-react";
+import { Search, Phone, Video, Info, Paperclip, Smile, Send, Check, Camera, X, MessageSquare, MoreVertical, Edit, Trash, Plus, FolderPlus, UserPlus, Folder, Users, Clock } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import {
   DropdownMenu,
@@ -52,7 +53,7 @@ interface ChatFolder {
 }
 
 export default function ChatPage() {
-  const [, setLocation] = useLocation();
+  const [, ] = useLocation();
   const queryClient = useQueryClient();
   const { notify, requestPermission } = useNotifications();
   const socketRef = useRef<Socket | null>(null);
@@ -70,11 +71,11 @@ export default function ChatPage() {
     queryKey: ["/api/users"],
   });
 
-  const { data: folders = [], isLoading: foldersLoading } = useQuery<ChatFolder[]>({
+  const { data: folders = [] } = useQuery<ChatFolder[]>({
     queryKey: ["/api/chat-folders"],
   });
 
-  const { data: calls = [], isLoading: callsLoading } = useQuery<Call[]>({
+  const { data: calls = [], isLoading: callsLoading } = useQuery<any[]>({
     queryKey: ["/api/calls"],
   });
 
@@ -116,6 +117,40 @@ export default function ChatPage() {
   const markReadMutation = useMutation({
     mutationFn: async (chatId: string) => {
       await apiRequest("POST", `/api/chats/${chatId}/read`);
+    }
+  });
+
+  const sendMessageMutation = useMutation({
+    mutationFn: async (data: { chatId: string, content: string, attachments?: any[] }) => {
+      const res = await apiRequest("POST", "/api/messages", data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/chats", activeChatId, "messages"] });
+      setMessageInput("");
+      setAttachments([]);
+    }
+  });
+
+  const updateChatMutation = useMutation({
+    mutationFn: async ({ id, ...data }: { id: string, name?: string, description?: string, avatar?: string | null, participantIds?: string[] }) => {
+      const res = await apiRequest("PATCH", `/api/chats/${id}`, data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/chats"] });
+      setIsInfoOpen(false);
+      toast.success("Настройки чата обновлены");
+    }
+  });
+
+  const deleteFolderMutation = useMutation({
+    mutationFn: async (id: string) => {
+      await apiRequest("DELETE", `/api/chat-folders/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/chat-folders"] });
+      toast.success("Папка удалена");
     }
   });
 
@@ -274,247 +309,99 @@ export default function ChatPage() {
   const [uploading, setUploading] = useState(false);
   const [attachments, setAttachments] = useState<{ url: string, name: string, type: string, size: number }[]>([]);
   const [scheduleOpen, setScheduleOpen] = useState(false);
-  const [scheduledCalls, setScheduledCalls] = useState<ScheduledCall[]>([]);
   
   const [isCreateGroupOpen, setIsCreateGroupOpen] = useState(false);
+  const [isCreateChatOpen, setIsCreateChatOpen] = useState(false);
+  const [isCreateFolderOpen, setIsCreateFolderOpen] = useState(false);
+  const [isInfoOpen, setIsInfoOpen] = useState(false);
+  
   const [newGroupName, setNewGroupName] = useState("");
+  const [newFolderName, setNewFolderName] = useState("");
   const [selectedMembers, setSelectedMembers] = useState<string[]>([]);
+  const [selectedChatIdsForFolder, setSelectedChatIdsForFolder] = useState<string[]>([]);
+  const [activeFolderId, setActiveFolderId] = useState<string | null>(null);
+  
+  const [editName, setEditName] = useState("");
+  const [editDescription, setEditDescription] = useState("");
+  const [editAvatar, setEditAvatar] = useState<string | null>(null);
+  const [selectedGroupParticipants, setSelectedGroupParticipants] = useState<string[]>([]);
+  
+  const [activeCall, setActiveCall] = useState<any>(null);
+  const [outboundCall, setOutboundCall] = useState<any>(null);
+  
   const [searchQuery, setSearchQuery] = useState("");
   const [messageSearchQuery, setMessageSearchQuery] = useState("");
 
-  const getChatName = (chat: Contact) => {
-    if (chat.type === "group") return chat.name;
+  const getChatName = (chat: Contact | undefined) => {
+    if (!chat) return "Чат";
+    if (chat.type === "group") return chat.name || "Группа";
     const otherParticipant = chat.participants?.find(p => p && p.id !== currentUser?.id);
     return otherParticipant?.username || "Чат";
   };
 
-  const filteredChats = chats.filter(chat => {
-    const name = getChatName(chat).toLowerCase();
-    return name.includes(searchQuery.toLowerCase());
-  });
+  const getChatAvatar = (chat: Contact | undefined) => {
+    if (!chat) return undefined;
+    if (chat.type === "group") return chat.avatar || undefined;
+    const otherParticipant = chat.participants?.find(p => p && p.id !== currentUser?.id);
+    return otherParticipant?.avatar || undefined;
+  };
 
-  const filteredMessages = messages.filter(msg => 
-    msg.content.toLowerCase().includes(messageSearchQuery.toLowerCase())
-  );
+  const formatTime = (dateStr?: string | Date | null) => {
+    if (!dateStr) return "";
+    const date = new Date(dateStr);
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  };
 
-  const [isCreateFolderOpen, setIsCreateFolderOpen] = useState(false);
-  const [isCreateChatOpen, setIsCreateChatOpen] = useState(false);
-  const [newFolderName, setNewFolderName] = useState("");
-  const [selectedChatIdsForFolder, setSelectedChatIdsForFolder] = useState<string[]>([]);
-  const [activeFolderId, setActiveFolderId] = useState<string | null>(null);
-
-  const [isInfoOpen, setIsInfoOpen] = useState(false);
-  
-  const [activeCall, setActiveCall] = useState<{
-    isReceiving: boolean;
-    from: string;
-    name: string;
-    signal: any;
-    type: 'audio' | 'video';
-    chatId: string;
-    callId?: string;
-  } | null>(null);
-
-  const [outboundCall, setOutboundCall] = useState<{
-    to: string;
-    name: string;
-    type: 'audio' | 'video';
-    chatId: string;
-  } | null>(null);
-
-  const [editName, setEditName] = useState("");
-  const [editDescription, setEditDescription] = useState("");
-  const [editAvatar, setEditAvatar] = useState<string | null>(null);
-
-  // Auto scroll to bottom
-  useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTo(0, scrollRef.current.scrollHeight);
-    }
-  }, [messages]);
-
-  const sendMessageMutation = useMutation({
-    mutationFn: async (content: string) => {
-      if (!activeChatId) return;
-      const res = await apiRequest("POST", `/api/chats/${activeChatId}/messages`, { 
-        content,
-        attachments: attachments 
+  const handleCreateDirectChat = async (userId: string) => {
+    try {
+      const res = await apiRequest("POST", "/api/chats", {
+        type: "direct",
+        participantIds: [currentUser?.id, userId]
       });
-      return res.json();
-    },
-    onSuccess: (newMessage) => {
-      setMessageInput("");
-      // Update local cache immediately for better UX
-      queryClient.setQueryData(["/api/chats", activeChatId, "messages"], (old: Message[] = []) => {
-        if (old.some(m => m.id === newMessage.id)) return old;
-        return [...old, newMessage];
-      });
+      const chat = await res.json();
       queryClient.invalidateQueries({ queryKey: ["/api/chats"] });
+      setActiveChatId(chat.id);
+      setIsCreateChatOpen(false);
+    } catch (err) {
+      toast.error("Ошибка при создании чата");
     }
-  });
+  };
 
-  const createChatMutation = useMutation({
-    mutationFn: async (data: any) => {
-      const res = await apiRequest("POST", "/api/chats", data);
-      return res.json();
-    },
-    onSuccess: (newChat) => {
+  const handleCreateGroup = async () => {
+    if (!newGroupName.trim()) return;
+    try {
+      const res = await apiRequest("POST", "/api/chats", {
+        type: "group",
+        name: newGroupName,
+        participantIds: [currentUser?.id, ...selectedMembers]
+      });
+      const chat = await res.json();
       queryClient.invalidateQueries({ queryKey: ["/api/chats"] });
+      setActiveChatId(chat.id);
       setIsCreateGroupOpen(false);
       setNewGroupName("");
       setSelectedMembers([]);
-      setActiveChatId(newChat.id);
-      toast.success("Чат создан");
+      toast.success("Группа создана");
+    } catch (err) {
+      toast.error("Ошибка при создании группы");
     }
-  });
+  };
 
-  const updateChatMutation = useMutation({
-    mutationFn: async ({ id, data }: { id: string, data: any }) => {
-      const res = await apiRequest("PATCH", `/api/chats/${id}`, data);
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/chats"] });
-      setIsInfoOpen(false);
-      toast.success("Настройки чата обновлены");
-    }
-  });
-
-  const createFolderMutation = useMutation({
-    mutationFn: async (data: { name: string, chatIds: string[] }) => {
-      const res = await apiRequest("POST", "/api/chat-folders", data);
-      return res.json();
-    },
-    onSuccess: () => {
+  const handleCreateFolder = async () => {
+    if (!newFolderName.trim()) return;
+    try {
+      await apiRequest("POST", "/api/chat-folders", {
+        name: newFolderName,
+        chatIds: selectedChatIdsForFolder
+      });
       queryClient.invalidateQueries({ queryKey: ["/api/chat-folders"] });
       setIsCreateFolderOpen(false);
       setNewFolderName("");
       setSelectedChatIdsForFolder([]);
       toast.success("Папка создана");
+    } catch (err) {
+      toast.error("Ошибка при создании папки");
     }
-  });
-
-  const deleteFolderMutation = useMutation({
-    mutationFn: async (id: string) => {
-      await apiRequest("DELETE", `/api/chat-folders/${id}`);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/chat-folders"] });
-      setActiveFolderId(null);
-      toast.success("Папка удалена");
-    }
-  });
-
-  const [selectedGroupParticipants, setSelectedGroupParticipants] = useState<string[]>([]);
-
-  const handleSaveEdit = () => {
-    if (!activeChatId || !editName.trim()) return;
-    updateChatMutation.mutate({
-      id: activeChatId,
-      data: {
-        name: editName,
-        description: editDescription,
-        avatar: editAvatar,
-        participantIds: selectedGroupParticipants
-      }
-    });
-  };
-
-  const handleSendMessage = () => {
-    if ((!messageInput.trim() && attachments.length === 0) || sendMessageMutation.isPending) return;
-    sendMessageMutation.mutate(messageInput);
-    setAttachments([]);
-  };
-
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>, isAvatar: boolean = false) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    setUploading(true);
-    const formData = new FormData();
-    formData.append("file", file);
-
-    try {
-      const response = await fetch("/api/upload", {
-        method: "POST",
-        body: formData,
-      });
-
-      if (!response.ok) throw new Error("Upload failed");
-
-      const data = await response.json();
-      if (isAvatar) {
-        setEditAvatar(data.url);
-      } else {
-        setAttachments(prev => [...prev, data]);
-        toast.success(`Файл "${file.name}" загружен`);
-      }
-    } catch (error) {
-      console.error("Upload error:", error);
-      toast.error(isAvatar ? "Ошибка при загрузке аватара" : "Ошибка при загрузке файла");
-    } finally {
-      setUploading(false);
-      if (!isAvatar && fileInputRef.current) fileInputRef.current.value = "";
-    }
-  };
-
-  const handleTyping = () => {
-    if (socketRef.current && activeChatId && currentUser) {
-      socketRef.current.emit("typing", {
-        chatId: activeChatId,
-        userId: currentUser.id,
-        username: currentUser.username
-      });
-    }
-  };
-
-  const handleCreateGroup = () => {
-    if (!newGroupName.trim()) {
-      toast.error("Введите название группы");
-      return;
-    }
-    
-    createChatMutation.mutate({
-      name: newGroupName.trim(),
-      type: "group",
-      participantIds: selectedMembers,
-      description: "Групповой чат"
-    });
-  };
-
-  const handleCreateDirectChat = (userId: string) => {
-    createChatMutation.mutate({
-      type: "direct",
-      participantIds: [userId],
-    }, {
-      onSuccess: (newChat) => {
-        setIsCreateChatOpen(false);
-        setActiveChatId(newChat.id);
-        toast.success("Чат открыт");
-      }
-    });
-  };
-
-  const handleScheduleCall = (callData: ScheduledCall) => {
-    setScheduledCalls([...scheduledCalls, callData]);
-  };
-
-  const handleCreateFolder = () => {
-    if (!newFolderName.trim()) {
-      toast.error("Введите название папки");
-      return;
-    }
-    
-    createFolderMutation.mutate({
-      name: newFolderName.trim(),
-      chatIds: selectedChatIdsForFolder
-    });
-  };
-
-  const toggleMember = (memberId: string) => {
-    setSelectedMembers(prev => 
-      prev.includes(memberId) ? prev.filter(id => id !== memberId) : [...prev, memberId]
-    );
   };
 
   const toggleChatForFolder = (chatId: string) => {
@@ -523,40 +410,110 @@ export default function ChatPage() {
     );
   };
 
-  const startCall = (type: 'audio' | 'video') => {
-    if (!activeChat || !currentUser) return;
+  const toggleMember = (userId: string) => {
+    setSelectedMembers(prev => 
+      prev.includes(userId) ? prev.filter(id => id !== userId) : [...prev, userId]
+    );
+  };
+
+  const handleSendMessage = () => {
+    if (!activeChatId || (!messageInput.trim() && attachments.length === 0)) return;
     
-    // In direct chat, call the other participant
-    if (activeChat.type === "direct") {
-      const otherParticipant = activeChat.participants.find(p => p.id !== currentUser.id);
-      if (otherParticipant) {
-        setOutboundCall({
-          to: otherParticipant.id,
-          name: otherParticipant.username,
-          type,
-          chatId: activeChat.id
-        });
+    sendMessageMutation.mutate({
+      chatId: activeChatId,
+      content: messageInput,
+      attachments: attachments.length > 0 ? attachments : undefined
+    });
+  };
+
+  const handleTyping = () => {
+    if (!socketRef.current || !activeChatId || !currentUser) return;
+    socketRef.current.emit("typing", {
+      chatId: activeChatId,
+      username: currentUser.username
+    });
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>, isAvatar = false) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setUploading(true);
+    const formData = new FormData();
+    formData.append("file", file);
+
+    try {
+      const res = await fetch("/api/upload", {
+        method: "POST",
+        body: formData,
+      });
+      const data = await res.json();
+      
+      if (isAvatar) {
+        setEditAvatar(data.url);
+      } else {
+        setAttachments(prev => [...prev, {
+          url: data.url,
+          name: file.name,
+          type: file.type,
+          size: file.size
+        }]);
       }
-    } else {
-      toast.error("Звонки в группах пока не поддерживаются");
+    } catch (err) {
+      toast.error("Ошибка при загрузке файла");
+    } finally {
+      setUploading(false);
     }
   };
 
-  const filteredContacts = activeFolderId 
-    ? filteredChats.filter(c => folders.find(f => f.id === activeFolderId)?.chatIds.includes(c.id))
-    : filteredChats;
-
-  const getChatAvatar = (chat: Contact) => {
-    if (chat.type === "group") return chat.avatar;
-    const otherParticipant = chat.participants?.find(p => p && p.id !== currentUser?.id);
-    return otherParticipant?.avatar;
+  const handleSaveEdit = () => {
+    if (!activeChat) return;
+    updateChatMutation.mutate({
+      id: activeChat.id,
+      name: editName,
+      description: editDescription,
+      avatar: editAvatar,
+      participantIds: selectedGroupParticipants
+    });
   };
 
-  const formatTime = (dateStr?: string | Date | null) => {
-    if (!dateStr) return "";
-    const date = new Date(dateStr);
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const startCall = (type: 'audio' | 'video') => {
+    if (!activeChat || !currentUser) return;
+    
+    const callData = {
+      from: currentUser.id,
+      name: currentUser.username,
+      type,
+      chatId: activeChat.id,
+      to: activeChat.type === 'direct' 
+        ? activeChat.participants.find(p => p.id !== currentUser.id)?.id 
+        : undefined
+    };
+    
+    setOutboundCall(callData);
   };
+
+  const handleScheduleCall = async (callData: any) => {
+    try {
+      await apiRequest("POST", "/api/calls/schedule", {
+        ...callData,
+        chatId: activeChatId
+      });
+      toast.success("Звонок запланирован");
+    } catch (err) {
+      toast.error("Ошибка при планировании звонка");
+    }
+  };
+
+  const filteredContacts = chats.filter(chat => {
+    const name = getChatName(chat).toLowerCase();
+    const inActiveFolder = !activeFolderId || folders.find(f => f.id === activeFolderId)?.chatIds.includes(chat.id);
+    return name.includes(searchQuery.toLowerCase()) && inActiveFolder;
+  });
+
+  const filteredMessages = messages.filter(msg => 
+    msg.content.toLowerCase().includes(messageSearchQuery.toLowerCase())
+  );
 
   return (
     <Layout>
@@ -668,28 +625,31 @@ export default function ChatPage() {
                             <Label>Выберите чаты</Label>
                             <ScrollArea className="h-[200px] pr-4">
                               <div className="space-y-2">
-                                {chats.map((contact) => (
-                                  <div 
-                                    key={contact.id} 
-                                    className="flex items-center justify-between p-2 rounded-lg hover:bg-secondary/50 transition-colors cursor-pointer group"
-                                    onClick={() => toggleChatForFolder(contact.id)}
-                                  >
-                                    <div className="flex items-center gap-3">
-                                      <Avatar className={cn("h-8 w-8", contact.type === "group" && "rounded-lg")}>
-                                        <AvatarFallback className="text-[10px]">{getChatName(contact).substring(0,2).toUpperCase()}</AvatarFallback>
-                                      </Avatar>
-                                      <span className="text-sm font-medium">{getChatName(contact)}</span>
+                                {chats.map((contact) => {
+                                  const contactName = getChatName(contact);
+                                  return (
+                                    <div 
+                                      key={contact.id} 
+                                      className="flex items-center justify-between p-2 rounded-lg hover:bg-secondary/50 transition-colors cursor-pointer group"
+                                      onClick={() => toggleChatForFolder(contact.id)}
+                                    >
+                                      <div className="flex items-center gap-3">
+                                        <Avatar className={cn("h-8 w-8", contact.type === "group" && "rounded-lg")}>
+                                          <AvatarFallback className="text-[10px]">{contactName.substring(0,2).toUpperCase()}</AvatarFallback>
+                                        </Avatar>
+                                        <span className="text-sm font-medium">{contactName}</span>
+                                      </div>
+                                      <div className={cn(
+                                        "w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all",
+                                        selectedChatIdsForFolder.includes(contact.id) 
+                                          ? "bg-primary border-primary text-primary-foreground" 
+                                          : "border-muted-foreground/30 group-hover:border-primary/50"
+                                      )}>
+                                        {selectedChatIdsForFolder.includes(contact.id) && <Check className="w-3 h-3" />}
+                                      </div>
                                     </div>
-                                    <div className={cn(
-                                      "w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all",
-                                      selectedChatIdsForFolder.includes(contact.id) 
-                                        ? "bg-primary border-primary text-primary-foreground" 
-                                        : "border-muted-foreground/30 group-hover:border-primary/50"
-                                    )}>
-                                      {selectedChatIdsForFolder.includes(contact.id) && <Check className="w-3 h-3" />}
-                                    </div>
-                                  </div>
-                                ))}
+                                  );
+                                })}
                               </div>
                             </ScrollArea>
                           </div>
@@ -866,7 +826,9 @@ export default function ChatPage() {
               <ScrollArea className="flex-1">
                 {chatsLoading ? (
                   <div className="p-8 text-center text-muted-foreground">Загрузка чатов...</div>
-                ) : filteredContacts.map(contact => (
+                ) : filteredContacts.map(contact => {
+                  const contactName = getChatName(contact);
+                  return (
                   <div 
                     key={contact.id} 
                     onClick={() => setActiveChatId(contact.id)}
@@ -882,7 +844,7 @@ export default function ChatPage() {
                         <Avatar className={cn(contact.type === "group" && "rounded-lg")}>
                           <AvatarImage src={getChatAvatar(contact) || undefined} />
                           <AvatarFallback className={cn(contact.type === "group" ? "bg-indigo-500/10 text-indigo-600 font-bold" : "bg-secondary text-muted-foreground")}>
-                            {contact.type === "group" ? <Users className="w-4 h-4" /> : getChatName(contact).substring(0,2).toUpperCase()}
+                            {contact.type === "group" ? <Users className="w-4 h-4" /> : contactName.substring(0,2).toUpperCase()}
                           </AvatarFallback>
                         </Avatar>
                         {contact.online && (
@@ -892,7 +854,7 @@ export default function ChatPage() {
                       <div className="flex-1 min-w-0">
                         <div className="flex justify-between items-baseline mb-1">
                           <h4 className={cn("text-sm truncate", activeChatId === contact.id ? "font-bold text-foreground" : "font-medium text-foreground/80")}>
-                            {getChatName(contact)}
+                            {contactName}
                           </h4>
                           <span className="text-[10px] text-muted-foreground whitespace-nowrap">{formatTime(contact.lastMessage?.createdAt || contact.updatedAt)}</span>
                         </div>
@@ -908,7 +870,8 @@ export default function ChatPage() {
                         </div>
                       </div>
                   </div>
-                ))}
+                  );
+                })}
                 {!chatsLoading && filteredContacts.length === 0 && (
                   <div className="p-8 text-center">
                     <p className="text-xs text-muted-foreground italic">Пока нет чатов</p>
@@ -1126,110 +1089,118 @@ export default function ChatPage() {
                   </div>
 
                   {/* Messages Area */}
-                  <ScrollArea className="flex-1 p-6" ref={scrollRef}>
-                      <div className="space-y-6 max-w-4xl mx-auto">
-                        {messagesLoading ? (
-                          <div className="text-center text-muted-foreground">Загрузка сообщений...</div>
-                        ) : filteredMessages.map((msg, i) => {
+                  <div className="flex-1 relative overflow-hidden">
+                    {messagesLoading ? (
+                      <div className="absolute inset-0 flex items-center justify-center text-muted-foreground">Загрузка сообщений...</div>
+                    ) : (
+                      <Virtuoso
+                        style={{ height: "100%" }}
+                        data={filteredMessages}
+                        initialTopMostItemIndex={Math.max(0, filteredMessages.length - 1)}
+                        followOutput="smooth"
+                        itemContent={(index, msg) => {
                           const sender = activeChat.participants.find(p => p.id === msg.senderId);
                           const isMe = msg.senderId === currentUser?.id;
                           
                           return (
-                            <div key={msg.id} className={cn(
-                              "flex flex-col gap-1 mb-4 animate-in fade-in slide-in-from-bottom-2 duration-300 group",
-                              isMe ? "ml-auto items-end" : "items-start"
-                            )}>
-                              <div className="flex items-center gap-2 px-1">
-                                {!isMe && <span className="text-[10px] font-bold text-muted-foreground">{sender?.username}</span>}
-                                <span className="text-[10px] text-muted-foreground opacity-50">
-                                  {formatTime(msg.createdAt)}
-                                </span>
-                                {isMe && (
-                                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                    <DropdownMenu>
-                                      <DropdownMenuTrigger asChild>
-                                        <Button variant="ghost" size="icon" className="h-4 w-4 rounded-full">
-                                          <MoreVertical className="w-3 h-3" />
-                                        </Button>
-                                      </DropdownMenuTrigger>
-                                      <DropdownMenuContent align="end">
-                                        <DropdownMenuItem onClick={() => {
-                                          setEditingMessageId(msg.id);
-                                          setEditContent(msg.content);
-                                        }}>
-                                          <Edit className="w-3 h-3 mr-2" />
-                                          Изменить
-                                        </DropdownMenuItem>
-                                        <DropdownMenuItem 
-                                          className="text-destructive"
-                                          onClick={() => deleteMessageMutation.mutate(msg.id)}
-                                        >
-                                          <Trash className="w-3 h-3 mr-2" />
-                                          Удалить
-                                        </DropdownMenuItem>
-                                      </DropdownMenuContent>
-                                    </DropdownMenu>
-                                  </div>
-                                )}
-                              </div>
-                              <div className={cn(
-                                "max-w-[80%] px-4 py-2.5 rounded-2xl text-sm shadow-sm transition-all hover:shadow-md relative",
-                                isMe ? "bg-primary text-primary-foreground rounded-tr-none" : "bg-card text-foreground border border-border/50 rounded-tl-none"
+                            <div className="px-6 py-2">
+                              <div key={msg.id} className={cn(
+                                "flex flex-col gap-1 mb-4 animate-in fade-in slide-in-from-bottom-2 duration-300 group",
+                                isMe ? "ml-auto items-end" : "items-start"
                               )}>
-                                {editingMessageId === msg.id ? (
-                                  <div className="flex flex-col gap-2 min-w-[200px]">
-                                    <textarea 
-                                      className="bg-transparent border-none focus:ring-0 text-sm w-full resize-none p-0"
-                                      value={editContent}
-                                      onChange={(e) => setEditContent(e.target.value)}
-                                      autoFocus
-                                    />
-                                    <div className="flex justify-end gap-1">
-                                      <Button size="sm" variant="ghost" className="h-6 text-[10px]" onClick={() => setEditingMessageId(null)}>Отмена</Button>
-                                      <Button size="sm" className="h-6 text-[10px]" onClick={() => updateMessageMutation.mutate({ id: msg.id, content: editContent })}>Сохранить</Button>
+                                <div className="flex items-center gap-2 px-1">
+                                  {!isMe && <span className="text-[10px] font-bold text-muted-foreground">{sender?.username}</span>}
+                                  <span className="text-[10px] text-muted-foreground opacity-50">
+                                    {formatTime(msg.createdAt)}
+                                  </span>
+                                  {isMe && (
+                                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                      <DropdownMenu>
+                                        <DropdownMenuTrigger asChild>
+                                          <Button variant="ghost" size="icon" className="h-4 w-4 rounded-full">
+                                            <MoreVertical className="w-3 h-3" />
+                                          </Button>
+                                        </DropdownMenuTrigger>
+                                        <DropdownMenuContent align="end">
+                                          <DropdownMenuItem onClick={() => {
+                                            setEditingMessageId(msg.id);
+                                            setEditContent(msg.content);
+                                          }}>
+                                            <Edit className="w-3 h-3 mr-2" />
+                                            Изменить
+                                          </DropdownMenuItem>
+                                          <DropdownMenuItem 
+                                            className="text-destructive"
+                                            onClick={() => deleteMessageMutation.mutate(msg.id)}
+                                          >
+                                            <Trash className="w-3 h-3 mr-2" />
+                                            Удалить
+                                          </DropdownMenuItem>
+                                        </DropdownMenuContent>
+                                      </DropdownMenu>
                                     </div>
-                                  </div>
-                                ) : (
-                                  <>
-                                    {msg.content}
-                                    {isMe && (
-                                      <div className="absolute bottom-1 right-2 flex gap-0.5">
-                                        <Check className={cn("w-3 h-3", (msg as any).isRead ? "text-blue-400" : "opacity-30")} />
-                                        {(msg as any).isRead && <Check className="w-3 h-3 -ml-2 text-blue-400" />}
+                                  )}
+                                </div>
+                                <div className={cn(
+                                  "max-w-[80%] px-4 py-2.5 rounded-2xl text-sm shadow-sm transition-all hover:shadow-md relative",
+                                  isMe ? "bg-primary text-primary-foreground rounded-tr-none" : "bg-card text-foreground border border-border/50 rounded-tl-none"
+                                )}>
+                                  {editingMessageId === msg.id ? (
+                                    <div className="flex flex-col gap-2 min-w-[200px]">
+                                      <textarea 
+                                        className="bg-transparent border-none focus:ring-0 text-sm w-full resize-none p-0"
+                                        value={editContent}
+                                        onChange={(e) => setEditContent(e.target.value)}
+                                        autoFocus
+                                      />
+                                      <div className="flex justify-end gap-1">
+                                        <Button size="sm" variant="ghost" className="h-6 text-[10px]" onClick={() => setEditingMessageId(null)}>Отмена</Button>
+                                        <Button size="sm" className="h-6 text-[10px]" onClick={() => updateMessageMutation.mutate({ id: msg.id, content: editContent })}>Сохранить</Button>
                                       </div>
-                                    )}
-                                  </>
-                                )}
-                                
-                                {msg.attachments && Array.isArray(msg.attachments) && msg.attachments.length > 0 && (
-                                  <div className="mt-2 space-y-1">
-                                    {msg.attachments.map((file: any, idx: number) => (
-                                      <a 
-                                        key={idx} 
-                                        href={file.url} 
-                                        target="_blank" 
-                                        rel="noopener noreferrer"
-                                        className={cn(
-                                          "flex items-center gap-2 p-2 rounded-lg text-[10px] hover:bg-black/5 transition-colors",
-                                          isMe ? "bg-white/10" : "bg-secondary/50"
-                                        )}
-                                      >
-                                        <Paperclip className="w-3 h-3 shrink-0" />
-                                        <span className="truncate">{file.name}</span>
-                                        <span className="opacity-50 shrink-0">({(file.size / 1024).toFixed(1)} KB)</span>
-                                      </a>
-                                    ))}
-                                  </div>
-                                )}
+                                    </div>
+                                  ) : (
+                                    <>
+                                      {msg.content}
+                                      {isMe && (
+                                        <div className="absolute bottom-1 right-2 flex gap-0.5">
+                                          <Check className={cn("w-3 h-3", (msg as any).isRead ? "text-blue-400" : "opacity-30")} />
+                                          {(msg as any).isRead && <Check className="w-3 h-3 -ml-2 text-blue-400" />}
+                                        </div>
+                                      )}
+                                    </>
+                                  )}
+                                  
+                                  {Array.isArray(msg.attachments) && msg.attachments.length > 0 && (
+                                    <div className="mt-2 space-y-1">
+                                      {(msg.attachments as any[]).map((file: any, idx: number) => (
+                                        <a 
+                                          key={idx} 
+                                          href={file.url} 
+                                          target="_blank" 
+                                          rel="noopener noreferrer"
+                                          className={cn(
+                                            "flex items-center gap-2 p-2 rounded-lg text-[10px] hover:bg-black/5 transition-colors",
+                                            isMe ? "bg-white/10" : "bg-secondary/50"
+                                          )}
+                                        >
+                                          <Paperclip className="w-3 h-3 shrink-0" />
+                                          <span className="truncate">{file.name}</span>
+                                          <span className="opacity-50 shrink-0">({(file.size / 1024).toFixed(1)} KB)</span>
+                                        </a>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
                               </div>
                             </div>
                           );
-                        })}
-                        {messages.length === 0 && !messagesLoading && (
-                          <div className="text-center text-muted-foreground py-8">Нет сообщений. Напишите первым!</div>
-                        )}
-                      </div>
-                  </ScrollArea>
+                        }}
+                      />
+                    )}
+                    {messages.length === 0 && !messagesLoading && (
+                      <div className="absolute inset-0 flex items-center justify-center text-muted-foreground">Нет сообщений. Напишите первым!</div>
+                    )}
+                  </div>
 
                   {/* Input Area */}
                   <div className="p-4 border-t border-border bg-card/80 backdrop-blur-md shrink-0">

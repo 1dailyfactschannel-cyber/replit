@@ -8,13 +8,16 @@ import {
   type Call,
   type InsertCall,
   type MessageAttachment,
-  type InsertMessageAttachment
+  type InsertMessageAttachment,
+  type Notification,
+  type InsertNotification
 } from "@shared/schema";
 import { drizzle } from "drizzle-orm/postgres-js";
-import { eq, and, or, desc, ne } from "drizzle-orm";
+import { eq, and, or, desc, ne, sql } from "drizzle-orm";
 import postgres from "postgres";
 import * as schema from "@shared/schema";
 import dotenv from "dotenv";
+import { getCache, setCache, delCache, invalidatePattern } from "./redis";
 
 // Load environment variables
 dotenv.config();
@@ -104,7 +107,12 @@ export class PostgresStorage {
   // Chat methods
   async getChatsForUser(userId: string) {
     try {
-      const results = await this.db
+      const cacheKey = `user:${userId}:chats`;
+      const cached = await getCache(cacheKey);
+      if (cached) return cached;
+
+      // 1. Get all chats for the user
+      const userChats = await this.db
         .select({
           id: schema.chats.id,
           name: schema.chats.name,
@@ -122,36 +130,48 @@ export class PostgresStorage {
         )
         .where(eq(schema.chatParticipants.userId, userId))
         .orderBy(desc(schema.chats.updatedAt));
-      
-      // For each chat, get participants and last message
-      const chatsWithDetails = await Promise.all(results.map(async (chat) => {
-        const participants = await this.db
-          .select({
-            id: schema.users.id,
-            username: schema.users.username,
-            avatar: schema.users.avatar,
-          })
-          .from(schema.users)
-          .innerJoin(
-            schema.chatParticipants,
-            eq(schema.users.id, schema.chatParticipants.userId)
-          )
-          .where(eq(schema.chatParticipants.chatId, chat.id));
 
-        const [lastMessage] = await this.db
-          .select()
-          .from(schema.messages)
-          .where(eq(schema.messages.chatId, chat.id))
-          .orderBy(desc(schema.messages.createdAt))
-          .limit(1);
+      if (userChats.length === 0) return [];
 
+      const chatIds = userChats.map(c => c.id);
+
+      // 2. Get all participants for these chats in one query
+      const allParticipants = await this.db
+        .select({
+          chatId: schema.chatParticipants.chatId,
+          id: schema.users.id,
+          username: schema.users.username,
+          avatar: schema.users.avatar,
+        })
+        .from(schema.users)
+        .innerJoin(
+          schema.chatParticipants,
+          eq(schema.users.id, schema.chatParticipants.userId)
+        )
+        .where(sql`${schema.chatParticipants.chatId} IN ${chatIds}`);
+
+      // 3. Get last messages for these chats
+      // We'll use a slightly more complex query to get only the latest message per chat
+      const lastMessages = await this.db
+        .select()
+        .from(schema.messages)
+        .where(sql`${schema.messages.id} IN (
+          SELECT DISTINCT ON (chat_id) id 
+          FROM messages 
+          WHERE chat_id IN ${chatIds} 
+          ORDER BY chat_id, created_at DESC
+        )`);
+
+      // 4. Combine everything
+      const chatsWithDetails = userChats.map(chat => {
         return {
           ...chat,
-          participants,
-          lastMessage,
+          participants: allParticipants.filter(p => p.chatId === chat.id),
+          lastMessage: lastMessages.find(m => m.chatId === chat.id)
         };
-      }));
+      });
 
+      await setCache(cacheKey, chatsWithDetails, 300); // Cache for 5 minutes
       return chatsWithDetails;
     } catch (error) {
       console.error("Error getting chats for user:", error);
@@ -323,7 +343,7 @@ export class PostgresStorage {
   async updateMessage(id: string, content: string) {
     try {
       const [message] = await this.db.update(schema.messages)
-        .set({ content, updatedAt: new Date() })
+        .set({ content })
         .where(eq(schema.messages.id, id))
         .returning();
       return message;
@@ -507,20 +527,22 @@ export class PostgresStorage {
 
   async setSiteSetting(key: string, value: string): Promise<SiteSettings> {
     try {
-      // Try to update existing setting
-      const [updated] = await this.db.update(schema.siteSettings)
-        .set({ value })
-        .where(eq(schema.siteSettings.key, key))
-        .returning();
+      const existing = await this.getSiteSetting(key);
+      let setting: SiteSettings;
       
-      if (updated) return updated;
-      
-      // If not found, create new setting
-      const [newSetting] = await this.db.insert(schema.siteSettings)
-        .values({ key, value })
-        .returning();
-      
-      return newSetting;
+      if (existing) {
+        [setting] = await this.db.update(schema.siteSettings)
+          .set({ value, updatedAt: new Date() })
+          .where(eq(schema.siteSettings.key, key))
+          .returning();
+      } else {
+        [setting] = await this.db.insert(schema.siteSettings)
+          .values({ key, value })
+          .returning();
+      }
+
+      await setCache(`setting:${key}`, setting);
+      return setting;
     } catch (error) {
       console.error("Error setting site setting:", error);
       throw error;
@@ -669,6 +691,74 @@ export class PostgresStorage {
     }
   }
 
+  // Notification methods
+  async getNotifications(userId: string): Promise<Notification[]> {
+    try {
+      return await this.db
+        .select()
+        .from(schema.notifications)
+        .where(eq(schema.notifications.userId, userId))
+        .orderBy(desc(schema.notifications.createdAt));
+    } catch (error) {
+      console.error("Error getting notifications:", error);
+      return [];
+    }
+  }
+
+  async createNotification(notification: InsertNotification): Promise<Notification> {
+    try {
+      const [newNotification] = await this.db
+        .insert(schema.notifications)
+        .values(notification)
+        .returning();
+      return newNotification;
+    } catch (error) {
+      console.error("Error creating notification:", error);
+      throw error;
+    }
+  }
+
+  async markNotificationAsRead(id: string): Promise<Notification> {
+    try {
+      const [notification] = await this.db
+        .update(schema.notifications)
+        .set({ isRead: true })
+        .where(eq(schema.notifications.id, id))
+        .returning();
+      if (!notification) throw new Error("Notification not found");
+      return notification;
+    } catch (error) {
+      console.error("Error marking notification as read:", error);
+      throw error;
+    }
+  }
+
+  async markAllNotificationsAsRead(userId: string): Promise<void> {
+    try {
+      await this.db
+        .update(schema.notifications)
+        .set({ isRead: true })
+        .where(and(
+          eq(schema.notifications.userId, userId),
+          eq(schema.notifications.isRead, false)
+        ));
+    } catch (error) {
+      console.error("Error marking all notifications as read:", error);
+      throw error;
+    }
+  }
+
+  async deleteNotification(id: string): Promise<void> {
+    try {
+      await this.db
+        .delete(schema.notifications)
+        .where(eq(schema.notifications.id, id));
+    } catch (error) {
+      console.error("Error deleting notification:", error);
+      throw error;
+    }
+  }
+
   async deleteBoard(id: string): Promise<void> {
     try {
       await this.db.delete(schema.boards).where(eq(schema.boards.id, id));
@@ -735,7 +825,9 @@ export class PostgresStorage {
 
   async getTasksByBoard(boardId: string): Promise<schema.Task[]> {
     try {
-      return await this.db.select().from(schema.tasks).where(eq(schema.tasks.boardId, boardId));
+      return await this.db.select().from(schema.tasks)
+        .where(eq(schema.tasks.boardId, boardId))
+        .orderBy(schema.tasks.order);
     } catch (error) {
       console.error("Error getting tasks by board:", error);
       return [];

@@ -458,3 +458,29 @@ export type InsertTask = z.infer<typeof insertTaskSchema>;
 export type SiteSettings = typeof siteSettings.$inferSelect;
 export type InsertSiteSettings = z.infer<typeof insertSiteSettingsSchema>;
 
+// Notifications table
+export const notifications = pgTable("notifications", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  senderId: uuid("sender_id").references(() => users.id, { onDelete: "set null" }),
+  type: text("type").notNull(), // message, task_assigned, project_update, etc.
+  title: text("title").notNull(),
+  message: text("message").notNull(),
+  link: text("link"), // Optional link to redirect
+  isRead: boolean("is_read").default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertNotificationSchema = createInsertSchema(notifications).pick({
+  userId: true,
+  senderId: true,
+  type: true,
+  title: true,
+  message: true,
+  link: true,
+  isRead: true,
+});
+
+export type Notification = typeof notifications.$inferSelect;
+export type InsertNotification = z.infer<typeof insertNotificationSchema>;
+

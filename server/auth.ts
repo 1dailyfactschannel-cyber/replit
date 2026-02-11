@@ -4,10 +4,11 @@ import { Express } from "express";
 import session from "express-session";
 import { storage } from "./postgres-storage";
 import { type User as SelectUser } from "@shared/schema";
-import MemoryStore from "memorystore";
+import connectPg from "connect-pg-simple";
 import crypto from "crypto";
 import { promisify } from "util";
 
+const PostgresSessionStore = connectPg(session);
 const scrypt = promisify(crypto.scrypt);
 
 async function hashPassword(password: string) {
@@ -35,13 +36,15 @@ declare global {
 }
 
 export function setupAuth(app: Express) {
-  const SessionStore = MemoryStore(session);
   const sessionSettings: session.SessionOptions = {
     secret: process.env.SESSION_SECRET || "teamsync-secret-key",
     resave: false,
     saveUninitialized: false,
-    store: new SessionStore({
-      checkPeriod: 86400000, // prune expired entries every 24h
+    store: new PostgresSessionStore({
+      conString: process.env.DATABASE_URL,
+      tableName: "sessions",
+      createTableIfMissing: true,
+      errorLog: console.error,
     }),
     cookie: {
       maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
@@ -55,6 +58,10 @@ export function setupAuth(app: Express) {
   }
 
   app.use(session(sessionSettings));
+  app.use((req, res, next) => {
+    console.log(`[session] Request session ID: ${req.sessionID}`);
+    next();
+  });
   app.use(passport.initialize());
   app.use(passport.session());
 
@@ -121,12 +128,12 @@ export function setupAuth(app: Express) {
         username: username || email.split("@")[0],
         firstName: "",
         lastName: "",
-        isActive: true,
       });
 
       req.login(user, (err) => {
         if (err) return next(err);
-        res.status(201).json(user);
+        const { password, ...userWithoutPassword } = user;
+        res.status(201).json(userWithoutPassword);
       });
     } catch (err) {
       next(err);
@@ -134,14 +141,25 @@ export function setupAuth(app: Express) {
   });
 
   app.post("/api/login", (req, res, next) => {
+    console.log("POST /api/login: Authentication started");
     passport.authenticate("local", (err: any, user: Express.User, info: any) => {
-      if (err) return next(err);
+      if (err) {
+        console.error("POST /api/login: Passport authenticate error:", err);
+        return next(err);
+      }
       if (!user) {
+        console.log("POST /api/login: Authentication failed:", info?.message);
         return res.status(401).json({ message: info?.message || "Ошибка входа" });
       }
+      console.log("POST /api/login: Authentication successful, logging in user:", user.id);
       req.login(user, (loginErr) => {
-        if (loginErr) return next(loginErr);
-        res.json(user);
+        if (loginErr) {
+          console.error("POST /api/login: req.login error:", loginErr);
+          return next(loginErr);
+        }
+        console.log("POST /api/login: User logged in successfully, sending response");
+        const { password, ...userWithoutPassword } = user;
+        res.json(userWithoutPassword);
       });
     })(req, res, next);
   });
@@ -157,6 +175,7 @@ export function setupAuth(app: Express) {
     if (!req.isAuthenticated()) {
       return res.status(401).json({ message: "Не авторизован" });
     }
-    res.json(req.user);
+    const { password, ...userWithoutPassword } = req.user as any;
+    res.json(userWithoutPassword);
   });
 }

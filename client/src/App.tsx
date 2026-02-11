@@ -19,7 +19,7 @@ import Shop from "@/pages/shop";
 import SettingsPage from "@/pages/settings";
 import ManagementPage from "@/pages/management";
 
-function ProtectedRoute({ component: Component, path }: { component: React.ComponentType, path: string }) {
+function ProtectedRoute({ component: Component, path }: { component: React.ComponentType<any>, path: string }) {
   const { data: user, isLoading } = useQuery({
     queryKey: ["/api/user"],
     retry: false,
@@ -44,7 +44,7 @@ function ProtectedRoute({ component: Component, path }: { component: React.Compo
     return null;
   }
 
-  return <Route path={path} component={Component} />;
+  return <Route path={path} component={Component as any} />;
 }
 
 function Router() {

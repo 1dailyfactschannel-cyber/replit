@@ -1,5 +1,5 @@
 import { Layout } from "@/components/layout/Layout";
-import { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo, useEffect, useCallback } from "react";
 import { cn } from "@/lib/utils";
 import { 
   ChevronRight, 
@@ -43,6 +43,53 @@ import {
 import { toast } from "sonner";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+
+const TaskCard = React.memo(({ task, index, onClick }: { task: any, index: number, onClick: (task: any) => void }) => {
+  return (
+    <Draggable key={task.id} draggableId={task.id.toString()} index={index}>
+      {(provided, snapshot) => (
+        <div
+          ref={provided.innerRef}
+          {...provided.draggableProps}
+          {...provided.dragHandleProps}
+          onClick={() => onClick(task)}
+          className={cn(
+            "bg-card border border-border/50 p-4 rounded-xl shadow-sm hover:shadow-md hover:border-primary/30 transition-[box-shadow,border-color,background-color] group/task",
+            snapshot.isDragging ? "shadow-xl ring-2 ring-primary/20 rotate-1 z-50" : ""
+          )}
+        >
+          <div className="flex items-start justify-between gap-2 mb-2">
+            <Badge variant="outline" className={cn(
+              "text-[10px] font-bold uppercase px-1.5 h-5 border-none",
+              task.priority === "high" || task.priority === "critical" ? "bg-rose-500/10 text-rose-600" :
+              task.priority === "medium" ? "bg-amber-500/10 text-amber-600" : "bg-emerald-500/10 text-emerald-600"
+            )}>
+              {task.priority === "low" ? "Низкий" : 
+               task.priority === "medium" ? "Средний" : 
+               task.priority === "high" ? "Высокий" : "Критич."}
+            </Badge>
+            <Badge variant="secondary" className="text-[10px] font-bold uppercase px-1.5 h-5">
+              {task.type === "bug" ? "Баг" : 
+               task.type === "feature" ? "Фича" : 
+               task.type === "story" ? "История" : "Задача"}
+            </Badge>
+          </div>
+          <h4 className="text-sm font-medium mb-3 leading-snug">{task.title}</h4>
+          {task.description && (
+            <p className="text-xs text-muted-foreground line-clamp-2 mb-3">{task.description}</p>
+          )}
+          <div className="flex items-center justify-between">
+            <div className="flex -space-x-2">
+              <Avatar className="w-6 h-6 border-2 border-background">
+                <AvatarFallback className="text-[10px]">UN</AvatarFallback>
+              </Avatar>
+            </div>
+          </div>
+        </div>
+      )}
+    </Draggable>
+  );
+});
 
 export default function Projects() {
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
@@ -197,15 +244,20 @@ export default function Projects() {
   const [isCreateTaskOpen, setIsCreateTaskOpen] = useState(false);
   const [newTask, setNewTask] = useState({ title: "", description: "", priority: "medium", type: "task" });
 
-  const { data: columns = [], isLoading: isLoadingColumns } = useQuery<any[]>({
-    queryKey: ["/api/boards", activeBoard?.id, "columns"],
+  const { data: boardData, isLoading: isLoadingBoard } = useQuery<{ columns: any[], tasks: any[] }>({
+    queryKey: ["/api/boards", activeBoard?.id, "full"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", `/api/boards/${activeBoard?.id}/full`);
+      return res.json();
+    },
     enabled: !!activeBoard?.id,
+    staleTime: 1000 * 60 * 5, // 5 минут кэша
   });
 
-  const { data: tasks = [], isLoading: isLoadingTasks } = useQuery<any[]>({
-    queryKey: ["/api/boards", activeBoard?.id, "tasks"],
-    enabled: !!activeBoard?.id,
-  });
+  const columns = boardData?.columns || [];
+  const tasks = boardData?.tasks || [];
+  const isLoadingColumns = isLoadingBoard;
+  const isLoadingTasks = isLoadingBoard;
 
   const createTaskMutation = useMutation({
     mutationFn: async (task: any) => {
@@ -213,7 +265,7 @@ export default function Projects() {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/boards", activeBoard?.id, "tasks"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/boards", activeBoard?.id, "full"] });
       queryClient.invalidateQueries({ queryKey: ["/api/projects"] }); // Для обновления прогресса
       setIsCreateTaskOpen(false);
       setNewTask({ title: "", description: "", priority: "medium", type: "task" });
@@ -226,8 +278,60 @@ export default function Projects() {
       const res = await apiRequest("PATCH", `/api/tasks/${id}`, data);
       return res.json();
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/boards", activeBoard?.id, "tasks"] });
+    onMutate: async ({ id, data }) => {
+      await queryClient.cancelQueries({ queryKey: ["/api/boards", activeBoard?.id, "full"] });
+      const previousData = queryClient.getQueryData<{ columns: any[], tasks: any[] }>(["/api/boards", activeBoard?.id, "full"]);
+
+      if (previousData) {
+        queryClient.setQueryData(["/api/boards", activeBoard?.id, "full"], (old: any) => {
+          if (!old) return old;
+          
+          const oldTasks = old.tasks || [];
+          // 1. Находим задачу, которую перемещаем
+          const movedTask = oldTasks.find((t: any) => t.id === id);
+          if (!movedTask) return old;
+
+          // 2. Создаем копию списка без этой задачи
+          const otherTasks = oldTasks.filter((t: any) => t.id !== id);
+          
+          // 3. Обновляем данные перемещаемой задачи (новая колонка и временный порядок)
+          const updatedMovedTask = { ...movedTask, ...data };
+          
+          // 4. Получаем задачи в целевой колонке
+          const targetColTasks = otherTasks
+            .filter((t: any) => t.columnId === (data.columnId || movedTask.columnId))
+            .sort((a: any, b: any) => (a.order || 0) - (b.order || 0));
+          
+          // 5. Вставляем задачу на новую позицию
+          targetColTasks.splice(data.order ?? 0, 0, updatedMovedTask);
+          
+          // 6. Пересчитываем order для всех задач в целевой колонке
+          const updatedTargetColTasks = targetColTasks.map((t: any, idx: number) => ({ ...t, order: idx }));
+          
+          // 7. Объединяем обратно со всеми остальными задачами
+          const finalTasks = [
+            ...otherTasks.filter((t: any) => t.columnId !== (data.columnId || movedTask.columnId)),
+            ...updatedTargetColTasks
+          ];
+          
+          return { ...old, tasks: finalTasks };
+        });
+      }
+
+      return { previousData };
+    },
+    onError: (err, variables, context) => {
+      if (context?.previousData) {
+        queryClient.setQueryData(["/api/boards", activeBoard?.id, "full"], context.previousData);
+      }
+      toast.error("Не удалось переместить задачу");
+    },
+    onSettled: () => {
+      // Инвалидируем без принудительного рефетча, чтобы не мерцало
+      queryClient.invalidateQueries({ 
+        queryKey: ["/api/boards", activeBoard?.id, "full"],
+        refetchType: 'none' 
+      });
       queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
     }
   });
@@ -237,17 +341,36 @@ export default function Projects() {
     
     const data: Record<string, any[]> = {};
     columns.forEach(col => {
-      data[col.name] = tasks.filter(t => t.columnId === col.id);
+      data[col.name] = tasks
+        .filter(t => t.columnId === col.id)
+        .sort((a, b) => (a.order || 0) - (b.order || 0));
     });
     return data;
   }, [columns, tasks]);
 
-  const handleTaskClick = (task: any) => {
+  const handleTaskClick = useCallback((task: any) => {
     // В будущем здесь будет открытие TaskDetailsModal
     toast.info(`Задача: ${task.title}`);
+  }, []);
+
+  const handleCreateTask = (columnName?: string) => {
+    if (!activeBoard) return;
+    
+    // Если передано название колонки, находим её ID
+    if (columnName) {
+      const column = columns.find(c => c.name === columnName);
+      if (column) {
+        setNewTask(prev => ({ ...prev, columnId: column.id }));
+      }
+    } else {
+      // По умолчанию первая колонка
+      setNewTask(prev => ({ ...prev, columnId: columns[0]?.id }));
+    }
+    
+    setIsCreateTaskOpen(true);
   };
 
-  const handleCreateTask = () => {
+  const submitCreateTask = () => {
     if (!newTask.title.trim() || !activeBoard) return;
     createTaskMutation.mutate(newTask);
   };
@@ -263,7 +386,7 @@ export default function Projects() {
   };
 
   const onDragEnd = (result: DropResult) => {
-    const { destination, source, draggableId } = result;
+    const { destination, source, draggableId, type } = result;
 
     if (!destination) return;
 
@@ -274,18 +397,20 @@ export default function Projects() {
       return;
     }
 
-    // Find the target column
-    const targetColumn = columns.find(col => col.name === destination.droppableId);
-    if (!targetColumn) return;
+    if (type === "task") {
+      // Find the target column
+      const targetColumn = columns.find(col => col.name === destination.droppableId);
+      if (!targetColumn) return;
 
-    // Optimistically update the UI or just call the mutation
-    updateTaskMutation.mutate({
-      id: draggableId,
-      data: {
-        columnId: targetColumn.id,
-        order: destination.index
-      }
-    });
+      // Optimistically update the UI or just call the mutation
+      updateTaskMutation.mutate({
+        id: draggableId,
+        data: {
+          columnId: targetColumn.id,
+          order: destination.index
+        }
+      });
+    }
   };
 
   if (isLoadingProjects) {
@@ -512,16 +637,15 @@ export default function Projects() {
                </Button>
                <Separator orientation="vertical" className="h-6 mx-2" />
                <Dialog open={isCreateTaskOpen} onOpenChange={setIsCreateTaskOpen}>
-                 <DialogTrigger asChild>
-                   <Button 
-                     className="gap-2 shadow-lg shadow-primary/20" 
-                     size="sm"
-                     disabled={!activeBoard}
-                   >
-                     <Plus className="w-4 h-4" />
-                     <span className="hidden sm:inline">Добавить задачу</span>
-                   </Button>
-                 </DialogTrigger>
+                 <Button 
+                   className="gap-2 shadow-lg shadow-primary/20" 
+                   size="sm"
+                   disabled={!activeBoard}
+                   onClick={() => handleCreateTask()}
+                 >
+                   <Plus className="w-4 h-4" />
+                   <span className="hidden sm:inline">Добавить задачу</span>
+                 </Button>
                  <DialogContent>
                    <DialogHeader>
                      <DialogTitle>Создать новую задачу</DialogTitle>
@@ -585,7 +709,7 @@ export default function Projects() {
                    </div>
                    <DialogFooter>
                      <Button variant="outline" onClick={() => setIsCreateTaskOpen(false)}>Отмена</Button>
-                     <Button onClick={handleCreateTask} disabled={createTaskMutation.isPending || !newTask.title.trim()}>
+                     <Button onClick={submitCreateTask} disabled={createTaskMutation.isPending || !newTask.title.trim()}>
                        {createTaskMutation.isPending && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
                        Создать задачу
                      </Button>
@@ -597,14 +721,14 @@ export default function Projects() {
 
           {/* Kanban Columns */}
           <DragDropContext onDragEnd={onDragEnd}>
-            <div className="flex-1 overflow-x-auto p-6 custom-scrollbar">
+            <div className="flex-1 overflow-auto p-6 custom-scrollbar">
               {activeBoard ? (
                 <Droppable droppableId="board" direction="horizontal" type="column">
                   {(provided) => (
                     <div 
                       {...provided.droppableProps}
                       ref={provided.innerRef}
-                      className="flex gap-6 h-full items-start"
+                      className="flex gap-6 items-start h-full min-w-max"
                     >
                       {Object.entries(kanbanData).map(([column, tasks]: [string, any], colIndex) => (
                         <div key={column} className="w-80 shrink-0 flex flex-col gap-4">
@@ -614,6 +738,15 @@ export default function Projects() {
                               <Badge variant="secondary" className="rounded-full px-2 py-0 h-5 text-[10px] font-bold shrink-0">
                                 {tasks.length}
                               </Badge>
+                              
+                              <Button 
+                                variant="ghost" 
+                                size="icon" 
+                                className="w-6 h-6 ml-auto text-muted-foreground/50 hover:text-primary hover:bg-primary/10 transition-colors"
+                                onClick={() => handleCreateTask(column)}
+                              >
+                                <Plus className="w-3.5 h-3.5" />
+                              </Button>
                             </div>
                           </div>
 
@@ -623,64 +756,19 @@ export default function Projects() {
                                 {...taskProvided.droppableProps}
                                 ref={taskProvided.innerRef}
                                 className={cn(
-                                  "flex flex-col gap-3 min-h-[150px] rounded-xl transition-colors p-1 overflow-y-auto max-h-[calc(100vh-12rem)] custom-scrollbar",
+                                  "flex flex-col gap-3 min-h-[150px] rounded-xl p-1",
                                   snapshot.isDraggingOver ? "bg-primary/5 ring-1 ring-primary/20" : ""
                                 )}
                               >
                                 {tasks.map((task: any, index: number) => (
-                                  <Draggable key={task.id} draggableId={task.id.toString()} index={index}>
-                                    {(provided, snapshot) => (
-                                      <div
-                                        ref={provided.innerRef}
-                                        {...provided.draggableProps}
-                                        {...provided.dragHandleProps}
-                                        onClick={() => handleTaskClick(task)}
-                                        className={cn(
-                                          "bg-card border border-border/50 p-4 rounded-xl shadow-sm hover:shadow-md hover:border-primary/30 transition-all group/task",
-                                          snapshot.isDragging ? "shadow-xl ring-2 ring-primary/20 rotate-1" : ""
-                                        )}
-                                      >
-                                        <div className="flex items-start justify-between gap-2 mb-2">
-                                          <Badge variant="outline" className={cn(
-                                            "text-[10px] font-bold uppercase px-1.5 h-5 border-none",
-                                            task.priority === "high" || task.priority === "critical" ? "bg-rose-500/10 text-rose-600" :
-                                            task.priority === "medium" ? "bg-amber-500/10 text-amber-600" : "bg-emerald-500/10 text-emerald-600"
-                                          )}>
-                                            {task.priority === "low" ? "Низкий" : 
-                                             task.priority === "medium" ? "Средний" : 
-                                             task.priority === "high" ? "Высокий" : "Критич."}
-                                          </Badge>
-                                          <Badge variant="secondary" className="text-[10px] font-bold uppercase px-1.5 h-5">
-                                            {task.type === "bug" ? "Баг" : 
-                                             task.type === "feature" ? "Фича" : 
-                                             task.type === "story" ? "История" : "Задача"}
-                                          </Badge>
-                                        </div>
-                                        <h4 className="text-sm font-medium mb-3 leading-snug">{task.title}</h4>
-                                        {task.description && (
-                                          <p className="text-xs text-muted-foreground line-clamp-2 mb-3">{task.description}</p>
-                                        )}
-                                        <div className="flex items-center justify-between">
-                                          <div className="flex -space-x-2">
-                                            <Avatar className="w-6 h-6 border-2 border-background">
-                                              <AvatarFallback className="text-[10px]">UN</AvatarFallback>
-                                            </Avatar>
-                                          </div>
-                                        </div>
-                                      </div>
-                                    )}
-                                  </Draggable>
+                                  <TaskCard 
+                                    key={task.id} 
+                                    task={task} 
+                                    index={index} 
+                                    onClick={handleTaskClick} 
+                                  />
                                 ))}
                                 {taskProvided.placeholder}
-                                <Button 
-                                  variant="ghost" 
-                                  size="sm" 
-                                  className="w-full justify-start gap-2 text-muted-foreground hover:text-primary hover:bg-primary/5 mt-1 h-9 rounded-lg"
-                                  onClick={handleCreateTask}
-                                >
-                                  <Plus className="w-4 h-4" />
-                                  <span className="text-xs font-medium">Добавить задачу</span>
-                                </Button>
                               </div>
                             )}
                           </Droppable>

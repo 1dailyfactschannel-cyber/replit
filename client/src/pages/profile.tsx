@@ -15,7 +15,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 export default function Profile() {
   const { toast } = useToast();
   
-  const { data: user, isLoading } = useQuery({
+  const { data: user, isLoading } = useQuery<any>({
     queryKey: ["/api/user"],
   });
 

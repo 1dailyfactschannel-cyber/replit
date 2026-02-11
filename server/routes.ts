@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { getStorage } from "./postgres-storage";
-import { insertSiteSettingsSchema, insertUserSchema } from "@shared/schema";
+import { insertSiteSettingsSchema, insertUserSchema, insertNotificationSchema } from "@shared/schema";
 import { setupWebSockets } from "./socket";
 import { Server as SocketIOServer } from "socket.io";
 import multer from "multer";
@@ -245,6 +245,20 @@ export async function registerRoutes(
   });
 
   // Board routes
+  app.get("/api/boards/:id/full", async (req, res) => {
+    try {
+      const boardId = req.params.id;
+      const [columns, tasks] = await Promise.all([
+        storage.getColumnsByBoard(boardId),
+        storage.getTasksByBoard(boardId)
+      ]);
+      res.json({ columns, tasks });
+    } catch (error) {
+      console.error("Error fetching full board data:", error);
+      res.status(500).json({ message: "Failed to fetch board data" });
+    }
+  });
+
   app.get("/api/projects/:projectId/boards", async (req, res) => {
     try {
       const boards = await storage.getBoardsByProject(req.params.projectId);
@@ -305,9 +319,38 @@ export async function registerRoutes(
 
   app.patch("/api/tasks/:id", async (req, res) => {
     try {
-      const task = await storage.updateTask(req.params.id, req.body);
+      const taskId = req.params.id;
+      const updateData = req.body;
+      
+      const task = await storage.updateTask(taskId, updateData);
+      
+      // Если передан новый порядок (order), нужно обновить порядок остальных задач в той же колонке
+      if (updateData.order !== undefined) {
+        const allTasks = await storage.getTasksByBoard(task.boardId);
+        
+        // 1. Берем все задачи в этой колонке, КРОМЕ той, которую мы уже обновили
+        const otherColumnTasks = allTasks
+          .filter(t => t.columnId === task.columnId && t.id !== taskId)
+          .sort((a, b) => (a.order || 0) - (b.order || 0));
+        
+        // 2. Вставляем обновленную задачу на её новую позицию в массив
+        const newColumnTasks = [...otherColumnTasks];
+        newColumnTasks.splice(updateData.order, 0, task);
+        
+        // 3. Обновляем порядок (order) для всех задач, у которых он изменился
+        for (let i = 0; i < newColumnTasks.length; i++) {
+          if (newColumnTasks[i].order !== i) {
+            await storage.updateTask(newColumnTasks[i].id, { order: i });
+          }
+        }
+        
+        // Возвращаем задачу с актуальным порядком
+        task.order = updateData.order;
+      }
+      
       res.json(task);
     } catch (error) {
+      console.error("Error updating task:", error);
       res.status(500).json({ message: "Failed to update task" });
     }
   });
@@ -456,7 +499,7 @@ export async function registerRoutes(
         // Trigger push notification for others
         if (p.userId !== user.id) {
           io.to(`user:${p.userId}`).emit("push-notification", {
-            title: `Новое сообщение от ${user.name}`,
+            title: `Новое сообщение от ${(user as any).firstName || (user as any).username}`,
             body: message.content,
             url: `/chat?id=${req.params.chatId}`
           });
@@ -633,6 +676,73 @@ export async function registerRoutes(
       res.json(call);
     } catch (error) {
       res.status(500).json({ message: "Failed to update call record" });
+    }
+  });
+
+  // Notification routes
+  app.get("/api/notifications", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
+    try {
+      const user = req.user;
+      const notifications = await storage.getNotifications(user.id);
+      res.json(notifications);
+    } catch (error) {
+      console.error("Error fetching notifications:", error);
+      res.status(500).json({ message: "Failed to fetch notifications" });
+    }
+  });
+
+  app.post("/api/notifications", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
+    try {
+      const parsed = insertNotificationSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ message: "Invalid notification data", errors: parsed.error.errors });
+      }
+
+      const notification = await storage.createNotification(parsed.data);
+      
+      // Notify user via socket
+      io.to(`user:${parsed.data.userId}`).emit("new-notification", notification);
+      
+      res.status(201).json(notification);
+    } catch (error) {
+      console.error("Error creating notification:", error);
+      res.status(500).json({ message: "Failed to create notification" });
+    }
+  });
+
+  app.patch("/api/notifications/:id/read", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
+    try {
+      const notification = await storage.markNotificationAsRead(req.params.id);
+      res.json(notification);
+    } catch (error) {
+      console.error("Error marking notification as read:", error);
+      res.status(500).json({ message: "Failed to mark notification as read" });
+    }
+  });
+
+  app.post("/api/notifications/read-all", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
+    try {
+      const user = req.user;
+      await storage.markAllNotificationsAsRead(user.id);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error marking all notifications as read:", error);
+      res.status(500).json({ message: "Failed to mark all notifications as read" });
+    }
+  });
+
+  app.delete("/api/notifications/:id", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
+    try {
+      await storage.deleteNotification(req.params.id);
+      res.status(204).end();
+    } catch (error) {
+      console.error("Error deleting notification:", error);
+      res.status(500).json({ message: "Failed to delete notification" });
     }
   });
 

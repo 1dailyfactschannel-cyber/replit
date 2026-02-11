@@ -56,6 +56,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ThemeToggle } from "./ThemeToggle";
+import { NotificationAlertDialog } from "@/components/ui/notification-alert-dialog";
 
 const sidebarItems = [
   { icon: LayoutDashboard, label: "Главная", href: "/" },
@@ -135,6 +136,7 @@ const SidebarContentComponent = React.memo(({
   location, 
   status, 
   isStatusDialogOpen, 
+  setIsStatusDialogOpen,
   setLocation, 
   setIsMobileOpen,
   setIsCollapsed,
@@ -355,10 +357,19 @@ export function Layout({ children, className }: { children: React.ReactNode, cla
   });
   const [location, setLocation] = useLocation();
   const [isMobileOpen, setIsMobileOpen] = useState(false);
-  const [isCollapsed, setIsCollapsed] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("sidebar-collapsed") === "true";
+    }
+    return false;
+  });
   const [isStatusDialogOpen, setIsStatusDialogOpen] = useState(false);
   const [status, setStatus] = useState("online");
   const [statusComment, setStatusComment] = useState("");
+
+  useEffect(() => {
+    localStorage.setItem("sidebar-collapsed", isCollapsed.toString());
+  }, [isCollapsed]);
 
   const statusColors = {
     online: "bg-emerald-500",
@@ -397,6 +408,7 @@ export function Layout({ children, className }: { children: React.ReactNode, cla
           location={location}
           status={status}
           isStatusDialogOpen={isStatusDialogOpen}
+          setIsStatusDialogOpen={setIsStatusDialogOpen}
           setLocation={setLocation}
           setIsMobileOpen={setIsMobileOpen}
           setIsCollapsed={setIsCollapsed}
@@ -422,6 +434,7 @@ export function Layout({ children, className }: { children: React.ReactNode, cla
                   location={location}
                   status={status}
                   isStatusDialogOpen={isStatusDialogOpen}
+                  setIsStatusDialogOpen={setIsStatusDialogOpen}
                   setLocation={setLocation}
                   setIsMobileOpen={setIsMobileOpen}
                   setIsCollapsed={setIsCollapsed}
@@ -453,10 +466,7 @@ export function Layout({ children, className }: { children: React.ReactNode, cla
 
           <div className="flex items-center gap-3">
              <ThemeToggle />
-             <Button variant="ghost" size="icon" className="relative rounded-full hover:bg-secondary">
-               <Bell className="w-5 h-5 text-muted-foreground" />
-               <span className="absolute top-2.5 right-2.5 w-2 h-2 bg-red-500 rounded-full border-2 border-background" />
-             </Button>
+             <NotificationAlertDialog />
           </div>
         </header>
 
