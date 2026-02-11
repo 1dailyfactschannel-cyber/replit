@@ -105,6 +105,7 @@ export default function Projects() {
   // Queries
   const { data: projects = [], isLoading: isLoadingProjects } = useQuery<any[]>({
     queryKey: ["/api/projects"],
+    staleTime: 1000 * 60 * 5, // 5 minutes
   });
 
   const activeProject = useMemo(() => 
@@ -115,6 +116,7 @@ export default function Projects() {
   const { data: boards = [], isLoading: isLoadingBoards } = useQuery<any[]>({
     queryKey: ["/api/projects", activeProject?.id, "boards"],
     enabled: !!activeProject?.id,
+    staleTime: 1000 * 60 * 5, // 5 minutes
   });
 
   const activeBoard = useMemo(() => 
@@ -413,7 +415,7 @@ export default function Projects() {
     }
   };
 
-  if (isLoadingProjects) {
+  if (isLoadingProjects && projects.length === 0) {
     return (
       <Layout className="overflow-hidden">
         <div className="flex items-center justify-center h-full">

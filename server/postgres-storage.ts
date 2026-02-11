@@ -694,7 +694,7 @@ export class PostgresStorage {
         };
       });
 
-      await setCache(cacheKey, projectsWithStats, 60); // Cache for 1 minute
+      await setCache(cacheKey, projectsWithStats, 300); // Cache for 5 minutes (was 1 min)
       return projectsWithStats;
     } catch (error) {
       console.error("Error getting projects with stats:", error);
@@ -846,6 +846,16 @@ export class PostgresStorage {
       return newColumn;
     } catch (error) {
       console.error("Error creating column:", error);
+      throw error;
+    }
+  }
+
+  async createColumns(columns: schema.InsertBoardColumn[]): Promise<schema.BoardColumn[]> {
+    try {
+      if (columns.length === 0) return [];
+      return await this.db.insert(schema.boardColumns).values(columns).returning();
+    } catch (error) {
+      console.error("Error creating multiple columns:", error);
       throw error;
     }
   }

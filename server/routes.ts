@@ -249,19 +249,23 @@ export async function registerRoutes(
     try {
       const board = await storage.createBoard({ ...req.body, projectId: req.params.projectId });
       
-      // Создаем стандартные колонки для новой доски
-      const defaultColumns = ["В планах", "В работе", "На проверке", "Готово"];
-      for (let i = 0; i < defaultColumns.length; i++) {
-        await storage.createColumn({
-          boardId: board.id,
-          name: defaultColumns[i],
-          order: i,
-          color: "#3b82f6"
-        });
-      }
+      // Создаем стандартные колонки для новой доски (bulk insert для скорости)
+      const defaultColumnNames = ["В планах", "В работе", "На проверке", "Готово"];
+      const columnsToCreate = defaultColumnNames.map((name, index) => ({
+        boardId: board.id,
+        name,
+        order: index,
+        color: "#3b82f6"
+      }));
+      
+      await storage.createColumns(columnsToCreate);
+      
+      // Инвалидируем кэш статистики проектов, так как количество досок изменилось
+      await invalidatePattern("projects:stats:*");
       
       res.status(201).json(board);
     } catch (error) {
+      console.error("Error creating board:", error);
       res.status(500).json({ message: "Failed to create board" });
     }
   });
@@ -278,6 +282,8 @@ export async function registerRoutes(
   app.delete("/api/boards/:id", async (req, res) => {
     try {
       await storage.deleteBoard(req.params.id);
+      // Инвалидируем кэш статистики проектов при удалении доски
+      await invalidatePattern("projects:stats:*");
       res.status(204).end();
     } catch (error) {
       res.status(500).json({ message: "Failed to delete board" });
@@ -300,6 +306,11 @@ export async function registerRoutes(
       const updateData = req.body;
       
       const task = await storage.updateTask(taskId, updateData);
+      
+      // Инвалидируем кэш статистики проектов, если статус задачи изменился (влияет на прогресс)
+      if (updateData.status) {
+        await invalidatePattern("projects:stats:*");
+      }
       
       // Если передан новый порядок (order), нужно обновить порядок остальных задач в той же колонке
       if (updateData.order !== undefined) {
@@ -349,6 +360,10 @@ export async function registerRoutes(
       };
 
       const task = await storage.createTask(taskData);
+      
+      // Инвалидируем кэш статистики проектов при создании задачи
+      await invalidatePattern("projects:stats:*");
+      
       res.status(201).json(task);
     } catch (error) {
       console.error("Error creating task:", error);
