@@ -674,7 +674,7 @@ export class PostgresStorage {
           project: schema.projects,
           boardCount: sql<number>`count(distinct ${schema.boards.id})`,
           taskCount: sql<number>`count(distinct ${schema.tasks.id})`,
-          completedTaskCount: sql<number>`count(distinct ${schema.tasks.id}) filter (where ${schema.tasks.status} in ('done', 'completed'))`,
+          completedTaskCount: sql<number>`count(distinct ${schema.tasks.id}) filter (where ${schema.tasks.status} in ('done', 'completed', 'Готово'))`,
         })
         .from(schema.projects)
         .leftJoin(schema.boards, eq(schema.projects.id, schema.boards.projectId))
@@ -857,6 +857,16 @@ export class PostgresStorage {
     } catch (error) {
       console.error("Error creating multiple columns:", error);
       throw error;
+    }
+  }
+
+  async getColumn(id: string): Promise<schema.BoardColumn | undefined> {
+    try {
+      const [column] = await this.db.select().from(schema.boardColumns).where(eq(schema.boardColumns.id, id)).limit(1);
+      return column;
+    } catch (error) {
+      console.error("Error getting column:", error);
+      return undefined;
     }
   }
 

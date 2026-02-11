@@ -326,6 +326,17 @@ export async function registerRoutes(
 
       const updateData = req.body;
       
+      // Если задача перемещается в колонку "Готово", обновляем её статус
+      if (updateData.columnId) {
+        const column = await storage.getColumn(updateData.columnId);
+        if (column && column.name === "Готово") {
+          updateData.status = "done";
+        } else if (column) {
+          // Если перемещаем из "Готово" в другую колонку, меняем статус обратно
+          updateData.status = "todo";
+        }
+      }
+
       const task = await storage.updateTask(taskId, updateData);
       
       // Инвалидируем кэш статистики проектов и данные доски

@@ -547,24 +547,39 @@ export default function Projects() {
                     )}
                   >
                     <div 
-                      className="flex items-center gap-2 flex-1 min-w-0"
+                      className="flex flex-col flex-1 min-w-0"
                       onClick={(e) => {
                         if (activeProject?.id === project.id) {
                           toggleProjectCollapse(project.id, e);
                         }
                       }}
                     >
-                      <ChevronRight className={cn(
-                        "w-3.5 h-3.5 shrink-0 transition-transform duration-200 opacity-50",
-                        !collapsedProjects[project.id] && "rotate-90"
-                      )} />
-                      <div className={cn(
-                        "w-2 h-2 rounded-full shrink-0 shadow-[0_0_8px_rgba(0,0,0,0.1)]",
-                        project.priority === "Высокий" || project.priority === "Критический" ? "bg-rose-500 shadow-rose-500/40" :
-                        project.priority === "Средний" ? "bg-amber-500 shadow-amber-500/40" :
-                        "bg-emerald-500 shadow-emerald-500/40"
-                      )} />
-                      <span className="truncate text-left">{project.name}</span>
+                      <div className="flex items-center gap-2">
+                        <ChevronRight className={cn(
+                          "w-3.5 h-3.5 shrink-0 transition-transform duration-200 opacity-50",
+                          !collapsedProjects[project.id] && "rotate-90"
+                        )} />
+                        <div className={cn(
+                          "w-2 h-2 rounded-full shrink-0 shadow-[0_0_8px_rgba(0,0,0,0.1)]",
+                          project.priority === "Высокий" || project.priority === "Критический" ? "bg-rose-500 shadow-rose-500/40" :
+                          project.priority === "Средний" ? "bg-amber-500 shadow-amber-500/40" :
+                          "bg-emerald-500 shadow-emerald-500/40"
+                        )} />
+                        <span className="truncate text-left">{project.name}</span>
+                      </div>
+                      
+                      <div className="mt-1.5 ml-5.5 px-2">
+                        <div className="flex items-center justify-between text-[10px] text-muted-foreground mb-1">
+                          <span>Прогресс</span>
+                          <span>{project.progress || 0}%</span>
+                        </div>
+                        <div className="h-1 w-full bg-secondary rounded-full overflow-hidden">
+                          <div 
+                            className="h-full bg-primary transition-all duration-500" 
+                            style={{ width: `${project.progress || 0}%` }}
+                          />
+                        </div>
+                      </div>
                     </div>
 
                     <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1 opacity-0 group-hover/project:opacity-100 transition-opacity">
