@@ -266,12 +266,54 @@ export default function Projects() {
       const res = await apiRequest("POST", `/api/boards/${activeBoard?.id}/tasks`, task);
       return res.json();
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/boards", activeBoard?.id, "full"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/projects"] }); // Для обновления прогресса
+    onMutate: async (newTaskData) => {
+      // Мгновенно закрываем окно и очищаем форму
       setIsCreateTaskOpen(false);
+      const currentNewTask = { ...newTask }; // Сохраняем текущее состояние для возможного отката
       setNewTask({ title: "", description: "", priority: "medium", type: "task" });
+
+      // Отменяем текущие запросы, чтобы они не перезаписали наш оптимистичный апдейт
+      await queryClient.cancelQueries({ queryKey: ["/api/boards", activeBoard?.id, "full"] });
+
+      // Сохраняем предыдущее состояние для отката при ошибке
+      const previousBoardData = queryClient.getQueryData<{ columns: any[], tasks: any[] }>(["/api/boards", activeBoard?.id, "full"]);
+
+      // Оптимистично обновляем кэш
+      if (previousBoardData) {
+        const optimisticTask = {
+          ...newTaskData,
+          id: `temp-${Date.now()}`, // Временный ID
+          createdAt: new Date().toISOString(),
+          order: previousBoardData.tasks.filter(t => t.columnId === newTaskData.columnId).length
+        };
+
+        queryClient.setQueryData(["/api/boards", activeBoard?.id, "full"], {
+          ...previousBoardData,
+          tasks: [...previousBoardData.tasks, optimisticTask]
+        });
+      }
+
+      return { previousBoardData, currentNewTask };
+    },
+    onError: (err, newTaskData, context) => {
+      // Откатываем изменения при ошибке
+      if (context?.previousBoardData) {
+        queryClient.setQueryData(["/api/boards", activeBoard?.id, "full"], context.previousBoardData);
+      }
+      // Возвращаем данные в форму, если произошла ошибка
+      if (context?.currentNewTask) {
+        setNewTask(context.currentNewTask);
+        setIsCreateTaskOpen(true);
+      }
+      toast.error("Не удалось создать задачу");
+    },
+    onSuccess: () => {
       toast.success("Задача успешно создана");
+    },
+    onSettled: () => {
+      // Синхронизируем данные с сервером
+      queryClient.invalidateQueries({ queryKey: ["/api/boards", activeBoard?.id, "full"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
     }
   });
 

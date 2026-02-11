@@ -325,11 +325,13 @@ export async function registerRoutes(
         const newColumnTasks = [...otherColumnTasks];
         newColumnTasks.splice(updateData.order, 0, task);
         
-        // 3. Обновляем порядок (order) для всех задач, у которых он изменился
-        for (let i = 0; i < newColumnTasks.length; i++) {
-          if (newColumnTasks[i].order !== i) {
-            await storage.updateTask(newColumnTasks[i].id, { order: i });
-          }
+        // 3. Собираем только те задачи, у которых реально изменился порядок
+        const tasksToUpdate = newColumnTasks
+          .map((t, idx) => ({ id: t.id, order: idx }))
+          .filter((t, idx) => newColumnTasks[idx].order !== idx);
+        
+        if (tasksToUpdate.length > 0) {
+          await storage.updateTaskOrders(tasksToUpdate);
         }
         
         // Возвращаем задачу с актуальным порядком

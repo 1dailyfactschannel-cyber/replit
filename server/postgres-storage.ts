@@ -895,6 +895,24 @@ export class PostgresStorage {
     }
   }
 
+  async updateTaskOrders(tasks: { id: string, order: number }[]): Promise<void> {
+    try {
+      if (tasks.length === 0) return;
+      
+      // Используем транзакцию для атомарности и производительности
+      await this.db.transaction(async (tx) => {
+        for (const task of tasks) {
+          await tx.update(schema.tasks)
+            .set({ order: task.order, updatedAt: new Date() })
+            .where(eq(schema.tasks.id, task.id));
+        }
+      });
+    } catch (error) {
+      console.error("Error updating task orders:", error);
+      throw error;
+    }
+  }
+
   async getTasksByBoard(boardId: string): Promise<schema.Task[]> {
     try {
       return await this.db.select().from(schema.tasks)
