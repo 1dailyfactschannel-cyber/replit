@@ -8,6 +8,7 @@ import multer from "multer";
 import path from "path";
 import fs from "fs";
 import { eq, and, ne } from "drizzle-orm";
+import { getCache, setCache, invalidatePattern } from "./redis";
 
 const storage = getStorage();
 let io: SocketIOServer;
