@@ -585,6 +585,17 @@ export default function Projects() {
                           <div key={board.id} className="group/board relative">
                             <div
                               onClick={() => setActiveBoardId(board.id)}
+                              onMouseEnter={() => {
+                                // Предзагрузка данных доски при наведении
+                                queryClient.prefetchQuery({
+                                  queryKey: ["/api/boards", board.id, "full"],
+                                  queryFn: async () => {
+                                    const res = await apiRequest("GET", `/api/boards/${board.id}/full`);
+                                    return res.json();
+                                  },
+                                  staleTime: 1000 * 60 * 5,
+                                });
+                              }}
                               className={cn(
                                 "w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-[13px] transition-colors text-left pr-8 cursor-pointer",
                                 activeBoard?.id === board.id

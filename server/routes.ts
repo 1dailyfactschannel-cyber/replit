@@ -225,11 +225,25 @@ export async function registerRoutes(
   app.get("/api/boards/:id/full", async (req, res) => {
     try {
       const boardId = req.params.id;
+      const cacheKey = `board:full:${boardId}`;
+      
+      // Попытка получить данные из кэша
+      const cachedData = await getCache<any>(cacheKey);
+      if (cachedData) {
+        return res.json(cachedData);
+      }
+
       const [columns, tasks] = await Promise.all([
         storage.getColumnsByBoard(boardId),
         storage.getTasksByBoard(boardId)
       ]);
-      res.json({ columns, tasks });
+      
+      const boardData = { columns, tasks };
+      
+      // Сохраняем в кэш на 5 минут
+      await setCache(cacheKey, boardData, 300);
+      
+      res.json(boardData);
     } catch (error) {
       console.error("Error fetching full board data:", error);
       res.status(500).json({ message: "Failed to fetch board data" });
@@ -307,10 +321,9 @@ export async function registerRoutes(
       
       const task = await storage.updateTask(taskId, updateData);
       
-      // Инвалидируем кэш статистики проектов, если статус задачи изменился (влияет на прогресс)
-      if (updateData.status) {
-        await invalidatePattern("projects:stats:*");
-      }
+      // Инвалидируем кэш статистики проектов и данные доски
+      await invalidatePattern("projects:stats:*");
+      await invalidatePattern(`board:full:${task.boardId}`);
       
       // Если передан новый порядок (order), нужно обновить порядок остальных задач в той же колонке
       if (updateData.order !== undefined) {
@@ -363,8 +376,9 @@ export async function registerRoutes(
 
       const task = await storage.createTask(taskData);
       
-      // Инвалидируем кэш статистики проектов при создании задачи
+      // Инвалидируем кэш статистики проектов и данные доски
       await invalidatePattern("projects:stats:*");
+      await invalidatePattern(`board:full:${req.params.boardId}`);
       
       res.status(201).json(task);
     } catch (error) {
