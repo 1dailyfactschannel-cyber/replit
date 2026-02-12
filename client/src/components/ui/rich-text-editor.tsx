@@ -119,7 +119,16 @@ const MenuBar = ({ editor }: { editor: any }) => {
 export function RichTextEditor({ content, onChange, onBlur, placeholder }: RichTextEditorProps) {
   const editor = useEditor({
     extensions: [
-      StarterKit,
+      StarterKit.configure({
+        bulletList: {
+          keepMarks: true,
+          keepAttributes: false,
+        },
+        orderedList: {
+          keepMarks: true,
+          keepAttributes: false,
+        },
+      }),
       Underline,
       Link.configure({
         openOnClick: false,
