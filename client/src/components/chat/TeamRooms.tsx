@@ -341,6 +341,10 @@ export function TeamRooms() {
 
       <Dialog open={isJoined} onOpenChange={(open) => !open && handleLeave()}>
         <DialogContent className="max-w-4xl h-[80vh] p-0 overflow-hidden bg-slate-950 border-slate-800 flex flex-col">
+          <DialogHeader className="sr-only">
+            <DialogTitle>{activeRoom?.name}: Видеовстреча</DialogTitle>
+            <DialogDescription>Интерфейс видеовстречи в зале {activeRoom?.name}.</DialogDescription>
+          </DialogHeader>
           <div className="p-4 border-b border-white/10 flex items-center justify-between bg-slate-900/50 backdrop-blur-md">
             <div className="flex items-center gap-3">
               <div className={`w-2 h-2 rounded-full bg-emerald-500 animate-pulse`} />

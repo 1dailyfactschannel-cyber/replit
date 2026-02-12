@@ -376,7 +376,21 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Cannot update task with temporary ID" });
       }
 
-      const updateData = req.body;
+      const updateData = { ...req.body };
+      
+      // Удаляем поля, которых нет в таблице tasks (обогащенные данные)
+      const allowedFields = [
+        'title', 'description', 'status', 'priority', 'type', 
+        'storyPoints', 'startDate', 'dueDate', 'completedAt', 
+        'order', 'columnId', 'boardId', 'assigneeId', 'reporterId',
+        'parentId', 'tags', 'attachments'
+      ];
+      
+      Object.keys(updateData).forEach(key => {
+        if (!allowedFields.includes(key)) {
+          delete updateData[key];
+        }
+      });
       
       // Если задача перемещается в колонку "Готово", обновляем её статус
       if (updateData.columnId) {
@@ -391,6 +405,31 @@ export async function registerRoutes(
 
       const task = await storage.updateTask(taskId, updateData);
       
+      // Обогащаем задачу данными об исполнителе и репортере перед отправкой
+      const [assignee, reporter] = await Promise.all([
+        task.assigneeId ? storage.getUser(task.assigneeId) : null,
+        task.reporterId ? storage.getUser(task.reporterId) : null
+      ]);
+
+      const formatName = (user: any) => {
+        if (!user) return null;
+        const fullName = `${user.firstName || ""} ${user.lastName || ""}`.trim();
+        return fullName || user.username || "Пользователь";
+      };
+
+      const enrichedTask = {
+        ...task,
+        assignee: assignee ? { 
+          name: formatName(assignee), 
+          avatar: assignee.avatar 
+        } : null,
+        creator: { 
+          name: formatName(reporter) || "Система", 
+          avatar: reporter?.avatar || null,
+          date: task.createdAt ? new Date(task.createdAt).toISOString() : ""
+        }
+      };
+
       // Инвалидируем кэш статистики проектов и данные доски
       await invalidatePattern("projects:stats:*");
       await invalidatePattern(`board:full:${task.boardId}`);
@@ -418,10 +457,10 @@ export async function registerRoutes(
         }
         
         // Возвращаем задачу с актуальным порядком
-        task.order = updateData.order;
+        enrichedTask.order = updateData.order;
       }
       
-      res.json(task);
+      res.json(enrichedTask);
     } catch (error) {
       console.error("Error updating task:", error);
       res.status(500).json({ message: "Failed to update task" });
@@ -446,11 +485,36 @@ export async function registerRoutes(
 
       const task = await storage.createTask(taskData);
       
+      // Обогащаем задачу данными об исполнителе и репортере перед отправкой
+      const [assignee, reporter] = await Promise.all([
+        task.assigneeId ? storage.getUser(task.assigneeId) : null,
+        task.reporterId ? storage.getUser(task.reporterId) : null
+      ]);
+
+      const formatName = (user: any) => {
+        if (!user) return null;
+        const fullName = `${user.firstName || ""} ${user.lastName || ""}`.trim();
+        return fullName || user.username || "Пользователь";
+      };
+
+      const enrichedTask = {
+        ...task,
+        assignee: assignee ? { 
+          name: formatName(assignee), 
+          avatar: assignee.avatar 
+        } : null,
+        creator: { 
+          name: formatName(reporter) || "Система", 
+          avatar: reporter?.avatar || null,
+          date: task.createdAt ? new Date(task.createdAt).toISOString() : ""
+        }
+      };
+
       // Инвалидируем кэш статистики проектов и данные доски
       await invalidatePattern("projects:stats:*");
       await invalidatePattern(`board:full:${req.params.boardId}`);
       
-      res.status(201).json(task);
+      res.status(201).json(enrichedTask);
     } catch (error) {
       console.error("Error creating task:", error);
       res.status(500).json({ message: "Failed to create task" });

@@ -182,7 +182,7 @@ export default function Tasks() {
            </div>
         </div>
 
-        <div className="rounded-xl border border-border/50 shadow-sm bg-card overflow-hidden">
+        <div className="rounded-xl border border-border/50 shadow-sm bg-card overflow-hidden font-sans">
           <Table>
             <TableHeader className="bg-secondary/30">
               <TableRow className="hover:bg-transparent">

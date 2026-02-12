@@ -39,18 +39,19 @@
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
-  .prose blockquote {
-    @apply border-l-4 border-primary/40 pl-4 italic text-muted-foreground my-4;
-  }
-  .prose ul {
-    @apply list-disc list-outside ml-4 my-4 space-y-1;
-  }
-  .prose ol {
-    @apply list-decimal list-outside ml-4 my-4 space-y-1;
-  }
-  .prose p {
-    @apply my-2 leading-relaxed;
-  }
+}
+
+.prose blockquote {
+  @apply border-l-4 border-primary/40 pl-4 italic text-muted-foreground my-4;
+}
+.prose ul {
+  @apply list-disc list-outside ml-4 my-4 space-y-1;
+}
+.prose ol {
+  @apply list-decimal list-outside ml-4 my-4 space-y-1;
+}
+.prose p {
+  @apply my-2 leading-relaxed;
 }
 
 :root {

@@ -128,6 +128,11 @@ export function RichTextEditor({ content, onChange, onBlur, placeholder }: RichT
           keepMarks: true,
           keepAttributes: false,
         },
+        history: true,
+        bold: true,
+        italic: true,
+        code: true,
+        blockquote: true,
       }),
       Underline,
       Link.configure({

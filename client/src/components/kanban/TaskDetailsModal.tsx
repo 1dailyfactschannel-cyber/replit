@@ -3,6 +3,9 @@ import { cn } from "@/lib/utils";
 import {
   Dialog,
   DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -59,7 +62,6 @@ import { format } from "date-fns";
 import { ru } from "date-fns/locale";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
-import { useToast } from "@/hooks/use-toast";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -76,7 +78,7 @@ import {
   CommandList,
 } from "@/components/ui/command";
 import { RichTextEditor } from "@/components/ui/rich-text-editor";
-import { toast } from "sonner";
+import { toast as sonnerToast } from "sonner";
 
 export interface Task {
   id: number | string;
@@ -85,6 +87,8 @@ export interface Task {
   status: string;
   priority: string;
   type: string;
+  boardId: string;
+  columnId: string;
   assignee: { name: string; avatar?: string };
   creator: { name: string; date: string };
   dueDate: string;
@@ -116,7 +120,6 @@ export function TaskDetailsModal({
   onUpdate,
   onAccept,
 }: TaskDetailsModalProps) {
-  const { toast } = useToast();
   const queryClient = useQueryClient();
 
   // Fetch all users for observer selection
@@ -126,6 +129,20 @@ export function TaskDetailsModal({
 
   const [newTitle, setNewTitle] = useState(task?.title || "");
   const [newDescription, setNewDescription] = useState(task?.description || "");
+
+  // Update local states when task prop changes (e.g. after successful mutation or task switch)
+  useEffect(() => {
+    if (task) {
+      setNewTitle(task.title || "");
+      setNewDescription(task.description || "");
+      setLocalSubtasks(task.subtasks || []);
+      setLocalObservers(task.observers || []);
+      setAttachments(task.attachments || []);
+    }
+  }, [task]);
+
+  const [attachments, setAttachments] = useState<{ name: string; url: string; size: string; type: string }[]>(task?.attachments || []);
+  const [localObservers, setLocalObservers] = useState<{ name: string; avatar?: string }[]>(task?.observers || []);
   const [localSubtasks, setLocalSubtasks] = useState<{ id: number; title: string; completed: boolean; dueDate?: string }[]>(task?.subtasks || []);
   const [newSubtaskTitle, setNewSubtaskTitle] = useState("");
   const [isAddingSubtask, setIsAddingSubtask] = useState(false);
@@ -136,12 +153,11 @@ export function TaskDetailsModal({
   });
 
   useEffect(() => {
-    if (serverComments.length > 0) {
+    if (serverComments && serverComments.length > 0) {
       setLocalComments(serverComments);
     }
   }, [serverComments]);
-  const [localObservers, setLocalObservers] = useState<{ name: string; avatar?: string }[]>(task?.observers || []);
-  const [attachments, setAttachments] = useState<{ name: string; url: string; size: string; type: string }[]>(task?.attachments || []);
+
   const [newComment, setNewComment] = useState("");
   const [commentAttachments, setCommentAttachments] = useState<{ name: string; url: string; size: string; type: string }[]>([]);
   const [isUploadingCommentFile, setIsUploadingCommentFile] = useState(false);
@@ -153,20 +169,20 @@ export function TaskDetailsModal({
   const updateTaskMutation = useMutation({
     mutationFn: async (updates: Partial<Task>) => {
       if (!task?.id) throw new Error("ID задачи отсутствует");
+      
       const res = await apiRequest("PATCH", `/api/tasks/${task.id}`, updates);
       return res.json();
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: [`/api/boards/${task?.boardId}/full`] });
+      if (task?.boardId) {
+        queryClient.invalidateQueries({ queryKey: [`/api/boards/${task.boardId}/full`] });
+      }
       queryClient.invalidateQueries({ queryKey: ["/api/tasks", task?.id] });
-      if (onUpdate) onUpdate(data);
+      if (onUpdate && data) onUpdate(data);
     },
     onError: (error) => {
-      toast({
-        title: "Ошибка обновления",
-        description: "Не удалось сохранить изменения в базе данных.",
-        variant: "destructive",
-      });
+      console.error("Update error:", error);
+      sonnerToast.error(`Ошибка обновления: ${error instanceof Error ? error.message : 'Неизвестная ошибка'}`);
       // Rollback local states if needed
       if (task) {
         setNewTitle(task.title || "");
@@ -178,6 +194,9 @@ export function TaskDetailsModal({
   });
 
   const handleUpdate = (updates: Partial<Task>) => {
+    if (typeof task?.id === 'string' && task.id.startsWith('temp-')) {
+      return;
+    }
     updateTaskMutation.mutate(updates);
   };
 
@@ -226,10 +245,10 @@ export function TaskDetailsModal({
         });
       }
       setCommentAttachments(newAttachments);
-      toast.success("Файлы прикреплены к комментарию");
+      sonnerToast.success("Файлы прикреплены к комментарию");
     } catch (error) {
       console.error("Comment file upload error:", error);
-      toast.error("Ошибка при загрузке файлов для комментария");
+      sonnerToast.error("Ошибка при загрузке файлов для комментария");
     } finally {
       setIsUploadingCommentFile(false);
     }
@@ -253,7 +272,7 @@ export function TaskDetailsModal({
       setCommentAttachments([]);
       queryClient.invalidateQueries({ queryKey: [`/api/tasks/${task.id}/comments`] });
     } catch (error) {
-      toast.error("Не удалось отправить комментарий");
+      sonnerToast.error("Не удалось отправить комментарий");
     }
   };
 
@@ -270,17 +289,10 @@ export function TaskDetailsModal({
       setLocalSubtasks([...localSubtasks, newSub]);
       setNewSubtaskTitle("");
       
-      queryClient.invalidateQueries({ queryKey: [`/api/tasks/${task.id}/subtasks`] });
-      toast({
-        title: "Подзадача добавлена",
-        description: "Новая подзадача успешно создана.",
-      });
+      queryClient.invalidateQueries({ queryKey: [`/api/tasks/${task?.id}/subtasks`] });
+      sonnerToast.success("Подзадача добавлена");
     } catch (error) {
-      toast({
-        title: "Ошибка",
-        description: "Не удалось создать подзадачу.",
-        variant: "destructive",
-      });
+      sonnerToast.error("Не удалось создать подзадачу");
     }
   };
 
@@ -303,11 +315,7 @@ export function TaskDetailsModal({
     } catch (error) {
       // Revert on error
       setLocalSubtasks(localSubtasks);
-      toast({
-        title: "Ошибка",
-        description: "Не удалось обновить статус подзадачи.",
-        variant: "destructive",
-      });
+      sonnerToast.error("Не удалось обновить статус подзадачи");
     }
   };
 
@@ -318,16 +326,10 @@ export function TaskDetailsModal({
     try {
       await apiRequest("DELETE", `/api/subtasks/${id}`);
       queryClient.invalidateQueries({ queryKey: [`/api/tasks/${task?.id}/subtasks`] });
-      toast({
-        title: "Подзадача удалена",
-      });
+      sonnerToast.success("Подзадача удалена");
     } catch (error) {
       setLocalSubtasks(localSubtasks);
-      toast({
-        title: "Ошибка",
-        description: "Не удалось удалить подзадачу.",
-        variant: "destructive",
-      });
+      sonnerToast.error("Не удалось удалить подзадачу");
     }
   };
 
@@ -389,12 +391,12 @@ export function TaskDetailsModal({
       }
 
       setAttachments(uploadedAttachments);
-      await handleUpdate({ attachments: uploadedAttachments });
+      handleUpdate({ attachments: uploadedAttachments });
       
-      toast.success("Файлы успешно загружены");
+      sonnerToast.success("Файлы успешно загружены");
     } catch (error) {
       console.error("Upload error:", error);
-      toast.error("Ошибка при загрузке файлов");
+      sonnerToast.error("Ошибка при загрузке файлов");
     } finally {
       setIsUploading(false);
       setUploadProgress(0);
@@ -423,6 +425,10 @@ export function TaskDetailsModal({
     return (
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent className="max-w-5xl p-0 overflow-hidden bg-background border-none shadow-2xl h-[90vh] flex items-center justify-center">
+          <DialogHeader className="sr-only">
+            <DialogTitle>Загрузка задачи</DialogTitle>
+            <DialogDescription>Пожалуйста, подождите, пока загружаются детали задачи.</DialogDescription>
+          </DialogHeader>
           <div className="flex flex-col items-center gap-4">
             <Skeleton className="h-12 w-12 rounded-full" />
             <div className="space-y-2">
@@ -484,11 +490,17 @@ export function TaskDetailsModal({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent 
-        className="fixed left-[50%] top-[50%] translate-x-[-50%] translate-y-[-50%] max-w-[1200px] w-[95vw] h-[90vh] max-h-[900px] flex flex-col p-0 gap-0 overflow-hidden bg-background border-none shadow-2xl font-body"
+        className="fixed left-[50%] top-[50%] translate-x-[-50%] translate-y-[-50%] max-w-[1200px] w-[95vw] h-[90vh] max-h-[900px] flex flex-col p-0 gap-0 overflow-hidden bg-background border-none shadow-2xl font-sans"
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
       >
+        <DialogHeader className="sr-only">
+          <DialogTitle>{safeTask.title || "Детали задачи"}</DialogTitle>
+          <DialogDescription>
+            Просмотр и редактирование деталей задачи {safeTask.title}.
+          </DialogDescription>
+        </DialogHeader>
         {/* Drag and Drop Overlay */}
         {isDragging && (
           <div className="absolute inset-0 z-50 bg-primary/10 backdrop-blur-[2px] border-2 border-dashed border-primary flex flex-col items-center justify-center pointer-events-none transition-all animate-in fade-in">
@@ -929,15 +941,65 @@ export function TaskDetailsModal({
                     <SelectItem value="Готово">Готово</SelectItem>
                   </SelectContent>
                 </Select>
-                <Button variant="outline" size="icon" className="h-9 w-9 rounded-lg bg-emerald-500/10 text-emerald-600 border-emerald-500/20 hover:bg-emerald-500/20">
-                  <Check className="w-4 h-4 stroke-[3]" />
-                </Button>
               </div>
 
               {/* Attributes Blocks */}
               <div className="space-y-1">
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <div 
+                      className="flex items-center gap-2.5 p-2 rounded-lg bg-secondary/15 hover:bg-secondary/25 transition-colors group cursor-pointer border border-transparent hover:border-border/20"
+                    >
+                      <User className="w-3.5 h-3.5 text-muted-foreground/60" />
+                      <span className="text-[12px] font-bold text-foreground/70 flex-1">Исполнитель</span>
+                      <div className="flex items-center gap-1.5">
+                        {safeTask.assignee?.avatar && (
+                          <Avatar className="w-5 h-5 border border-background">
+                            <AvatarImage src={safeTask.assignee.avatar} />
+                            <AvatarFallback className="text-[8px]">{safeTask.assignee.name.substring(0, 2).toUpperCase()}</AvatarFallback>
+                          </Avatar>
+                        )}
+                        <span className="text-[10px] font-bold text-muted-foreground/50">{safeTask.assignee?.name || "Не назначен"}</span>
+                      </div>
+                    </div>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-64 p-0 rounded-xl overflow-hidden" align="end">
+                    <Command>
+                      <CommandInput placeholder="Поиск исполнителя..." className="h-9 border-none focus:ring-0" />
+                      <CommandList className="max-h-64">
+                        <CommandEmpty>Пользователь не найден</CommandEmpty>
+                        <CommandGroup>
+                          {users.map((user: any) => {
+                            const displayName = user.firstName ? `${user.firstName} ${user.lastName || ''}` : user.username;
+                            const isSelected = safeTask.assignee?.name === displayName;
+                            return (
+                              <CommandItem
+                                key={user.id}
+                                value={displayName}
+                                onSelect={() => {
+                                  handleUpdate({ 
+                                    assignee: { name: displayName, avatar: user.avatar },
+                                    assigneeId: user.id 
+                                  } as any);
+                                }}
+                                className="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-secondary/50"
+                              >
+                                <Avatar className="w-6 h-6">
+                                  <AvatarImage src={user.avatar} />
+                                  <AvatarFallback>{displayName.substring(0, 2).toUpperCase()}</AvatarFallback>
+                                </Avatar>
+                                <span className="text-sm font-medium flex-1">{displayName}</span>
+                                {isSelected && <Check className="w-4 h-4 text-primary" />}
+                              </CommandItem>
+                            );
+                          })}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
+
                 {[
-                  { icon: User, label: "Исполнитель", value: safeTask.assignee?.name || "Не назначен", avatar: safeTask.assignee?.avatar },
                   { 
                     icon: Eye, 
                     label: "Наблюдатели", 

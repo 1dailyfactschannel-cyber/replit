@@ -54,37 +54,18 @@ const TaskCard = React.memo(({ task, index, onClick }: { task: any, index: numbe
           {...provided.dragHandleProps}
           onClick={() => onClick(task)}
           className={cn(
-            "bg-card border border-border/50 p-4 rounded-xl shadow-sm hover:shadow-md hover:border-primary/30 transition-[box-shadow,border-color,background-color] group/task relative overflow-hidden",
+            "bg-card border border-border/50 p-4 rounded-xl shadow-sm hover:shadow-md hover:border-primary/30 transition-[box-shadow,border-color,background-color] group/task relative overflow-hidden font-sans",
             snapshot.isDragging ? "shadow-xl ring-2 ring-primary/20 rotate-1 z-50" : ""
           )}
         >
           {/* Bottom border indicator for priority */}
           <div className={cn(
-            "absolute bottom-0 left-0 right-0 h-1",
-            task.priority === "high" || task.priority === "critical" ? "bg-rose-500" :
-            task.priority === "medium" ? "bg-amber-500" : "bg-emerald-500"
+            "absolute inset-x-[-1px] bottom-[-1px] h-2 rounded-b-xl border-b-4",
+            task.priority === "high" || task.priority === "critical" ? "border-rose-500" :
+            task.priority === "medium" ? "border-amber-500" : "border-emerald-500"
           )} />
           
-          <div className="flex items-start justify-between gap-2 mb-2">
-            <Badge variant="outline" className={cn(
-              "text-[10px] font-bold uppercase px-1.5 h-5 border-none",
-              task.priority === "high" || task.priority === "critical" ? "bg-rose-500/10 text-rose-600" :
-              task.priority === "medium" ? "bg-amber-500/10 text-amber-600" : "bg-emerald-500/10 text-emerald-600"
-            )}>
-              {task.priority === "low" ? "Низкий" : 
-               task.priority === "medium" ? "Средний" : 
-               task.priority === "high" ? "Высокий" : "Критич."}
-            </Badge>
-            <Badge variant="secondary" className="text-[10px] font-bold uppercase px-1.5 h-5">
-              {task.type === "bug" ? "Баг" : 
-               task.type === "feature" ? "Фича" : 
-               task.type === "story" ? "История" : "Задача"}
-            </Badge>
-          </div>
           <h4 className="text-sm font-semibold mb-3 leading-snug text-foreground/90">{task.title}</h4>
-          {task.description && (
-            <p className="text-xs text-muted-foreground/80 line-clamp-2 mb-3">{task.description}</p>
-          )}
           <div className="flex items-center justify-between">
             <div className="flex -space-x-2">
               {task.assignee ? (
@@ -113,6 +94,7 @@ const TaskCard = React.memo(({ task, index, onClick }: { task: any, index: numbe
 });
 
 export default function Projects() {
+  const { data: user } = useQuery<any>({ queryKey: ["/api/user"] });
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
   const [activeBoardId, setActiveBoardId] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
@@ -320,7 +302,15 @@ export default function Projects() {
 
   const createTaskMutation = useMutation({
     mutationFn: async (task: any) => {
-      const res = await apiRequest("POST", `/api/boards/${activeBoard?.id}/tasks`, task);
+      // Подготавливаем данные для отправки, включая информацию об исполнителе для корректного отображения
+      const taskData = {
+        ...task,
+        assignee: user ? { 
+          name: user.firstName ? `${user.firstName} ${user.lastName || ''}` : user.username,
+          avatar: user.avatar 
+        } : undefined
+      };
+      const res = await apiRequest("POST", `/api/boards/${activeBoard?.id}/tasks`, taskData);
       return res.json();
     },
     onMutate: async (newTaskData) => {
@@ -474,11 +464,21 @@ export default function Projects() {
     if (columnName) {
       const column = columns.find(c => c.name === columnName);
       if (column) {
-        setNewTask(prev => ({ ...prev, columnId: column.id }));
+        setNewTask(prev => ({ 
+          ...prev, 
+          columnId: column.id, 
+          status: columnName,
+          assigneeId: user?.id 
+        }));
       }
     } else {
       // По умолчанию первая колонка
-      setNewTask(prev => ({ ...prev, columnId: columns[0]?.id }));
+      setNewTask(prev => ({ 
+        ...prev, 
+        columnId: columns[0]?.id, 
+        status: columns[0]?.name || "В планах",
+        assigneeId: user?.id
+      }));
     }
     
     setIsCreateTaskOpen(true);
@@ -490,9 +490,14 @@ export default function Projects() {
   };
 
   const onTaskUpdate = (updatedTask: any) => {
-    updateTaskMutation.mutate({
-      id: updatedTask.id.toString(),
-      data: updatedTask
+    // Задача уже обновлена на сервере через TaskDetailsModal.
+    // Обновляем локальный кэш, чтобы UI сразу отобразил изменения.
+    queryClient.setQueryData(["/api/boards", activeBoard?.id, "full"], (old: any) => {
+      if (!old || !old.tasks) return old;
+      return {
+        ...old,
+        tasks: old.tasks.map((t: any) => t.id === updatedTask.id ? updatedTask : t)
+      };
     });
   };
 
@@ -676,6 +681,7 @@ export default function Projects() {
                                 <DialogContent>
                                   <DialogHeader>
                                     <DialogTitle>Переименовать доску</DialogTitle>
+                                    <DialogDescription>Введите новое название для этой доски.</DialogDescription>
                                   </DialogHeader>
                                   <div className="py-4">
                                     <Input 
@@ -721,6 +727,7 @@ export default function Projects() {
                         <DialogContent>
                           <DialogHeader>
                             <DialogTitle>Создать новую доску</DialogTitle>
+                            <DialogDescription>Укажите название для новой доски в этом проекте.</DialogDescription>
                           </DialogHeader>
                           <div className="py-4">
                             <Input 
@@ -789,10 +796,10 @@ export default function Projects() {
                    <span className="hidden sm:inline">Добавить задачу</span>
                  </Button>
                  <DialogContent>
-                   <DialogHeader>
-                     <DialogTitle>Создать новую задачу</DialogTitle>
-                     <DialogDescription>Добавьте детали задачи для текущей доски.</DialogDescription>
-                   </DialogHeader>
+                    <DialogHeader>
+                      <DialogTitle>Создать новую задачу</DialogTitle>
+                      <DialogDescription>Введите название задачи для добавления на доску.</DialogDescription>
+                    </DialogHeader>
                    <div className="space-y-4 py-4">
                      <div className="space-y-2">
                        <Label htmlFor="task-title">Название задачи</Label>
@@ -801,52 +808,12 @@ export default function Projects() {
                          placeholder="Что нужно сделать?" 
                          value={newTask.title}
                          onChange={(e) => setNewTask({ ...newTask, title: e.target.value })}
+                         onKeyDown={(e) => {
+                           if (e.key === 'Enter' && newTask.title.trim()) {
+                             submitCreateTask();
+                           }
+                         }}
                        />
-                     </div>
-                     <div className="space-y-2">
-                       <Label htmlFor="task-desc">Описание</Label>
-                       <Input 
-                         id="task-desc" 
-                         placeholder="Добавьте описание (необязательно)" 
-                         value={newTask.description}
-                         onChange={(e) => setNewTask({ ...newTask, description: e.target.value })}
-                       />
-                     </div>
-                     <div className="grid grid-cols-2 gap-4">
-                       <div className="space-y-2">
-                         <Label>Приоритет</Label>
-                         <Select 
-                           value={newTask.priority} 
-                           onValueChange={(val) => setNewTask({ ...newTask, priority: val })}
-                         >
-                           <SelectTrigger>
-                             <SelectValue />
-                           </SelectTrigger>
-                           <SelectContent>
-                             <SelectItem value="low">Низкий</SelectItem>
-                             <SelectItem value="medium">Средний</SelectItem>
-                             <SelectItem value="high">Высокий</SelectItem>
-                             <SelectItem value="critical">Критический</SelectItem>
-                           </SelectContent>
-                         </Select>
-                       </div>
-                       <div className="space-y-2">
-                         <Label>Тип</Label>
-                         <Select 
-                           value={newTask.type} 
-                           onValueChange={(val) => setNewTask({ ...newTask, type: val })}
-                         >
-                           <SelectTrigger>
-                             <SelectValue />
-                           </SelectTrigger>
-                           <SelectContent>
-                             <SelectItem value="task">Задача</SelectItem>
-                             <SelectItem value="bug">Баг</SelectItem>
-                             <SelectItem value="feature">Фича</SelectItem>
-                             <SelectItem value="story">История</SelectItem>
-                           </SelectContent>
-                         </Select>
-                       </div>
                      </div>
                    </div>
                    <DialogFooter>
@@ -946,49 +913,6 @@ export default function Projects() {
         />
       )}
 
-      {/* Edit Project Dialog */}
-      <Dialog open={!!editingProject} onOpenChange={(open) => !open && setEditingProject(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Редактировать проект</DialogTitle>
-            <DialogDescription>Измените параметры и приоритет проекта.</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="edit-project-name">Название проекта</Label>
-              <Input 
-                id="edit-project-name" 
-                value={editingProject?.name || ""}
-                onChange={(e) => setEditingProject(prev => prev ? { ...prev, name: e.target.value } : null)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Приоритет проекта</Label>
-              <Select 
-                value={editingProject?.priority || "Средний"} 
-                onValueChange={(val) => setEditingProject(prev => prev ? { ...prev, priority: val } : null)}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Низкий">Низкий</SelectItem>
-                  <SelectItem value="Средний">Средний</SelectItem>
-                  <SelectItem value="Высокий">Высокий</SelectItem>
-                  <SelectItem value="Критический">Критический</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setEditingProject(null)}>Отмена</Button>
-            <Button onClick={handleUpdateProject} disabled={updateProjectMutation.isPending || !editingProject?.name}>
-              {updateProjectMutation.isPending && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
-              Сохранить изменения
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
       {/* Project Edit Dialog */}
       <Dialog open={!!editingProject} onOpenChange={(open) => !open && setEditingProject(null)}>
         <DialogContent>

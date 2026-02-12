@@ -50,6 +50,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
@@ -479,6 +480,7 @@ export function Layout({ children, className }: { children: React.ReactNode, cla
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
             <DialogTitle>Установить статус</DialogTitle>
+            <DialogDescription>Обновите ваш рабочий статус для коллег.</DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
             <div className="space-y-2">

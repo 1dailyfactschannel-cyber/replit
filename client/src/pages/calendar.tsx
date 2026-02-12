@@ -6,7 +6,7 @@ import { useState, useMemo } from "react";
 import { ChevronLeft, ChevronRight, Clock, MapPin, Video, Mic, Plus, Users as UsersIcon, X, PhoneCall, Info } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -328,6 +328,7 @@ export default function CalendarPage() {
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
             <DialogTitle>Новое событие</DialogTitle>
+            <DialogDescription>Добавьте новое событие в ваш календарь.</DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
             <div className="grid gap-2">
@@ -412,6 +413,10 @@ export default function CalendarPage() {
       {/* Event Details Dialog */}
       <Dialog open={!!selectedEvent} onOpenChange={() => setSelectedEvent(null)}>
         <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader className="sr-only">
+            <DialogTitle>Детали события</DialogTitle>
+            <DialogDescription>Просмотр информации о выбранном событии.</DialogDescription>
+          </DialogHeader>
           {selectedEvent && (
             <>
               <DialogHeader>

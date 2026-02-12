@@ -943,6 +943,10 @@ export default function ChatPage() {
                             </Button>
                           </DialogTrigger>
                           <DialogContent className="sm:max-w-[425px]">
+                            <DialogHeader className="sr-only">
+                              <DialogTitle>Информация и настройки чата</DialogTitle>
+                              <DialogDescription>Управление настройками и просмотр информации о текущем чате.</DialogDescription>
+                            </DialogHeader>
                             <Tabs defaultValue="info" className="w-full">
                               <TabsList className="grid w-full grid-cols-2">
                                 <TabsTrigger value="info">Информация</TabsTrigger>
@@ -952,6 +956,7 @@ export default function ChatPage() {
                               <TabsContent value="info">
                                 <DialogHeader>
                                   <DialogTitle>Информация о {activeChat.type === "group" ? "группе" : "собеседнике"}</DialogTitle>
+                                  <DialogDescription>Просмотрите детальную информацию о чате и его участниках.</DialogDescription>
                                 </DialogHeader>
                                 <div className="py-6 flex flex-col items-center">
                                    <Avatar className={cn("w-24 h-24 mb-4 shadow-lg", activeChat.type === "group" && "rounded-2xl")}>

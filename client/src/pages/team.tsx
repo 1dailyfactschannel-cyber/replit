@@ -19,6 +19,7 @@ import {
   DialogContent, 
   DialogHeader, 
   DialogTitle,
+  DialogDescription,
   DialogFooter,
   DialogTrigger,
 } from "@/components/ui/dialog";
@@ -249,6 +250,7 @@ export default function EmployeesPage() {
                 <DialogContent>
                   <DialogHeader>
                     <DialogTitle>Создать новый отдел</DialogTitle>
+                    <DialogDescription>Укажите название нового отдела для управления командой.</DialogDescription>
                   </DialogHeader>
                   <div className="space-y-4 py-4">
                     <div className="space-y-2">
@@ -384,7 +386,7 @@ export default function EmployeesPage() {
                 </Avatar>
                 <div>
                   <DialogTitle className="text-xl">{selectedEmployee?.name}</DialogTitle>
-                  <p className="text-sm text-muted-foreground">{selectedEmployee?.position}</p>
+                  <DialogDescription className="text-sm text-muted-foreground">{selectedEmployee?.position}</DialogDescription>
                 </div>
               </div>
             </DialogHeader>
