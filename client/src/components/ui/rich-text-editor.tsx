@@ -116,7 +116,7 @@ const MenuBar = ({ editor }: { editor: any }) => {
   );
 };
 
-export function RichTextEditor({ content, onChange, placeholder }: RichTextEditorProps) {
+export function RichTextEditor({ content, onChange, onBlur, placeholder }: RichTextEditorProps) {
   const editor = useEditor({
     extensions: [
       StarterKit,
