@@ -18,6 +18,7 @@ import {
 import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { PageLoadingAnimation, SectionLoadingSpinner } from "@/components/PageLoadingAnimation";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
@@ -43,8 +44,76 @@ import {
 import { toast } from "sonner";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useDebounce } from "@/hooks/useDebounce";
 
-const TaskCard = React.memo(({ task, index, onClick }: { task: any, index: number, onClick: (task: any) => void }) => {
+// Loading animation components - replaced skeletons with smooth animations
+const KanbanLoading = () => (
+  <div className="flex gap-6 items-start h-full px-6 pb-6">
+    {[1, 2, 3, 4].map((col) => (
+      <div key={col} className="w-80 shrink-0 flex flex-col gap-4">
+        <SectionLoadingSpinner text="" />
+      </div>
+    ))}
+  </div>
+);
+
+const ProjectListLoading = () => (
+  <div className="p-4">
+    <SectionLoadingSpinner text="Загрузка проектов..." />
+  </div>
+);
+
+// Function to determine column color based on column name
+const getColumnColor = (columnName: string): { bg: string; text: string; border: string; badge: string } => {
+  const name = columnName.toLowerCase();
+  
+  if (name.includes('сделать') || name.includes('план') || name.includes('todo') || name.includes('to do') || name.includes('backlog')) {
+    return { 
+      bg: 'bg-blue-50', 
+      text: 'text-blue-700', 
+      border: 'border-blue-500',
+      badge: 'bg-blue-100 text-blue-700'
+    };
+  } else if (name.includes('работ') || name.includes('progress') || name.includes('doing')) {
+    return { 
+      bg: 'bg-orange-50', 
+      text: 'text-orange-700', 
+      border: 'border-orange-500',
+      badge: 'bg-orange-100 text-orange-700'
+    };
+  } else if (name.includes('проверк') || name.includes('review') || name.includes('test')) {
+    return { 
+      bg: 'bg-red-50', 
+      text: 'text-red-700', 
+      border: 'border-red-500',
+      badge: 'bg-red-100 text-red-700'
+    };
+  } else if (name.includes('готово') || name.includes('done') || name.includes('complete') || name.includes('finished')) {
+    return { 
+      bg: 'bg-emerald-50', 
+      text: 'text-emerald-700', 
+      border: 'border-emerald-500',
+      badge: 'bg-emerald-100 text-emerald-700'
+    };
+  }
+  
+  // Default gray color
+  return { 
+    bg: 'bg-gray-50', 
+    text: 'text-gray-700', 
+    border: 'border-gray-500',
+    badge: 'bg-gray-100 text-gray-700'
+  };
+};
+
+// Memoized TaskCard with custom comparison for performance
+const TaskCard = React.memo(({ task, index, onClick, columnColor }: { task: any, index: number, onClick: (task: any) => void, columnColor: { bg: string; text: string; border: string; badge: string } }) => {
+  // Preload avatar image for better perceived performance
+  const avatarSrc = task.assignee?.avatar;
+  
+  // Extract task number from ID (show last 4-6 chars) or use task.number if available
+  const taskNumber = task.number || (task.id ? `#${task.id.toString().slice(-4)}` : '#0000');
+  
   return (
     <Draggable key={task.id} draggableId={task.id.toString()} index={index}>
       {(provided, snapshot) => (
@@ -58,19 +127,27 @@ const TaskCard = React.memo(({ task, index, onClick }: { task: any, index: numbe
             snapshot.isDragging ? "shadow-xl ring-2 ring-primary/20 rotate-1 z-50" : ""
           )}
         >
-          {/* Bottom border indicator for priority */}
+          {/* Bottom border indicator for column status */}
           <div className={cn(
-            "absolute inset-x-[-1px] bottom-[-1px] h-2 rounded-b-xl border-b-4",
-            task.priority === "high" || task.priority === "critical" ? "border-rose-500" :
-            task.priority === "medium" ? "border-amber-500" : "border-emerald-500"
+            "absolute inset-x-0 bottom-0 h-1.5 rounded-b-xl",
+            columnColor.border.replace('border-', 'bg-')
           )} />
           
-          <h4 className="text-sm font-semibold mb-3 leading-snug text-foreground/90">{task.title}</h4>
+          {/* Task Number */}
+          <div className="text-xs text-muted-foreground mb-1 font-mono">{taskNumber}</div>
+          
+          <h4 className="text-sm font-normal mb-3 leading-snug text-foreground/90 line-clamp-2">{task.title}</h4>
           <div className="flex items-center justify-between">
             <div className="flex -space-x-2">
               {task.assignee ? (
                 <Avatar className="w-6 h-6 border-2 border-background">
-                  {task.assignee.avatar && <AvatarImage src={task.assignee.avatar} />}
+                  {avatarSrc && (
+                    <AvatarImage 
+                      src={avatarSrc} 
+                      loading="lazy"
+                      decoding="async"
+                    />
+                  )}
                   <AvatarFallback className="text-[8px]">
                     {task.assignee.name.substring(0, 2).toUpperCase()}
                   </AvatarFallback>
@@ -91,7 +168,186 @@ const TaskCard = React.memo(({ task, index, onClick }: { task: any, index: numbe
       )}
     </Draggable>
   );
+}, (prevProps, nextProps) => {
+  // Custom comparison: only re-render if task data actually changed
+  return (
+    prevProps.task.id === nextProps.task.id &&
+    prevProps.task.title === nextProps.task.title &&
+    prevProps.task.priority === nextProps.task.priority &&
+    prevProps.task.assignee?.id === nextProps.task.assignee?.id &&
+    prevProps.columnColor.border === nextProps.columnColor.border &&
+    prevProps.index === nextProps.index
+  );
 });
+
+TaskCard.displayName = 'TaskCard';
+
+// Memoized Kanban Column component
+interface KanbanColumnProps {
+  column: string;
+  tasks: any[];
+  onCreateTask: (column: string) => void;
+  onTaskClick: (task: any) => void;
+}
+
+const KanbanColumn = React.memo(({ column, tasks, onCreateTask, onTaskClick }: KanbanColumnProps) => {
+  const columnColor = getColumnColor(column);
+  
+  return (
+    <div className="w-80 shrink-0 flex flex-col gap-4">
+      {/* Column Header with color */}
+      <div className="flex flex-col gap-2">
+        <div className="flex items-center justify-between px-1">
+          <div className="flex items-center gap-2 group/col-title w-full">
+            <h3 className={cn("font-bold text-sm truncate max-w-[150px]", columnColor.text)}>{column}</h3>
+            <Badge className={cn("rounded-full px-2 py-0 h-5 text-[10px] font-bold shrink-0 border-0", columnColor.badge)}>
+              {tasks.length}
+            </Badge>
+            
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              className="w-6 h-6 ml-auto text-muted-foreground/50 hover:text-primary hover:bg-primary/10 transition-colors"
+              onClick={() => onCreateTask(column)}
+            >
+              <Plus className="w-3.5 h-3.5" />
+            </Button>
+          </div>
+        </div>
+        {/* Colored underline for column header */}
+        <div className={cn("h-0.5 w-full rounded-full", columnColor.border.replace('border-', 'bg-'))} />
+      </div>
+
+      <Droppable droppableId={column} type="task">
+        {(taskProvided, snapshot) => (
+          <div
+            {...taskProvided.droppableProps}
+            ref={taskProvided.innerRef}
+            className={cn(
+              "flex flex-col gap-3 min-h-[150px] rounded-xl p-1",
+              snapshot.isDraggingOver ? "bg-primary/5 ring-1 ring-primary/20" : ""
+            )}
+          >
+            {tasks.map((task: any, index: number) => (
+              <TaskCard 
+                key={task.id} 
+                task={task} 
+                index={index} 
+                onClick={onTaskClick}
+                columnColor={columnColor}
+              />
+            ))}
+            {taskProvided.placeholder}
+          </div>
+        )}
+      </Droppable>
+    </div>
+  );
+}, (prevProps, nextProps) => {
+  // Only re-render if column name, task count, or tasks actually changed
+  if (prevProps.column !== nextProps.column) return false;
+  if (prevProps.tasks.length !== nextProps.tasks.length) return false;
+  
+  // Check if any task ID or title changed
+  for (let i = 0; i < prevProps.tasks.length; i++) {
+    if (prevProps.tasks[i]?.id !== nextProps.tasks[i]?.id) return false;
+    if (prevProps.tasks[i]?.title !== nextProps.tasks[i]?.title) return false;
+  }
+  
+  return true;
+});
+
+KanbanColumn.displayName = 'KanbanColumn';
+
+// Memoized Project Item component
+interface ProjectItemProps {
+  project: any;
+  isActive: boolean;
+  isCollapsed: boolean;
+  onSelect: (projectId: string) => void;
+  onToggleCollapse: (projectId: string, e: React.MouseEvent) => void;
+  onEdit: (project: any, e: React.MouseEvent) => void;
+}
+
+const ProjectItem = React.memo(({ 
+  project, 
+  isActive, 
+  isCollapsed, 
+  onSelect, 
+  onToggleCollapse, 
+  onEdit 
+}: ProjectItemProps) => {
+  return (
+    <div className="space-y-1">
+      <div
+        onClick={() => onSelect(project.id)}
+        className={cn(
+          "w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-all group/project relative pr-10 cursor-pointer",
+          isActive
+            ? "bg-primary/10 text-primary"
+            : "text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
+        )}
+      >
+        <div 
+          className="flex flex-col flex-1 min-w-0"
+          onClick={(e) => {
+            if (isActive) {
+              onToggleCollapse(project.id, e);
+            }
+          }}
+        >
+          <div className="flex items-center gap-2">
+            <ChevronRight className={cn(
+              "w-3.5 h-3.5 shrink-0 transition-transform duration-200 opacity-50",
+              !isCollapsed && "rotate-90"
+            )} />
+            <div className={cn(
+              "w-2 h-2 rounded-full shrink-0 shadow-[0_0_8px_rgba(0,0,0,0.1)]",
+              project.priority === "Высокий" || project.priority === "Критический" ? "bg-rose-500 shadow-rose-500/40" :
+              project.priority === "Средний" ? "bg-amber-500 shadow-amber-500/40" :
+              "bg-emerald-500 shadow-emerald-500/40"
+            )} />
+            <span className="truncate text-left">{project.name}</span>
+          </div>
+          
+          <div className="mt-1.5 ml-5.5 px-2">
+            <div className="flex items-center justify-between text-[10px] text-muted-foreground mb-1">
+              <span>Прогресс</span>
+              <span>{project.progress || 0}%</span>
+            </div>
+            <div className="h-1 w-full bg-secondary rounded-full overflow-hidden">
+              <div 
+                className="h-full bg-primary transition-all duration-500" 
+                style={{ width: `${project.progress || 0}%` }}
+              />
+            </div>
+          </div>
+        </div>
+
+        <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1 opacity-0 group-hover/project:opacity-100 transition-opacity">
+          <Button 
+            variant="ghost" 
+            size="icon" 
+            className="h-6 w-6 text-muted-foreground hover:text-foreground"
+            onClick={(e) => onEdit(project, e)}
+          >
+            <Pencil className="w-3 h-3" />
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}, (prevProps, nextProps) => {
+  return (
+    prevProps.project.id === nextProps.project.id &&
+    prevProps.project.name === nextProps.project.name &&
+    prevProps.project.progress === nextProps.project.progress &&
+    prevProps.isActive === nextProps.isActive &&
+    prevProps.isCollapsed === nextProps.isCollapsed
+  );
+});
+
+ProjectItem.displayName = 'ProjectItem';
 
 export default function Projects() {
   const { data: user } = useQuery<any>({ queryKey: ["/api/user"] });
@@ -104,12 +360,28 @@ export default function Projects() {
   const [newBoardName, setNewBoardName] = useState("");
   const [editingColumn, setEditingColumn] = useState<{ originalName: string, currentName: string } | null>(null);
   const [collapsedProjects, setCollapsedProjects] = useState<Record<string, boolean>>({});
+  
+  // Search with debounce for better performance
+  const [projectSearchQuery, setProjectSearchQuery] = useState("");
+  const debouncedProjectSearch = useDebounce(projectSearchQuery, 300);
 
-  // Queries
+  // Queries with optimized caching
   const { data: projects = [], isLoading: isLoadingProjects } = useQuery<any[]>({
     queryKey: ["/api/projects"],
-    staleTime: 1000 * 60 * 5, // 5 minutes
+    staleTime: 1000 * 60 * 10, // 10 minutes - projects change rarely
+    gcTime: 1000 * 60 * 30, // Keep in cache for 30 minutes
+    placeholderData: [], // Use empty array while loading to prevent flicker
   });
+
+  // Filter projects based on debounced search query
+  const filteredProjects = useMemo(() => {
+    if (!debouncedProjectSearch.trim()) return projects;
+    const query = debouncedProjectSearch.toLowerCase();
+    return projects.filter(project => 
+      project.name?.toLowerCase().includes(query) ||
+      project.description?.toLowerCase().includes(query)
+    );
+  }, [projects, debouncedProjectSearch]);
 
   const activeProject = useMemo(() => 
     projects.find(p => p.id === activeProjectId) || projects[0],
@@ -119,7 +391,9 @@ export default function Projects() {
   const { data: boards = [], isLoading: isLoadingBoards } = useQuery<any[]>({
     queryKey: ["/api/projects", activeProject?.id, "boards"],
     enabled: !!activeProject?.id,
-    staleTime: 1000 * 60 * 5, // 5 minutes
+    staleTime: 1000 * 60 * 10, // 10 minutes
+    gcTime: 1000 * 60 * 30,
+    placeholderData: [],
   });
 
   const activeBoard = useMemo(() => 
@@ -288,11 +562,17 @@ export default function Projects() {
   const { data: boardData, isLoading: isLoadingBoard } = useQuery<{ columns: any[], tasks: any[] }>({
     queryKey: ["/api/boards", activeBoard?.id, "full"],
     queryFn: async () => {
+      console.log("[Frontend] Fetching board data for:", activeBoard?.id);
       const res = await apiRequest("GET", `/api/boards/${activeBoard?.id}/full`);
-      return res.json();
+      const data = await res.json();
+      console.log("[Frontend] Board data received:", { columns: data.columns?.length, tasks: data.tasks?.length });
+      console.log("[Frontend] Tasks from server:", data.tasks?.map((t: any) => ({ id: t.id, title: t.title, columnId: t.columnId })));
+      return data;
     },
     enabled: !!activeBoard?.id,
     staleTime: 1000 * 60 * 5, // 5 минут кэша
+    gcTime: 1000 * 60 * 15, // Keep data for 15 minutes
+    placeholderData: (previousData) => previousData, // Use previous data while loading new
   });
 
   const columns = boardData?.columns || [];
@@ -302,6 +582,7 @@ export default function Projects() {
 
   const createTaskMutation = useMutation({
     mutationFn: async (task: any) => {
+      console.log("[Frontend] Creating task:", task);
       // Подготавливаем данные для отправки, включая информацию об исполнителе для корректного отображения
       const taskData = {
         ...task,
@@ -310,8 +591,11 @@ export default function Projects() {
           avatar: user.avatar 
         } : undefined
       };
+      console.log("[Frontend] Sending task data:", taskData);
       const res = await apiRequest("POST", `/api/boards/${activeBoard?.id}/tasks`, taskData);
-      return res.json();
+      const createdTask = await res.json();
+      console.log("[Frontend] Task created response:", createdTask);
+      return createdTask;
     },
     onMutate: async (newTaskData) => {
       // Мгновенно закрываем окно и очищаем форму
@@ -354,10 +638,12 @@ export default function Projects() {
       }
       toast.error("Не удалось создать задачу");
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
+      console.log("[Frontend] Task created successfully:", data);
       toast.success("Задача успешно создана");
     },
     onSettled: () => {
+      console.log("[Frontend] Invalidating queries for board:", activeBoard?.id);
       // Синхронизируем данные с сервером
       queryClient.invalidateQueries({ queryKey: ["/api/boards", activeBoard?.id, "full"] });
       queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
@@ -441,11 +727,20 @@ export default function Projects() {
   const kanbanData = useMemo(() => {
     if (!columns.length) return {};
     
+    console.log("[Kanban] Building kanbanData:", { columnsCount: columns.length, tasksCount: tasks.length });
+    console.log("[Kanban] All tasks:", tasks.map(t => ({ id: t.id, title: t.title, columnId: t.columnId })));
+    
     const data: Record<string, any[]> = {};
     columns.forEach(col => {
-      data[col.name] = tasks
-        .filter(t => t.columnId === col.id)
-        .sort((a, b) => (a.order || 0) - (b.order || 0));
+      const columnTasks = tasks.filter(t => {
+        const match = t.columnId === col.id;
+        if (!match) {
+          console.log(`[Kanban] Task ${t.id} (${t.title}) columnId=${t.columnId} !== col.id=${col.id}`);
+        }
+        return match;
+      });
+      console.log(`[Kanban] Column "${col.name}" (${col.id}): ${columnTasks.length} tasks`);
+      data[col.name] = columnTasks.sort((a, b) => (a.order || 0) - (b.order || 0));
     });
     return data;
   }, [columns, tasks]);
@@ -457,7 +752,7 @@ export default function Projects() {
     setModalOpen(true);
   }, []);
 
-  const handleCreateTask = (columnName?: string) => {
+  const handleCreateTask = useCallback((columnName?: string) => {
     if (!activeBoard) return;
     
     // Если передано название колонки, находим её ID
@@ -482,14 +777,14 @@ export default function Projects() {
     }
     
     setIsCreateTaskOpen(true);
-  };
+  }, [activeBoard, columns, user?.id]);
 
-  const submitCreateTask = () => {
+  const submitCreateTask = useCallback(() => {
     if (!newTask.title.trim() || !activeBoard) return;
     createTaskMutation.mutate(newTask);
-  };
+  }, [newTask, activeBoard, createTaskMutation]);
 
-  const onTaskUpdate = (updatedTask: any) => {
+  const onTaskUpdate = useCallback((updatedTask: any) => {
     // Задача уже обновлена на сервере через TaskDetailsModal.
     // Обновляем локальный кэш, чтобы UI сразу отобразил изменения.
     queryClient.setQueryData(["/api/boards", activeBoard?.id, "full"], (old: any) => {
@@ -499,12 +794,19 @@ export default function Projects() {
         tasks: old.tasks.map((t: any) => t.id === updatedTask.id ? updatedTask : t)
       };
     });
-  };
+    // Обновляем selectedTask, чтобы модальное окно отображало актуальные данные
+    setSelectedTask((prev: any) => {
+      if (prev && prev.id === updatedTask.id) {
+        return { ...prev, ...updatedTask };
+      }
+      return prev;
+    });
+  }, [activeBoard?.id]);
 
-  const toggleProjectCollapse = (projectId: string, e: React.MouseEvent) => {
+  const toggleProjectCollapse = useCallback((projectId: string, e: React.MouseEvent) => {
     e.stopPropagation();
     setCollapsedProjects(prev => ({ ...prev, [projectId]: !prev[projectId] }));
-  };
+  }, []);
 
   const onDragEnd = (result: DropResult) => {
     const { destination, source, draggableId, type } = result;
@@ -556,86 +858,52 @@ export default function Projects() {
           <div className="p-3">
              <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
-              <Input placeholder="Найти проект..." className="h-9 pl-9 bg-secondary/50 border-none text-xs" />
+              <Input 
+                placeholder="Найти проект..." 
+                className="h-9 pl-9 bg-secondary/50 border-none text-xs"
+                value={projectSearchQuery}
+                onChange={(e) => setProjectSearchQuery(e.target.value)}
+              />
             </div>
           </div>
 
           <ScrollArea className="flex-1">
             <div className="px-2 space-y-1 py-2">
-              {projects.map((project: any) => (
+              {isLoadingProjects && filteredProjects.length === 0 ? (
+                <ProjectListLoading />
+              ) : filteredProjects.length === 0 ? (
+                <div className="p-4 text-center text-xs text-muted-foreground">
+                  {debouncedProjectSearch ? "Проекты не найдены" : "Нет проектов"}
+                </div>
+              ) : (
+                filteredProjects.map((project: any) => (
                 <div key={project.id} className="space-y-1">
-                  <div
-                    onClick={() => {
-                      setActiveProjectId(project.id);
+                  <ProjectItem
+                    project={project}
+                    isActive={activeProject?.id === project.id}
+                    isCollapsed={!!collapsedProjects[project.id]}
+                    onSelect={(projectId) => {
+                      setActiveProjectId(projectId);
                       setActiveBoardId(null);
                     }}
-                    className={cn(
-                      "w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-all group/project relative pr-10 cursor-pointer",
-                      activeProject?.id === project.id
-                        ? "bg-primary/10 text-primary"
-                        : "text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
-                    )}
-                  >
-                    <div 
-                      className="flex flex-col flex-1 min-w-0"
-                      onClick={(e) => {
-                        if (activeProject?.id === project.id) {
-                          toggleProjectCollapse(project.id, e);
-                        }
-                      }}
-                    >
-                      <div className="flex items-center gap-2">
-                        <ChevronRight className={cn(
-                          "w-3.5 h-3.5 shrink-0 transition-transform duration-200 opacity-50",
-                          !collapsedProjects[project.id] && "rotate-90"
-                        )} />
-                        <div className={cn(
-                          "w-2 h-2 rounded-full shrink-0 shadow-[0_0_8px_rgba(0,0,0,0.1)]",
-                          project.priority === "Высокий" || project.priority === "Критический" ? "bg-rose-500 shadow-rose-500/40" :
-                          project.priority === "Средний" ? "bg-amber-500 shadow-amber-500/40" :
-                          "bg-emerald-500 shadow-emerald-500/40"
-                        )} />
-                        <span className="truncate text-left">{project.name}</span>
-                      </div>
-                      
-                      <div className="mt-1.5 ml-5.5 px-2">
-                        <div className="flex items-center justify-between text-[10px] text-muted-foreground mb-1">
-                          <span>Прогресс</span>
-                          <span>{project.progress || 0}%</span>
-                        </div>
-                        <div className="h-1 w-full bg-secondary rounded-full overflow-hidden">
-                          <div 
-                            className="h-full bg-primary transition-all duration-500" 
-                            style={{ width: `${project.progress || 0}%` }}
-                          />
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1 opacity-0 group-hover/project:opacity-100 transition-opacity">
-                      <Button 
-                        variant="ghost" 
-                        size="icon" 
-                        className="h-6 w-6 text-muted-foreground hover:text-foreground"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setEditingProject({ 
-                            id: project.id, 
-                            name: project.name, 
-                            priority: project.priority || "Средний", 
-                            color: project.color || "bg-blue-500"
-                          });
-                        }}
-                      >
-                        <Pencil className="w-3 h-3" />
-                      </Button>
-                    </div>
-                  </div>
+                    onToggleCollapse={toggleProjectCollapse}
+                    onEdit={(proj, e) => {
+                      e.stopPropagation();
+                      setEditingProject({ 
+                        id: proj.id, 
+                        name: proj.name, 
+                        priority: proj.priority || "Средний", 
+                        color: proj.color || "bg-blue-500"
+                      });
+                    }}
+                  />
                   
                   {activeProject?.id === project.id && !collapsedProjects[project.id] && (
                     <div className="ml-4 pl-3 border-l border-border/60 space-y-1 mt-1">
                       {isLoadingBoards ? (
-                        <div className="p-2 text-xs text-muted-foreground">Загрузка...</div>
+                        <div className="p-2">
+                          <SectionLoadingSpinner text="Загрузка досок..." />
+                        </div>
                       ) : (
                         boards.map((board: any) => (
                           <div key={board.id} className="group/board relative">
@@ -749,7 +1017,8 @@ export default function Projects() {
                     </div>
                   )}
                 </div>
-              ))}
+              ))
+              )}
             </div>
           </ScrollArea>
         </div>
@@ -830,58 +1099,25 @@ export default function Projects() {
 
           {/* Kanban Columns */}
           <DragDropContext onDragEnd={onDragEnd}>
-            <div className="flex-1 overflow-auto p-6 custom-scrollbar">
-              {activeBoard ? (
+            <div className="flex-1 overflow-auto custom-scrollbar">
+              {isLoadingBoard && !boardData ? (
+                <KanbanLoading />
+              ) : activeBoard ? (
                 <Droppable droppableId="board" direction="horizontal" type="column">
                   {(provided) => (
                     <div 
                       {...provided.droppableProps}
                       ref={provided.innerRef}
-                      className="flex gap-6 items-start h-full min-w-max"
+                      className="flex gap-6 items-start h-full px-6 pb-6"
                     >
-                      {Object.entries(kanbanData).map(([column, tasks]: [string, any], colIndex) => (
-                        <div key={column} className="w-80 shrink-0 flex flex-col gap-4">
-                          <div className="flex items-center justify-between px-1">
-                            <div className="flex items-center gap-2 group/col-title w-full">
-                              <h3 className="font-bold text-sm text-foreground/80 truncate max-w-[150px]">{column}</h3>
-                              <Badge variant="secondary" className="rounded-full px-2 py-0 h-5 text-[10px] font-bold shrink-0">
-                                {tasks.length}
-                              </Badge>
-                              
-                              <Button 
-                                variant="ghost" 
-                                size="icon" 
-                                className="w-6 h-6 ml-auto text-muted-foreground/50 hover:text-primary hover:bg-primary/10 transition-colors"
-                                onClick={() => handleCreateTask(column)}
-                              >
-                                <Plus className="w-3.5 h-3.5" />
-                              </Button>
-                            </div>
-                          </div>
-
-                          <Droppable droppableId={column} type="task">
-                            {(taskProvided, snapshot) => (
-                              <div
-                                {...taskProvided.droppableProps}
-                                ref={taskProvided.innerRef}
-                                className={cn(
-                                  "flex flex-col gap-3 min-h-[150px] rounded-xl p-1",
-                                  snapshot.isDraggingOver ? "bg-primary/5 ring-1 ring-primary/20" : ""
-                                )}
-                              >
-                                {tasks.map((task: any, index: number) => (
-                                  <TaskCard 
-                                    key={task.id} 
-                                    task={task} 
-                                    index={index} 
-                                    onClick={handleTaskClick} 
-                                  />
-                                ))}
-                                {taskProvided.placeholder}
-                              </div>
-                            )}
-                          </Droppable>
-                        </div>
+                      {Object.entries(kanbanData).map(([column, columnTasks]: [string, any]) => (
+                        <KanbanColumn
+                          key={column}
+                          column={column}
+                          tasks={columnTasks}
+                          onCreateTask={handleCreateTask}
+                          onTaskClick={handleTaskClick}
+                        />
                       ))}
                       {provided.placeholder}
                     </div>

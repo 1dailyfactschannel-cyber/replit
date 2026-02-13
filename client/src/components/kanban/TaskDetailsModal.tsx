@@ -57,9 +57,11 @@ import {
   SignalLow,
   SignalMedium,
   SignalHigh,
+  Save,
 } from "lucide-react";
-import { format } from "date-fns";
+import { format, parseISO } from "date-fns";
 import { ru } from "date-fns/locale";
+import { Calendar as CalendarComponent } from "@/components/ui/calendar";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -89,11 +91,13 @@ export interface Task {
   type: string;
   boardId: string;
   columnId: string;
-  assignee: { name: string; avatar?: string };
-  creator: { name: string; date: string };
+  assignee?: { name: string; avatar?: string };
+  assigneeId?: string;
+  creator: { name: string; date: string; avatar?: string | null };
   dueDate: string;
   labels: string[];
-  subtasks: { id: number; title: string; completed: boolean; dueDate?: string }[];
+  tags?: string[];
+  subtasks: { id: string | number; title: string; completed: boolean; dueDate?: string }[];
   comments: { id: number; author: { name: string; avatar: string }; text: string; date: string; isOwn?: boolean }[];
   history: { id: number; action: string; user: string; date: string }[];
   observers?: { name: string; avatar?: string }[];
@@ -127,6 +131,18 @@ export function TaskDetailsModal({
     queryKey: ["/api/users"],
   });
 
+  // Fetch observers for the task
+  const { data: serverObservers = [] } = useQuery<any[]>({
+    queryKey: [`/api/tasks/${task?.id}/observers`],
+    enabled: !!task?.id && open,
+  });
+
+  // Fetch subtasks for the task
+  const { data: serverSubtasks = [] } = useQuery<any[]>({
+    queryKey: [`/api/tasks/${task?.id}/subtasks`],
+    enabled: !!task?.id && open,
+  });
+
   const [newTitle, setNewTitle] = useState(task?.title || "");
   const [newDescription, setNewDescription] = useState(task?.description || "");
 
@@ -136,16 +152,72 @@ export function TaskDetailsModal({
       setNewTitle(task.title || "");
       setNewDescription(task.description || "");
       setLocalSubtasks(task.subtasks || []);
-      setLocalObservers(task.observers || []);
       setAttachments(task.attachments || []);
     }
   }, [task]);
 
+  // Sync observers with server data
+  useEffect(() => {
+    if (serverObservers && serverObservers.length > 0) {
+      const formattedObservers = serverObservers.map((user: any) => ({
+        name: user.firstName ? `${user.firstName} ${user.lastName || ''}` : user.username,
+        avatar: user.avatar,
+      }));
+      setLocalObservers(formattedObservers);
+    } else if (task?.observers) {
+      setLocalObservers(task.observers);
+    }
+  }, [serverObservers, task]);
+
+  // Sync subtasks - при открытии модалки загружаем с сервера
+  useEffect(() => {
+    if (serverSubtasks && serverSubtasks.length > 0) {
+      setLocalSubtasks(serverSubtasks);
+    } else if (task?.subtasks) {
+      setLocalSubtasks(task.subtasks);
+    }
+  }, [task?.id, open]);
+
+  // Sync labels with task data
+  useEffect(() => {
+    if (task?.labels) {
+      setLocalLabels(task.labels);
+    }
+  }, [task?.labels]);
+
+  // Local state for immediate UI updates
+  const [localAssignee, setLocalAssignee] = useState<{ name: string; avatar?: string } | null>(null);
+  const [localDueDate, setLocalDueDate] = useState<string | null>(null);
+  
+  // Sync local assignee with task data
+  useEffect(() => {
+    if (task?.assignee) {
+      setLocalAssignee(task.assignee);
+    } else {
+      setLocalAssignee(null);
+    }
+  }, [task?.assignee]);
+
+  // Sync local dueDate with task data
+  useEffect(() => {
+    if (task?.dueDate) {
+      setLocalDueDate(task.dueDate);
+    } else {
+      setLocalDueDate(null);
+    }
+  }, [task?.dueDate]);
+
   const [attachments, setAttachments] = useState<{ name: string; url: string; size: string; type: string }[]>(task?.attachments || []);
   const [localObservers, setLocalObservers] = useState<{ name: string; avatar?: string }[]>(task?.observers || []);
-  const [localSubtasks, setLocalSubtasks] = useState<{ id: number; title: string; completed: boolean; dueDate?: string }[]>(task?.subtasks || []);
+  const [localLabels, setLocalLabels] = useState<string[]>(task?.labels || []);
+  const [localSubtasks, setLocalSubtasks] = useState<{ id: string | number; title: string; completed: boolean; isCompleted?: boolean; dueDate?: string; author?: { name: string; avatar?: string } | null; order?: number }[]>(task?.subtasks || []);
   const [newSubtaskTitle, setNewSubtaskTitle] = useState("");
   const [isAddingSubtask, setIsAddingSubtask] = useState(false);
+  
+  // Popover states
+  const [assigneePopoverOpen, setAssigneePopoverOpen] = useState(false);
+  const [datePopoverOpen, setDatePopoverOpen] = useState(false);
+  const [selectedTime, setSelectedTime] = useState<string>("12:00");
   const [localComments, setLocalComments] = useState<any[]>([]);
   const { data: serverComments = [] } = useQuery<any[]>({
     queryKey: [`/api/tasks/${task?.id}/comments`],
@@ -194,14 +266,45 @@ export function TaskDetailsModal({
   });
 
   const handleUpdate = (updates: Partial<Task>) => {
-    if (typeof task?.id === 'string' && task.id.startsWith('temp-')) {
+    console.log("[TaskDetails] handleUpdate called with:", updates);
+    console.log("[TaskDetails] Current task:", task);
+    console.log("[TaskDetails] Task ID:", task?.id, "Type:", typeof task?.id);
+    
+    if (!task?.id) {
+      console.error("[TaskDetails] No task ID available!");
+      sonnerToast.error("Ошибка: ID задачи не найден");
       return;
     }
+    
+    if (typeof task.id === 'string' && task.id.startsWith('temp-')) {
+      console.log("[TaskDetails] Skipping update for temp task");
+      return;
+    }
+    
+    // Immediate UI update for assignee change
+    if (updates.assigneeId && users) {
+      const newAssignee = users.find((u: any) => u.id === updates.assigneeId);
+      if (newAssignee) {
+        const displayName = newAssignee.firstName 
+          ? `${newAssignee.firstName} ${newAssignee.lastName || ''}` 
+          : newAssignee.username;
+        setLocalAssignee({ name: displayName, avatar: newAssignee.avatar });
+      }
+    }
+    
+    // Immediate UI update for dueDate change
+    if (updates.dueDate) {
+      setLocalDueDate(updates.dueDate);
+    }
+    
+    console.log("[TaskDetails] Calling mutation with:", updates);
     updateTaskMutation.mutate(updates);
   };
 
   const handleTitleBlur = () => {
+    console.log("[TaskDetails] Title blur, newTitle:", newTitle, "task.title:", task?.title);
     if (newTitle !== task?.title) {
+      console.log("[TaskDetails] Updating title to:", newTitle);
       handleUpdate({ title: newTitle });
     }
   };
@@ -279,6 +382,34 @@ export function TaskDetailsModal({
   const handleAddSubtask = async () => {
     if (!newSubtaskTitle.trim() || !task?.id) return;
     
+    // Создаем временную подзадачу для мгновенного отображения
+    const tempId = `temp-${Date.now()}`;
+    const tempSubtask = {
+      id: tempId,
+      taskId: task.id,
+      title: newSubtaskTitle,
+      completed: false,
+      isCompleted: false,
+      order: localSubtasks.length,
+      author: { name: "Вы" }, // Показываем как текущего пользователя
+      authorId: null
+    };
+    
+    // Мгновенно обновляем UI
+    const optimisticSubtasks = [...localSubtasks, tempSubtask];
+    setLocalSubtasks(optimisticSubtasks);
+    setNewSubtaskTitle("");
+    setIsAddingSubtask(false);
+    
+    // Update parent component immediately
+    if (onUpdate && task) {
+      onUpdate({
+        ...task,
+        subtasks: optimisticSubtasks
+      });
+    }
+    
+    // Отправляем запрос в фоне
     try {
       const res = await apiRequest("POST", `/api/tasks/${task.id}/subtasks`, {
         title: newSubtaskTitle,
@@ -286,12 +417,27 @@ export function TaskDetailsModal({
       });
       const newSub = await res.json();
       
-      setLocalSubtasks([...localSubtasks, newSub]);
-      setNewSubtaskTitle("");
+      // Заменяем временную подзадачу на реальную
+      setLocalSubtasks(prev => prev.map(s => s.id === tempId ? newSub : s));
       
+      if (onUpdate && task) {
+        onUpdate({
+          ...task,
+          subtasks: task.subtasks ? [...task.subtasks, newSub] : [newSub]
+        });
+      }
+      
+      // Инвалидируем кэш в фоне
       queryClient.invalidateQueries({ queryKey: [`/api/tasks/${task?.id}/subtasks`] });
-      sonnerToast.success("Подзадача добавлена");
     } catch (error) {
+      // Откатываем изменения при ошибке
+      setLocalSubtasks(prev => prev.filter(s => s.id !== tempId));
+      if (onUpdate && task) {
+        onUpdate({
+          ...task,
+          subtasks: task.subtasks || []
+        });
+      }
       sonnerToast.error("Не удалось создать подзадачу");
     }
   };
@@ -303,15 +449,29 @@ export function TaskDetailsModal({
     const newStatus = !subtask.completed;
     
     // Optimistic update
-    setLocalSubtasks(localSubtasks.map(sub => 
+    const updatedSubtasks = localSubtasks.map(sub => 
       sub.id === id ? { ...sub, completed: newStatus } : sub
-    ));
+    );
+    setLocalSubtasks(updatedSubtasks);
 
     try {
       await apiRequest("PATCH", `/api/subtasks/${id}`, {
         isCompleted: newStatus
       });
+      
+      // Update parent component with new subtasks data
+      if (onUpdate && task) {
+        onUpdate({
+          ...task,
+          subtasks: updatedSubtasks
+        });
+      }
+      
+      if (task?.boardId) {
+        queryClient.invalidateQueries({ queryKey: [`/api/boards/${task.boardId}/full`] });
+      }
       queryClient.invalidateQueries({ queryKey: [`/api/tasks/${task?.id}/subtasks`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks", task?.id] });
     } catch (error) {
       // Revert on error
       setLocalSubtasks(localSubtasks);
@@ -320,20 +480,45 @@ export function TaskDetailsModal({
   };
 
   const handleDeleteSubtask = async (id: string | number) => {
-    // Optimistic update
-    setLocalSubtasks(localSubtasks.filter(sub => sub.id !== id));
+    // Optimistic update - мгновенно удаляем из UI
+    const previousSubtasks = localSubtasks;
+    const updatedSubtasks = localSubtasks.filter(sub => sub.id !== id);
+    setLocalSubtasks(updatedSubtasks);
+
+    // Мгновенно обновляем parent
+    if (onUpdate && task) {
+      onUpdate({
+        ...task,
+        subtasks: updatedSubtasks
+      });
+    }
 
     try {
       await apiRequest("DELETE", `/api/subtasks/${id}`);
+      
+      // Только инвалидируем запрос подзадач (без лишних запросов)
       queryClient.invalidateQueries({ queryKey: [`/api/tasks/${task?.id}/subtasks`] });
+      
       sonnerToast.success("Подзадача удалена");
     } catch (error) {
-      setLocalSubtasks(localSubtasks);
+      // Откатываем при ошибке
+      setLocalSubtasks(previousSubtasks);
+      if (onUpdate && task) {
+        onUpdate({
+          ...task,
+          subtasks: previousSubtasks
+        });
+      }
       sonnerToast.error("Не удалось удалить подзадачу");
     }
   };
 
-  const toggleObserver = async (user: { name: string; avatar?: string }) => {
+  const toggleObserver = async (user: { name: string; avatar?: string; userId?: string }) => {
+    if (!task?.id) {
+      sonnerToast.error("Ошибка: ID задачи не найден");
+      return;
+    }
+    
     const isObserver = localObservers.some(o => o.name === user.name);
     let updatedObservers;
     if (isObserver) {
@@ -344,10 +529,61 @@ export function TaskDetailsModal({
     setLocalObservers(updatedObservers);
 
     try {
-      await updateTaskMutation.mutateAsync({ observers: updatedObservers });
+      // Find userId for the observer
+      const targetUser = users.find((u: any) => {
+        const displayName = u.firstName ? `${u.firstName} ${u.lastName || ''}` : u.username;
+        return displayName === user.name;
+      });
+      
+      if (!targetUser) {
+        throw new Error("User not found");
+      }
+
+      // Get current observer user IDs
+      const currentObserverIds = serverObservers.map((o: any) => o.id);
+      let newObserverIds: string[];
+      
+      if (isObserver) {
+        // Remove user from observers
+        newObserverIds = currentObserverIds.filter((id: string) => id !== targetUser.id);
+      } else {
+        // Add user to observers
+        newObserverIds = [...currentObserverIds, targetUser.id];
+      }
+
+      console.log("[TaskDetails] Updating observers:", { taskId: task.id, newObserverIds });
+
+      // Use the dedicated observers API endpoint
+      const res = await apiRequest("POST", `/api/tasks/${task.id}/observers`, {
+        userIds: newObserverIds
+      });
+      
+      if (!res.ok) {
+        throw new Error("Failed to update observers");
+      }
+      
+      console.log("[TaskDetails] Observers updated successfully");
+      
+      // Refresh observers data
+      queryClient.invalidateQueries({ queryKey: [`/api/tasks/${task.id}/observers`] });
     } catch (error) {
+      console.error("[TaskDetails] Error updating observers:", error);
       setLocalObservers(localObservers);
+      sonnerToast.error("Не удалось обновить наблюдателей");
     }
+  };
+
+  const handleAddLabel = (label: string) => {
+    if (!label.trim() || localLabels.includes(label.trim())) return;
+    const updatedLabels = [...localLabels, label.trim()];
+    setLocalLabels(updatedLabels);
+    handleUpdate({ tags: updatedLabels });
+  };
+
+  const handleRemoveLabel = (labelToRemove: string) => {
+    const updatedLabels = localLabels.filter(label => label !== labelToRemove);
+    setLocalLabels(updatedLabels);
+    handleUpdate({ tags: updatedLabels });
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement> | React.DragEvent) => {
@@ -473,7 +709,7 @@ export function TaskDetailsModal({
 
   const safeTask = {
     ...task,
-    creator: task?.creator || { name: "Неизвестно", date: "" },
+    creator: task?.creator || { name: "Неизвестно", date: "", avatar: null },
     history: task?.history || [],
     labels: task?.labels || [],
     subtasks: task?.subtasks || [],
@@ -559,14 +795,38 @@ export function TaskDetailsModal({
           <ScrollArea className="flex-1 border-r border-border/40 bg-card/30 relative">
             <div className="p-8 pb-32 space-y-10 max-w-4xl mx-auto">
               {/* Title Section */}
-              <div>
-                <Input 
-                  value={newTitle}
-                  onChange={(e) => setNewTitle(e.target.value)}
-                  onBlur={handleTitleBlur}
-                  className="text-3xl font-bold border-none bg-transparent p-0 focus-visible:ring-0 h-auto placeholder:text-muted-foreground/30 font-sans"
-                  placeholder="Введите название задачи..."
-                />
+              <div className="space-y-2 relative">
+                <div className="relative flex items-center">
+                  <Input 
+                    value={newTitle}
+                    onChange={(e) => setNewTitle(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Escape') {
+                        setNewTitle(task?.title || "");
+                      } else if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleTitleBlur();
+                      }
+                    }}
+                    className="text-3xl font-bold border-none bg-transparent pr-12 focus-visible:ring-0 h-auto placeholder:text-muted-foreground/30 font-sans"
+                    placeholder="Введите название задачи..."
+                  />
+                  {newTitle !== task?.title && (
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="ghost"
+                      onClick={() => {
+                        console.log("[TaskDetails] Save button clicked");
+                        handleTitleBlur();
+                      }}
+                      className="absolute right-0 top-1/2 -translate-y-1/2 h-10 w-10 text-muted-foreground hover:text-primary hover:bg-primary/10"
+                      title="Сохранить (Enter)"
+                    >
+                      <Save className="w-5 h-5" />
+                    </Button>
+                  )}
+                </div>
               </div>
 
               {/* Description Section */}
@@ -626,6 +886,15 @@ export function TaskDetailsModal({
                         {sub.title}
                       </span>
                       
+                      {sub.author && (
+                        <Badge 
+                          variant="secondary" 
+                          className="text-[10px] px-2 py-0.5 h-6 font-normal shrink-0"
+                        >
+                          {sub.author.name}
+                        </Badge>
+                      )}
+                      
                       <div className="flex items-center gap-3 opacity-0 group-hover:opacity-100 transition-opacity">
                         <Button 
                           variant="ghost" 
@@ -634,9 +903,6 @@ export function TaskDetailsModal({
                           onClick={() => handleDeleteSubtask(sub.id)}
                         >
                           <Trash2 className="w-3.5 h-3.5" />
-                        </Button>
-                        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground/60">
-                          <User className="w-3.5 h-3.5" />
                         </Button>
                         {sub.dueDate && (
                           <Badge variant="destructive" className="h-6 gap-1.5 text-[10px] font-bold bg-rose-500/90 hover:bg-rose-500 border-none px-2">
@@ -945,7 +1211,7 @@ export function TaskDetailsModal({
 
               {/* Attributes Blocks */}
               <div className="space-y-1">
-                <Popover>
+                <Popover open={assigneePopoverOpen} onOpenChange={setAssigneePopoverOpen}>
                   <PopoverTrigger asChild>
                     <div 
                       className="flex items-center gap-2.5 p-2 rounded-lg bg-secondary/15 hover:bg-secondary/25 transition-colors group cursor-pointer border border-transparent hover:border-border/20"
@@ -953,49 +1219,50 @@ export function TaskDetailsModal({
                       <User className="w-3.5 h-3.5 text-muted-foreground/60" />
                       <span className="text-[12px] font-bold text-foreground/70 flex-1">Исполнитель</span>
                       <div className="flex items-center gap-1.5">
-                        {safeTask.assignee?.avatar && (
+                        {localAssignee?.avatar && (
                           <Avatar className="w-5 h-5 border border-background">
-                            <AvatarImage src={safeTask.assignee.avatar} />
-                            <AvatarFallback className="text-[8px]">{safeTask.assignee.name.substring(0, 2).toUpperCase()}</AvatarFallback>
+                            <AvatarImage src={localAssignee.avatar} />
+                            <AvatarFallback className="text-[8px]">{localAssignee.name.substring(0, 2).toUpperCase()}</AvatarFallback>
                           </Avatar>
                         )}
-                        <span className="text-[10px] font-bold text-muted-foreground/50">{safeTask.assignee?.name || "Не назначен"}</span>
+                        <span className="text-[10px] font-bold text-muted-foreground/50">{localAssignee?.name || "Не назначен"}</span>
                       </div>
                     </div>
                   </PopoverTrigger>
-                  <PopoverContent className="w-64 p-0 rounded-xl overflow-hidden" align="end">
-                    <Command>
-                      <CommandInput placeholder="Поиск исполнителя..." className="h-9 border-none focus:ring-0" />
-                      <CommandList className="max-h-64">
-                        <CommandEmpty>Пользователь не найден</CommandEmpty>
-                        <CommandGroup>
-                          {users.map((user: any) => {
-                            const displayName = user.firstName ? `${user.firstName} ${user.lastName || ''}` : user.username;
-                            const isSelected = safeTask.assignee?.name === displayName;
-                            return (
-                              <CommandItem
-                                key={user.id}
-                                value={displayName}
-                                onSelect={() => {
-                                  handleUpdate({ 
-                                    assignee: { name: displayName, avatar: user.avatar },
-                                    assigneeId: user.id 
-                                  } as any);
-                                }}
-                                className="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-secondary/50"
-                              >
-                                <Avatar className="w-6 h-6">
-                                  <AvatarImage src={user.avatar} />
-                                  <AvatarFallback>{displayName.substring(0, 2).toUpperCase()}</AvatarFallback>
-                                </Avatar>
-                                <span className="text-sm font-medium flex-1">{displayName}</span>
-                                {isSelected && <Check className="w-4 h-4 text-primary" />}
-                              </CommandItem>
-                            );
-                          })}
-                        </CommandGroup>
-                      </CommandList>
-                    </Command>
+                  <PopoverContent className="w-64 p-2 rounded-xl overflow-hidden" align="end">
+                    <div className="max-h-64 overflow-y-auto">
+                      <div className="text-xs font-medium text-muted-foreground px-2 py-1.5">Выберите исполнителя</div>
+                      {users.length === 0 ? (
+                        <div className="px-2 py-4 text-sm text-muted-foreground text-center">Нет доступных пользователей</div>
+                      ) : (
+                        users.map((user: any) => {
+                          const displayName = user.firstName ? `${user.firstName} ${user.lastName || ''}` : user.username;
+                          const isSelected = localAssignee?.name === displayName;
+                          return (
+                            <button
+                              key={user.id}
+                              type="button"
+                              onClick={() => {
+                                console.log("[TaskDetails] Selected assignee:", user.id, displayName);
+                                console.log("[TaskDetails] Current task ID:", task?.id);
+                                handleUpdate({ 
+                                  assigneeId: user.id 
+                                });
+                                setAssigneePopoverOpen(false);
+                              }}
+                              className="w-full flex items-center gap-2 px-2 py-2 rounded-lg hover:bg-secondary/50 transition-colors text-left"
+                            >
+                              <Avatar className="w-6 h-6">
+                                <AvatarImage src={user.avatar} />
+                                <AvatarFallback>{displayName.substring(0, 2).toUpperCase()}</AvatarFallback>
+                              </Avatar>
+                              <span className="text-sm font-medium flex-1">{displayName}</span>
+                              {isSelected && <Check className="w-4 h-4 text-primary" />}
+                            </button>
+                          );
+                        })
+                      )}
+                    </div>
                   </PopoverContent>
                 </Popover>
 
@@ -1006,64 +1273,132 @@ export function TaskDetailsModal({
                     value: localObservers.length > 0 ? `${localObservers.length}` : "0",
                     isObservers: true 
                   },
-                  { icon: Calendar, label: "Дата", value: safeTask.dueDate },
+                   {
+                      icon: Calendar, 
+                      label: "Дата", 
+                      value: localDueDate ? (() => {
+                        const date = new Date(localDueDate);
+                        const dateStr = date.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' });
+                        const timeStr = date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+                        return `${dateStr}, ${timeStr}`;
+                      })() : "Не установлен", 
+                      isDate: true 
+                    },
                   { icon: CheckSquare, label: "Подзадачи", value: `${localSubtasks.filter(s => s.completed).length}/${localSubtasks.length}` },
                   { icon: Paperclip, label: "Файлы", value: attachments.length > 0 ? `${attachments.length}` : "0" },
                 ].map((item, idx) => (
                   <div key={idx}>
-                    {item.isObservers ? (
-                      <Popover>
+                    {(item as any).isObservers ? (
+                      <div className="flex flex-col gap-2">
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <div 
+                              className="flex items-center gap-2.5 p-2 rounded-lg bg-secondary/15 hover:bg-secondary/25 transition-colors group cursor-pointer border border-transparent hover:border-border/20"
+                            >
+                              <item.icon className="w-3.5 h-3.5 text-muted-foreground/60" />
+                              <span className="text-[12px] font-bold text-foreground/70 flex-1">{item.label}</span>
+                              <span className="text-[10px] font-bold text-muted-foreground/50">{localObservers.length}</span>
+                            </div>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-64 p-0 rounded-xl overflow-hidden" align="end">
+                            <Command>
+                              <CommandInput placeholder="Поиск наблюдателей..." className="h-9 border-none focus:ring-0" />
+                              <CommandList className="max-h-64">
+                                <CommandEmpty>Пользователь не найден</CommandEmpty>
+                                <CommandGroup>
+                                  {users.map((user) => {
+                                    const isSelected = localObservers.some(o => o.name === (user.firstName ? `${user.firstName} ${user.lastName || ''}` : user.username));
+                                    const displayName = user.firstName ? `${user.firstName} ${user.lastName || ''}` : user.username;
+                                    return (
+                                      <CommandItem
+                                        key={user.id}
+                                        onSelect={() => toggleObserver({ name: displayName, avatar: user.avatar })}
+                                        className="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-secondary/50"
+                                      >
+                                        <Avatar className="w-6 h-6">
+                                          <AvatarImage src={user.avatar} />
+                                          <AvatarFallback>{displayName.substring(0, 2).toUpperCase()}</AvatarFallback>
+                                        </Avatar>
+                                        <span className="text-sm font-medium flex-1">{displayName}</span>
+                                        {isSelected && <Check className="w-4 h-4 text-primary" />}
+                                      </CommandItem>
+                                    );
+                                  })}
+                                </CommandGroup>
+                              </CommandList>
+                            </Command>
+                          </PopoverContent>
+                        </Popover>
+                        
+                        {/* Отображение всех наблюдателей под полем */}
+                        {localObservers.length > 0 && (
+                          <div className="flex flex-wrap gap-1.5 px-2">
+                            {localObservers.map((obs, i) => (
+                              <Badge 
+                                key={i} 
+                                variant="secondary" 
+                                className="text-[11px] px-2 py-0.5 h-6 font-normal"
+                              >
+                                {obs.name}
+                              </Badge>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ) : (item as any).isDate ? (
+                      <Popover open={datePopoverOpen} onOpenChange={setDatePopoverOpen}>
                         <PopoverTrigger asChild>
                           <div 
                             className="flex items-center gap-2.5 p-2 rounded-lg bg-secondary/15 hover:bg-secondary/25 transition-colors group cursor-pointer border border-transparent hover:border-border/20"
                           >
                             <item.icon className="w-3.5 h-3.5 text-muted-foreground/60" />
                             <span className="text-[12px] font-bold text-foreground/70 flex-1">{item.label}</span>
-                            <div className="flex items-center gap-1.5">
-                              <div className="flex -space-x-1.5 overflow-hidden">
-                                {localObservers.slice(0, 2).map((obs, i) => (
-                                  <Avatar key={i} className="w-5 h-5 border border-background">
-                                    <AvatarImage src={obs.avatar} />
-                                    <AvatarFallback className="text-[8px]">{obs.name.substring(0, 2).toUpperCase()}</AvatarFallback>
-                                  </Avatar>
-                                ))}
-                                {localObservers.length > 2 && (
-                                  <div className="w-5 h-5 rounded-full bg-secondary border border-background flex items-center justify-center text-[8px] font-bold text-muted-foreground">
-                                    +{localObservers.length - 2}
-                                  </div>
-                                )}
-                              </div>
-                              <span className="text-[10px] font-bold text-muted-foreground/50">{item.value}</span>
-                            </div>
+                            <span className="text-[10px] font-bold text-muted-foreground/50">{item.value}</span>
                           </div>
                         </PopoverTrigger>
-                        <PopoverContent className="w-64 p-0 rounded-xl overflow-hidden" align="end">
-                          <Command>
-                            <CommandInput placeholder="Поиск наблюдателей..." className="h-9 border-none focus:ring-0" />
-                            <CommandList className="max-h-64">
-                              <CommandEmpty>Пользователь не найден</CommandEmpty>
-                              <CommandGroup>
-                                {users.map((user) => {
-                                  const isSelected = localObservers.some(o => o.name === (user.firstName ? `${user.firstName} ${user.lastName || ''}` : user.username));
-                                  const displayName = user.firstName ? `${user.firstName} ${user.lastName || ''}` : user.username;
-                                  return (
-                                    <CommandItem
-                                      key={user.id}
-                                      onSelect={() => toggleObserver({ name: displayName, avatar: user.avatar })}
-                                      className="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-secondary/50"
-                                    >
-                                      <Avatar className="w-6 h-6">
-                                        <AvatarImage src={user.avatar} />
-                                        <AvatarFallback>{displayName.substring(0, 2).toUpperCase()}</AvatarFallback>
-                                      </Avatar>
-                                      <span className="text-sm font-medium flex-1">{displayName}</span>
-                                      {isSelected && <Check className="w-4 h-4 text-primary" />}
-                                    </CommandItem>
-                                  );
-                                })}
-                              </CommandGroup>
-                            </CommandList>
-                          </Command>
+                        <PopoverContent className="w-auto p-3 rounded-xl" align="end">
+                          <div className="space-y-3">
+                            <CalendarComponent
+                              mode="single"
+                              selected={localDueDate ? parseISO(localDueDate) : undefined}
+                              onSelect={(date) => {
+                                if (date) {
+                                  const [hours, minutes] = selectedTime.split(':').map(Number);
+                                  date.setHours(hours, minutes, 0, 0);
+                                  handleUpdate({ dueDate: date.toISOString() });
+                                  setLocalDueDate(date.toISOString());
+                                  setDatePopoverOpen(false);
+                                }
+                              }}
+                              locale={ru}
+                              initialFocus
+                              formatters={{
+                                formatWeekdayName: (date) => {
+                                  const weekdays = ['ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ', 'ВС'];
+                                  return weekdays[date.getDay() === 0 ? 6 : date.getDay() - 1];
+                                }
+                              }}
+                            />
+                            <div className="border-t border-border/40 pt-3">
+                              <label className="text-xs font-medium text-muted-foreground mb-2 block">Время</label>
+                              <div className="flex items-center gap-2">
+                                <Input
+                                  type="time"
+                                  value={selectedTime}
+                                  onChange={(e) => {
+                                    setSelectedTime(e.target.value);
+                                    if (localDueDate) {
+                                      const date = new Date(localDueDate);
+                                      const [hours, minutes] = e.target.value.split(':').map(Number);
+                                      date.setHours(hours, minutes, 0, 0);
+                                      handleUpdate({ dueDate: date.toISOString() });
+                                    }
+                                  }}
+                                  className="w-full h-8 text-sm"
+                                />
+                              </div>
+                            </div>
+                          </div>
                         </PopoverContent>
                       </Popover>
                     ) : (
@@ -1073,10 +1408,10 @@ export function TaskDetailsModal({
                         <item.icon className="w-3.5 h-3.5 text-muted-foreground/60" />
                         <span className="text-[12px] font-bold text-foreground/70 flex-1">{item.label}</span>
                         <div className="flex items-center gap-1.5">
-                          {item.avatar && (
+                          {(item as any).avatar && (
                             <Avatar className="w-5 h-5 border border-background">
-                              <AvatarImage src={item.avatar} />
-                              <AvatarFallback className="text-[8px]">{item.value.substring(0, 2).toUpperCase()}</AvatarFallback>
+                              <AvatarImage src={(item as any).avatar} />
+                              <AvatarFallback className="text-[8px]">{(item as any).value?.substring(0, 2).toUpperCase() || ''}</AvatarFallback>
                             </Avatar>
                           )}
                           <span className="text-[10px] font-bold text-muted-foreground/50">{item.value}</span>
@@ -1095,42 +1430,81 @@ export function TaskDetailsModal({
                   value={safeTask.priority}
                   onValueChange={handlePriorityChange}
                 >
-                  <SelectTrigger className="w-full h-9 bg-secondary/15 border-none rounded-lg px-3 hover:bg-secondary/25 transition-all font-bold text-[12px] text-foreground/70">
-                    <div className="flex items-center gap-2.5">
-                      {safeTask.priority === "Без приоритета" && <MoreHorizontal className="w-3.5 h-3.5" />}
-                      {safeTask.priority === "Низкий" && <SignalLow className="w-3.5 h-3.5 text-blue-400" />}
-                      {safeTask.priority === "Средний" && <SignalMedium className="w-3.5 h-3.5 text-amber-500" />}
-                      {safeTask.priority === "Высокий" && <SignalHigh className="w-3.5 h-3.5 text-rose-400" />}
-                      {safeTask.priority === "Критический" && <Flame className="w-3.5 h-3.5 text-rose-600" />}
-                      <SelectValue placeholder="Приоритет" />
+                  <SelectTrigger className="w-full h-10 bg-secondary/15 border-none rounded-lg px-3 hover:bg-secondary/25 transition-all font-bold text-[13px]">
+                    <div className="flex items-center gap-3">
+                      {safeTask.priority === "Без приоритета" && (
+                        <>
+                          <span className="w-5 h-5" />
+                          <span className="text-foreground/70">Без приоритета</span>
+                        </>
+                      )}
+                      {safeTask.priority === "Низкий" && (
+                        <>
+                          <SignalLow className="w-5 h-5 text-blue-500" strokeWidth={2.5} />
+                          <span className="text-blue-500">Низкий</span>
+                        </>
+                      )}
+                      {safeTask.priority === "Средний" && (
+                        <>
+                          <SignalMedium className="w-5 h-5 text-orange-500" strokeWidth={2.5} />
+                          <span className="text-orange-500">Средний</span>
+                        </>
+                      )}
+                      {safeTask.priority === "Высокий" && (
+                        <>
+                          <SignalHigh className="w-5 h-5 text-rose-500" strokeWidth={2.5} />
+                          <span className="text-rose-500">Высокий</span>
+                        </>
+                      )}
+                      {safeTask.priority === "Критический" && (
+                        <>
+                          <Flame className="w-5 h-5 text-rose-600" strokeWidth={2.5} />
+                          <span className="text-rose-600">Критический</span>
+                        </>
+                      )}
                     </div>
                   </SelectTrigger>
-                  <SelectContent className="rounded-xl">
-                    <SelectItem value="Без приоритета" className="font-bold text-[12px]">
-                      Без приоритета
-                    </SelectItem>
-                    <SelectItem value="Низкий" className="font-bold text-[12px] text-blue-400">
-                      <div className="flex items-center gap-2.5">
-                        <SignalLow className="w-3.5 h-3.5" />
-                        Низкий
+                  <SelectContent className="rounded-xl min-w-[220px]">
+                    <SelectItem value="Без приоритета" className="text-[14px] py-3">
+                      <div className="flex items-center justify-between w-full">
+                        <span>Без приоритета</span>
+                        {safeTask.priority === "Без приоритета" && <Check className="w-5 h-5 ml-4" />}
                       </div>
                     </SelectItem>
-                    <SelectItem value="Средний" className="font-bold text-[12px] text-amber-500">
-                      <div className="flex items-center gap-2.5">
-                        <SignalMedium className="w-3.5 h-3.5" />
-                        Средний
+                    <SelectItem value="Низкий" className="text-[14px] py-3 text-blue-500">
+                      <div className="flex items-center justify-between w-full">
+                        <div className="flex items-center gap-3">
+                          <SignalLow className="w-5 h-5" strokeWidth={2.5} />
+                          <span>Низкий</span>
+                        </div>
+                        {safeTask.priority === "Низкий" && <Check className="w-5 h-5 ml-4" />}
                       </div>
                     </SelectItem>
-                    <SelectItem value="Высокий" className="font-bold text-[12px] text-rose-400">
-                      <div className="flex items-center gap-2.5">
-                        <SignalHigh className="w-3.5 h-3.5" />
-                        Высокий
+                    <SelectItem value="Средний" className="text-[14px] py-3 text-orange-500">
+                      <div className="flex items-center justify-between w-full">
+                        <div className="flex items-center gap-3">
+                          <SignalMedium className="w-5 h-5" strokeWidth={2.5} />
+                          <span>Средний</span>
+                        </div>
+                        {safeTask.priority === "Средний" && <Check className="w-5 h-5 ml-4" />}
                       </div>
                     </SelectItem>
-                    <SelectItem value="Критический" className="font-bold text-[12px] text-foreground">
-                      <div className="flex items-center gap-2.5">
-                        <Flame className="w-3.5 h-3.5 text-rose-600" />
-                        Критический
+                    <SelectItem value="Высокий" className="text-[14px] py-3 text-rose-500">
+                      <div className="flex items-center justify-between w-full">
+                        <div className="flex items-center gap-3">
+                          <SignalHigh className="w-5 h-5" strokeWidth={2.5} />
+                          <span>Высокий</span>
+                        </div>
+                        {safeTask.priority === "Высокий" && <Check className="w-5 h-5 ml-4" />}
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="Критический" className="text-[14px] py-3 text-foreground">
+                      <div className="flex items-center justify-between w-full">
+                        <div className="flex items-center gap-3">
+                          <Flame className="w-5 h-5 text-rose-600" strokeWidth={2.5} />
+                          <span>Критический</span>
+                        </div>
+                        {safeTask.priority === "Критический" && <Check className="w-5 h-5 ml-4" />}
                       </div>
                     </SelectItem>
                   </SelectContent>
@@ -1149,13 +1523,49 @@ export function TaskDetailsModal({
               <div className="space-y-2">
                 <div className="flex items-center justify-between px-1">
                   <span className="text-[12px] font-bold text-muted-foreground/60">Метки</span>
-                  <Button variant="ghost" size="icon" className="h-5 w-5 rounded-md bg-secondary/15 hover:bg-primary/10 hover:text-primary">
-                    <Plus className="w-3 h-3" />
-                  </Button>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button variant="ghost" size="icon" className="h-5 w-5 rounded-md bg-secondary/15 hover:bg-primary/10 hover:text-primary">
+                        <Plus className="w-3 h-3" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-64 p-3 rounded-xl" align="end">
+                      <div className="space-y-3">
+                        <Input
+                          placeholder="Новая метка..."
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              handleAddLabel(e.currentTarget.value);
+                              e.currentTarget.value = '';
+                            }
+                          }}
+                          className="h-8 text-sm"
+                        />
+                        <div className="flex flex-wrap gap-1">
+                          {localLabels.map((label: string) => (
+                            <Badge 
+                              key={label} 
+                              variant="secondary" 
+                              className="px-2 py-0.5 text-[9px] font-bold bg-primary/10 text-primary border-none rounded-md cursor-pointer hover:bg-destructive/20 hover:text-destructive"
+                              onClick={() => handleRemoveLabel(label)}
+                            >
+                              {label} ×
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+                    </PopoverContent>
+                  </Popover>
                 </div>
                 <div className="flex flex-wrap gap-1">
-                  {safeTask.labels.map((label: string) => (
-                    <Badge key={label} variant="secondary" className="px-2 py-0 text-[9px] font-bold bg-primary/10 text-primary border-none rounded-md">
+                  {localLabels.map((label: string) => (
+                    <Badge 
+                      key={label} 
+                      variant="secondary" 
+                      className="px-2 py-0 text-[9px] font-bold bg-primary/10 text-primary border-none rounded-md cursor-pointer hover:bg-destructive/20 hover:text-destructive transition-colors"
+                      onClick={() => handleRemoveLabel(label)}
+                      title="Кликните для удаления"
+                    >
                       {label}
                     </Badge>
                   ))}
@@ -1169,7 +1579,7 @@ export function TaskDetailsModal({
                   <span className="text-[9px] font-bold text-muted-foreground/40 uppercase tracking-widest">Создатель</span>
                   <div className="flex items-center gap-1">
                     <Avatar className="w-3.5 h-3.5">
-                      {task?.creator?.avatar && <AvatarImage src={task.creator.avatar} />}
+                      {safeTask.creator.avatar && <AvatarImage src={safeTask.creator.avatar} />}
                       <AvatarFallback className="text-[7px]">{safeTask.creator.name.substring(0, 2).toUpperCase()}</AvatarFallback>
                     </Avatar>
                     <span className="text-[9px] font-bold text-primary/70">{safeTask.creator.name}</span>

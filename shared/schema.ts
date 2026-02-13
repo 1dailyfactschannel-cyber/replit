@@ -170,9 +170,12 @@ export const subtasks = pgTable("subtasks", {
   title: text("title").notNull(),
   isCompleted: boolean("is_completed").default(false),
   order: integer("order").notNull().default(0),
+  authorId: uuid("author_id").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-});
+}, (table) => ({
+  taskIdIdx: index("subtasks_task_id_idx").on(table.taskId),
+}));
 
 // Task observers junction table
 export const taskObservers = pgTable("task_observers", {
@@ -193,6 +196,27 @@ export const comments = pgTable("comments", {
   attachments: jsonb("attachments").default(sql`'[]'::jsonb`),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  taskIdIdx: index("comments_task_id_idx").on(table.taskId),
+  authorIdIdx: index("comments_author_id_idx").on(table.authorId),
+  createdAtIdx: index("comments_created_at_idx").on(table.createdAt),
+}));
+
+export const insertSubtaskSchema = createInsertSchema(subtasks).pick({
+  taskId: true,
+  title: true,
+  isCompleted: true,
+  order: true,
+  authorId: true,
+});
+
+export const insertCommentSchema = createInsertSchema(comments).pick({
+  taskId: true,
+  projectId: true,
+  authorId: true,
+  content: true,
+  parentId: true,
+  attachments: true,
 });
 
 // Task history table
@@ -465,6 +489,12 @@ export type InsertBoardColumn = z.infer<typeof insertBoardColumnSchema>;
 
 export type Task = typeof tasks.$inferSelect;
 export type InsertTask = z.infer<typeof insertTaskSchema>;
+
+export type Subtask = typeof subtasks.$inferSelect;
+export type InsertSubtask = z.infer<typeof insertSubtaskSchema>;
+
+export type Comment = typeof comments.$inferSelect;
+export type InsertComment = z.infer<typeof insertCommentSchema>;
 
 export type SiteSettings = typeof siteSettings.$inferSelect;
 export type InsertSiteSettings = z.infer<typeof insertSiteSettingsSchema>;

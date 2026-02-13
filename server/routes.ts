@@ -235,61 +235,11 @@ export async function registerRoutes(
         return res.json(cachedData);
       }
 
-      const [columns, rawTasks] = await Promise.all([
+      // Оптимизированная загрузка: колонки и задачи с пользователями за 2 запроса (вместо 2*N)
+      const [columns, tasks] = await Promise.all([
         storage.getColumnsByBoard(boardId),
-        storage.getTasksByBoard(boardId)
+        storage.getTasksByBoardWithUsers(boardId)
       ]);
-
-      // Обогащаем задачи данными об исполнителях и репортерах
-      const tasks = await Promise.all(rawTasks.map(async (task) => {
-        try {
-          // Fetch assignee and reporter in parallel for performance
-          const [assignee, reporter] = await Promise.all([
-            task.assigneeId ? storage.getUser(task.assigneeId) : null,
-            task.reporterId ? storage.getUser(task.reporterId) : null
-          ]);
-
-          if (!reporter && task.reporterId) {
-            console.warn(`Reporter not found for task ${task.id}, reporterId: ${task.reporterId}`);
-          }
-
-          // Use a helper for name formatting to ensure consistency
-          const formatName = (user: any) => {
-            if (!user) return null;
-            const fullName = `${user.firstName || ""} ${user.lastName || ""}`.trim();
-            return fullName || user.username || "Пользователь";
-          };
-
-          // Format creation date
-          let creationDate = "";
-          if (task.createdAt) {
-            const dateObj = new Date(task.createdAt);
-            if (!isNaN(dateObj.getTime())) {
-              creationDate = format(dateObj, "dd.MM.yyyy HH:mm");
-            }
-          }
-
-          return {
-            ...task,
-            assignee: assignee ? { 
-              name: formatName(assignee), 
-              avatar: assignee.avatar 
-            } : null,
-            creator: { 
-               name: formatName(reporter) || "Система", 
-               avatar: reporter?.avatar || null,
-               date: creationDate || "Дата не указана"
-             }
-          };
-        } catch (err) {
-          console.error(`Error enriching task ${task.id}:`, err);
-          return {
-            ...task,
-            assignee: null,
-            creator: { name: "Ошибка загрузки", date: "", avatar: null }
-          };
-        }
-      }));
       
       const boardData = { columns, tasks };
       
@@ -392,6 +342,17 @@ export async function registerRoutes(
         }
       });
       
+      // Конвертируем строковые даты в объекты Date для PostgreSQL
+      if (updateData.dueDate && typeof updateData.dueDate === 'string') {
+        updateData.dueDate = new Date(updateData.dueDate);
+      }
+      if (updateData.startDate && typeof updateData.startDate === 'string') {
+        updateData.startDate = new Date(updateData.startDate);
+      }
+      if (updateData.completedAt && typeof updateData.completedAt === 'string') {
+        updateData.completedAt = new Date(updateData.completedAt);
+      }
+      
       // Если задача перемещается в колонку "Готово", обновляем её статус
       if (updateData.columnId) {
         const column = await storage.getColumn(updateData.columnId);
@@ -471,6 +432,7 @@ export async function registerRoutes(
     if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
     try {
       const user = req.user;
+      console.log("[API] Creating task with data:", req.body);
 
       const columns = await storage.getColumnsByBoard(req.params.boardId);
       if (columns.length === 0) return res.status(400).json({ message: "Board has no columns" });
@@ -482,8 +444,10 @@ export async function registerRoutes(
         reporterId: user.id,
         status: req.body.status || "todo"
       };
+      console.log("[API] Task data prepared:", taskData);
 
       const task = await storage.createTask(taskData);
+      console.log("[API] Task created:", task);
       
       // Обогащаем задачу данными об исполнителе и репортере перед отправкой
       const [assignee, reporter] = await Promise.all([
@@ -886,20 +850,55 @@ export async function registerRoutes(
   app.get("/api/tasks/:taskId/subtasks", async (req, res) => {
     try {
       const subtasks = await storage.getSubtasksByTask(req.params.taskId);
-      res.json(subtasks);
+      
+      // Обогащаем подзадачи данными об авторах
+      const enrichedSubtasks = await Promise.all(subtasks.map(async (subtask) => {
+        if (subtask.authorId) {
+          const author = await storage.getUser(subtask.authorId);
+          return {
+            ...subtask,
+            author: author ? { 
+              name: `${author.firstName || ""} ${author.lastName || ""}`.trim() || author.username, 
+              avatar: author.avatar 
+            } : null
+          };
+        }
+        return { ...subtask, author: null };
+      }));
+      
+      res.json(enrichedSubtasks);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch subtasks" });
     }
   });
 
   app.post("/api/tasks/:taskId/subtasks", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
+    
     try {
+      const userId = req.user!.id;
+      console.log("[Subtasks] Creating subtask with userId:", userId);
+      
       const subtask = await storage.createSubtask({
         ...req.body,
-        taskId: req.params.taskId
+        taskId: req.params.taskId,
+        authorId: userId
       });
-      res.status(201).json(subtask);
+      
+      console.log("[Subtasks] Created subtask:", subtask);
+      
+      // Получаем данные об авторе для ответа
+      const authorUser = await storage.getUser(userId);
+      const author = authorUser ? {
+        name: `${authorUser.firstName || ""} ${authorUser.lastName || ""}`.trim() || authorUser.username,
+        avatar: authorUser.avatar
+      } : null;
+      
+      console.log("[Subtasks] Author:", author);
+      
+      res.status(201).json({ ...subtask, author });
     } catch (error) {
+      console.error("[Subtasks] Error creating subtask:", error);
       res.status(500).json({ message: "Failed to create subtask" });
     }
   });
