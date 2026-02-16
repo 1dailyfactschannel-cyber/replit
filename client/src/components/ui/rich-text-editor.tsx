@@ -1,5 +1,5 @@
 import { useEditor, EditorContent } from '@tiptap/react';
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
 import Link from '@tiptap/extension-link';
@@ -86,6 +86,7 @@ const MenuBar = ({ editor }: { editor: any }) => {
             btn.isActive && "bg-secondary text-secondary-foreground"
           )}
           onClick={btn.onClick}
+          onMouseDown={(e) => e.preventDefault()}
           type="button"
         >
           <btn.icon className="h-4 w-4" />
@@ -98,6 +99,7 @@ const MenuBar = ({ editor }: { editor: any }) => {
         className="h-8 w-8"
         onClick={() => editor.chain().focus().undo().run()}
         disabled={!editor.can().undo()}
+        onMouseDown={(e) => e.preventDefault()}
         type="button"
       >
         <Undo className="h-4 w-4" />
@@ -108,6 +110,7 @@ const MenuBar = ({ editor }: { editor: any }) => {
         className="h-8 w-8"
         onClick={() => editor.chain().focus().redo().run()}
         disabled={!editor.can().redo()}
+        onMouseDown={(e) => e.preventDefault()}
         type="button"
       >
         <Redo className="h-4 w-4" />
@@ -117,31 +120,33 @@ const MenuBar = ({ editor }: { editor: any }) => {
 };
 
 export function RichTextEditor({ content, onChange, onBlur, placeholder }: RichTextEditorProps) {
+  const extensions = useMemo(() => [
+    StarterKit.configure({
+      bulletList: {
+        keepMarks: true,
+        keepAttributes: false,
+      },
+      orderedList: {
+        keepMarks: true,
+        keepAttributes: false,
+      },
+      history: true,
+      bold: true,
+      italic: true,
+      code: true,
+      blockquote: true,
+    }),
+    Underline,
+    Link.configure({
+      openOnClick: false,
+    }),
+    Placeholder.configure({
+      placeholder: placeholder || 'Начните писать...',
+    }),
+  ], [placeholder]);
+
   const editor = useEditor({
-    extensions: [
-      StarterKit.configure({
-        bulletList: {
-          keepMarks: true,
-          keepAttributes: false,
-        },
-        orderedList: {
-          keepMarks: true,
-          keepAttributes: false,
-        },
-        history: true,
-        bold: true,
-        italic: true,
-        code: true,
-        blockquote: true,
-      }),
-      Underline,
-      Link.configure({
-        openOnClick: false,
-      }),
-      Placeholder.configure({
-        placeholder: placeholder || 'Начните писать...',
-      }),
-    ],
+    extensions,
     content,
     onUpdate: ({ editor }) => {
       onChange(editor.getHTML());
@@ -151,7 +156,7 @@ export function RichTextEditor({ content, onChange, onBlur, placeholder }: RichT
     },
     editorProps: {
       attributes: {
-        class: 'prose prose-sm dark:prose-invert max-w-none min-h-[150px] p-4 focus:outline-none',
+        class: 'prose prose-sm dark:prose-invert max-w-none min-h-[150px] p-4 focus:outline-none text-black dark:text-white',
       },
     },
   });

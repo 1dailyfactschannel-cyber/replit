@@ -107,6 +107,7 @@ export interface Task {
   attachments?: { name: string; url: string; size: string; type: string }[];
   project?: string;
   board?: string;
+  number?: string;
 }
 
 interface TaskDetailsModalProps {
@@ -146,15 +147,21 @@ export function TaskDetailsModal({
   const [newTitle, setNewTitle] = useState(task?.title || "");
   const [newDescription, setNewDescription] = useState(task?.description || "");
 
-  // Update local states when task prop changes (e.g. after successful mutation or task switch)
+  // Update local states when task changes or modal opens
   useEffect(() => {
-    if (task) {
+    if (task && open) {
       setNewTitle(task.title || "");
-      setNewDescription(task.description || "");
+      
+      // Only update description if it's different to avoid cursor jumps/resets during editing
+      if (task.description !== newDescription) {
+        setNewDescription(task.description || "");
+      }
+      
       setLocalSubtasks(task.subtasks || []);
       setAttachments(task.attachments || []);
+      setTaskNumber(task.number || (task.id ? task.id.toString().slice(-4) : ''));
     }
-  }, [task]);
+  }, [task, open]); // Depend on task and open state to sync data
 
   // Sync observers with server data
   useEffect(() => {
@@ -213,6 +220,14 @@ export function TaskDetailsModal({
   const [localSubtasks, setLocalSubtasks] = useState<{ id: string | number; title: string; completed: boolean; isCompleted?: boolean; dueDate?: string; author?: { name: string; avatar?: string } | null; order?: number }[]>(task?.subtasks || []);
   const [newSubtaskTitle, setNewSubtaskTitle] = useState("");
   const [isAddingSubtask, setIsAddingSubtask] = useState(false);
+  const [taskNumber, setTaskNumber] = useState(task?.number || (task?.id ? task.id.toString().slice(-4) : ''));
+  
+  const handleTaskNumberBlur = () => {
+    const originalNumber = task?.number || (task?.id ? task.id.toString().slice(-4) : '');
+    if (taskNumber !== originalNumber && task?.id) {
+      handleUpdate({ number: taskNumber });
+    }
+  };
   
   // Popover states
   const [assigneePopoverOpen, setAssigneePopoverOpen] = useState(false);
@@ -246,11 +261,15 @@ export function TaskDetailsModal({
       return res.json();
     },
     onSuccess: (data) => {
+      // Update local cache immediately to prevent UI flicker/reversion
+      if (onUpdate && data) {
+        onUpdate(data);
+      }
+
       if (task?.boardId) {
-        queryClient.invalidateQueries({ queryKey: [`/api/boards/${task.boardId}/full`] });
+        queryClient.invalidateQueries({ queryKey: ["/api/boards", task.boardId, "full"] });
       }
       queryClient.invalidateQueries({ queryKey: ["/api/tasks", task?.id] });
-      if (onUpdate && data) onUpdate(data);
     },
     onError: (error) => {
       console.error("Update error:", error);
@@ -261,6 +280,7 @@ export function TaskDetailsModal({
         setNewDescription(task.description || "");
         setLocalSubtasks(task.subtasks || []);
         setLocalObservers(task.observers || []);
+        setTaskNumber(task.number || (task.id ? task.id.toString().slice(-4) : ''));
       }
     }
   });
@@ -752,14 +772,22 @@ export function TaskDetailsModal({
           </div>
         )}
 
-        {/* Top Header / Breadcrumbs */}
+        {/* Top Header / Task Number */}
         <div className="flex items-center justify-between px-6 py-3 border-b border-border/40 bg-background/50 backdrop-blur-sm shrink-0">
-          <div className="flex items-center gap-2 text-xs text-muted-foreground font-medium font-sans">
-            <span>{safeTask.project}</span>
-            <ChevronRight className="w-3 h-3" />
-            <span>{safeTask.board}</span>
-            <ChevronRight className="w-3 h-3" />
-            <span className="text-foreground/70">Разработка #{safeTask.id}</span>
+          <div className="flex items-center gap-2 text-sm text-muted-foreground font-medium font-sans">
+            <span className="text-foreground/50">#</span>
+            <Input 
+              value={taskNumber}
+              onChange={(e) => setTaskNumber(e.target.value)}
+              onBlur={handleTaskNumberBlur}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.currentTarget.blur();
+                }
+              }}
+              className="h-6 w-32 text-sm font-medium bg-transparent border-none focus-visible:ring-0 px-0 text-foreground/70"
+              placeholder="Номер"
+            />
           </div>
           
           <div className="flex items-center gap-1.5">
@@ -800,6 +828,7 @@ export function TaskDetailsModal({
                   <Input 
                     value={newTitle}
                     onChange={(e) => setNewTitle(e.target.value)}
+                    onBlur={handleTitleBlur}
                     onKeyDown={(e) => {
                       if (e.key === 'Escape') {
                         setNewTitle(task?.title || "");
@@ -808,7 +837,7 @@ export function TaskDetailsModal({
                         handleTitleBlur();
                       }
                     }}
-                    className="text-3xl font-bold border-none bg-transparent pr-12 focus-visible:ring-0 h-auto placeholder:text-muted-foreground/30 font-sans"
+                    className="text-3xl font-bold border-none bg-transparent pr-12 focus-visible:ring-0 h-auto placeholder:text-muted-foreground/30 font-sans text-black dark:text-white"
                     placeholder="Введите название задачи..."
                   />
                   {newTitle !== task?.title && (

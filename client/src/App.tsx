@@ -5,7 +5,6 @@ import { QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { PageLoadingAnimation } from "@/components/PageLoadingAnimation";
-import { Layout } from "@/components/layout/Layout";
 
 // Eager load critical pages for better initial load
 import Dashboard from "@/pages/dashboard";
@@ -132,9 +131,7 @@ export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
-        <Layout>
-          <Router />
-        </Layout>
+        <Router />
         <Toaster />
       </TooltipProvider>
     </QueryClientProvider>
