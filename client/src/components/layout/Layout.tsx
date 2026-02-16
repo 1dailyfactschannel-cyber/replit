@@ -132,6 +132,17 @@ function SidebarCollapsibleItem({ item, isActive, setLocation, setIsMobileOpen, 
   );
 }
 
+// Use stable references for callbacks to prevent unnecessary re-renders
+const useStableCallbacks = () => {
+  const callbacks = React.useRef({
+    setLocation: null as any,
+    setIsMobileOpen: null as any,
+    setIsCollapsed: null as any,
+    setIsStatusDialogOpen: null as any,
+  });
+  return callbacks.current;
+};
+
 const SidebarContentComponent = React.memo(({ 
   isCollapsed, 
   location, 
@@ -353,9 +364,19 @@ const SidebarContentComponent = React.memo(({
 });
 
 export function Layout({ children, className }: { children: React.ReactNode, className?: string }) {
-  const { data: user } = useQuery({
+  const { data: user, isLoading } = useQuery({
     queryKey: ["/api/user"],
+    retry: false,
   });
+  
+  // Show loading while checking auth
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+      </div>
+    );
+  }
   const [location, setLocation] = useLocation();
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(() => {
@@ -367,6 +388,23 @@ export function Layout({ children, className }: { children: React.ReactNode, cla
   const [isStatusDialogOpen, setIsStatusDialogOpen] = useState(false);
   const [status, setStatus] = useState("online");
   const [statusComment, setStatusComment] = useState("");
+
+  // Memoize callbacks to prevent unnecessary re-renders of SidebarContentComponent
+  const handleSetLocation = React.useCallback((href: string) => {
+    setLocation(href);
+  }, [setLocation]);
+
+  const handleSetIsMobileOpen = React.useCallback((value: boolean) => {
+    setIsMobileOpen(value);
+  }, []);
+
+  const handleSetIsCollapsed = React.useCallback((value: boolean | ((prev: boolean) => boolean)) => {
+    setIsCollapsed(value);
+  }, []);
+
+  const handleSetIsStatusDialogOpen = React.useCallback((value: boolean) => {
+    setIsStatusDialogOpen(value);
+  }, []);
 
   useEffect(() => {
     localStorage.setItem("sidebar-collapsed", isCollapsed.toString());
@@ -409,10 +447,10 @@ export function Layout({ children, className }: { children: React.ReactNode, cla
           location={location}
           status={status}
           isStatusDialogOpen={isStatusDialogOpen}
-          setIsStatusDialogOpen={setIsStatusDialogOpen}
-          setLocation={setLocation}
-          setIsMobileOpen={setIsMobileOpen}
-          setIsCollapsed={setIsCollapsed}
+          setIsStatusDialogOpen={handleSetIsStatusDialogOpen}
+          setLocation={handleSetLocation}
+          setIsMobileOpen={handleSetIsMobileOpen}
+          setIsCollapsed={handleSetIsCollapsed}
           statusColors={statusColors}
           statusLabels={statusLabels}
           user={user}
@@ -422,23 +460,25 @@ export function Layout({ children, className }: { children: React.ReactNode, cla
       {/* Main Content */}
       <div className="flex-1 flex flex-col min-h-screen min-w-0 overflow-hidden">
         <header className="h-16 px-6 border-b border-border flex items-center justify-between bg-card/50 backdrop-blur-sm sticky top-0 z-10">
+          {/* Left side - Menu button for mobile, nothing for desktop (sidebar is always visible) */}
           <div className="flex items-center gap-4">
-             <Sheet open={isMobileOpen} onOpenChange={setIsMobileOpen}>
+            {/* Mobile menu button */}
+            <Sheet open={isMobileOpen} onOpenChange={setIsMobileOpen}>
               <SheetTrigger asChild>
                 <Button variant="ghost" size="icon" className="md:hidden">
                   <Menu className="w-5 h-5" />
                 </Button>
               </SheetTrigger>
-              <SheetContent side="left" className="p-0 w-64 border-r-sidebar-border bg-sidebar text-sidebar-foreground">
+              <SheetContent side="left" className="p-0 w-72 border-r-sidebar-border bg-sidebar text-sidebar-foreground">
                 <SidebarContentComponent 
-                  isCollapsed={isCollapsed}
+                  isCollapsed={false}
                   location={location}
                   status={status}
                   isStatusDialogOpen={isStatusDialogOpen}
-                  setIsStatusDialogOpen={setIsStatusDialogOpen}
-                  setLocation={setLocation}
-                  setIsMobileOpen={setIsMobileOpen}
-                  setIsCollapsed={setIsCollapsed}
+                  setIsStatusDialogOpen={handleSetIsStatusDialogOpen}
+                  setLocation={handleSetLocation}
+                  setIsMobileOpen={handleSetIsMobileOpen}
+                  setIsCollapsed={handleSetIsCollapsed}
                   statusColors={statusColors}
                   statusLabels={statusLabels}
                   user={user}
@@ -446,7 +486,7 @@ export function Layout({ children, className }: { children: React.ReactNode, cla
               </SheetContent>
             </Sheet>
 
-            {/* Desktop Toggle Button in Header */}
+            {/* Desktop sidebar toggle */}
             <Button 
               variant="ghost" 
               size="icon" 
@@ -456,6 +496,8 @@ export function Layout({ children, className }: { children: React.ReactNode, cla
             >
               <Menu className="w-5 h-5" />
             </Button>
+
+            {/* Search bar */}
             <div className="relative hidden sm:block w-96">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input
@@ -465,9 +507,10 @@ export function Layout({ children, className }: { children: React.ReactNode, cla
             </div>
           </div>
 
+          {/* Right side - Theme toggle and notifications */}
           <div className="flex items-center gap-3">
-             <ThemeToggle />
-             <NotificationAlertDialog />
+            <ThemeToggle />
+            <NotificationAlertDialog />
           </div>
         </header>
 

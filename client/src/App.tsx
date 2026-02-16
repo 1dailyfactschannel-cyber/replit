@@ -1,14 +1,17 @@
-import { useState, useEffect, lazy, Suspense } from "react";
+import { useState, useEffect, lazy, Suspense, startTransition } from "react";
 import { Switch, Route, useLocation } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { Loader2 } from "lucide-react";
+import { PageLoadingAnimation } from "@/components/PageLoadingAnimation";
+import { Layout } from "@/components/layout/Layout";
 
-// Lazy load pages
+// Eager load critical pages for better initial load
+import Dashboard from "@/pages/dashboard";
+
+// Lazy load heavy pages
 const NotFound = lazy(() => import("@/pages/not-found"));
-const Dashboard = lazy(() => import("@/pages/dashboard"));
 const Projects = lazy(() => import("@/pages/projects"));
 const Tasks = lazy(() => import("@/pages/tasks"));
 const CalendarPage = lazy(() => import("@/pages/calendar"));
@@ -21,11 +24,49 @@ const Shop = lazy(() => import("@/pages/shop"));
 const SettingsPage = lazy(() => import("@/pages/settings"));
 const ManagementPage = lazy(() => import("@/pages/management"));
 
+// Preload function for route prefetching
+const preloadProjects = () => {
+  const ProjectsModule = import("@/pages/projects");
+  return ProjectsModule;
+};
+
+const preloadTasks = () => {
+  const TasksModule = import("@/pages/tasks");
+  return TasksModule;
+};
+
+// Page Loader with smooth animation
 function PageLoader() {
+  return <PageLoadingAnimation />;
+}
+
+// Component for prefetching routes on hover
+function PrefetchLink({ href, children, className }: { href: string; children: React.ReactNode; className?: string }) {
+  const [, setLocation] = useLocation();
+  
+  const handleMouseEnter = () => {
+    // Prefetch route based on href
+    switch (href) {
+      case "/projects":
+        preloadProjects();
+        break;
+      case "/tasks":
+        preloadTasks();
+        break;
+    }
+  };
+  
+  const handleClick = (e: React.MouseEvent) => {
+    e.preventDefault();
+    startTransition(() => {
+      setLocation(href);
+    });
+  };
+  
   return (
-    <div className="flex items-center justify-center min-h-screen">
-      <Loader2 className="h-8 w-8 animate-spin text-primary" />
-    </div>
+    <a href={href} onClick={handleClick} onMouseEnter={handleMouseEnter} className={className}>
+      {children}
+    </a>
   );
 }
 
@@ -91,7 +132,9 @@ export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
-        <Router />
+        <Layout>
+          <Router />
+        </Layout>
         <Toaster />
       </TooltipProvider>
     </QueryClientProvider>
