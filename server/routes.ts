@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { getStorage } from "./postgres-storage";
-import { insertSiteSettingsSchema, insertUserSchema, insertNotificationSchema } from "@shared/schema";
+import { insertSiteSettingsSchema, insertUserSchema, insertNotificationSchema, insertLabelSchema } from "@shared/schema";
 import { setupWebSockets } from "./socket";
 import { Server as SocketIOServer } from "socket.io";
 import multer from "multer";
@@ -537,6 +537,45 @@ export async function registerRoutes(
       res.json(columns);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch columns" });
+    }
+  });
+
+  // Label routes
+  app.get("/api/labels", async (_req, res) => {
+    try {
+      const labels = await storage.getLabels();
+      res.json(labels);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch labels" });
+    }
+  });
+
+  app.post("/api/labels", async (req, res) => {
+    try {
+      const parsed = insertLabelSchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json(parsed.error);
+      const label = await storage.createLabel(parsed.data);
+      res.status(201).json(label);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to create label" });
+    }
+  });
+
+  app.patch("/api/labels/:id", async (req, res) => {
+    try {
+      const label = await storage.updateLabel(req.params.id, req.body);
+      res.json(label);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to update label" });
+    }
+  });
+
+  app.delete("/api/labels/:id", async (req, res) => {
+    try {
+      await storage.deleteLabel(req.params.id);
+      res.status(204).end();
+    } catch (error) {
+      res.status(500).json({ message: "Failed to delete label" });
     }
   });
 
@@ -1134,6 +1173,43 @@ export async function registerRoutes(
       res.json(updatedObservers);
     } catch (error) {
       res.status(500).json({ message: "Failed to update observers" });
+    }
+  });
+
+  // Labels routes
+  app.get("/api/labels", async (req, res) => {
+    try {
+      const labels = await storage.getLabels();
+      res.json(labels);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch labels" });
+    }
+  });
+
+  app.post("/api/labels", async (req, res) => {
+    try {
+      const label = await storage.createLabel(req.body);
+      res.status(201).json(label);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to create label" });
+    }
+  });
+
+  app.patch("/api/labels/:id", async (req, res) => {
+    try {
+      const label = await storage.updateLabel(req.params.id, req.body);
+      res.json(label);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to update label" });
+    }
+  });
+
+  app.delete("/api/labels/:id", async (req, res) => {
+    try {
+      await storage.deleteLabel(req.params.id);
+      res.sendStatus(204);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to delete label" });
     }
   });
 

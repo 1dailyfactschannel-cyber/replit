@@ -18,6 +18,12 @@ export interface IStorage {
   updateSubtask(id: string, updates: Partial<any>): Promise<any>;
   deleteSubtask(id: string): Promise<void>;
   getSubtask(id: string): Promise<any>;
+
+  // Labels
+  getLabels(): Promise<any[]>;
+  createLabel(label: any): Promise<any>;
+  updateLabel(id: string, label: any): Promise<any>;
+  deleteLabel(id: string): Promise<void>;
 }
 
 import { PostgresStorage } from "./postgres-storage";

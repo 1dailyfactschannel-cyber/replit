@@ -107,7 +107,7 @@ const getColumnColor = (columnName: string): { bg: string; text: string; border:
 };
 
 // Memoized TaskCard with custom comparison for performance
-const TaskCard = React.memo(({ task, index, onClick, columnColor }: { task: any, index: number, onClick: (task: any) => void, columnColor: { bg: string; text: string; border: string; badge: string } }) => {
+const TaskCard = React.memo(({ task, index, onClick, columnColor, availableLabels = [] }: { task: any, index: number, onClick: (task: any) => void, columnColor: { bg: string; text: string; border: string; badge: string }, availableLabels?: any[] }) => {
   // Preload avatar image for better perceived performance
   // const avatarSrc = task.assignee?.avatar;
   
@@ -141,6 +141,29 @@ const TaskCard = React.memo(({ task, index, onClick, columnColor }: { task: any,
           <div className="text-xs text-muted-foreground mb-1 font-mono">{taskNumber}</div>
           
           <h4 className="text-sm font-normal mb-3 leading-snug text-foreground/90 line-clamp-2">{task.title}</h4>
+          
+          {/* Labels */}
+          {task.tags && task.tags.length > 0 && (
+            <div className="flex flex-wrap gap-1 mb-3">
+              {task.tags.map((tagName: string) => {
+                const labelInfo = availableLabels.find((l: any) => l.name === tagName);
+                return (
+                  <Badge 
+                    key={tagName} 
+                    variant="secondary" 
+                    className={cn(
+                      "px-1.5 py-0 text-[9px] font-bold border-none rounded-md pointer-events-none",
+                      labelInfo?.color ? labelInfo.color.replace('bg-', 'bg-').replace('500', '500/10') : "bg-primary/10",
+                      labelInfo?.color ? labelInfo.color.replace('bg-', 'text-').replace('500', '600') : "text-primary"
+                    )}
+                  >
+                    {tagName}
+                  </Badge>
+                );
+              })}
+            </div>
+          )}
+
           <div className="flex items-center justify-between">
             <div className="flex items-center">
               {task.assignee ? (
@@ -165,13 +188,21 @@ const TaskCard = React.memo(({ task, index, onClick, columnColor }: { task: any,
   );
 }, (prevProps, nextProps) => {
   // Custom comparison: only re-render if task data actually changed
+  // Deep compare tags
+  const prevTags = prevProps.task.tags || [];
+  const nextTags = nextProps.task.tags || [];
+  const tagsChanged = prevTags.length !== nextTags.length || !prevTags.every((t: string, i: number) => t === nextTags[i]);
+  const labelsChanged = prevProps.availableLabels !== nextProps.availableLabels;
+
   return (
     prevProps.task.id === nextProps.task.id &&
     prevProps.task.title === nextProps.task.title &&
     prevProps.task.priority === nextProps.task.priority &&
     prevProps.task.assignee?.id === nextProps.task.assignee?.id &&
     prevProps.columnColor.border === nextProps.columnColor.border &&
-    prevProps.index === nextProps.index
+    prevProps.index === nextProps.index &&
+    !tagsChanged &&
+    !labelsChanged
   );
 });
 
@@ -183,9 +214,10 @@ interface KanbanColumnProps {
   tasks: any[];
   onCreateTask: (column: string) => void;
   onTaskClick: (task: any) => void;
+  availableLabels?: any[];
 }
 
-const KanbanColumn = React.memo(({ column, tasks, onCreateTask, onTaskClick }: KanbanColumnProps) => {
+const KanbanColumn = React.memo(({ column, tasks, onCreateTask, onTaskClick, availableLabels = [] }: KanbanColumnProps) => {
   const columnColor = getColumnColor(column);
   
   return (
@@ -230,6 +262,7 @@ const KanbanColumn = React.memo(({ column, tasks, onCreateTask, onTaskClick }: K
                 index={index} 
                 onClick={onTaskClick}
                 columnColor={columnColor}
+                availableLabels={availableLabels}
               />
             ))}
             {taskProvided.placeholder}
@@ -242,6 +275,7 @@ const KanbanColumn = React.memo(({ column, tasks, onCreateTask, onTaskClick }: K
   // Only re-render if column name, task count, or tasks actually changed
   if (prevProps.column !== nextProps.column) return false;
   if (prevProps.tasks.length !== nextProps.tasks.length) return false;
+  if (prevProps.availableLabels !== nextProps.availableLabels) return false;
   
   // Check if any task ID, title, or priority changed
   for (let i = 0; i < prevProps.tasks.length; i++) {
@@ -250,6 +284,11 @@ const KanbanColumn = React.memo(({ column, tasks, onCreateTask, onTaskClick }: K
     if (prevProps.tasks[i]?.priority !== nextProps.tasks[i]?.priority) return false;
     if (prevProps.tasks[i]?.status !== nextProps.tasks[i]?.status) return false;
     if (prevProps.tasks[i]?.assignee?.id !== nextProps.tasks[i]?.assignee?.id) return false;
+    
+    // Check tags
+    const prevTags = prevProps.tasks[i]?.tags || [];
+    const nextTags = nextProps.tasks[i]?.tags || [];
+    if (prevTags.length !== nextTags.length || !prevTags.every((t: string, k: number) => t === nextTags[k])) return false;
   }
   
   return true;
@@ -369,6 +408,11 @@ export default function Projects() {
     staleTime: 1000 * 60 * 10, // 10 minutes - projects change rarely
     gcTime: 1000 * 60 * 30, // Keep in cache for 30 minutes
     placeholderData: [], // Use empty array while loading to prevent flicker
+  });
+
+  const { data: availableLabels = [] } = useQuery<any[]>({
+    queryKey: ["/api/labels"],
+    staleTime: 1000 * 60 * 60, // 1 hour
   });
 
   // Filter projects based on debounced search query
@@ -1105,6 +1149,7 @@ export default function Projects() {
                           tasks={columnTasks}
                           onCreateTask={handleCreateTask}
                           onTaskClick={handleTaskClick}
+                          availableLabels={availableLabels}
                         />
                       ))}
                       {provided.placeholder}

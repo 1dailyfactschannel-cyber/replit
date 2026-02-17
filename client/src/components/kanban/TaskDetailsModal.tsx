@@ -295,6 +295,10 @@ export function TaskDetailsModal({
     enabled: !!task?.id,
   });
 
+  const { data: availableLabels = [] } = useQuery<any[]>({
+    queryKey: ["/api/labels"],
+  });
+
   useEffect(() => {
     if (serverComments && serverComments.length > 0) {
       setLocalComments(serverComments);
@@ -1644,33 +1648,52 @@ export function TaskDetailsModal({
                           className="h-8 text-sm"
                         />
                         <div className="flex flex-wrap gap-1">
-                          {localLabels.map((label: string) => (
-                            <Badge 
-                              key={label} 
-                              variant="secondary" 
-                              className="px-2 py-0.5 text-[9px] font-bold bg-primary/10 text-primary border-none rounded-md cursor-pointer hover:bg-destructive/20 hover:text-destructive"
-                              onClick={() => handleRemoveLabel(label)}
-                            >
-                              {label} ×
-                            </Badge>
-                          ))}
+                          {availableLabels.length > 0 ? (
+                            availableLabels.map((label: any) => {
+                              const isSelected = localLabels.includes(label.name);
+                              if (isSelected) return null;
+                              return (
+                                <Badge 
+                                  key={label.id} 
+                                  variant="secondary" 
+                                  className={cn(
+                                    "px-2 py-0.5 text-[9px] font-bold border-none rounded-md cursor-pointer transition-all hover:opacity-80",
+                                    label.color ? label.color.replace('bg-', 'bg-').replace('500', '500/10') : "bg-primary/10",
+                                    label.color ? label.color.replace('bg-', 'text-').replace('500', '600') : "text-primary"
+                                  )}
+                                  onClick={() => handleAddLabel(label.name)}
+                                >
+                                  {label.name}
+                                </Badge>
+                              );
+                            })
+                          ) : (
+                            <span className="text-xs text-muted-foreground">Нет доступных меток</span>
+                          )}
                         </div>
                       </div>
                     </PopoverContent>
                   </Popover>
                 </div>
                 <div className="flex flex-wrap gap-1">
-                  {localLabels.map((label: string) => (
-                    <Badge 
-                      key={label} 
-                      variant="secondary" 
-                      className="px-2 py-0 text-[9px] font-bold bg-primary/10 text-primary border-none rounded-md cursor-pointer hover:bg-destructive/20 hover:text-destructive transition-colors"
-                      onClick={() => handleRemoveLabel(label)}
-                      title="Кликните для удаления"
-                    >
-                      {label}
-                    </Badge>
-                  ))}
+                  {localLabels.map((labelName: string) => {
+                    const labelInfo = availableLabels.find((l: any) => l.name === labelName);
+                    return (
+                      <Badge 
+                        key={labelName} 
+                        variant="secondary" 
+                        className={cn(
+                          "px-2 py-0 text-[9px] font-bold border-none rounded-md cursor-pointer hover:bg-destructive/20 hover:text-destructive transition-colors",
+                          labelInfo?.color ? labelInfo.color.replace('bg-', 'bg-').replace('500', '500/10') : "bg-primary/10",
+                          labelInfo?.color ? labelInfo.color.replace('bg-', 'text-').replace('500', '600') : "text-primary"
+                        )}
+                        onClick={() => handleRemoveLabel(labelName)}
+                        title="Кликните для удаления"
+                      >
+                        {labelName}
+                      </Badge>
+                    );
+                  })}
                 </div>
               </div>
 

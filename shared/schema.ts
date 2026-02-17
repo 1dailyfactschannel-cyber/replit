@@ -337,6 +337,19 @@ export const insertBoardColumnSchema = createInsertSchema(boardColumns).pick({
   color: true,
 });
 
+export const insertLabelSchema = createInsertSchema(labels).pick({
+  name: true,
+  color: true,
+});
+
+// Chat folders table
+export const labels = pgTable("labels", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  name: text("name").notNull().unique(),
+  color: text("color").default("bg-blue-500"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 // Chat folders table
 export const chatFolders = pgTable("chat_folders", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -416,6 +429,7 @@ export const calls = pgTable("calls", {
 });
 
 // Export types
+export type User = typeof users.$inferSelect;
 export type Chat = typeof chats.$inferSelect;
 export type ChatParticipant = typeof chatParticipants.$inferSelect;
 export type Message = typeof messages.$inferSelect;
@@ -487,6 +501,9 @@ export type InsertBoard = z.infer<typeof insertBoardSchema>;
 
 export type BoardColumn = typeof boardColumns.$inferSelect;
 export type InsertBoardColumn = z.infer<typeof insertBoardColumnSchema>;
+
+export type Label = typeof labels.$inferSelect;
+export type InsertLabel = z.infer<typeof insertLabelSchema>;
 
 export type Task = typeof tasks.$inferSelect;
 export type InsertTask = z.infer<typeof insertTaskSchema>;

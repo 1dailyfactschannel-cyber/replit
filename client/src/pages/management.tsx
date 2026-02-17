@@ -34,11 +34,13 @@ import {
   Flag,
   Check,
   X,
-  Palette
+  Palette,
+  Tags
 } from "lucide-react";
 import { RolesManagement } from "@/components/settings/RolesManagement";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { User } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -363,12 +365,21 @@ function IntegrationsManagement() {
 
 function TeamManagement() {
   const { toast } = useToast();
-  const members = [
-    { id: 2, name: "Алексей Иванов", role: "Владелец", email: "alex@teamsync.com", department: "IT", status: "offline", lastActive: "2 часа назад", avatar: "" },
-    { id: 3, name: "Мария Петрова", role: "Разработчик", email: "maria@teamsync.com", department: "Дизайн", status: "online", lastActive: "Сейчас", avatar: "" },
-    { id: 4, name: "Дмитрий Сидоров", role: "Менеджер", email: "dima@teamsync.com", department: "Маркетинг", status: "online", lastActive: "15 мин назад", avatar: "" },
-    { id: 5, name: "Елена Козлова", role: "Разработчик", email: "elena@teamsync.com", department: "IT", status: "offline", lastActive: "Вчера", avatar: "" },
-  ];
+  
+  const { data: users = [], isLoading } = useQuery<User[]>({
+    queryKey: ["/api/users"],
+  });
+
+  const members = users.map(user => ({
+    id: user.id,
+    name: (user.firstName && user.lastName) ? `${user.firstName} ${user.lastName}` : user.username,
+    role: user.position || "Сотрудник",
+    email: user.email,
+    department: user.department || "Без отдела",
+    status: user.isOnline ? "online" : "offline",
+    lastActive: user.lastSeen ? new Date(user.lastSeen).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' }) : "Недавно",
+    avatar: user.avatar || ""
+  }));
 
   const invites = [
     { id: 1, email: "hr@teamsync.com", role: "HR-менеджер", sentAt: "24.01.2026", status: "pending" },
@@ -535,7 +546,7 @@ function TelegramSettings() {
   const { toast } = useToast();
   const [token, setToken] = useState("");
 
-  const { data: setting } = useQuery({
+  const { data: setting } = useQuery<any>({
     queryKey: ["/api/settings/tg_bot_token"],
   });
 
@@ -644,8 +655,19 @@ function ProjectsManagement() {
   const [isCreateProjectOpen, setIsCreateProjectOpen] = useState(false);
   const [newProject, setNewProject] = useState({ name: "", color: "bg-blue-500", priority: "Средний" });
 
+  const priorityDisplayMap: Record<string, string> = {
+    "low": "Низкий",
+    "medium": "Средний",
+    "high": "Высокий",
+    "critical": "Критический"
+  };
+
   const { data: projects = [], isLoading: isLoadingProjects } = useQuery<any[]>({
     queryKey: ["/api/projects"],
+  });
+
+  const { data: users = [] } = useQuery<User[]>({
+    queryKey: ["/api/users"],
   });
 
   const createProjectMutation = useMutation({
@@ -746,6 +768,78 @@ function ProjectsManagement() {
     setEditingPriority(null);
   };
 
+  const { data: labels = [] } = useQuery<any[]>({
+    queryKey: ["/api/labels"],
+  });
+
+  const createLabelMutation = useMutation({
+    mutationFn: async (label: any) => {
+      const res = await apiRequest("POST", "/api/labels", label);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/labels"] });
+      setNewLabel({ name: "", color: "bg-blue-500" });
+      setIsLabelDialogOpen(false);
+      toast({ title: "Метка создана" });
+    },
+  });
+
+  const updateLabelMutation = useMutation({
+    mutationFn: async (label: any) => {
+      const res = await apiRequest("PATCH", `/api/labels/${label.id}`, label);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/labels"] });
+      setEditingLabel(null);
+      setIsLabelDialogOpen(false);
+      toast({ title: "Метка обновлена" });
+    },
+  });
+
+  const deleteLabelMutation = useMutation({
+    mutationFn: async (id: string) => {
+      await apiRequest("DELETE", `/api/labels/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/labels"] });
+      if (editingLabel) {
+        setIsLabelDialogOpen(false);
+        setEditingLabel(null);
+      }
+      toast({ title: "Метка удалена" });
+    },
+  });
+
+  const [newLabel, setNewLabel] = useState({ name: "", color: "bg-blue-500" });
+  const [editingLabel, setEditingLabel] = useState<any>(null);
+  const [isLabelDialogOpen, setIsLabelDialogOpen] = useState(false);
+
+  const handleAddLabel = () => {
+    if (!newLabel.name) return;
+    createLabelMutation.mutate(newLabel);
+  };
+
+  const handleUpdateLabel = () => {
+    if (!editingLabel) return;
+    updateLabelMutation.mutate(editingLabel);
+  };
+
+  const handleDeleteLabel = (id: string) => {
+    deleteLabelMutation.mutate(id);
+  };
+
+  const openLabelDialog = (label?: any) => {
+    if (label) {
+      setEditingLabel(label);
+    } else {
+      setNewLabel({ name: "", color: "bg-blue-500" });
+      setEditingLabel(null);
+    }
+    setIsLabelDialogOpen(true);
+  };
+
   const colors = [
     "bg-rose-600", "bg-rose-400", "bg-amber-500", "bg-emerald-500", 
     "bg-blue-500", "bg-indigo-500", "bg-purple-500", "bg-slate-500"
@@ -782,7 +876,7 @@ function ProjectsManagement() {
                 <Users className="w-6 h-6" />
               </div>
               <div className="flex flex-col">
-                <span className="text-2xl font-bold tracking-tight">24</span>
+                <span className="text-2xl font-bold tracking-tight">{users.length}</span>
                 <span className="text-xs font-medium text-muted-foreground uppercase tracking-widest">Активных участников</span>
               </div>
             </div>
@@ -914,10 +1008,10 @@ function ProjectsManagement() {
                     <div className="flex items-center gap-4">
                       <Badge variant="outline" className={cn(
                         "text-[10px] font-bold uppercase px-3 h-6 border-none shadow-sm",
-                        project.priority === "Высокий" || project.priority === "Критический" ? "bg-rose-500/10 text-rose-600" :
-                        project.priority === "Средний" ? "bg-amber-500/10 text-amber-600" : "bg-emerald-500/10 text-emerald-600"
+                        project.priority === "high" || project.priority === "critical" ? "bg-rose-500/10 text-rose-600" :
+                        project.priority === "medium" ? "bg-amber-500/10 text-amber-600" : "bg-emerald-500/10 text-emerald-600"
                       )}>
-                        {project.priority || "Средний"}
+                        {priorityDisplayMap[project.priority] || project.priority || "Средний"}
                       </Badge>
                       <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all transform translate-x-2 group-hover:translate-x-0">
                         <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-background border border-transparent hover:border-border/50">
@@ -954,19 +1048,19 @@ function ProjectsManagement() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           {/* Priorities List */}
           <Card className="lg:col-span-2 border-border/50 shadow-sm overflow-hidden bg-card/50">
             <div className="divide-y divide-border/50">
               {priorities.map((priority) => (
-                <div key={priority.id} className="p-5 flex items-center justify-between group hover:bg-muted/10 transition-colors">
-                  <div className="flex items-center gap-5">
-                    <div className={cn("w-4 h-4 rounded-full shadow-lg ring-4 ring-background", priority.color)} />
-                    <div className="flex flex-col gap-1">
+                <div key={priority.id} className="p-3 flex items-center justify-between group hover:bg-muted/10 transition-colors">
+                  <div className="flex items-center gap-3">
+                    <div className={cn("w-3 h-3 rounded-full shadow-lg ring-2 ring-background", priority.color)} />
+                    <div className="flex flex-col gap-0.5">
                       <span className="text-sm font-bold tracking-tight">{priority.name}</span>
-                      <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-2">
                         <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-widest">Уровень {priority.level}</span>
-                        <div className="w-24 h-1 rounded-full bg-muted overflow-hidden">
+                        <div className="w-16 h-1 rounded-full bg-muted overflow-hidden">
                           <div 
                             className={cn("h-full transition-all", priority.color)} 
                             style={{ width: `${(priority.level / 10) * 100}%` }}
@@ -979,18 +1073,18 @@ function ProjectsManagement() {
                     <Button 
                       variant="ghost" 
                       size="icon" 
-                      className="h-9 w-9 text-muted-foreground hover:text-foreground hover:bg-background border border-transparent hover:border-border/50"
+                      className="h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-background border border-transparent hover:border-border/50"
                       onClick={() => setEditingPriority({ ...priority })}
                     >
-                      <Pencil className="w-3.5 h-3.5" />
+                      <Pencil className="w-3 h-3" />
                     </Button>
                     <Button 
                       variant="ghost" 
                       size="icon" 
-                      className="h-9 w-9 text-rose-500 hover:text-rose-600 hover:bg-rose-50 border border-transparent hover:border-rose-100"
+                      className="h-8 w-8 text-rose-500 hover:text-rose-600 hover:bg-rose-50 border border-transparent hover:border-rose-100"
                       onClick={() => handleDeletePriority(priority.id)}
                     >
-                      <Trash2 className="w-3.5 h-3.5" />
+                      <Trash2 className="w-3 h-3" />
                     </Button>
                   </div>
                 </div>
@@ -1000,35 +1094,32 @@ function ProjectsManagement() {
 
           {/* Add/Edit Form */}
           <Card className="border-border/50 shadow-xl bg-card relative overflow-hidden flex flex-col h-fit sticky top-8">
-            <div className={cn("absolute top-0 left-0 w-full h-1.5", editingPriority ? editingPriority.color : newPriority.color)} />
-            <CardHeader className="pb-4">
-              <CardTitle className="text-base font-bold flex items-center gap-2">
+            <div className={cn("absolute top-0 left-0 w-full h-1", editingPriority ? editingPriority.color : newPriority.color)} />
+            <CardHeader className="pb-2 p-4">
+              <CardTitle className="text-sm font-bold flex items-center gap-2">
                 {editingPriority ? (
                   <>
-                    <div className={cn("p-2 rounded-lg bg-primary/10 text-primary")}>
-                      <Pencil className="w-4 h-4" />
+                    <div className={cn("p-1.5 rounded-md bg-primary/10 text-primary")}>
+                      <Pencil className="w-3.5 h-3.5" />
                     </div>
                     Редактирование
                   </>
                 ) : (
                   <>
-                    <div className="p-2 rounded-lg bg-primary/10 text-primary">
-                      <Plus className="w-4 h-4" />
+                    <div className="p-1.5 rounded-md bg-primary/10 text-primary">
+                      <Plus className="w-3.5 h-3.5" />
                     </div>
                     Новый приоритет
                   </>
                 )}
               </CardTitle>
-              <CardDescription className="text-xs">
-                {editingPriority ? "Измените параметры существующего приоритета" : "Создайте новый уровень важности для задач"}
-              </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="space-y-2.5">
+            <CardContent className="space-y-3 p-4 pt-0">
+              <div className="space-y-1.5">
                 <Label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Название</Label>
                 <Input 
                   placeholder="Напр: Срочно" 
-                  className="h-10 text-sm bg-muted/20 border-border/50 focus:bg-background transition-all"
+                  className="h-8 text-xs bg-muted/20 border-border/50 focus:bg-background transition-all"
                   value={editingPriority ? editingPriority.name : newPriority.name}
                   onChange={(e) => editingPriority 
                     ? setEditingPriority({ ...editingPriority, name: e.target.value })
@@ -1037,7 +1128,7 @@ function ProjectsManagement() {
                 />
               </div>
 
-              <div className="space-y-2.5">
+              <div className="space-y-1.5">
                 <div className="flex justify-between items-center">
                   <Label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Уровень важности</Label>
                   <span className="text-xs font-bold text-primary">{editingPriority ? editingPriority.level : newPriority.level}</span>
@@ -1047,22 +1138,18 @@ function ProjectsManagement() {
                   min="1" 
                   max="10" 
                   step="1"
-                  className="h-6 cursor-pointer accent-primary"
+                  className="h-4 cursor-pointer accent-primary"
                   value={editingPriority ? editingPriority.level : newPriority.level}
                   onChange={(e) => editingPriority 
                     ? setEditingPriority({ ...editingPriority, level: Number(e.target.value) })
                     : setNewPriority({ ...newPriority, level: Number(e.target.value) })
                   }
                 />
-                <div className="flex justify-between text-[9px] font-bold text-muted-foreground/50 uppercase tracking-tighter">
-                  <span>Низкий</span>
-                  <span>Высокий</span>
-                </div>
               </div>
 
-              <div className="space-y-2.5">
+              <div className="space-y-1.5">
                 <Label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Цвет метки</Label>
-                <div className="grid grid-cols-4 gap-3 pt-1">
+                <div className="grid grid-cols-4 gap-2 pt-1">
                   {colors.map((color) => (
                     <button
                       key={color}
@@ -1071,16 +1158,16 @@ function ProjectsManagement() {
                         : setNewPriority({ ...newPriority, color })
                       }
                       className={cn(
-                        "h-8 rounded-lg transition-all ring-offset-2 ring-offset-background relative overflow-hidden group/color",
+                        "h-6 rounded-md transition-all ring-offset-1 ring-offset-background relative overflow-hidden group/color",
                         color,
                         (editingPriority ? editingPriority.color === color : newPriority.color === color)
-                          ? "ring-2 ring-primary scale-105 shadow-md" 
+                          ? "ring-2 ring-primary scale-105 shadow-sm" 
                           : "hover:scale-105 opacity-70 hover:opacity-100"
                       )}
                     >
                       {(editingPriority ? editingPriority.color === color : newPriority.color === color) && (
                         <div className="absolute inset-0 flex items-center justify-center bg-black/10">
-                          <Check className="w-4 h-4 text-white" />
+                          <Check className="w-3 h-3 text-white" />
                         </div>
                       )}
                     </button>
@@ -1088,24 +1175,132 @@ function ProjectsManagement() {
                 </div>
               </div>
             </CardContent>
-            <CardFooter className="pt-2 pb-6 flex gap-3">
+            <CardFooter className="pt-0 pb-4 px-4 flex gap-2">
               {editingPriority ? (
                 <>
-                  <Button variant="outline" size="sm" className="flex-1 h-10 text-xs font-bold border-border/50" onClick={() => setEditingPriority(null)}>
+                  <Button variant="outline" size="sm" className="flex-1 h-8 text-xs font-bold border-border/50" onClick={() => setEditingPriority(null)}>
                     Отмена
                   </Button>
-                  <Button size="sm" className="flex-1 h-10 text-xs font-bold gap-2 shadow-lg shadow-primary/20" onClick={handleUpdatePriority}>
-                    <Check className="w-3.5 h-3.5" /> Сохранить
+                  <Button size="sm" className="flex-1 h-8 text-xs font-bold gap-2 shadow-sm" onClick={handleUpdatePriority}>
+                    <Check className="w-3 h-3" /> Сохранить
                   </Button>
                 </>
               ) : (
-                <Button size="sm" className="w-full h-11 text-xs font-bold gap-2 shadow-lg shadow-primary/20" onClick={handleAddPriority} disabled={!newPriority.name}>
-                  <Plus className="w-4 h-4" /> Добавить приоритет
+                <Button size="sm" className="w-full h-9 text-xs font-bold gap-2 shadow-sm" onClick={handleAddPriority} disabled={!newPriority.name}>
+                  <Plus className="w-3.5 h-3.5" /> Добавить
                 </Button>
               )}
             </CardFooter>
           </Card>
         </div>
+      </section>
+
+      {/* Task Labels Section */}
+      <section className="space-y-4">
+        <div className="flex items-center justify-between px-1">
+          <div className="flex flex-col gap-1">
+            <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+              <Tags className="w-3.5 h-3.5" />
+              Метки задач
+            </h4>
+            <p className="text-[11px] text-muted-foreground">Управление метками для категоризации задач</p>
+          </div>
+        </div>
+
+        <Card className="border-border/50 shadow-sm overflow-hidden bg-card/50">
+          <div className="p-6">
+            <div className="flex flex-wrap gap-3">
+              <Dialog open={isLabelDialogOpen} onOpenChange={setIsLabelDialogOpen}>
+                <DialogTrigger asChild>
+                  <button 
+                    className="h-8 px-3 rounded-full border border-dashed border-border hover:border-primary/50 hover:bg-primary/5 flex items-center gap-2 transition-all group"
+                    onClick={() => openLabelDialog()}
+                  >
+                    <Plus className="w-3.5 h-3.5 text-muted-foreground group-hover:text-primary transition-colors" />
+                    <span className="text-xs font-medium text-muted-foreground group-hover:text-primary transition-colors">Добавить метку</span>
+                  </button>
+                </DialogTrigger>
+                <DialogContent className="sm:max-w-[425px]">
+                  <DialogHeader>
+                    <DialogTitle>{editingLabel ? "Редактировать метку" : "Новая метка"}</DialogTitle>
+                    <DialogDescription>
+                      {editingLabel ? "Измените название или цвет метки" : "Создайте новую метку для задач"}
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="grid gap-4 py-4">
+                    <div className="grid gap-2">
+                      <Label htmlFor="name">Название</Label>
+                      <Input
+                        id="name"
+                        value={editingLabel ? editingLabel.name : newLabel.name}
+                        onChange={(e) => editingLabel 
+                          ? setEditingLabel({ ...editingLabel, name: e.target.value })
+                          : setNewLabel({ ...newLabel, name: e.target.value })
+                        }
+                        placeholder="Например: Ошибка"
+                      />
+                    </div>
+                    <div className="grid gap-2">
+                      <Label>Цвет</Label>
+                      <div className="flex flex-wrap gap-2">
+                        {colors.map((color) => (
+                          <button
+                            key={color}
+                            onClick={() => editingLabel 
+                              ? setEditingLabel({ ...editingLabel, color })
+                              : setNewLabel({ ...newLabel, color })
+                            }
+                            className={cn(
+                              "w-6 h-6 rounded-full transition-all ring-offset-2 ring-offset-background relative",
+                              color,
+                              (editingLabel ? editingLabel.color === color : newLabel.color === color)
+                                ? "ring-2 ring-primary scale-110" 
+                                : "hover:scale-110 opacity-70 hover:opacity-100"
+                            )}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                  <DialogFooter>
+                    {editingLabel && (
+                       <Button 
+                        type="button" 
+                        variant="destructive" 
+                        size="sm"
+                        className="mr-auto"
+                        onClick={() => {
+                          handleDeleteLabel(editingLabel.id);
+                          setIsLabelDialogOpen(false);
+                        }}
+                      >
+                        Удалить
+                      </Button>
+                    )}
+                    <Button onClick={editingLabel ? handleUpdateLabel : handleAddLabel}>
+                      {editingLabel ? "Сохранить" : "Создать"}
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+
+              {labels.map((label) => (
+                <div
+                  key={label.id}
+                  className={cn(
+                    "h-8 px-3 rounded-full flex items-center gap-2 transition-all cursor-pointer hover:ring-2 ring-offset-2 ring-offset-background ring-primary/20",
+                    label.color.replace('bg-', 'bg-').replace('500', '500/10'),
+                    label.color.replace('bg-', 'text-').replace('500', '600')
+                  )}
+                  onClick={() => openLabelDialog(label)}
+                >
+                  <div className={cn("w-2 h-2 rounded-full", label.color)} />
+                  <span className="text-xs font-medium">{label.name}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </Card>
       </section>
     </div>
   );

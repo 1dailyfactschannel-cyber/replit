@@ -1239,6 +1239,49 @@ export class PostgresStorage {
     }
   }
 
+  // Labels
+  async getLabels(): Promise<schema.Label[]> {
+    try {
+      return await this.db.select().from(schema.labels).orderBy(schema.labels.name);
+    } catch (error) {
+      console.error("Error getting labels:", error);
+      return [];
+    }
+  }
+
+  async createLabel(label: schema.InsertLabel): Promise<schema.Label> {
+    try {
+      const [newLabel] = await this.db.insert(schema.labels).values(label).returning();
+      return newLabel;
+    } catch (error) {
+      console.error("Error creating label:", error);
+      throw error;
+    }
+  }
+
+  async updateLabel(id: string, update: Partial<schema.InsertLabel>): Promise<schema.Label> {
+    try {
+      const [updatedLabel] = await this.db.update(schema.labels)
+        .set(update)
+        .where(eq(schema.labels.id, id))
+        .returning();
+      if (!updatedLabel) throw new Error("Label not found");
+      return updatedLabel;
+    } catch (error) {
+      console.error("Error updating label:", error);
+      throw error;
+    }
+  }
+
+  async deleteLabel(id: string): Promise<void> {
+    try {
+      await this.db.delete(schema.labels).where(eq(schema.labels.id, id));
+    } catch (error) {
+      console.error("Error deleting label:", error);
+      throw error;
+    }
+  }
+
   // Database health check
   async healthCheck(): Promise<boolean> {
     try {
