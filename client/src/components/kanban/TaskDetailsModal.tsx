@@ -142,7 +142,15 @@ export function TaskDetailsModal({
   const { data: serverSubtasks = [] } = useQuery<any[]>({
     queryKey: [`/api/tasks/${task?.id}/subtasks`],
     enabled: !!task?.id && open,
+    staleTime: 0,
   });
+  
+  // Debug log
+  useEffect(() => {
+    if (open && serverSubtasks) {
+      console.log("[Subtask] serverSubtasks loaded:", serverSubtasks);
+    }
+  }, [open, serverSubtasks]);
 
   // Fetch task details directly to ensure fresh data
   const { data: serverTask } = useQuery<Task>({
@@ -196,14 +204,35 @@ export function TaskDetailsModal({
     }
   }, [serverObservers, effectiveTask]);
 
-  // Sync subtasks - при открытии модалки загружаем с сервера
+  // Sync subtasks - при изменении serverSubtasks
   useEffect(() => {
-    if (serverSubtasks && serverSubtasks.length > 0) {
-      setLocalSubtasks(serverSubtasks);
-    } else if (effectiveTask?.subtasks) {
-      setLocalSubtasks(effectiveTask.subtasks);
+    if (!open) return;
+    if (!serverSubtasks || serverSubtasks.length === 0) {
+      console.log("[Subtask] No serverSubtasks, skipping sync");
+      return;
     }
-  }, [effectiveTask?.id, open]);
+    
+    console.log("[Subtask] Syncing subtasks, serverSubtasks:", serverSubtasks);
+    
+    // Маппим isCompleted в completed для совместимости
+    const mappedSubtasks = serverSubtasks.map((s: any) => ({
+      ...s,
+      completed: s.isCompleted || s.completed || false
+    }));
+    
+    // Не обновляем если данные идентичны
+    const currentIds = localSubtasks.map(s => String(s.id)).sort();
+    const serverIds = mappedSubtasks.map((s: any) => String(s.id)).sort();
+    const isSame = currentIds.length === serverIds.length && 
+                   currentIds.every((id, i) => id === serverIds[i]);
+    if (isSame) {
+      console.log("[Subtask] Same subtasks, skipping update");
+      return;
+    }
+    
+    console.log("[Subtask] Setting localSubtasks to:", mappedSubtasks);
+    setLocalSubtasks(mappedSubtasks);
+  }, [open, serverSubtasks]);
 
   // Sync labels with task data
   useEffect(() => {
@@ -306,6 +335,11 @@ export function TaskDetailsModal({
     onError: (error) => {
       console.error("Update error:", error);
       sonnerToast.error(`Ошибка обновления: ${error instanceof Error ? error.message : 'Неизвестная ошибка'}`);
+      // Revert optimistic update by invalidating cache
+      if (task?.id) {
+        queryClient.invalidateQueries({ queryKey: ["/api/tasks", task.id] });
+      }
+      
       // Rollback local states if needed
       if (task) {
         setNewTitle(task.title || "");
@@ -322,6 +356,10 @@ export function TaskDetailsModal({
     if (!task?.id) {
       sonnerToast.error("Ошибка: ID задачи не найден");
       return;
+    }
+
+    if (updates.priority) {
+      console.log("[TaskDetails] Updating priority to:", updates.priority);
     }
     
     if (typeof task.id === 'string' && task.id.startsWith('temp-')) {
@@ -439,18 +477,19 @@ export function TaskDetailsModal({
   };
 
   const handleAddSubtask = async () => {
-    if (!newSubtaskTitle.trim() || !task?.id) return;
+    const title = newSubtaskTitle.trim();
+    if (!title || !task?.id) return;
     
     // Создаем временную подзадачу для мгновенного отображения
     const tempId = `temp-${Date.now()}`;
     const tempSubtask = {
       id: tempId,
       taskId: task.id,
-      title: newSubtaskTitle,
+      title: title,
       completed: false,
       isCompleted: false,
       order: localSubtasks.length,
-      author: { name: "Вы" }, // Показываем как текущего пользователя
+      author: { name: "Вы" },
       authorId: null
     };
     
@@ -470,14 +509,22 @@ export function TaskDetailsModal({
     
     // Отправляем запрос в фоне
     try {
+      console.log("[Subtask] Sending request with title:", title);
       const res = await apiRequest("POST", `/api/tasks/${task.id}/subtasks`, {
-        title: newSubtaskTitle,
-        completed: false
+        title: title,
+        isCompleted: false,
+        order: optimisticSubtasks.length - 1
       });
       const newSub = await res.json();
+      console.log("[Subtask] Response:", newSub);
       
       // Заменяем временную подзадачу на реальную
-      setLocalSubtasks(prev => prev.map(s => s.id === tempId ? newSub : s));
+      // Маппим поле isCompleted в completed для совместимости
+      const mappedSub = {
+        ...newSub,
+        completed: newSub.isCompleted || newSub.completed || false
+      };
+      setLocalSubtasks(prev => prev.map(s => s.id === tempId ? mappedSub : s));
       
       if (onUpdate && task) {
         onUpdate({
@@ -488,7 +535,10 @@ export function TaskDetailsModal({
       
       // Инвалидируем кэш в фоне
       queryClient.invalidateQueries({ queryKey: [`/api/tasks/${task?.id}/subtasks`] });
+      // Также инвалидируем кэш доски
+      queryClient.invalidateQueries({ queryKey: [`/api/boards/${task?.boardId}/full`] });
     } catch (error) {
+      console.error("[Subtask] Error creating subtask:", error);
       // Откатываем изменения при ошибке
       setLocalSubtasks(prev => prev.filter(s => s.id !== tempId));
       if (onUpdate && task) {
@@ -555,11 +605,13 @@ export function TaskDetailsModal({
     try {
       await apiRequest("DELETE", `/api/subtasks/${id}`);
       
-      // Только инвалидируем запрос подзадач (без лишних запросов)
+      // Инвалидируем кэш
       queryClient.invalidateQueries({ queryKey: [`/api/tasks/${task?.id}/subtasks`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/boards/${task?.boardId}/full`] });
       
       sonnerToast.success("Подзадача удалена");
     } catch (error) {
+      console.error("[Subtask] Error deleting subtask:", error);
       // Откатываем при ошибке
       setLocalSubtasks(previousSubtasks);
       if (onUpdate && task) {
@@ -749,6 +801,17 @@ export function TaskDetailsModal({
     "critical": "Критический"
   };
 
+  const normalizePriority = (p?: string) => {
+    if (!p) return "medium";
+    const lower = p.toString().trim().toLowerCase();
+    if (lower === "критический" || lower === "critical") return "critical";
+    if (lower === "высокий" || lower === "high") return "high";
+    if (lower === "средний" || lower === "medium") return "medium";
+    if (lower === "низкий" || lower === "low") return "low";
+    if (lower === "без приоритета" || lower === "no_priority" || lower === "no priority") return "no_priority";
+    return "medium";
+  };
+
   const safeTask = {
     ...effectiveTask,
     creator: effectiveTask?.creator || { name: "Неизвестно", date: "", avatar: null },
@@ -758,7 +821,7 @@ export function TaskDetailsModal({
     comments: effectiveTask?.comments || [],
     attachments: effectiveTask?.attachments || [],
     type: effectiveTask?.type || "Задача",
-    priority: effectiveTask?.priority || "medium",
+    priority: normalizePriority(effectiveTask?.priority),
     status: effectiveTask?.status || "В планах",
     dueDate: effectiveTask?.dueDate || "Не установлен",
     project: effectiveTask?.project || "м4",
@@ -946,7 +1009,7 @@ export function TaskDetailsModal({
                       </button>
                       <span className={cn(
                         "text-[15px] flex-1 font-medium transition-all", 
-                        sub.completed ? "text-muted-foreground line-through opacity-60" : "text-foreground/90"
+                        sub.completed ? "text-muted-foreground line-through opacity-60" : "text-black dark:text-white"
                       )}>
                         {sub.title}
                       </span>
@@ -995,7 +1058,7 @@ export function TaskDetailsModal({
                           setNewSubtaskTitle("");
                         }
                       }}
-                      className="h-9 border-none bg-transparent focus-visible:ring-0 text-sm"
+                      className="h-9 border-none bg-transparent focus-visible:ring-0 text-sm text-black dark:text-white placeholder:text-muted-foreground"
                     />
                     <Button size="sm" onClick={handleAddSubtask} className="h-8">
                       Ок
@@ -1205,7 +1268,7 @@ export function TaskDetailsModal({
               <div className="relative group">
                 <Input 
                   placeholder="Напишите комментарий..." 
-                  className="h-14 pl-4 pr-24 bg-secondary/20 border-border/40 rounded-2xl focus-visible:ring-primary/20 transition-all text-[15px] font-medium placeholder:text-muted-foreground/40 shadow-inner"
+                  className="h-14 pl-4 pr-24 bg-secondary/20 border-border/40 rounded-2xl focus-visible:ring-primary/20 transition-all text-[15px] font-medium placeholder:text-muted-foreground/40 shadow-inner text-black dark:text-white"
                   value={newComment}
                   onChange={(e) => setNewComment(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && handleAddComment()}

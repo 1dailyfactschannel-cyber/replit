@@ -152,6 +152,7 @@ export const tasks = pgTable("tasks", {
   dueDate: timestamp("due_date"),
   completedAt: timestamp("completed_at"),
   order: integer("order").notNull().default(0),
+  number: text("number"),
   parentId: uuid("parent_id").references((): any => tasks.id),
   tags: jsonb("tags").default(sql`'[]'::jsonb`),
   attachments: jsonb("attachments").default(sql`'[]'::jsonb`),

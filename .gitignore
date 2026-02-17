@@ -9,3 +9,4 @@ dist
 .trae
 client/dist
 server/dist
+nul

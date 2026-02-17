@@ -35,8 +35,41 @@ export function setupWebSockets(httpServer: HttpServer) {
       log(`Socket ${socket.id} left chat room chat:${chatId}`, "socket.io");
     });
 
+    // Typing events with debounce/batching to reduce server load
+    const typingTimeouts = new Map<string, NodeJS.Timeout>();
+    
     socket.on("typing", (data: { chatId: string, userId: string, username: string }) => {
+      const key = `${data.chatId}:${data.userId}`;
+      
+      // Clear existing timeout
+      if (typingTimeouts.has(key)) {
+        clearTimeout(typingTimeouts.get(key));
+      }
+      
+      // Emit typing event
       socket.to(`chat:${data.chatId}`).emit("user-typing", data);
+      
+      // Set timeout to emit "stopped-typing" after 2 seconds
+      const timeout = setTimeout(() => {
+        socket.to(`chat:${data.chatId}`).emit("user-stopped-typing", {
+          chatId: data.chatId,
+          userId: data.userId
+        });
+        typingTimeouts.delete(key);
+      }, 2000);
+      
+      typingTimeouts.set(key, timeout);
+    });
+    
+    socket.on("stop-typing", (data: { chatId: string, userId: string }) => {
+      const key = `${data.chatId}:${data.userId}`;
+      
+      if (typingTimeouts.has(key)) {
+        clearTimeout(typingTimeouts.get(key));
+        typingTimeouts.delete(key);
+      }
+      
+      socket.to(`chat:${data.chatId}`).emit("user-stopped-typing", data);
     });
 
     // Call signaling events

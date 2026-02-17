@@ -13,7 +13,7 @@ import {
   type InsertNotification
 } from "@shared/schema";
 import { drizzle } from "drizzle-orm/postgres-js";
-import { eq, and, or, desc, ne, sql } from "drizzle-orm";
+import { eq, and, or, desc, ne, sql, inArray } from "drizzle-orm";
 import postgres from "postgres";
 import * as schema from "@shared/schema";
 import dotenv from "dotenv";
@@ -100,6 +100,16 @@ export class PostgresStorage {
       return await this.db.select().from(schema.users);
     } catch (error) {
       console.error("Error getting all users:", error);
+      return [];
+    }
+  }
+
+  async getUsersByIds(ids: string[]): Promise<User[]> {
+    try {
+      if (ids.length === 0) return [];
+      return await this.db.select().from(schema.users).where(inArray(schema.users.id, ids));
+    } catch (error) {
+      console.error("Error getting users by ids:", error);
       return [];
     }
   }
@@ -664,26 +674,73 @@ export class PostgresStorage {
   }
 
   async getProjectsWithStats(): Promise<any[]> {
+    const startTime = Date.now();
     try {
       const cacheKey = "projects:stats:all";
       const cached = await getCache<any[]>(cacheKey);
-      if (cached) return cached;
+      if (cached) {
+        console.log(`[DB] getProjectsWithStats: cached (${cached.length} projects)`);
+        return cached;
+      }
 
-      const result = await this.db
+      // Optimized: Get projects with board counts in a single efficient query
+      const projectsWithBoards = await this.db
         .select({
           project: schema.projects,
           boardCount: sql<number>`count(distinct ${schema.boards.id})`,
-          taskCount: sql<number>`count(distinct ${schema.tasks.id})`,
-          completedTaskCount: sql<number>`count(distinct ${schema.tasks.id}) filter (where ${schema.tasks.status} in ('done', 'completed', 'Готово'))`,
         })
         .from(schema.projects)
         .leftJoin(schema.boards, eq(schema.projects.id, schema.boards.projectId))
-        .leftJoin(schema.tasks, eq(schema.boards.id, schema.tasks.boardId))
         .groupBy(schema.projects.id);
 
-      const projectsWithStats = result.map((row) => {
-        const taskCount = Number(row.taskCount || 0);
-        const completedTaskCount = Number(row.completedTaskCount || 0);
+      // Get task stats separately to avoid complex joins
+      const boardIds = projectsWithBoards
+        .filter(p => p.boardCount > 0)
+        .map(p => p.project.id);
+      
+      let taskStats: Map<string, { taskCount: number; completedTaskCount: number }> = new Map();
+      
+      if (boardIds.length > 0) {
+        const boardsForProjects = await this.db
+          .select({
+            projectId: schema.boards.projectId,
+            boardId: schema.boards.id,
+          })
+          .from(schema.boards)
+          .where(inArray(schema.boards.projectId, boardIds));
+
+        const allBoardIds = boardsForProjects.map(b => b.boardId);
+        
+        if (allBoardIds.length > 0) {
+          const taskCounts = await this.db
+            .select({
+              boardId: schema.tasks.boardId,
+              taskCount: sql<number>`count(*)`,
+              completedCount: sql<number>`count(*) filter (where ${schema.tasks.status} in ('done', 'completed', 'Готово'))`,
+            })
+            .from(schema.tasks)
+            .where(inArray(schema.tasks.boardId, allBoardIds))
+            .groupBy(schema.tasks.boardId);
+
+          // Aggregate stats by project
+          const boardToProject = new Map(boardsForProjects.map(b => [b.boardId, b.projectId]));
+          
+          for (const stat of taskCounts) {
+            const projectId = boardToProject.get(stat.boardId);
+            if (projectId) {
+              const existing = taskStats.get(projectId) || { taskCount: 0, completedTaskCount: 0 };
+              existing.taskCount += Number(stat.taskCount);
+              existing.completedTaskCount += Number(stat.completedCount);
+              taskStats.set(projectId, existing);
+            }
+          }
+        }
+      }
+
+      const projectsWithStats = projectsWithBoards.map((row) => {
+        const stats = taskStats.get(row.project.id) || { taskCount: 0, completedTaskCount: 0 };
+        const taskCount = stats.taskCount;
+        const completedTaskCount = stats.completedTaskCount;
         const progress = taskCount > 0 ? Math.round((completedTaskCount / taskCount) * 100) : 100;
 
         return {
@@ -694,7 +751,10 @@ export class PostgresStorage {
         };
       });
 
-      await setCache(cacheKey, projectsWithStats, 300); // Cache for 5 minutes (was 1 min)
+      const duration = Date.now() - startTime;
+      console.log(`[DB] getProjectsWithStats: ${projectsWithStats.length} projects in ${duration}ms`);
+      
+      await setCache(cacheKey, projectsWithStats, 300); // Cache for 5 minutes
       return projectsWithStats;
     } catch (error) {
       console.error("Error getting projects with stats:", error);
@@ -942,6 +1002,84 @@ export class PostgresStorage {
     }
   }
 
+  // Optimized method: get tasks with assignee and reporter in single query (no N+1)
+  async getTasksByBoardWithUsers(boardId: string, limit: number = 100): Promise<any[]> {
+    const startTime = Date.now();
+    try {
+      // Get tasks first
+      const tasks = await this.db
+        .select()
+        .from(schema.tasks)
+        .where(eq(schema.tasks.boardId, boardId))
+        .orderBy(schema.tasks.order)
+        .limit(limit);
+
+      if (tasks.length === 0) {
+        return [];
+      }
+
+      // Get all unique user IDs from tasks
+      const userIds = Array.from(new Set(tasks.flatMap(t => [t.assigneeId, t.reporterId]).filter((id): id is string => !!id)));
+      
+      // Fetch all users in one query
+      const users = userIds.length > 0 
+        ? await this.db.select().from(schema.users).where(inArray(schema.users.id, userIds))
+        : [];
+      
+      const userMap = new Map(users.map(u => [u.id, u]));
+
+      // Get all subtasks for these tasks
+      const taskIds = tasks.map(t => t.id);
+      let subtasks: any[] = [];
+      if (taskIds.length > 0) {
+        subtasks = await this.db
+          .select()
+          .from(schema.subtasks)
+          .where(inArray(schema.subtasks.taskId, taskIds))
+          .orderBy(schema.subtasks.order);
+      }
+      
+      // Create subtasks map
+      const subtasksMap = new Map<string, any[]>();
+      for (const subtask of subtasks) {
+        const existing = subtasksMap.get(subtask.taskId) || [];
+        existing.push(subtask);
+        subtasksMap.set(subtask.taskId, existing);
+      }
+
+      const duration = Date.now() - startTime;
+      console.log(`[DB] getTasksByBoardWithUsers: ${tasks.length} tasks, ${subtasks.length} subtasks in ${duration}ms`);
+
+      return tasks.map((task) => {
+        const assignee = task.assigneeId ? userMap.get(task.assigneeId) : null;
+        const reporter = task.reporterId ? userMap.get(task.reporterId) : null;
+        
+        const formatName = (user: any) => {
+          if (!user) return null;
+          const fullName = `${user.firstName || ""} ${user.lastName || ""}`.trim();
+          return fullName || user.username || "Пользователь";
+        };
+
+        return {
+          ...task,
+          assignee: assignee ? { 
+            name: formatName(assignee), 
+            avatar: assignee.avatar 
+          } : null,
+          creator: { 
+            name: formatName(reporter) || "Система", 
+            avatar: reporter?.avatar || null,
+            date: task.createdAt ? new Date(task.createdAt).toLocaleString("ru-RU") : ""
+          },
+          subtasks: subtasksMap.get(task.id) || []
+        };
+      });
+    } catch (error) {
+      console.error("Error getting tasks by board with users:", error);
+      return [];
+    }
+  }
+
   async getFirstUser(): Promise<User | undefined> {
     try {
       // Получаем последнего зарегистрированного пользователя, 
@@ -997,6 +1135,16 @@ export class PostgresStorage {
     } catch (error) {
       console.error("Error deleting subtask:", error);
       throw error;
+    }
+  }
+
+  async getSubtask(id: string): Promise<schema.Subtask | undefined> {
+    try {
+      const [subtask] = await this.db.select().from(schema.subtasks).where(eq(schema.subtasks.id, id)).limit(1);
+      return subtask;
+    } catch (error) {
+      console.error("Error getting subtask:", error);
+      return undefined;
     }
   }
 

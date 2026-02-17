@@ -58,10 +58,6 @@ export function setupAuth(app: Express) {
   }
 
   app.use(session(sessionSettings));
-  app.use((req, res, next) => {
-    console.log(`[session] Request session ID: ${req.sessionID}`);
-    next();
-  });
   app.use(passport.initialize());
   app.use(passport.session());
 
@@ -107,8 +103,13 @@ export function setupAuth(app: Express) {
   passport.deserializeUser(async (id: string, done) => {
     try {
       const user = await storage.getUser(id);
+      if (!user) {
+        console.log(`[auth] User with id ${id} not found during deserialization`);
+        return done(null, false);
+      }
       done(null, user);
     } catch (err) {
+      console.error(`[auth] Error deserializing user ${id}:`, err);
       done(err);
     }
   });

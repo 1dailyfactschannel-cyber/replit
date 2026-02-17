@@ -86,7 +86,16 @@ export default function Kanban() {
                 <ScrollArea className="flex-1">
                   <div className="flex flex-col gap-3 pb-4">
                     {col.tasks.map(task => (
-                      <div key={task.id} className="bg-card border border-border/50 rounded-xl p-4 shadow-sm hover:shadow-md transition-all cursor-pointer group">
+                      <div key={task.id} className="bg-card border border-border/50 rounded-xl p-4 shadow-sm hover:shadow-md transition-all cursor-pointer group relative overflow-hidden">
+                        {/* Bottom border indicator for priority */}
+                        <div className={cn(
+                          "absolute inset-x-0 bottom-0 h-1.5 rounded-b-xl",
+                          (task.priority === "Критический" || task.priority === "critical") ? "bg-rose-600" :
+                          (task.priority === "Высокий" || task.priority === "high") ? "bg-rose-500" :
+                          (task.priority === "Средний" || task.priority === "medium") ? "bg-orange-500" :
+                          (task.priority === "Низкий" || task.priority === "low") ? "bg-blue-500" :
+                          "bg-slate-400"
+                        )} />
                         {task.image && (
                           <div className="mb-3 rounded-lg overflow-hidden h-32 w-full">
                             <img src={task.image} alt="Task cover" className="w-full h-full object-cover" />
@@ -123,13 +132,6 @@ export default function Kanban() {
                                </div>
                              )}
                           </div>
-                          
-                          <div className={cn(
-                            "w-2 h-2 rounded-full",
-                            task.priority === 'high' ? "bg-rose-500" :
-                            task.priority === 'medium' ? "bg-amber-500" :
-                            "bg-emerald-500"
-                          )} />
                         </div>
                       </div>
                     ))}

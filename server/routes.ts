@@ -960,17 +960,30 @@ export async function registerRoutes(
   });
 
   app.post("/api/tasks/:taskId/subtasks", async (req, res) => {
-    if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
+    console.log("[Subtasks] POST request received");
+    console.log("[Subtasks] Request body:", req.body);
+    console.log("[Subtasks] Task ID:", req.params.taskId);
+    console.log("[Subtasks] Is authenticated:", req.isAuthenticated());
+    
+    if (!req.isAuthenticated()) {
+      console.log("[Subtasks] User not authenticated");
+      return res.status(401).json({ message: "Не авторизован" });
+    }
     
     try {
       const userId = req.user!.id;
       console.log("[Subtasks] Creating subtask with userId:", userId);
       
-      const subtask = await storage.createSubtask({
-        ...req.body,
+      const subtaskData = {
         taskId: req.params.taskId,
+        title: req.body.title,
+        isCompleted: req.body.isCompleted || false,
+        order: req.body.order || 0,
         authorId: userId
-      });
+      };
+      console.log("[Subtasks] Subtask data:", subtaskData);
+      
+      const subtask = await storage.createSubtask(subtaskData);
       
       console.log("[Subtasks] Created subtask:", subtask);
       
@@ -983,6 +996,11 @@ export async function registerRoutes(
       
       console.log("[Subtasks] Author:", author);
       
+      // Инвалидируем кэш доски
+      await invalidatePattern(`board:full:*`);
+      // Инвалидируем кэш подзадач для этой задачи
+      await invalidatePattern(`task:${req.params.taskId}:subtasks`);
+      
       res.status(201).json({ ...subtask, author });
     } catch (error) {
       console.error("[Subtasks] Error creating subtask:", error);
@@ -993,6 +1011,12 @@ export async function registerRoutes(
   app.patch("/api/subtasks/:id", async (req, res) => {
     try {
       const subtask = await storage.updateSubtask(req.params.id, req.body);
+      
+      // Инвалидируем кэш
+      await invalidatePattern(`board:full:*`);
+      // Инвалидируем кэш подзадач для этой задачи
+      await invalidatePattern(`task:${subtask.taskId}:subtasks`);
+      
       res.json(subtask);
     } catch (error) {
       res.status(500).json({ message: "Failed to update subtask" });
@@ -1001,9 +1025,23 @@ export async function registerRoutes(
 
   app.delete("/api/subtasks/:id", async (req, res) => {
     try {
+      const subtask = await storage.getSubtask(req.params.id);
+      
       await storage.deleteSubtask(req.params.id);
-      res.status(204).end();
+      
+      // Invalidate board cache
+      await invalidatePattern(`board:full:*`);
+      
+      // Invalidate specific task subtasks cache
+      if (subtask) {
+        await invalidatePattern(`task:${subtask.taskId}:subtasks`);
+      } else {
+        await invalidatePattern(`task:*:subtasks`);
+      }
+      
+      res.sendStatus(204);
     } catch (error) {
+      console.error("[Subtasks] Error deleting subtask:", error);
       res.status(500).json({ message: "Failed to delete subtask" });
     }
   });

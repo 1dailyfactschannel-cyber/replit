@@ -1,4 +1,5 @@
 import "./globals.ts";
+import { setupVite } from "./vite";
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupAuth } from "./auth";
@@ -22,8 +23,46 @@ declare module "http" {
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: false, limit: '10mb' }));
 
+// Enable compression for all responses
+import compression from 'compression';
+app.use(compression());
+
+// Cache storage (shared across all requests)
+const apiCache = new Map<string, { data: any; timestamp: number }>();
+
+// Cache middleware for API responses
+const cacheMiddleware = (duration: number) => {
+  return (req: Request, res: Response, next: NextFunction) => {
+    if (req.method !== 'GET') return next();
+
+    const key = req.originalUrl;
+    const cached = apiCache.get(key);
+
+    if (cached && Date.now() - cached.timestamp < duration) {
+      res.json(cached.data);
+      return;
+    }
+
+    const originalJson = res.json.bind(res);
+    res.json = (data: any) => {
+      apiCache.set(key, { data, timestamp: Date.now() });
+      return originalJson(data);
+    };
+
+    next();
+  };
+};
+
 // Serve static files from the 'uploads' directory
 app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads')));
+
+// Cache static assets for 1 year (only in production)
+if (process.env.NODE_ENV === "production") {
+  app.use('/assets', express.static(path.join(__dirname, '..', 'dist/public/assets'), {
+    maxAge: '1y',
+    immutable: true
+  }));
+}
 
 export function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {
@@ -51,9 +90,11 @@ app.use((req, res, next) => {
     const duration = Date.now() - start;
     if (path.startsWith("/api")) {
       let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
-      if (capturedJsonResponse) {
-        logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
-      }
+      // Don't log the full JSON response as it can be huge and cause performance issues
+      // if (capturedJsonResponse) {
+      //   const jsonStr = JSON.stringify(capturedJsonResponse);
+      //   logLine += ` :: ${jsonStr.length > 200 ? jsonStr.slice(0, 200) + '...' : jsonStr}`;
+      // }
 
       log(logLine);
     }
@@ -75,20 +116,15 @@ app.use((req, res, next) => {
   });
 
   // importantly only setup vite in development and after
-  // setting up all the other routes so the catch-all route
-  // doesn't interfere with the other routes
-  if (process.env.NODE_ENV === "production") {
-    serveStatic(app);
-  } else {
-    const { setupVite } = await import("./vite");
+  if (process.env.NODE_ENV === "development") {
     await setupVite(httpServer, app);
+  } else {
+    serveStatic(app);
   }
 
-  // ALWAYS serve the app on the port specified in the environment variable PORT
-  // Other ports are firewalled. Default to 5000 if not specified.
+  // ALWAYS serve the app on port 3005
   // this serves both the API and the client.
-  // It is the only port that is not firewalled.
-  const port = parseInt(process.env.PORT || "5000", 10);
+  const port = parseInt(process.env.PORT || "3005", 10);
   httpServer.listen(
     {
       port,

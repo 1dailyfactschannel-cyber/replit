@@ -13,6 +13,11 @@ export interface IStorage {
   // Site Settings
   getSiteSetting(key: string): Promise<SiteSettings | undefined>;
   setSiteSetting(key: string, value: string): Promise<SiteSettings>;
+
+  createSubtask(subtask: any): Promise<any>;
+  updateSubtask(id: string, updates: Partial<any>): Promise<any>;
+  deleteSubtask(id: string): Promise<void>;
+  getSubtask(id: string): Promise<any>;
 }
 
 import { PostgresStorage } from "./postgres-storage";

@@ -1,206 +1,70 @@
 <!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TeamSync - Project Management</title>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1" />
+    <title>TeamSync - Управление проектами</title>
+    <meta name="description" content="Управляйте проектами, командой и задачами в одном месте." />
+
+    <!-- Preconnect для ускорения загрузки -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    
+    <!-- Preload критических ресурсов -->
+    <link rel="preload" href="/favicon.png" as="image">
+    <link rel="preload" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" as="style">
+    
+    <!-- CSS с font-display=swap для мгновенного отображения текста -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    
+    <meta property="og:title" content="TeamSync - Управление проектами" />
+    <meta property="og:description" content="Управляйте проектами, командой и задачами в одном месте." />
+    <meta property="og:type" content="website" />
+    
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    
+    <!-- Критические CSS для мгновенного отображения -->
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: #333;
-        }
-        
-        .container {
-            background: white;
-            border-radius: 16px;
-            padding: 40px;
-            width: 90%;
-            max-width: 600px;
-            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
-            text-align: center;
-        }
-        
-        h1 {
-            color: #2563eb;
-            margin-bottom: 20px;
-            font-size: 2.5rem;
-        }
-        
-        .status-card {
-            background: #f0fdf4;
-            border: 2px solid #bbf7d0;
-            border-radius: 12px;
-            padding: 20px;
-            margin: 25px 0;
-        }
-        
-        .status-card h2 {
-            color: #166534;
-            margin-bottom: 10px;
-        }
-        
-        .api-grid {
-            display: grid;
-            gap: 15px;
-            margin: 30px 0;
-        }
-        
-        .endpoint-card {
-            background: #f8fafc;
-            border: 1px solid #e2e8f0;
-            border-radius: 8px;
-            padding: 15px;
-            text-align: left;
-            font-family: 'Monaco', 'Consolas', monospace;
-            font-size: 14px;
-        }
-        
-        .endpoint-card strong {
-            color: #2563eb;
-            display: inline-block;
-            width: 60px;
-        }
-        
-        .button-group {
-            display: flex;
-            gap: 15px;
-            justify-content: center;
-            flex-wrap: wrap;
-            margin: 30px 0;
-        }
-        
-        .btn {
-            padding: 12px 24px;
-            background: #2563eb;
-            color: white;
-            text-decoration: none;
-            border-radius: 8px;
-            font-weight: 500;
-            transition: all 0.2s ease;
-            border: none;
-            cursor: pointer;
-        }
-        
-        .btn:hover {
-            background: #1d4ed8;
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
-        }
-        
-        .btn.secondary {
-            background: #64748b;
-        }
-        
-        .btn.secondary:hover {
-            background: #475569;
-        }
-        
-        .footer {
-            margin-top: 30px;
-            color: #64748b;
-            font-size: 14px;
-            border-top: 1px solid #e2e8f0;
-            padding-top: 20px;
-        }
-        
-        .tech-stack {
-            display: flex;
-            justify-content: center;
-            gap: 15px;
-            flex-wrap: wrap;
-            margin-top: 15px;
-        }
-        
-        .tech-item {
-            background: #eff6ff;
-            color: #1e40af;
-            padding: 6px 12px;
-            border-radius: 20px;
-            font-size: 12px;
-            font-weight: 500;
-        }
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html { font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; }
+      body { 
+        background: #0f172a; 
+        color: #f8fafc;
+        min-height: 100vh;
+      }
+      #root { min-height: 100vh; }
+      /* Спиннер загрузки */
+      .initial-loader {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 1rem;
+      }
+      .spinner {
+        width: 40px;
+        height: 40px;
+        border: 3px solid #334155;
+        border-top-color: #3b82f6;
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+      }
+      @keyframes spin {
+        to { transform: rotate(360deg); }
+      }
     </style>
-</head>
-<body>
-    <div class="container">
-        <h1>🚀 TeamSync</h1>
-        <p style="color: #64748b; margin-bottom: 30px; font-size: 1.1rem;">
-            Современная платформа управления проектами
-        </p>
-        
-        <div class="status-card">
-            <h2>✅ Приложение успешно развернуто!</h2>
-            <p>Работает на Vercel с интеграцией PostgreSQL</p>
-        </div>
-
-        <div class="api-grid">
-            <div class="endpoint-card">
-                <strong>GET</strong> /api/health - Статус приложения и базы данных
-            </div>
-            <div class="endpoint-card">
-                <strong>GET</strong> /api/users - Получить всех пользователей
-            </div>
-            <div class="endpoint-card">
-                <strong>POST</strong> /api/users - Создать нового пользователя
-            </div>
-            <div class="endpoint-card">
-                <strong>GET</strong> /api/settings - Получить настройки сайта
-            </div>
-            <div class="endpoint-card">
-                <strong>POST</strong> /api/settings - Обновить настройки
-            </div>
-        </div>
-
-        <div class="button-group">
-            <button class="btn" onclick="testApi()">Проверить API</button>
-            <a href="/api/health" class="btn secondary">Статус API</a>
-            <a href="https://github.com/1dailyfactschannel-cyber/replit" class="btn secondary" target="_blank">GitHub</a>
-        </div>
-
-        <div class="footer">
-            <div class="tech-stack">
-                <span class="tech-item">React</span>
-                <span class="tech-item">TypeScript</span>
-                <span class="tech-item">PostgreSQL</span>
-                <span class="tech-item">Vercel</span>
-                <span class="tech-item">Drizzle ORM</span>
-            </div>
-            <p style="margin-top: 15px;">
-                База данных: подключена к ds_test (10.30.0.136:5532)
-            </p>
-        </div>
+  </head>
+  <body>
+    <div id="root">
+      <!-- Начальный лоадер, пока загружается React -->
+      <div class="initial-loader">
+        <div class="spinner"></div>
+        <p style="color: #94a3b8; font-size: 14px;">Загрузка...</p>
+      </div>
     </div>
-
-    <script>
-        async function testApi() {
-            try {
-                const response = await fetch('/api/health');
-                const data = await response.json();
-                
-                alert(`✅ API работает!
-
-Статус: ${data.status}
-База данных: ${data.database}
-Время: ${new Date(data.timestamp).toLocaleString('ru-RU')}`);
-            } catch (error) {
-                alert(`❌ Ошибка API: ${error.message}`);
-            }
-        }
-        
-        // Логирование в консоль
-        console.log('TeamSync application initialized');
-        console.log('API endpoints available at /api/*');
-    </script>
-</body>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
 </html>

@@ -22,7 +22,7 @@ import { PageLoadingAnimation, SectionLoadingSpinner } from "@/components/PageLo
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+// import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { TaskDetailsModal, Task } from "@/components/kanban/TaskDetailsModal";
 import {
   Dialog,
@@ -109,7 +109,7 @@ const getColumnColor = (columnName: string): { bg: string; text: string; border:
 // Memoized TaskCard with custom comparison for performance
 const TaskCard = React.memo(({ task, index, onClick, columnColor }: { task: any, index: number, onClick: (task: any) => void, columnColor: { bg: string; text: string; border: string; badge: string } }) => {
   // Preload avatar image for better perceived performance
-  const avatarSrc = task.assignee?.avatar;
+  // const avatarSrc = task.assignee?.avatar;
   
   // Extract task number from ID (show last 4-6 chars) or use task.number if available
   const taskNumber = task.number || (task.id ? `#${task.id.toString().slice(-4)}` : '#0000');
@@ -127,10 +127,14 @@ const TaskCard = React.memo(({ task, index, onClick, columnColor }: { task: any,
             snapshot.isDragging ? "shadow-xl ring-2 ring-primary/20 rotate-1 z-50" : ""
           )}
         >
-          {/* Bottom border indicator for column status */}
+          {/* Bottom border indicator for priority */}
           <div className={cn(
             "absolute inset-x-0 bottom-0 h-1.5 rounded-b-xl",
-            columnColor.border.replace('border-', 'bg-')
+            (task.priority?.toLowerCase() === "критический" || task.priority?.toLowerCase() === "critical") ? "bg-rose-600" :
+            (task.priority?.toLowerCase() === "высокий" || task.priority?.toLowerCase() === "high") ? "bg-rose-500" :
+            (task.priority?.toLowerCase() === "средний" || task.priority?.toLowerCase() === "medium") ? "bg-orange-500" :
+            (task.priority?.toLowerCase() === "низкий" || task.priority?.toLowerCase() === "low") ? "bg-blue-500" :
+            "bg-slate-400"
           )} />
           
           {/* Task Number */}
@@ -138,24 +142,15 @@ const TaskCard = React.memo(({ task, index, onClick, columnColor }: { task: any,
           
           <h4 className="text-sm font-normal mb-3 leading-snug text-foreground/90 line-clamp-2">{task.title}</h4>
           <div className="flex items-center justify-between">
-            <div className="flex -space-x-2">
+            <div className="flex items-center">
               {task.assignee ? (
-                <Avatar className="w-6 h-6 border-2 border-background">
-                  {avatarSrc && (
-                    <AvatarImage 
-                      src={avatarSrc} 
-                      loading="lazy"
-                      decoding="async"
-                    />
-                  )}
-                  <AvatarFallback className="text-[8px]">
-                    {task.assignee.name.substring(0, 2).toUpperCase()}
-                  </AvatarFallback>
-                </Avatar>
+                <span className="text-xs font-medium text-muted-foreground truncate max-w-[150px]">
+                  {task.assignee.name}
+                </span>
               ) : (
-                <Avatar className="w-6 h-6 border-2 border-background">
-                  <AvatarFallback className="text-[8px]">?</AvatarFallback>
-                </Avatar>
+                <span className="text-xs text-muted-foreground/50">
+                  Не назначен
+                </span>
               )}
             </div>
             {task.creator && (
@@ -248,10 +243,13 @@ const KanbanColumn = React.memo(({ column, tasks, onCreateTask, onTaskClick }: K
   if (prevProps.column !== nextProps.column) return false;
   if (prevProps.tasks.length !== nextProps.tasks.length) return false;
   
-  // Check if any task ID or title changed
+  // Check if any task ID, title, or priority changed
   for (let i = 0; i < prevProps.tasks.length; i++) {
     if (prevProps.tasks[i]?.id !== nextProps.tasks[i]?.id) return false;
     if (prevProps.tasks[i]?.title !== nextProps.tasks[i]?.title) return false;
+    if (prevProps.tasks[i]?.priority !== nextProps.tasks[i]?.priority) return false;
+    if (prevProps.tasks[i]?.status !== nextProps.tasks[i]?.status) return false;
+    if (prevProps.tasks[i]?.assignee?.id !== nextProps.tasks[i]?.assignee?.id) return false;
   }
   
   return true;
@@ -727,19 +725,9 @@ export default function Projects() {
   const kanbanData = useMemo(() => {
     if (!columns.length) return {};
     
-    console.log("[Kanban] Building kanbanData:", { columnsCount: columns.length, tasksCount: tasks.length });
-    console.log("[Kanban] All tasks:", tasks.map(t => ({ id: t.id, title: t.title, columnId: t.columnId })));
-    
     const data: Record<string, any[]> = {};
     columns.forEach(col => {
-      const columnTasks = tasks.filter(t => {
-        const match = t.columnId === col.id;
-        if (!match) {
-          console.log(`[Kanban] Task ${t.id} (${t.title}) columnId=${t.columnId} !== col.id=${col.id}`);
-        }
-        return match;
-      });
-      console.log(`[Kanban] Column "${col.name}" (${col.id}): ${columnTasks.length} tasks`);
+      const columnTasks = tasks.filter(t => t.columnId === col.id);
       data[col.name] = columnTasks.sort((a, b) => (a.order || 0) - (b.order || 0));
     });
     return data;

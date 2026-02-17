@@ -100,13 +100,7 @@ export default defineConfig(async ({ mode }): Promise<UserConfig> => ({
   },
   server: {
     host: "0.0.0.0",
-    port: 3005,
-    strictPort: true,
     allowedHosts: true,
-    hmr: {
-      port: 3005,
-      path: "/vite-hmr",
-    },
     fs: {
       strict: false,
       deny: ["**/.*"],
