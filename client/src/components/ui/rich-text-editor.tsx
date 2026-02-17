@@ -75,15 +75,15 @@ const MenuBar = ({ editor }: { editor: any }) => {
   ];
 
   return (
-    <div className="flex flex-wrap gap-1 p-1 border-b border-border bg-muted/30">
+    <div className="flex flex-wrap gap-1 p-1 border-b border-border bg-secondary/50">
       {buttons.map((btn, i) => (
         <Button
           key={i}
           variant="ghost"
           size="icon"
           className={cn(
-            "h-8 w-8",
-            btn.isActive && "bg-secondary text-secondary-foreground"
+            "h-8 w-8 text-muted-foreground hover:text-foreground",
+            btn.isActive && "bg-primary/20 text-primary"
           )}
           onClick={btn.onClick}
           onMouseDown={(e) => e.preventDefault()}
@@ -96,7 +96,7 @@ const MenuBar = ({ editor }: { editor: any }) => {
       <Button
         variant="ghost"
         size="icon"
-        className="h-8 w-8"
+        className="h-8 w-8 text-muted-foreground hover:text-foreground"
         onClick={() => editor.chain().focus().undo().run()}
         disabled={!editor.can().undo()}
         onMouseDown={(e) => e.preventDefault()}
@@ -107,7 +107,7 @@ const MenuBar = ({ editor }: { editor: any }) => {
       <Button
         variant="ghost"
         size="icon"
-        className="h-8 w-8"
+        className="h-8 w-8 text-muted-foreground hover:text-foreground"
         onClick={() => editor.chain().focus().redo().run()}
         disabled={!editor.can().redo()}
         onMouseDown={(e) => e.preventDefault()}
@@ -130,11 +130,8 @@ export function RichTextEditor({ content, onChange, onBlur, placeholder }: RichT
         keepMarks: true,
         keepAttributes: false,
       },
-      history: true,
-      bold: true,
-      italic: true,
-      code: true,
-      blockquote: true,
+      link: false,
+      underline: false,
     }),
     Underline,
     Link.configure({

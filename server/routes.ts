@@ -57,7 +57,7 @@ export async function registerRoutes(
     if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
     console.log("PATCH /api/user hit!");
     try {
-      console.log("PATCH /api/user request body:", req.body);
+      // console.log("PATCH /api/user request body:", req.body);
       const user = req.user;
       
       // Маппинг полей из фронтенда (telegram) в поля базы данных (telegram)
@@ -77,7 +77,14 @@ export async function registerRoutes(
 
   app.get("/api/users", async (_req, res) => {
     try {
+      const cacheKey = "users:all";
+      const cached = await getCache(cacheKey);
+      if (cached) {
+        return res.json(cached);
+      }
+
       const users = await storage.getAllUsers();
+      await setCache(cacheKey, users, 300);
       res.json(users);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch users" });
@@ -192,7 +199,7 @@ export async function registerRoutes(
 
   app.post("/api/projects", async (req, res) => {
     if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
-    console.log("POST /api/projects hit with body:", req.body);
+    // console.log("POST /api/projects hit with body:", req.body);
     try {
       const user = req.user;
       
@@ -326,6 +333,7 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Cannot update task with temporary ID" });
       }
 
+      console.log(`[PATCH Task] Updating task ${taskId}`, req.body);
       const updateData = { ...req.body };
       
       // Удаляем поля, которых нет в таблице tasks (обогащенные данные)
@@ -333,7 +341,7 @@ export async function registerRoutes(
         'title', 'description', 'status', 'priority', 'type', 
         'storyPoints', 'startDate', 'dueDate', 'completedAt', 
         'order', 'columnId', 'boardId', 'assigneeId', 'reporterId',
-        'parentId', 'tags', 'attachments'
+        'parentId', 'tags', 'attachments', 'number'
       ];
       
       Object.keys(updateData).forEach(key => {
@@ -428,6 +436,44 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/tasks/:id", async (req, res) => {
+    try {
+      const task = await storage.getTask(req.params.id);
+      if (!task) {
+        return res.status(404).json({ message: "Task not found" });
+      }
+      
+      const [assignee, reporter] = await Promise.all([
+        task.assigneeId ? storage.getUser(task.assigneeId) : null,
+        task.reporterId ? storage.getUser(task.reporterId) : null
+      ]);
+
+      const formatName = (user: any) => {
+        if (!user) return null;
+        const fullName = `${user.firstName || ""} ${user.lastName || ""}`.trim();
+        return fullName || user.username || "Пользователь";
+      };
+
+      const enrichedTask = {
+        ...task,
+        assignee: assignee ? { 
+          name: formatName(assignee), 
+          avatar: assignee.avatar 
+        } : null,
+        creator: { 
+          name: formatName(reporter) || "Система", 
+          avatar: reporter?.avatar || null,
+          date: task.createdAt ? new Date(task.createdAt).toISOString() : ""
+        }
+      };
+
+      res.json(enrichedTask);
+    } catch (error) {
+      console.error("Error fetching task:", error);
+      res.status(500).json({ message: "Failed to fetch task" });
+    }
+  });
+
   app.post("/api/boards/:boardId/tasks", async (req, res) => {
     if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
     try {
@@ -499,7 +545,14 @@ export async function registerRoutes(
     if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
     try {
       const user = req.user;
+      const cacheKey = `user:${user.id}:chats`;
+      const cached = await getCache(cacheKey);
+      if (cached) {
+        return res.json(cached);
+      }
+
       const chats = await storage.getChatsForUser(user.id);
+      await setCache(cacheKey, chats, 180); // Cache for 3 minutes
       res.json(chats);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch chats" });
@@ -784,7 +837,14 @@ export async function registerRoutes(
     if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
     try {
       const user = req.user;
+      const cacheKey = `user:${user.id}:notifications`;
+      const cached = await getCache(cacheKey);
+      if (cached) {
+        return res.json(cached);
+      }
+
       const notifications = await storage.getNotifications(user.id);
+      await setCache(cacheKey, notifications, 60); // Cache for 1 minute
       res.json(notifications);
     } catch (error) {
       console.error("Error fetching notifications:", error);
@@ -846,26 +906,53 @@ export async function registerRoutes(
     }
   });
 
-  // Subtask routes
+  // Reorder tasks
+  app.post("/api/tasks/reorder", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
+    try {
+      const { tasks } = req.body;
+      if (!Array.isArray(tasks)) {
+        return res.status(400).json({ message: "Tasks must be an array" });
+      }
+      
+      await storage.updateTaskOrders(tasks);
+      res.json({ message: "Tasks reordered successfully" });
+    } catch (error) {
+      console.error("Error reordering tasks:", error);
+      res.status(500).json({ message: "Failed to reorder tasks" });
+    }
+  });
+
   app.get("/api/tasks/:taskId/subtasks", async (req, res) => {
     try {
+      const cacheKey = `task:${req.params.taskId}:subtasks`;
+      const cached = await getCache(cacheKey);
+      if (cached) {
+        return res.json(cached);
+      }
+
       const subtasks = await storage.getSubtasksByTask(req.params.taskId);
-      
-      // Обогащаем подзадачи данными об авторах
-      const enrichedSubtasks = await Promise.all(subtasks.map(async (subtask) => {
+
+      // Оптимизация: получаем всех авторов одним запросом
+      const authorIds = Array.from(new Set(subtasks.map((s: any) => s.authorId).filter(Boolean)));
+      const authors = authorIds.length > 0 ? await storage.getUsersByIds(authorIds as string[]) : [];
+      const authorMap = new Map(authors.map((a: any) => [a.id, a]));
+
+      const enrichedSubtasks = subtasks.map((subtask: any) => {
         if (subtask.authorId) {
-          const author = await storage.getUser(subtask.authorId);
+          const author: any = authorMap.get(subtask.authorId);
           return {
             ...subtask,
-            author: author ? { 
-              name: `${author.firstName || ""} ${author.lastName || ""}`.trim() || author.username, 
-              avatar: author.avatar 
+            author: author ? {
+              name: `${author.firstName || ""} ${author.lastName || ""}`.trim() || author.username,
+              avatar: author.avatar
             } : null
           };
         }
         return { ...subtask, author: null };
-      }));
-      
+      });
+
+      await setCache(cacheKey, enrichedSubtasks, 300); // Cache for 5 minutes
       res.json(enrichedSubtasks);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch subtasks" });
@@ -924,20 +1011,31 @@ export async function registerRoutes(
   // Comment routes
   app.get("/api/tasks/:taskId/comments", async (req, res) => {
     try {
+      const cacheKey = `task:${req.params.taskId}:comments`;
+      const cached = await getCache(cacheKey);
+      if (cached) {
+        return res.json(cached);
+      }
+
       const rawComments = await storage.getCommentsByTask(req.params.taskId);
-      
-      // Обогащаем комментарии данными об авторах
-      const comments = await Promise.all(rawComments.map(async (comment) => {
-        const author = await storage.getUser(comment.authorId);
+
+      // Оптимизация: получаем всех авторов одним запросом
+      const authorIds = Array.from(new Set(rawComments.map((c: any) => c.authorId).filter(Boolean)));
+      const authors = authorIds.length > 0 ? await storage.getUsersByIds(authorIds as string[]) : [];
+      const authorMap = new Map(authors.map((a: any) => [a.id, a]));
+
+      const comments = rawComments.map((comment: any) => {
+        const author: any = authorMap.get(comment.authorId);
         return {
           ...comment,
-          author: author ? { 
-            name: `${author.firstName || ""} ${author.lastName || ""}`.trim() || author.username, 
-            avatar: author.avatar 
+          author: author ? {
+            name: `${author.firstName || ""} ${author.lastName || ""}`.trim() || author.username,
+            avatar: author.avatar
           } : { name: "Неизвестно" }
         };
-      }));
-      
+      });
+
+      await setCache(cacheKey, comments, 300); // Cache for 5 minutes
       res.json(comments);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch comments" });

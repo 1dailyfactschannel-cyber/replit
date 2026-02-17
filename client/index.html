@@ -15,12 +15,61 @@
     <meta name="twitter:image" content="https://replit.com/public/images/opengraph.png" />
 
     <link rel="icon" type="image/png" href="/favicon.png" />
+    
+    <!-- Preconnect to critical domains -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,200..800;1,200..800&family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap" rel="stylesheet">
+    <link rel="dns-prefetch" href="https://fonts.googleapis.com">
+    <link rel="dns-prefetch" href="https://fonts.gstatic.com">
+    
+    <!-- Load fonts with display=swap -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Preload critical CSS -->
+    <style>
+      /* Critical CSS for initial render */
+      html { font-family: 'Inter', sans-serif; }
+      body { margin: 0; min-height: 100vh; background: hsl(210 40% 98%); }
+      #root { min-height: 100vh; }
+      
+      /* Initial loading spinner */
+      .initial-loader {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 1rem;
+        z-index: 9999;
+      }
+      .spinner {
+        width: 40px;
+        height: 40px;
+        border: 3px solid #e2e8f0;
+        border-top-color: #3b82f6;
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+      }
+      @keyframes spin {
+        to { transform: rotate(360deg); }
+      }
+      
+      @media (prefers-color-scheme: dark) {
+        body { background: hsl(222 47% 11%); color: hsl(210 40% 98%); }
+        .spinner { border-color: #334155; border-top-color: #3b82f6; }
+      }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <!-- Initial loader shown while React loads -->
+      <div class="initial-loader">
+        <div class="spinner"></div>
+        <p style="color: #64748b; font-size: 14px; margin: 0;">Загрузка...</p>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

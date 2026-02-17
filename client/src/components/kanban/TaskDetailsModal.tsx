@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+// import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
@@ -144,24 +144,44 @@ export function TaskDetailsModal({
     enabled: !!task?.id && open,
   });
 
-  const [newTitle, setNewTitle] = useState(task?.title || "");
-  const [newDescription, setNewDescription] = useState(task?.description || "");
+  // Fetch task details directly to ensure fresh data
+  const { data: serverTask } = useQuery<Task>({
+    queryKey: ["/api/tasks", task?.id],
+    enabled: !!task?.id && open,
+    staleTime: 0, // Always fetch fresh data
+  });
+
+  const effectiveTask = serverTask || task;
+
+  const [newTitle, setNewTitle] = useState(effectiveTask?.title || "");
+  const [newDescription, setNewDescription] = useState(effectiveTask?.description || "");
+  
+  // Refs to track server state and avoid overwriting user changes
+  const lastServerTitleRef = React.useRef(effectiveTask?.title || "");
+  const lastServerDescriptionRef = React.useRef(effectiveTask?.description || "");
 
   // Update local states when task changes or modal opens
   useEffect(() => {
-    if (task && open) {
-      setNewTitle(task.title || "");
-      
-      // Only update description if it's different to avoid cursor jumps/resets during editing
-      if (task.description !== newDescription) {
-        setNewDescription(task.description || "");
+    if (effectiveTask && open) {
+      // Sync title only if server value changed
+      const serverTitle = effectiveTask.title || "";
+      if (serverTitle !== lastServerTitleRef.current) {
+        setNewTitle(serverTitle);
+        lastServerTitleRef.current = serverTitle;
+      }
+
+      // Sync description only if server value changed
+      const serverDesc = effectiveTask.description || "";
+      if (serverDesc !== lastServerDescriptionRef.current) {
+        setNewDescription(serverDesc);
+        lastServerDescriptionRef.current = serverDesc;
       }
       
-      setLocalSubtasks(task.subtasks || []);
-      setAttachments(task.attachments || []);
-      setTaskNumber(task.number || (task.id ? task.id.toString().slice(-4) : ''));
+      setLocalSubtasks(effectiveTask.subtasks || []);
+      setAttachments(effectiveTask.attachments || []);
+      setTaskNumber(effectiveTask.number || (effectiveTask.id ? effectiveTask.id.toString().slice(-4) : ''));
     }
-  }, [task, open]); // Depend on task and open state to sync data
+  }, [effectiveTask, open]); // Depend on task and open state to sync data
 
   // Sync observers with server data
   useEffect(() => {
@@ -171,26 +191,26 @@ export function TaskDetailsModal({
         avatar: user.avatar,
       }));
       setLocalObservers(formattedObservers);
-    } else if (task?.observers) {
-      setLocalObservers(task.observers);
+    } else if (effectiveTask?.observers) {
+      setLocalObservers(effectiveTask.observers);
     }
-  }, [serverObservers, task]);
+  }, [serverObservers, effectiveTask]);
 
   // Sync subtasks - при открытии модалки загружаем с сервера
   useEffect(() => {
     if (serverSubtasks && serverSubtasks.length > 0) {
       setLocalSubtasks(serverSubtasks);
-    } else if (task?.subtasks) {
-      setLocalSubtasks(task.subtasks);
+    } else if (effectiveTask?.subtasks) {
+      setLocalSubtasks(effectiveTask.subtasks);
     }
-  }, [task?.id, open]);
+  }, [effectiveTask?.id, open]);
 
   // Sync labels with task data
   useEffect(() => {
-    if (task?.labels) {
-      setLocalLabels(task.labels);
+    if (effectiveTask?.labels) {
+      setLocalLabels(effectiveTask.labels);
     }
-  }, [task?.labels]);
+  }, [effectiveTask?.labels]);
 
   // Local state for immediate UI updates
   const [localAssignee, setLocalAssignee] = useState<{ name: string; avatar?: string } | null>(null);
@@ -198,33 +218,40 @@ export function TaskDetailsModal({
   
   // Sync local assignee with task data
   useEffect(() => {
-    if (task?.assignee) {
-      setLocalAssignee(task.assignee);
+    if (effectiveTask?.assignee) {
+      setLocalAssignee(effectiveTask.assignee);
     } else {
       setLocalAssignee(null);
     }
-  }, [task?.assignee]);
+  }, [effectiveTask?.assignee]);
 
   // Sync local dueDate with task data
   useEffect(() => {
-    if (task?.dueDate) {
-      setLocalDueDate(task.dueDate);
+    if (effectiveTask?.dueDate) {
+      setLocalDueDate(effectiveTask.dueDate);
     } else {
       setLocalDueDate(null);
     }
-  }, [task?.dueDate]);
+  }, [effectiveTask?.dueDate]);
 
-  const [attachments, setAttachments] = useState<{ name: string; url: string; size: string; type: string }[]>(task?.attachments || []);
-  const [localObservers, setLocalObservers] = useState<{ name: string; avatar?: string }[]>(task?.observers || []);
-  const [localLabels, setLocalLabels] = useState<string[]>(task?.labels || []);
-  const [localSubtasks, setLocalSubtasks] = useState<{ id: string | number; title: string; completed: boolean; isCompleted?: boolean; dueDate?: string; author?: { name: string; avatar?: string } | null; order?: number }[]>(task?.subtasks || []);
+  // Sync local priority with task data
+  // Removed localPriority state to rely on optimistic cache updates for single source of truth
+  
+  const [attachments, setAttachments] = useState<{ name: string; url: string; size: string; type: string }[]>(effectiveTask?.attachments || []);
+  // Removed localPriority state
+  
+
+
+  const [localObservers, setLocalObservers] = useState<{ name: string; avatar?: string }[]>(effectiveTask?.observers || []);
+  const [localLabels, setLocalLabels] = useState<string[]>(effectiveTask?.labels || []);
+  const [localSubtasks, setLocalSubtasks] = useState<{ id: string | number; title: string; completed: boolean; isCompleted?: boolean; dueDate?: string; author?: { name: string; avatar?: string } | null; order?: number }[]>(effectiveTask?.subtasks || []);
   const [newSubtaskTitle, setNewSubtaskTitle] = useState("");
   const [isAddingSubtask, setIsAddingSubtask] = useState(false);
-  const [taskNumber, setTaskNumber] = useState(task?.number || (task?.id ? task.id.toString().slice(-4) : ''));
+  const [taskNumber, setTaskNumber] = useState(effectiveTask?.number || (effectiveTask?.id ? effectiveTask.id.toString().slice(-4) : ''));
   
   const handleTaskNumberBlur = () => {
-    const originalNumber = task?.number || (task?.id ? task.id.toString().slice(-4) : '');
-    if (taskNumber !== originalNumber && task?.id) {
+    const originalNumber = effectiveTask?.number || (effectiveTask?.id ? effectiveTask.id.toString().slice(-4) : '');
+    if (taskNumber !== originalNumber && effectiveTask?.id) {
       handleUpdate({ number: taskNumber });
     }
   };
@@ -269,6 +296,11 @@ export function TaskDetailsModal({
       if (task?.boardId) {
         queryClient.invalidateQueries({ queryKey: ["/api/boards", task.boardId, "full"] });
       }
+      
+      // Update specific task cache to avoid stale data flicker
+      if (task?.id) {
+        queryClient.setQueryData(["/api/tasks", task.id], data);
+      }
       queryClient.invalidateQueries({ queryKey: ["/api/tasks", task?.id] });
     },
     onError: (error) => {
@@ -286,45 +318,52 @@ export function TaskDetailsModal({
   });
 
   const handleUpdate = (updates: Partial<Task>) => {
-    console.log("[TaskDetails] handleUpdate called with:", updates);
-    console.log("[TaskDetails] Current task:", task);
-    console.log("[TaskDetails] Task ID:", task?.id, "Type:", typeof task?.id);
     
     if (!task?.id) {
-      console.error("[TaskDetails] No task ID available!");
       sonnerToast.error("Ошибка: ID задачи не найден");
       return;
     }
     
     if (typeof task.id === 'string' && task.id.startsWith('temp-')) {
-      console.log("[TaskDetails] Skipping update for temp task");
       return;
     }
     
-    // Immediate UI update for assignee change
-    if (updates.assigneeId && users) {
-      const newAssignee = users.find((u: any) => u.id === updates.assigneeId);
-      if (newAssignee) {
-        const displayName = newAssignee.firstName 
-          ? `${newAssignee.firstName} ${newAssignee.lastName || ''}` 
-          : newAssignee.username;
-        setLocalAssignee({ name: displayName, avatar: newAssignee.avatar });
+    // Optimistic local task update via Query Cache
+    // Removed setLocalPriority(updates.priority);
+
+    queryClient.setQueryData(["/api/tasks", task.id], (old: any) => {
+      if (!old) return old;
+      
+      const newDisplayData: any = {};
+      
+      // Handle Assignee display update
+      if (updates.assigneeId && users) {
+        const newAssignee = users.find((u: any) => u.id === updates.assigneeId);
+        if (newAssignee) {
+          const displayName = newAssignee.firstName 
+            ? `${newAssignee.firstName} ${newAssignee.lastName || ''}` 
+            : newAssignee.username;
+          newDisplayData.assignee = { 
+            id: newAssignee.id,
+            name: displayName, 
+            avatar: newAssignee.avatar 
+          };
+        }
       }
+
+      return { ...old, ...updates, ...newDisplayData };
+    });
+
+    // Optimistic parent update
+    if (onUpdate && task) {
+      onUpdate({ ...task, ...updates });
     }
     
-    // Immediate UI update for dueDate change
-    if (updates.dueDate) {
-      setLocalDueDate(updates.dueDate);
-    }
-    
-    console.log("[TaskDetails] Calling mutation with:", updates);
     updateTaskMutation.mutate(updates);
   };
 
   const handleTitleBlur = () => {
-    console.log("[TaskDetails] Title blur, newTitle:", newTitle, "task.title:", task?.title);
     if (newTitle !== task?.title) {
-      console.log("[TaskDetails] Updating title to:", newTitle);
       handleUpdate({ title: newTitle });
     }
   };
@@ -702,49 +741,47 @@ export function TaskDetailsModal({
   }
 
   // Ensure task has all required properties for rendering
-  const reversePriorityMap: Record<string, string> = {
-    "Без приоритета": "low",
-    "Низкий": "low",
-    "Средний": "medium",
-    "Высокий": "high",
-    "Критический": "critical"
-  };
-
-  const handlePriorityChange = (displayValue: string) => {
-    const dbValue = reversePriorityMap[displayValue] || "medium";
-    handleUpdate({ priority: dbValue });
-  };
-
   const priorityMap: Record<string, string> = {
+    "no_priority": "Без приоритета",
     "low": "Низкий",
     "medium": "Средний",
     "high": "Высокий",
-    "critical": "Критический",
-    "Низкий": "Низкий",
-    "Средний": "Средний",
-    "Высокий": "Высокий",
-    "Критический": "Критический",
-    "Без приоритета": "Без приоритета"
+    "critical": "Критический"
   };
 
   const safeTask = {
-    ...task,
-    creator: task?.creator || { name: "Неизвестно", date: "", avatar: null },
-    history: task?.history || [],
-    labels: task?.labels || [],
-    subtasks: task?.subtasks || [],
-    comments: task?.comments || [],
-    attachments: task?.attachments || [],
-    type: task?.type || "Задача",
-    priority: priorityMap[task?.priority || "medium"] || "Средний",
-    status: task?.status || "В планах",
-    dueDate: task?.dueDate || "Не установлен",
-    project: task?.project || "м4",
-    board: task?.board || "доска"
+    ...effectiveTask,
+    creator: effectiveTask?.creator || { name: "Неизвестно", date: "", avatar: null },
+    history: effectiveTask?.history || [],
+    labels: effectiveTask?.labels || [],
+    subtasks: effectiveTask?.subtasks || [],
+    comments: effectiveTask?.comments || [],
+    attachments: effectiveTask?.attachments || [],
+    type: effectiveTask?.type || "Задача",
+    priority: effectiveTask?.priority || "medium",
+    status: effectiveTask?.status || "В планах",
+    dueDate: effectiveTask?.dueDate || "Не установлен",
+    project: effectiveTask?.project || "м4",
+    board: effectiveTask?.board || "доска"
+  };
+
+  const handleOpenChangeWrapper = (newOpen: boolean) => {
+    if (!newOpen) {
+      // Closing the modal - save unsaved changes
+      if (task) {
+        if (newTitle !== task.title) {
+          handleUpdate({ title: newTitle });
+        }
+        if (newDescription !== task.description) {
+          handleUpdate({ description: newDescription });
+        }
+      }
+    }
+    onOpenChange(newOpen);
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleOpenChangeWrapper}>
       <DialogContent 
         className="fixed left-[50%] top-[50%] translate-x-[-50%] translate-y-[-50%] max-w-[1200px] w-[95vw] h-[90vh] max-h-[900px] flex flex-col p-0 gap-0 overflow-hidden bg-background border-none shadow-2xl font-sans"
         onDragOver={handleDragOver}
@@ -846,7 +883,6 @@ export function TaskDetailsModal({
                       size="icon"
                       variant="ghost"
                       onClick={() => {
-                        console.log("[TaskDetails] Save button clicked");
                         handleTitleBlur();
                       }}
                       className="absolute right-0 top-1/2 -translate-y-1/2 h-10 w-10 text-muted-foreground hover:text-primary hover:bg-primary/10"
@@ -1167,15 +1203,9 @@ export function TaskDetailsModal({
               )}
 
               <div className="relative group">
-                <div className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground/50">
-                  <Avatar className="w-6 h-6 grayscale opacity-50">
-                    <AvatarImage src="https://github.com/shadcn.png" />
-                    <AvatarFallback>@</AvatarFallback>
-                  </Avatar>
-                </div>
                 <Input 
                   placeholder="Напишите комментарий..." 
-                  className="h-14 pl-14 pr-24 bg-secondary/20 border-border/40 rounded-2xl focus-visible:ring-primary/20 transition-all text-[15px] font-medium placeholder:text-muted-foreground/40 shadow-inner"
+                  className="h-14 pl-4 pr-24 bg-secondary/20 border-border/40 rounded-2xl focus-visible:ring-primary/20 transition-all text-[15px] font-medium placeholder:text-muted-foreground/40 shadow-inner"
                   value={newComment}
                   onChange={(e) => setNewComment(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && handleAddComment()}
@@ -1248,12 +1278,6 @@ export function TaskDetailsModal({
                       <User className="w-3.5 h-3.5 text-muted-foreground/60" />
                       <span className="text-[12px] font-bold text-foreground/70 flex-1">Исполнитель</span>
                       <div className="flex items-center gap-1.5">
-                        {localAssignee?.avatar && (
-                          <Avatar className="w-5 h-5 border border-background">
-                            <AvatarImage src={localAssignee.avatar} />
-                            <AvatarFallback className="text-[8px]">{localAssignee.name.substring(0, 2).toUpperCase()}</AvatarFallback>
-                          </Avatar>
-                        )}
                         <span className="text-[10px] font-bold text-muted-foreground/50">{localAssignee?.name || "Не назначен"}</span>
                       </div>
                     </div>
@@ -1281,10 +1305,6 @@ export function TaskDetailsModal({
                               }}
                               className="w-full flex items-center gap-2 px-2 py-2 rounded-lg hover:bg-secondary/50 transition-colors text-left"
                             >
-                              <Avatar className="w-6 h-6">
-                                <AvatarImage src={user.avatar} />
-                                <AvatarFallback>{displayName.substring(0, 2).toUpperCase()}</AvatarFallback>
-                              </Avatar>
                               <span className="text-sm font-medium flex-1">{displayName}</span>
                               {isSelected && <Check className="w-4 h-4 text-primary" />}
                             </button>
@@ -1344,10 +1364,6 @@ export function TaskDetailsModal({
                                         onSelect={() => toggleObserver({ name: displayName, avatar: user.avatar })}
                                         className="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-secondary/50"
                                       >
-                                        <Avatar className="w-6 h-6">
-                                          <AvatarImage src={user.avatar} />
-                                          <AvatarFallback>{displayName.substring(0, 2).toUpperCase()}</AvatarFallback>
-                                        </Avatar>
                                         <span className="text-sm font-medium flex-1">{displayName}</span>
                                         {isSelected && <Check className="w-4 h-4 text-primary" />}
                                       </CommandItem>
@@ -1437,12 +1453,6 @@ export function TaskDetailsModal({
                         <item.icon className="w-3.5 h-3.5 text-muted-foreground/60" />
                         <span className="text-[12px] font-bold text-foreground/70 flex-1">{item.label}</span>
                         <div className="flex items-center gap-1.5">
-                          {(item as any).avatar && (
-                            <Avatar className="w-5 h-5 border border-background">
-                              <AvatarImage src={(item as any).avatar} />
-                              <AvatarFallback className="text-[8px]">{(item as any).value?.substring(0, 2).toUpperCase() || ''}</AvatarFallback>
-                            </Avatar>
-                          )}
                           <span className="text-[10px] font-bold text-muted-foreground/50">{item.value}</span>
                         </div>
                       </div>
@@ -1457,35 +1467,35 @@ export function TaskDetailsModal({
               <div className="space-y-1.5">
                 <Select 
                   value={safeTask.priority}
-                  onValueChange={handlePriorityChange}
+                  onValueChange={(value) => handleUpdate({ priority: value })}
                 >
                   <SelectTrigger className="w-full h-10 bg-secondary/15 border-none rounded-lg px-3 hover:bg-secondary/25 transition-all font-bold text-[13px]">
                     <div className="flex items-center gap-3">
-                      {safeTask.priority === "Без приоритета" && (
+                      {safeTask.priority === "no_priority" && (
                         <>
                           <span className="w-5 h-5" />
                           <span className="text-foreground/70">Без приоритета</span>
                         </>
                       )}
-                      {safeTask.priority === "Низкий" && (
+                      {safeTask.priority === "low" && (
                         <>
                           <SignalLow className="w-5 h-5 text-blue-500" strokeWidth={2.5} />
                           <span className="text-blue-500">Низкий</span>
                         </>
                       )}
-                      {safeTask.priority === "Средний" && (
+                      {safeTask.priority === "medium" && (
                         <>
                           <SignalMedium className="w-5 h-5 text-orange-500" strokeWidth={2.5} />
                           <span className="text-orange-500">Средний</span>
                         </>
                       )}
-                      {safeTask.priority === "Высокий" && (
+                      {safeTask.priority === "high" && (
                         <>
                           <SignalHigh className="w-5 h-5 text-rose-500" strokeWidth={2.5} />
                           <span className="text-rose-500">Высокий</span>
                         </>
                       )}
-                      {safeTask.priority === "Критический" && (
+                      {safeTask.priority === "critical" && (
                         <>
                           <Flame className="w-5 h-5 text-rose-600" strokeWidth={2.5} />
                           <span className="text-rose-600">Критический</span>
@@ -1494,46 +1504,46 @@ export function TaskDetailsModal({
                     </div>
                   </SelectTrigger>
                   <SelectContent className="rounded-xl min-w-[220px]">
-                    <SelectItem value="Без приоритета" className="text-[14px] py-3">
+                    <SelectItem value="no_priority" className="text-[14px] py-3">
                       <div className="flex items-center justify-between w-full">
                         <span>Без приоритета</span>
-                        {safeTask.priority === "Без приоритета" && <Check className="w-5 h-5 ml-4" />}
+                        {safeTask.priority === "no_priority" && <Check className="w-5 h-5 ml-4" />}
                       </div>
                     </SelectItem>
-                    <SelectItem value="Низкий" className="text-[14px] py-3 text-blue-500">
+                    <SelectItem value="low" className="text-[14px] py-3 text-blue-500">
                       <div className="flex items-center justify-between w-full">
                         <div className="flex items-center gap-3">
                           <SignalLow className="w-5 h-5" strokeWidth={2.5} />
                           <span>Низкий</span>
                         </div>
-                        {safeTask.priority === "Низкий" && <Check className="w-5 h-5 ml-4" />}
+                        {safeTask.priority === "low" && <Check className="w-5 h-5 ml-4" />}
                       </div>
                     </SelectItem>
-                    <SelectItem value="Средний" className="text-[14px] py-3 text-orange-500">
+                    <SelectItem value="medium" className="text-[14px] py-3 text-orange-500">
                       <div className="flex items-center justify-between w-full">
                         <div className="flex items-center gap-3">
                           <SignalMedium className="w-5 h-5" strokeWidth={2.5} />
                           <span>Средний</span>
                         </div>
-                        {safeTask.priority === "Средний" && <Check className="w-5 h-5 ml-4" />}
+                        {safeTask.priority === "medium" && <Check className="w-5 h-5 ml-4" />}
                       </div>
                     </SelectItem>
-                    <SelectItem value="Высокий" className="text-[14px] py-3 text-rose-500">
+                    <SelectItem value="high" className="text-[14px] py-3 text-rose-500">
                       <div className="flex items-center justify-between w-full">
                         <div className="flex items-center gap-3">
                           <SignalHigh className="w-5 h-5" strokeWidth={2.5} />
                           <span>Высокий</span>
                         </div>
-                        {safeTask.priority === "Высокий" && <Check className="w-5 h-5 ml-4" />}
+                        {safeTask.priority === "high" && <Check className="w-5 h-5 ml-4" />}
                       </div>
                     </SelectItem>
-                    <SelectItem value="Критический" className="text-[14px] py-3 text-foreground">
+                    <SelectItem value="critical" className="text-[14px] py-3 text-foreground">
                       <div className="flex items-center justify-between w-full">
                         <div className="flex items-center gap-3">
                           <Flame className="w-5 h-5 text-rose-600" strokeWidth={2.5} />
                           <span>Критический</span>
                         </div>
-                        {safeTask.priority === "Критический" && <Check className="w-5 h-5 ml-4" />}
+                        {safeTask.priority === "critical" && <Check className="w-5 h-5 ml-4" />}
                       </div>
                     </SelectItem>
                   </SelectContent>
@@ -1607,10 +1617,6 @@ export function TaskDetailsModal({
                 <div className="flex items-center gap-2">
                   <span className="text-[9px] font-bold text-muted-foreground/40 uppercase tracking-widest">Создатель</span>
                   <div className="flex items-center gap-1">
-                    <Avatar className="w-3.5 h-3.5">
-                      {safeTask.creator.avatar && <AvatarImage src={safeTask.creator.avatar} />}
-                      <AvatarFallback className="text-[7px]">{safeTask.creator.name.substring(0, 2).toUpperCase()}</AvatarFallback>
-                    </Avatar>
                     <span className="text-[9px] font-bold text-primary/70">{safeTask.creator.name}</span>
                   </div>
                 </div>

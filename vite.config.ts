@@ -1,13 +1,12 @@
-import { defineConfig } from "vite";
+import { defineConfig, type UserConfig } from "vite";
 import react from "@vitejs/plugin-react";
-import tailwindcss from "@tailwindcss/vite";
 import path from "path";
 import runtimeErrorOverlay from "@replit/vite-plugin-runtime-error-modal";
 import { metaImagesPlugin } from "./vite-plugin-meta-images";
 import { nodePolyfills } from "vite-plugin-node-polyfills";
 import gzipPlugin from "rollup-plugin-gzip";
 
-export default defineConfig(async ({ mode }) => ({
+export default defineConfig(async ({ mode }): Promise<UserConfig> => ({
   root: 'client',
   plugins: [
     react({
@@ -17,7 +16,6 @@ export default defineConfig(async ({ mode }) => ({
       },
     }),
     runtimeErrorOverlay(),
-    tailwindcss(),
     // Only include node polyfills in development
     ...(mode !== "production" ? [
       nodePolyfills({
@@ -79,7 +77,8 @@ export default defineConfig(async ({ mode }) => ({
         // Optimize chunk file naming for caching
         entryFileNames: 'assets/[name]-[hash].js',
         chunkFileNames: 'assets/[name]-[hash].js',
-        assetFileNames: (assetInfo) => {
+        assetFileNames: (assetInfo: any) => {
+          if (!assetInfo.name) return 'assets/[name]-[hash][extname]';
           const info = assetInfo.name.split('.');
           const ext = info[info.length - 1];
           if (/png|jpe?g|svg|gif|tiff|bmp|ico/i.test(ext)) {
@@ -101,7 +100,13 @@ export default defineConfig(async ({ mode }) => ({
   },
   server: {
     host: "0.0.0.0",
+    port: 3005,
+    strictPort: true,
     allowedHosts: true,
+    hmr: {
+      port: 3005,
+      path: "/vite-hmr",
+    },
     fs: {
       strict: false,
       deny: ["**/.*"],
