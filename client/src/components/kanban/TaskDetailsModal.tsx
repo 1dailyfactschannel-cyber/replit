@@ -1247,37 +1247,37 @@ export function TaskDetailsModal({
                     <span className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest pb-2">29.12.2025</span>
                   </div>
                   
-                  <TabsContent value="comments" className="pt-3 mt-0">
-                    <div className="space-y-2 mb-16 min-h-[100px]">
+                  <TabsContent value="comments" className="pt-2 mt-0">
+                    <div className="space-y-1.5 mb-16 min-h-[80px]">
                       {localComments.map((comment) => (
                         <div 
                           key={comment.id} 
                           className={cn(
-                            "flex flex-col gap-0.5 max-w-[80%]",
+                            "flex flex-col gap-0 max-w-[85%]",
                             comment.authorId === (users.find(u => u.username === "admin")?.id || "") ? "ml-auto items-end" : "items-start"
                           )}
                         >
                           <div 
                             className={cn(
-                              "px-3 py-1.5 rounded-xl text-xs font-medium shadow-sm border",
+                              "px-2.5 py-1 rounded-lg text-xs shadow-sm border",
                               comment.authorId === (users.find(u => u.username === "admin")?.id || "") 
-                                ? "bg-primary text-primary-foreground border-primary/20 rounded-tr-none" 
-                                : "bg-card text-foreground border-border/50 rounded-tl-none"
+                                ? "bg-primary text-primary-foreground border-primary/20 rounded-tr-sm" 
+                                : "bg-card text-foreground border-border/50 rounded-tl-sm"
                             )}
                           >
-                            <div className="flex flex-col gap-1">
-                              <span className="text-[10px] opacity-70">{comment.author?.name}</span>
-                              <span className="text-sm">{comment.content}</span>
+                            <div className="flex flex-col gap-0.5">
+                              <span className="text-[9px] opacity-60 font-medium">{comment.author?.name}</span>
+                              <span className="text-xs leading-relaxed">{comment.content}</span>
                               {comment.attachments && comment.attachments.length > 0 && (
-                                <div className="mt-1 flex flex-wrap gap-1">
+                                <div className="mt-0.5 flex flex-wrap gap-0.5">
                                   {comment.attachments.map((file: any, i: number) => (
                                     <a 
                                       key={i} 
                                       href={file.url} 
                                       download={file.name}
-                                      className="flex items-center gap-1 p-1 rounded bg-background/20 hover:bg-background/40 transition-colors text-[9px]"
+                                      className="flex items-center gap-0.5 px-1 py-0.5 rounded bg-background/20 hover:bg-background/40 transition-colors text-[8px]"
                                     >
-                                      <Paperclip className="w-2.5 h-2.5" />
+                                      <Paperclip className="w-2 h-2" />
                                       {file.name}
                                     </a>
                                   ))}
@@ -1285,11 +1285,9 @@ export function TaskDetailsModal({
                               )}
                             </div>
                           </div>
-                          <div className="flex items-center gap-1 px-1">
-                            <span className="text-[9px] text-muted-foreground/50 uppercase">
-                              {comment.createdAt ? new Date(comment.createdAt).toLocaleString() : ""}
-                            </span>
-                          </div>
+                          <span className="text-[8px] text-muted-foreground/40 uppercase px-1">
+                            {comment.createdAt ? new Date(comment.createdAt).toLocaleString() : ""}
+                          </span>
                         </div>
                       ))}
                     </div>
