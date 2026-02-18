@@ -87,7 +87,7 @@ export interface Task {
   title: string;
   description: string;
   status: string;
-  priority: string;
+  priorityId: string;
   type: string;
   boardId: string;
   columnId: string;
@@ -237,7 +237,7 @@ export function TaskDetailsModal({
   // Sync labels with task data
   useEffect(() => {
     if (effectiveTask?.labels) {
-      setLocalLabels(effectiveTask.labels);
+      setLocalLabels(effectiveTask.labels.map(name => ({ name })));
     }
   }, [effectiveTask?.labels]);
 
@@ -272,7 +272,7 @@ export function TaskDetailsModal({
 
 
   const [localObservers, setLocalObservers] = useState<{ name: string; avatar?: string }[]>(effectiveTask?.observers || []);
-  const [localLabels, setLocalLabels] = useState<string[]>(effectiveTask?.labels || []);
+  const [localLabels, setLocalLabels] = useState<{ name: string; pending?: boolean }[]>([]);
   const [localSubtasks, setLocalSubtasks] = useState<{ id: string | number; title: string; completed: boolean; isCompleted?: boolean; dueDate?: string; author?: { name: string; avatar?: string } | null; order?: number }[]>(effectiveTask?.subtasks || []);
   const [newSubtaskTitle, setNewSubtaskTitle] = useState("");
   const [isAddingSubtask, setIsAddingSubtask] = useState(false);
@@ -297,6 +297,10 @@ export function TaskDetailsModal({
 
   const { data: availableLabels = [] } = useQuery<any[]>({
     queryKey: ["/api/labels"],
+  });
+
+  const { data: availablePriorities = [] } = useQuery<any[]>({
+    queryKey: ["/api/priorities"],
   });
 
   useEffect(() => {
@@ -688,17 +692,70 @@ export function TaskDetailsModal({
     }
   };
 
-  const handleAddLabel = (label: string) => {
-    if (!label.trim() || localLabels.includes(label.trim())) return;
-    const updatedLabels = [...localLabels, label.trim()];
-    setLocalLabels(updatedLabels);
-    handleUpdate({ tags: updatedLabels });
+  const handleAddLabel = (labelName: string) => {
+    const trimmedLabel = labelName.trim();
+    if (!trimmedLabel || localLabels.some(l => l.name === trimmedLabel)) return;
+
+    const tempLabel = { name: trimmedLabel, pending: true };
+    setLocalLabels(prev => [...prev, tempLabel]);
+
+    createLabel(trimmedLabel).then(result => {
+      if (result.success) {
+        setLocalLabels(prev => {
+          const updatedLabels = prev.map(l => l.name === trimmedLabel ? { ...l, pending: false } : l);
+          // Update the task with the new labels (including the newly added one)
+          handleUpdate({ labels: updatedLabels.map(l => l.name) });
+          return updatedLabels;
+        });
+        queryClient.invalidateQueries({ queryKey: ["/api/labels"] });
+      } else {
+        setLocalLabels(prev => prev.filter(l => l.name !== trimmedLabel));
+      }
+    });
   };
 
-  const handleRemoveLabel = (labelToRemove: string) => {
-    const updatedLabels = localLabels.filter(label => label !== labelToRemove);
-    setLocalLabels(updatedLabels);
-    handleUpdate({ tags: updatedLabels });
+  const createLabel = async (labelName: string) => {
+    try {
+      const response = await apiRequest("POST", "/api/labels", {
+        name: labelName.trim(),
+        color: "bg-blue-500" // Default color
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        if (errorData.error === "DUPLICATE_LABEL_NAME") {
+          return { success: true, alreadyExists: true };
+        }
+        throw new Error(errorData.message || "Failed to create label");
+      }
+      
+      const newLabel = await response.json();
+      return { success: true, label: newLabel };
+    } catch (error) {
+      console.error("Error creating label:", error);
+      sonnerToast.error(`Не удалось создать метку: ${error instanceof Error ? error.message : 'Неизвестная ошибка'}`);
+      return { success: false };
+    }
+  };
+
+  const handleRemoveLabel = (labelName: string) => {
+    // Optimistic update - remove label immediately from UI
+    setLocalLabels(prev => {
+      const updatedLabels = prev.filter(l => l.name !== labelName);
+      // Update the task with the new labels (excluding the removed one)
+      handleUpdate({ labels: updatedLabels.map(l => l.name) });
+      return updatedLabels;
+    });
+  };
+
+  const handleKeyDown = async (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      const labelName = e.currentTarget.value;
+      if (!labelName.trim()) return;
+      
+      handleAddLabel(labelName);
+      e.currentTarget.value = '';
+    }
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement> | React.DragEvent) => {
@@ -796,26 +853,6 @@ export function TaskDetailsModal({
     return null;
   }
 
-  // Ensure task has all required properties for rendering
-  const priorityMap: Record<string, string> = {
-    "no_priority": "Без приоритета",
-    "low": "Низкий",
-    "medium": "Средний",
-    "high": "Высокий",
-    "critical": "Критический"
-  };
-
-  const normalizePriority = (p?: string) => {
-    if (!p) return "medium";
-    const lower = p.toString().trim().toLowerCase();
-    if (lower === "критический" || lower === "critical") return "critical";
-    if (lower === "высокий" || lower === "high") return "high";
-    if (lower === "средний" || lower === "medium") return "medium";
-    if (lower === "низкий" || lower === "low") return "low";
-    if (lower === "без приоритета" || lower === "no_priority" || lower === "no priority") return "no_priority";
-    return "medium";
-  };
-
   const safeTask = {
     ...effectiveTask,
     creator: effectiveTask?.creator || { name: "Неизвестно", date: "", avatar: null },
@@ -825,7 +862,7 @@ export function TaskDetailsModal({
     comments: effectiveTask?.comments || [],
     attachments: effectiveTask?.attachments || [],
     type: effectiveTask?.type || "Задача",
-    priority: normalizePriority(effectiveTask?.priority),
+    priorityId: effectiveTask?.priorityId || "",
     status: effectiveTask?.status || "В планах",
     dueDate: effectiveTask?.dueDate || "Не установлен",
     project: effectiveTask?.project || "м4",
@@ -1533,86 +1570,38 @@ export function TaskDetailsModal({
               {/* Priority Section */}
               <div className="space-y-1.5">
                 <Select 
-                  value={safeTask.priority}
-                  onValueChange={(value) => handleUpdate({ priority: value })}
+                  value={safeTask.priorityId}
+                  onValueChange={(value) => handleUpdate({ priorityId: value })}
                 >
                   <SelectTrigger className="w-full h-10 bg-secondary/15 border-none rounded-lg px-3 hover:bg-secondary/25 transition-all font-bold text-[13px]">
                     <div className="flex items-center gap-3">
-                      {safeTask.priority === "no_priority" && (
+                      {availablePriorities.find(p => p.id === safeTask.priorityId) ? (
+                        <>
+                          <div className={cn("w-3 h-3 rounded-full", availablePriorities.find(p => p.id === safeTask.priorityId)?.color)} />
+                          <span style={{ color: availablePriorities.find(p => p.id === safeTask.priorityId)?.color.replace('bg-', '').replace('-500', '') }}>
+                            {availablePriorities.find(p => p.id === safeTask.priorityId)?.name}
+                          </span>
+                        </>
+                      ) : (
                         <>
                           <span className="w-5 h-5" />
                           <span className="text-foreground/70">Без приоритета</span>
                         </>
                       )}
-                      {safeTask.priority === "low" && (
-                        <>
-                          <SignalLow className="w-5 h-5 text-blue-500" strokeWidth={2.5} />
-                          <span className="text-blue-500">Низкий</span>
-                        </>
-                      )}
-                      {safeTask.priority === "medium" && (
-                        <>
-                          <SignalMedium className="w-5 h-5 text-orange-500" strokeWidth={2.5} />
-                          <span className="text-orange-500">Средний</span>
-                        </>
-                      )}
-                      {safeTask.priority === "high" && (
-                        <>
-                          <SignalHigh className="w-5 h-5 text-rose-500" strokeWidth={2.5} />
-                          <span className="text-rose-500">Высокий</span>
-                        </>
-                      )}
-                      {safeTask.priority === "critical" && (
-                        <>
-                          <Flame className="w-5 h-5 text-rose-600" strokeWidth={2.5} />
-                          <span className="text-rose-600">Критический</span>
-                        </>
-                      )}
                     </div>
                   </SelectTrigger>
                   <SelectContent className="rounded-xl min-w-[220px]">
-                    <SelectItem value="no_priority" className="text-[14px] py-3">
-                      <div className="flex items-center justify-between w-full">
-                        <span>Без приоритета</span>
-                        {safeTask.priority === "no_priority" && <Check className="w-5 h-5 ml-4" />}
-                      </div>
-                    </SelectItem>
-                    <SelectItem value="low" className="text-[14px] py-3 text-blue-500">
-                      <div className="flex items-center justify-between w-full">
-                        <div className="flex items-center gap-3">
-                          <SignalLow className="w-5 h-5" strokeWidth={2.5} />
-                          <span>Низкий</span>
+                    {availablePriorities.map((priority: any) => (
+                      <SelectItem key={priority.id} value={priority.id} className="text-[14px] py-3">
+                        <div className="flex items-center justify-between w-full">
+                          <div className="flex items-center gap-3">
+                            <div className={cn("w-3 h-3 rounded-full", priority.color)} />
+                            <span style={{ color: priority.color.replace('bg-', '').replace('-500', '') }}>{priority.name}</span>
+                          </div>
+                          {safeTask.priorityId === priority.id && <Check className="w-5 h-5 ml-4" />}
                         </div>
-                        {safeTask.priority === "low" && <Check className="w-5 h-5 ml-4" />}
-                      </div>
-                    </SelectItem>
-                    <SelectItem value="medium" className="text-[14px] py-3 text-orange-500">
-                      <div className="flex items-center justify-between w-full">
-                        <div className="flex items-center gap-3">
-                          <SignalMedium className="w-5 h-5" strokeWidth={2.5} />
-                          <span>Средний</span>
-                        </div>
-                        {safeTask.priority === "medium" && <Check className="w-5 h-5 ml-4" />}
-                      </div>
-                    </SelectItem>
-                    <SelectItem value="high" className="text-[14px] py-3 text-rose-500">
-                      <div className="flex items-center justify-between w-full">
-                        <div className="flex items-center gap-3">
-                          <SignalHigh className="w-5 h-5" strokeWidth={2.5} />
-                          <span>Высокий</span>
-                        </div>
-                        {safeTask.priority === "high" && <Check className="w-5 h-5 ml-4" />}
-                      </div>
-                    </SelectItem>
-                    <SelectItem value="critical" className="text-[14px] py-3 text-foreground">
-                      <div className="flex items-center justify-between w-full">
-                        <div className="flex items-center gap-3">
-                          <Flame className="w-5 h-5 text-rose-600" strokeWidth={2.5} />
-                          <span>Критический</span>
-                        </div>
-                        {safeTask.priority === "critical" && <Check className="w-5 h-5 ml-4" />}
-                      </div>
-                    </SelectItem>
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -1639,18 +1628,13 @@ export function TaskDetailsModal({
                       <div className="space-y-3">
                         <Input
                           placeholder="Новая метка..."
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                              handleAddLabel(e.currentTarget.value);
-                              e.currentTarget.value = '';
-                            }
-                          }}
-                          className="h-8 text-sm"
+
+                                                    onKeyDown={handleKeyDown}
                         />
                         <div className="flex flex-wrap gap-1">
                           {availableLabels.length > 0 ? (
                             availableLabels.map((label: any) => {
-                              const isSelected = localLabels.includes(label.name);
+                              const isSelected = localLabels.some(l => l.name === label.name);
                               if (isSelected) return null;
                               return (
                                 <Badge 
@@ -1659,7 +1643,7 @@ export function TaskDetailsModal({
                                   className={cn(
                                     "px-2 py-0.5 text-[9px] font-bold border-none rounded-md cursor-pointer transition-all hover:opacity-80",
                                     label.color ? label.color.replace('bg-', 'bg-').replace('500', '500/10') : "bg-primary/10",
-                                    label.color ? label.color.replace('bg-', 'text-').replace('500', '600') : "text-primary"
+                                    label.color ? (label.color.includes('red') || label.color.includes('orange') || label.color.includes('rose') ? "text-white" : label.color.replace('bg-', 'text-').replace('500', '600')) : "text-primary"
                                   )}
                                   onClick={() => handleAddLabel(label.name)}
                                 >
@@ -1676,21 +1660,22 @@ export function TaskDetailsModal({
                   </Popover>
                 </div>
                 <div className="flex flex-wrap gap-1">
-                  {localLabels.map((labelName: string) => {
-                    const labelInfo = availableLabels.find((l: any) => l.name === labelName);
+                  {localLabels.map((label) => {
+                    const labelInfo = availableLabels.find((l: any) => l.name === label.name);
                     return (
                       <Badge 
-                        key={labelName} 
+                        key={label.name} 
                         variant="secondary" 
                         className={cn(
                           "px-2 py-0 text-[9px] font-bold border-none rounded-md cursor-pointer hover:bg-destructive/20 hover:text-destructive transition-colors",
+                          label.pending && "opacity-50",
                           labelInfo?.color ? labelInfo.color.replace('bg-', 'bg-').replace('500', '500/10') : "bg-primary/10",
-                          labelInfo?.color ? labelInfo.color.replace('bg-', 'text-').replace('500', '600') : "text-primary"
+                          labelInfo?.color ? (labelInfo.color.includes('red') || labelInfo.color.includes('orange') || labelInfo.color.includes('rose') ? "text-white" : labelInfo.color.replace('bg-', 'text-').replace('500', '600')) : "text-primary"
                         )}
-                        onClick={() => handleRemoveLabel(labelName)}
+                        onClick={() => handleRemoveLabel(label.name)}
                         title="Кликните для удаления"
                       >
-                        {labelName}
+                        {label.name}
                       </Badge>
                     );
                   })}

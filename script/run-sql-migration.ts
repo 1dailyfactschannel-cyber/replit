@@ -28,15 +28,21 @@ async function runSqlMigration() {
     const client = await pool.connect();
     
     try {
-      // Read the SQL migration file
-      const migrationPath = join(__dirname, '../migrations/0001_initial_schema.sql');
+      // Get migration file from command line arguments
+      const migrationFile = process.argv[2];
+      if (!migrationFile) {
+        console.error('❌ Please provide a migration file to run');
+        process.exit(1);
+      }
+
+      const migrationPath = join(__dirname, '../migrations', migrationFile);
       const sql = readFileSync(migrationPath, 'utf8');
       
       console.log('📝 Executing SQL migration...');
       
-      // Split SQL into statements (simple approach)
+      // Split SQL into statements (handle multiline & comments)
       const statements = sql
-        .split(';')
+        .split(/;\s*$/m)
         .map(stmt => stmt.trim())
         .filter(stmt => stmt.length > 0 && !stmt.startsWith('--'));
       
@@ -48,8 +54,11 @@ async function runSqlMigration() {
             await client.query(statement);
             executedCount++;
           } catch (error: any) {
-            // Skip errors for already existing objects
-            if (error.code !== '42P07' && error.code !== '42710' && error.code !== '23505') {
+            // Skip errors for already existing objects or non-existent columns
+            if (error.code !== '42P07' && error.code !== '42710' && error.code !== '23505' && error.code !== '42703') {
+              console.error(`Error executing statement: ${statement}`, error);
+              throw error;
+            } else {
               console.warn(`⚠️  Warning executing statement: ${error.message}`);
             }
           }

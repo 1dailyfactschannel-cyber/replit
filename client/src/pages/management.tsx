@@ -706,16 +706,6 @@ function ProjectsManagement() {
     }
   });
 
-  const [priorities, setPriorities] = useState([
-    { id: 1, name: "Критический", color: "bg-rose-600", textColor: "text-rose-600", level: 10 },
-    { id: 2, name: "Высокий", color: "bg-rose-400", textColor: "text-rose-400", level: 7 },
-    { id: 3, name: "Средний", color: "bg-amber-500", textColor: "text-amber-500", level: 5 },
-    { id: 4, name: "Низкий", color: "bg-emerald-500", textColor: "text-emerald-500", level: 2 },
-  ]);
-
-  const [editingPriority, setEditingPriority] = useState<any>(null);
-  const [newPriority, setNewPriority] = useState({ name: "", color: "bg-blue-500", level: 1 });
-
   const handleCreateProject = () => {
     if (!newProject.name.trim()) {
       toast({
@@ -742,108 +732,6 @@ function ProjectsManagement() {
     console.log("Creating project with data:", projectToCreate);
     createProjectMutation.mutate(projectToCreate);
   };
-
-  const handleAddPriority = () => {
-    if (!newPriority.name) return;
-    const priority = {
-      id: Date.now(),
-      name: newPriority.name,
-      color: newPriority.color,
-      textColor: newPriority.color.replace('bg-', 'text-'),
-      level: Number(newPriority.level)
-    };
-    setPriorities([...priorities, priority].sort((a, b) => b.level - a.level));
-    setNewPriority({ name: "", color: "bg-blue-500", level: 1 });
-  };
-
-  const handleDeletePriority = (id: number) => {
-    setPriorities(priorities.filter(p => p.id !== id));
-  };
-
-  const handleUpdatePriority = () => {
-    if (!editingPriority) return;
-    setPriorities(priorities.map(p => 
-      p.id === editingPriority.id ? editingPriority : p
-    ).sort((a, b) => b.level - a.level));
-    setEditingPriority(null);
-  };
-
-  const { data: labels = [] } = useQuery<any[]>({
-    queryKey: ["/api/labels"],
-  });
-
-  const createLabelMutation = useMutation({
-    mutationFn: async (label: any) => {
-      const res = await apiRequest("POST", "/api/labels", label);
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/labels"] });
-      setNewLabel({ name: "", color: "bg-blue-500" });
-      setIsLabelDialogOpen(false);
-      toast({ title: "Метка создана" });
-    },
-  });
-
-  const updateLabelMutation = useMutation({
-    mutationFn: async (label: any) => {
-      const res = await apiRequest("PATCH", `/api/labels/${label.id}`, label);
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/labels"] });
-      setEditingLabel(null);
-      setIsLabelDialogOpen(false);
-      toast({ title: "Метка обновлена" });
-    },
-  });
-
-  const deleteLabelMutation = useMutation({
-    mutationFn: async (id: string) => {
-      await apiRequest("DELETE", `/api/labels/${id}`);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/labels"] });
-      if (editingLabel) {
-        setIsLabelDialogOpen(false);
-        setEditingLabel(null);
-      }
-      toast({ title: "Метка удалена" });
-    },
-  });
-
-  const [newLabel, setNewLabel] = useState({ name: "", color: "bg-blue-500" });
-  const [editingLabel, setEditingLabel] = useState<any>(null);
-  const [isLabelDialogOpen, setIsLabelDialogOpen] = useState(false);
-
-  const handleAddLabel = () => {
-    if (!newLabel.name) return;
-    createLabelMutation.mutate(newLabel);
-  };
-
-  const handleUpdateLabel = () => {
-    if (!editingLabel) return;
-    updateLabelMutation.mutate(editingLabel);
-  };
-
-  const handleDeleteLabel = (id: string) => {
-    deleteLabelMutation.mutate(id);
-  };
-
-  const openLabelDialog = (label?: any) => {
-    if (label) {
-      setEditingLabel(label);
-    } else {
-      setNewLabel({ name: "", color: "bg-blue-500" });
-      setEditingLabel(null);
-    }
-    setIsLabelDialogOpen(true);
-  };
-
-  const colors = [
-    "bg-rose-600", "bg-rose-400", "bg-amber-500", "bg-emerald-500", 
-    "bg-blue-500", "bg-indigo-500", "bg-purple-500", "bg-slate-500"
-  ];
 
   return (
     <div className="space-y-10 animate-in fade-in slide-in-from-bottom-2 duration-300">
@@ -893,7 +781,7 @@ function ProjectsManagement() {
                 <Flag className="w-6 h-6" />
               </div>
               <div className="flex flex-col">
-                <span className="text-2xl font-bold tracking-tight">{priorities.length}</span>
+                <span className="text-2xl font-bold tracking-tight">{projects.length}</span>
                 <span className="text-xs font-medium text-muted-foreground uppercase tracking-widest">Уровней приоритета</span>
               </div>
             </div>
@@ -1036,23 +924,100 @@ function ProjectsManagement() {
         </Card>
       </section>
 
-      {/* Task Priorities Section */}
-      <section className="space-y-4">
-        <div className="flex items-center justify-between px-1">
-          <div className="flex flex-col gap-1">
-            <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
-              <Flag className="w-3.5 h-3.5" />
-              Приоритеты задач
-            </h4>
-            <p className="text-[11px] text-muted-foreground">Настройка глобальных уровней важности для всех задач</p>
-          </div>
-        </div>
+      <PrioritiesManagement />
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <LabelsManagement />
+    </div>
+  );
+}
+
+function PrioritiesManagement() {
+  const { toast } = useToast();
+  const [isCollapsed, setIsCollapsed] = useState(false);
+
+  const { data: priorities = [], isLoading } = useQuery<any[]>({
+    queryKey: ["/api/priorities"],
+  });
+
+  const createPriorityMutation = useMutation({
+    mutationFn: async (priority: any) => {
+      const res = await apiRequest("POST", "/api/priorities", priority);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/priorities"] });
+      setNewPriority({ name: "", color: "bg-blue-500", level: 1 });
+      toast({ title: "Приоритет создан" });
+    },
+  });
+
+  const updatePriorityMutation = useMutation({
+    mutationFn: async (priority: any) => {
+      const res = await apiRequest("PUT", `/api/priorities/${priority.id}`, priority);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/priorities"] });
+      setEditingPriority(null);
+      toast({ title: "Приоритет обновлен" });
+    },
+  });
+
+  const deletePriorityMutation = useMutation({
+    mutationFn: async (id: string) => {
+      await apiRequest("DELETE", `/api/priorities/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/priorities"] });
+      toast({ title: "Приоритет удален" });
+    },
+  });
+
+  const [editingPriority, setEditingPriority] = useState<any>(null);
+  const [newPriority, setNewPriority] = useState({ name: "", color: "bg-blue-500", level: 1 });
+
+  const handleAddPriority = () => {
+    if (!newPriority.name) return;
+    createPriorityMutation.mutate(newPriority);
+  };
+
+  const handleDeletePriority = (id: string) => {
+    deletePriorityMutation.mutate(id);
+  };
+
+  const handleUpdatePriority = () => {
+    if (!editingPriority) return;
+    updatePriorityMutation.mutate(editingPriority);
+  };
+
+  const colors = [
+    "bg-rose-600", "bg-rose-400", "bg-amber-500", "bg-emerald-500", 
+    "bg-blue-500", "bg-indigo-500", "bg-purple-500", "bg-slate-500"
+  ];
+
+  return (
+    <section className="space-y-4">
+      <div className="flex items-center justify-between px-1 cursor-pointer" onClick={() => setIsCollapsed(!isCollapsed)}>
+        <div className="flex flex-col gap-1">
+          <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+            <Flag className="w-3.5 h-3.5" />
+            Приоритеты задач
+          </h4>
+          <p className="text-[11px] text-muted-foreground">Настройка глобальных уровней важности для всех задач</p>
+        </div>
+        <ChevronRight className={cn("w-4 h-4 text-muted-foreground transition-transform", isCollapsed && "rotate-90")} />
+      </div>
+
+      {!isCollapsed && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 animate-in fade-in slide-in-from-top-2 duration-300">
           {/* Priorities List */}
           <Card className="lg:col-span-2 border-border/50 shadow-sm overflow-hidden bg-card/50">
             <div className="divide-y divide-border/50">
-              {priorities.map((priority) => (
+              {isLoading ? (
+                <div className="p-8 flex items-center justify-center">
+                  <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+                </div>
+              ) : priorities.map((priority) => (
                 <div key={priority.id} className="p-3 flex items-center justify-between group hover:bg-muted/10 transition-colors">
                   <div className="flex items-center gap-3">
                     <div className={cn("w-3 h-3 rounded-full shadow-lg ring-2 ring-background", priority.color)} />
@@ -1154,7 +1119,7 @@ function ProjectsManagement() {
                     <button
                       key={color}
                       onClick={() => editingPriority 
-                        ? setEditingPriority({ ...editingPriority, color, textColor: color.replace('bg-', 'text-') })
+                        ? setEditingPriority({ ...editingPriority, color })
                         : setNewPriority({ ...newPriority, color })
                       }
                       className={cn(
@@ -1193,21 +1158,107 @@ function ProjectsManagement() {
             </CardFooter>
           </Card>
         </div>
-      </section>
+      )}
+    </section>
+  )
+}
 
-      {/* Task Labels Section */}
-      <section className="space-y-4">
-        <div className="flex items-center justify-between px-1">
-          <div className="flex flex-col gap-1">
-            <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
-              <Tags className="w-3.5 h-3.5" />
-              Метки задач
-            </h4>
-            <p className="text-[11px] text-muted-foreground">Управление метками для категоризации задач</p>
-          </div>
+function LabelsManagement() {
+  const { toast } = useToast();
+  const [isCollapsed, setIsCollapsed] = useState(false);
+
+  const { data: labels = [] } = useQuery<any[]>({
+    queryKey: ["/api/labels"],
+  });
+
+  const createLabelMutation = useMutation({
+    mutationFn: async (label: any) => {
+      const res = await apiRequest("POST", "/api/labels", label);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/labels"] });
+      setNewLabel({ name: "", color: "bg-blue-500" });
+      setIsLabelDialogOpen(false);
+      toast({ title: "Метка создана" });
+    },
+  });
+
+  const updateLabelMutation = useMutation({
+    mutationFn: async (label: any) => {
+      const res = await apiRequest("PATCH", `/api/labels/${label.id}`, label);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/labels"] });
+      setEditingLabel(null);
+      setIsLabelDialogOpen(false);
+      toast({ title: "Метка обновлена" });
+    },
+  });
+
+  const deleteLabelMutation = useMutation({
+    mutationFn: async (id: string) => {
+      await apiRequest("DELETE", `/api/labels/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/labels"] });
+      if (editingLabel) {
+        setIsLabelDialogOpen(false);
+        setEditingLabel(null);
+      }
+      toast({ title: "Метка удалена" });
+    },
+  });
+
+  const [newLabel, setNewLabel] = useState({ name: "", color: "bg-blue-500" });
+  const [editingLabel, setEditingLabel] = useState<any>(null);
+  const [isLabelDialogOpen, setIsLabelDialogOpen] = useState(false);
+
+  const handleAddLabel = () => {
+    if (!newLabel.name) return;
+    createLabelMutation.mutate(newLabel);
+  };
+
+  const handleUpdateLabel = () => {
+    if (!editingLabel) return;
+    updateLabelMutation.mutate(editingLabel);
+  };
+
+  const handleDeleteLabel = (id: string) => {
+    deleteLabelMutation.mutate(id);
+  };
+
+  const openLabelDialog = (label?: any) => {
+    if (label) {
+      setEditingLabel(label);
+    } else {
+      setNewLabel({ name: "", color: "bg-blue-500" });
+      setEditingLabel(null);
+    }
+    setIsLabelDialogOpen(true);
+  };
+
+  const colors = [
+    "bg-rose-600", "bg-rose-400", "bg-amber-500", "bg-emerald-500", 
+    "bg-blue-500", "bg-indigo-500", "bg-purple-500", "bg-slate-500"
+  ];
+
+  return (
+    <section className="space-y-4">
+      <div className="flex items-center justify-between px-1 cursor-pointer" onClick={() => setIsCollapsed(!isCollapsed)}>
+        <div className="flex flex-col gap-1">
+          <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+            <Tags className="w-3.5 h-3.5" />
+            Метки задач
+          </h4>
+          <p className="text-[11px] text-muted-foreground">Управление метками для категоризации задач</p>
         </div>
+        <ChevronRight className={cn("w-4 h-4 text-muted-foreground transition-transform", isCollapsed && "rotate-90")} />
+      </div>
 
-        <Card className="border-border/50 shadow-sm overflow-hidden bg-card/50">
+      {!isCollapsed && (
+        <Card className="border-border/50 shadow-sm overflow-hidden bg-card/50 animate-in fade-in slide-in-from-top-2 duration-300">
           <div className="p-6">
             <div className="flex flex-wrap gap-3">
               <Dialog open={isLabelDialogOpen} onOpenChange={setIsLabelDialogOpen}>
@@ -1301,10 +1352,11 @@ function ProjectsManagement() {
             </div>
           </div>
         </Card>
-      </section>
-    </div>
-  );
+      )}
+    </section>
+  )
 }
+
 
 function DefaultSection({ section }: { section: { label: string, icon: any, description: string } }) {
   return (

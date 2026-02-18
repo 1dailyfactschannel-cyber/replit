@@ -20,11 +20,6 @@ export default defineConfig(async ({ mode }): Promise<UserConfig> => ({
     ...(mode !== "production" ? [
       nodePolyfills({
         include: ["buffer", "events", "stream", "util"],
-        globals: {
-          Buffer: true,
-          global: true,
-          process: true,
-        },
       })
     ] : []),
     // Enable gzip compression for production

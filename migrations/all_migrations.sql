@@ -1,4 +1,4 @@
--- TeamSync Database Schema Creation Script
+﻿-- TeamSync Database Schema Creation Script
 
 -- Enable UUID extension
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
@@ -234,38 +234,86 @@ INSERT INTO site_settings (key, value, description, category) VALUES
   ('timezone', 'UTC', 'Default timezone', 'general')
 ON CONFLICT (key) DO NOTHING;
 
--- Create updated_at trigger function
-CREATE OR REPLACE FUNCTION update_updated_at_column()
-RETURNS TRIGGER AS '
-BEGIN
-    NEW.updated_at = NOW();
-    RETURN NEW;
-END;
-' language 'plpgsql';
 
--- Add triggers for automatic updated_at updates
-CREATE TRIGGER update_users_updated_at BEFORE UPDATE ON users FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-CREATE TRIGGER update_departments_updated_at BEFORE UPDATE ON departments FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-CREATE TRIGGER update_projects_updated_at BEFORE UPDATE ON projects FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-CREATE TRIGGER update_teams_updated_at BEFORE UPDATE ON teams FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-CREATE TRIGGER update_boards_updated_at BEFORE UPDATE ON boards FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-CREATE TRIGGER update_board_columns_updated_at BEFORE UPDATE ON board_columns FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-CREATE TRIGGER update_tasks_updated_at BEFORE UPDATE ON tasks FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-CREATE TRIGGER update_subtasks_updated_at BEFORE UPDATE ON subtasks FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-CREATE TRIGGER update_site_settings_updated_at BEFORE UPDATE ON site_settings FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 -- Verify tables creation
 SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE' ORDER BY table_name;
 
--- Create indexes for better performance
-CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
-CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
-CREATE INDEX IF NOT EXISTS idx_users_department ON users(department);
-CREATE INDEX IF NOT EXISTS idx_projects_owner ON projects(owner_id);
-CREATE INDEX IF NOT EXISTS idx_projects_department ON projects(department_id);
-CREATE INDEX IF NOT EXISTS idx_tasks_assignee ON tasks(assignee_id);
-CREATE INDEX IF NOT EXISTS idx_tasks_board ON tasks(board_id);
-CREATE INDEX IF NOT EXISTS idx_tasks_column ON tasks(column_id);
-CREATE INDEX IF NOT EXISTS idx_comments_task ON comments(task_id);
-CREATE INDEX IF NOT EXISTS idx_comments_project ON comments(project_id);
-CREATE INDEX IF NOT EXISTS idx_sessions_expire ON sessions(expire);
+-- Add telegram column to users
+ALTER TABLE "users" ADD COLUMN "telegram" text;
+
+-- Create priorities table
+CREATE TABLE IF NOT EXISTS "priorities" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"name" text NOT NULL,
+	"color" text DEFAULT 'bg-gray-500',
+	"level" integer NOT NULL,
+	CONSTRAINT "priorities_name_unique" UNIQUE("name")
+);
+
+-- Seed the priorities table
+INSERT INTO "priorities" (name, color, level) VALUES
+('Critical', 'bg-red-500', 10),
+('High', 'bg-orange-500', 7),
+('Medium', 'bg-yellow-500', 5),
+('Low', 'bg-blue-500', 2),
+('Trivial', 'bg-gray-500', 0)
+ON CONFLICT (name) DO NOTHING;
+
+
+
+-- Create task_labels table if it doesn't exist
+CREATE TABLE IF NOT EXISTS "task_labels" (
+	"task_id" uuid NOT NULL,
+	"label_id" uuid NOT NULL,
+	CONSTRAINT "task_labels_task_id_label_id_pk" PRIMARY KEY("task_id","label_id")
+);
+
+
+
+
+
+
+
+-- Create priorities table
+CREATE TABLE IF NOT EXISTS "priorities" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"name" text NOT NULL,
+	"color" text DEFAULT 'bg-gray-500',
+	"level" integer NOT NULL,
+	CONSTRAINT "priorities_name_unique" UNIQUE("name")
+);
+
+-- Seed the priorities table
+INSERT INTO "priorities" (name, color, level) VALUES
+('Critical', 'bg-red-500', 10),
+('High', 'bg-orange-500', 7),
+('Medium', 'bg-yellow-500', 5),
+('Low', 'bg-blue-500', 2),
+('Trivial', 'bg-gray-500', 0)
+ON CONFLICT (name) DO NOTHING;
+
+-- Add priorityId column to tasks table
+ALTER TABLE "tasks" ADD COLUMN IF NOT EXISTS "priority_id" uuid;
+
+-- Update the new priorityId column based on the old priority column
+UPDATE "tasks" t SET "priority_id" = (SELECT p.id FROM "priorities" p WHERE p.name = t.priority);
+
+-- Add foreign key constraint
+ALTER TABLE "tasks" ADD CONSTRAINT "tasks_priority_id_priorities_id_fk" FOREIGN KEY ("priority_id") REFERENCES "public"."priorities"("id") ON DELETE no action ON UPDATE no action;
+
+-- Drop the old priority column
+ALTER TABLE "tasks" DROP COLUMN IF EXISTS "priority";
+
+-- Create task_labels table
+CREATE TABLE IF NOT EXISTS "task_labels" (
+	"task_id" uuid NOT NULL,
+	"label_id" uuid NOT NULL,
+	CONSTRAINT "task_labels_task_id_label_id_pk" PRIMARY KEY("task_id","label_id")
+);
+
+
+
+-- Drop the old tags column
+ALTER TABLE "tasks" DROP COLUMN IF EXISTS "tags";
+

@@ -24,7 +24,7 @@ dotenv.config();
 
 // PostgreSQL Storage Implementation
 export class PostgresStorage {
-  private db: ReturnType<typeof drizzle>;
+  public db: ReturnType<typeof drizzle>;
   
   constructor() {
     if (!process.env.DATABASE_URL) {
@@ -676,12 +676,12 @@ export class PostgresStorage {
   async getProjectsWithStats(): Promise<any[]> {
     const startTime = Date.now();
     try {
-      const cacheKey = "projects:stats:all";
-      const cached = await getCache<any[]>(cacheKey);
-      if (cached) {
-        console.log(`[DB] getProjectsWithStats: cached (${cached.length} projects)`);
-        return cached;
-      }
+      // const cacheKey = "projects:stats:all";
+      // const cached = await getCache<any[]>(cacheKey);
+      // if (cached) {
+      //   console.log(`[DB] getProjectsWithStats: cached (${cached.length} projects)`);
+      //   return cached;
+      // }
 
       // Optimized: Get projects with board counts in a single efficient query
       const projectsWithBoards = await this.db
@@ -694,8 +694,8 @@ export class PostgresStorage {
         .groupBy(schema.projects.id);
 
       // Get task stats separately to avoid complex joins
+      console.log('projectsWithBoards:', projectsWithBoards);
       const boardIds = projectsWithBoards
-        .filter(p => p.boardCount > 0)
         .map(p => p.project.id);
       
       let taskStats: Map<string, { taskCount: number; completedTaskCount: number }> = new Map();

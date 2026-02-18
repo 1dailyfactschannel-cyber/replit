@@ -91,7 +91,7 @@ export const projects = pgTable("projects", {
   ownerId: uuid("owner_id").notNull().references(() => users.id),
   departmentId: uuid("department_id").references(() => departments.id),
   status: text("status").default("active"), // active, paused, completed, archived
-  priority: text("priority").default("medium"), // low, medium, high, critical
+  priorityId: uuid("priority_id").references(() => priorities.id), // New foreign key to priorities table
   startDate: timestamp("start_date"),
   endDate: timestamp("end_date"),
   budget: integer("budget"),
@@ -145,7 +145,7 @@ export const tasks = pgTable("tasks", {
   assigneeId: uuid("assignee_id").references(() => users.id),
   reporterId: uuid("reporter_id").notNull().references(() => users.id),
   status: text("status").default("todo"), // todo, in_progress, review, done
-  priority: text("priority").default("medium"), // low, medium, high, critical
+  priorityId: uuid("priority_id").references(() => priorities.id), // New foreign key to priorities table
   type: text("type").default("task"), // task, bug, feature, story
   storyPoints: integer("story_points"),
   startDate: timestamp("start_date"),
@@ -154,7 +154,7 @@ export const tasks = pgTable("tasks", {
   order: integer("order").notNull().default(0),
   number: text("number"),
   parentId: uuid("parent_id").references((): any => tasks.id),
-  tags: jsonb("tags").default(sql`'[]'::jsonb`),
+  tags: jsonb("tags").default(sql`'[]'::jsonb`), // This will be replaced with task_labels junction table
   attachments: jsonb("attachments").default(sql`'[]'::jsonb`),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
@@ -162,7 +162,9 @@ export const tasks = pgTable("tasks", {
   boardIdIdx: index("tasks_board_id_idx").on(table.boardId),
   columnIdIdx: index("tasks_column_id_idx").on(table.columnId),
   assigneeIdIdx: index("tasks_assignee_id_idx").on(table.assigneeId),
+  priorityIdIdx: index("tasks_priority_id_idx").on(table.priorityId), // New index
 }));
+
 
 // Subtasks table
 export const subtasks = pgTable("subtasks", {
@@ -288,7 +290,7 @@ export const insertProjectSchema = createInsertSchema(projects).pick({
   ownerId: true,
   departmentId: true,
   status: true,
-  priority: true,
+  priorityId: true,
   startDate: true,
   endDate: true,
   budget: true,
@@ -305,7 +307,7 @@ export const insertTaskSchema = createInsertSchema(tasks).pick({
   assigneeId: true,
   reporterId: true,
   status: true,
-  priority: true,
+  priorityId: true,
   type: true,
   storyPoints: true,
   startDate: true,
@@ -337,10 +339,22 @@ export const insertBoardColumnSchema = createInsertSchema(boardColumns).pick({
   color: true,
 });
 
-export const insertLabelSchema = createInsertSchema(labels).pick({
+// Priorities table
+export const priorities = pgTable("priorities", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  name: text("name").notNull().unique(),
+  color: text("color").default("bg-blue-500"),
+  level: integer("level").notNull().default(1), // 1-10, where 10 is highest priority
+});
+
+export const insertPrioritySchema = createInsertSchema(priorities).pick({
   name: true,
   color: true,
+  level: true,
 });
+
+export type Priority = typeof priorities.$inferSelect;
+export type InsertPriority = z.infer<typeof insertPrioritySchema>;
 
 // Chat folders table
 export const labels = pgTable("labels", {
@@ -350,6 +364,11 @@ export const labels = pgTable("labels", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+export const insertLabelSchema = createInsertSchema(labels).pick({
+  name: true,
+  color: true,
+});
+
 // Chat folders table
 export const chatFolders = pgTable("chat_folders", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -357,6 +376,7 @@ export const chatFolders = pgTable("chat_folders", {
   name: text("name").notNull(),
   icon: text("icon"),
   createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
 });
 
 // Chat folder items junction table

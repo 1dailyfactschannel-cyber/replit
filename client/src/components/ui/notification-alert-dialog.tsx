@@ -57,7 +57,7 @@ export function NotificationAlertDialog() {
         },
     })
 
-    const unreadCount = notifications.filter((n) => !n.isRead).length
+    const unreadCount = notifications?.filter((n) => !n.isRead).length ?? 0
 
     const getInitials = (title: string) => {
         return title
@@ -107,7 +107,7 @@ export function NotificationAlertDialog() {
                         </AlertDialogDescription>
                     </AlertDialogHeader>
                     <div className="my-3 space-y-2 max-h-[300px] overflow-y-auto">
-                        {notifications.length === 0 ? (
+                        {!notifications || notifications.length === 0 ? (
                             <p className="text-center py-4 text-muted-foreground">Нет уведомлений</p>
                         ) : (
                             notifications.slice(0, 3).map((notification) => (
@@ -206,7 +206,7 @@ export function NotificationAlertDialog() {
                             </Button>
                         </div>
                         <div className="flex-1 overflow-y-auto p-4 space-y-3 scrollbar-thin scrollbar-thumb-indigo-200 dark:scrollbar-thumb-indigo-800">
-                            {notifications.length === 0 ? (
+                            {!notifications || notifications.length === 0 ? (
                                 <div className="flex flex-col items-center justify-center h-full text-gray-500 dark:text-gray-400">
                                     <BellRing className="h-12 w-12 mb-2 text-gray-300 dark:text-gray-700" />
                                     <p>Нет уведомлений</p>
