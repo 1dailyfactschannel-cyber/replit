@@ -75,45 +75,45 @@ const MenuBar = ({ editor }: { editor: any }) => {
   ];
 
   return (
-    <div className="flex flex-wrap gap-1 p-1 border-b border-border bg-secondary/50">
+    <div className="flex flex-wrap gap-0.5 p-1 border-b border-border bg-secondary/50">
       {buttons.map((btn, i) => (
         <Button
           key={i}
           variant="ghost"
           size="icon"
           className={cn(
-            "h-8 w-8 text-muted-foreground hover:text-foreground",
+            "h-6 w-6 text-muted-foreground hover:text-foreground",
             btn.isActive && "bg-primary/20 text-primary"
           )}
           onClick={btn.onClick}
           onMouseDown={(e) => e.preventDefault()}
           type="button"
         >
-          <btn.icon className="h-4 w-4" />
+          <btn.icon className="h-3.5 w-3.5" />
         </Button>
       ))}
       <div className="flex-1" />
       <Button
         variant="ghost"
         size="icon"
-        className="h-8 w-8 text-muted-foreground hover:text-foreground"
+        className="h-6 w-6 text-muted-foreground hover:text-foreground"
         onClick={() => editor.chain().focus().undo().run()}
         disabled={!editor.can().undo()}
         onMouseDown={(e) => e.preventDefault()}
         type="button"
       >
-        <Undo className="h-4 w-4" />
+        <Undo className="h-3.5 w-3.5" />
       </Button>
       <Button
         variant="ghost"
         size="icon"
-        className="h-8 w-8 text-muted-foreground hover:text-foreground"
+        className="h-6 w-6 text-muted-foreground hover:text-foreground"
         onClick={() => editor.chain().focus().redo().run()}
         disabled={!editor.can().redo()}
         onMouseDown={(e) => e.preventDefault()}
         type="button"
       >
-        <Redo className="h-4 w-4" />
+        <Redo className="h-3.5 w-3.5" />
       </Button>
     </div>
   );
@@ -153,7 +153,7 @@ export function RichTextEditor({ content, onChange, onBlur, placeholder }: RichT
     },
     editorProps: {
       attributes: {
-        class: 'prose prose-sm dark:prose-invert max-w-none min-h-[150px] p-4 focus:outline-none text-black dark:text-white',
+        class: 'prose prose-sm dark:prose-invert max-w-none min-h-[60px] p-3 focus:outline-none text-black dark:text-white',
       },
     },
   });
@@ -166,7 +166,7 @@ export function RichTextEditor({ content, onChange, onBlur, placeholder }: RichT
   }, [content, editor]);
 
   return (
-    <div className="rounded-xl border border-border/50 bg-card overflow-hidden focus-within:ring-2 ring-primary/20 transition-all">
+    <div className="rounded-lg border border-border/50 bg-card overflow-hidden focus-within:ring-2 ring-primary/20 transition-all">
       <MenuBar editor={editor} />
       <EditorContent editor={editor} />
     </div>

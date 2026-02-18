@@ -1014,17 +1014,17 @@ export function TaskDetailsModal({
               </div>
 
               {/* Description Section */}
-              <div className="space-y-4">
-                <div className="flex items-center gap-2.5 text-muted-foreground/80">
-                  <AlignLeft className="w-4 h-4" />
-                  <span className="text-sm font-semibold tracking-tight uppercase">Описание задачи</span>
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 text-muted-foreground/80">
+                  <AlignLeft className="w-3.5 h-3.5" />
+                  <span className="text-xs font-semibold tracking-tight uppercase">Описание задачи</span>
                 </div>
-                <div className="bg-secondary/10 rounded-xl p-1 border border-border/30 hover:border-border/60 transition-colors">
+                <div className="bg-secondary/10 rounded-lg p-0.5 border border-border/30 hover:border-border/60 transition-colors">
                   <RichTextEditor 
                     content={newDescription} 
                     onChange={handleDescriptionChange}
                     onBlur={handleDescriptionBlur}
-                    placeholder="Добавьте детальное описание..."
+                    placeholder="Добавьте описание..."
                   />
                 </div>
               </div>
