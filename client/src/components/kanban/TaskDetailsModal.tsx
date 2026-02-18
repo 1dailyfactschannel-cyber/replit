@@ -1452,7 +1452,6 @@ export function TaskDetailsModal({
                       })() : "Не установлен", 
                       isDate: true 
                     },
-                  { icon: CheckSquare, label: "Подзадачи", value: `${localSubtasks.filter(s => s.completed).length}/${localSubtasks.length}` },
                 ].map((item, idx) => (
                   <div key={idx}>
                     {(item as any).isObservers ? (
