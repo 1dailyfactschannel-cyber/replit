@@ -40,32 +40,9 @@ async function runSqlMigration() {
       
       console.log('📝 Executing SQL migration...');
       
-      // Split SQL into statements (handle multiline & comments)
-      const statements = sql
-        .split(/;\s*$/m)
-        .map(stmt => stmt.trim())
-        .filter(stmt => stmt.length > 0 && !stmt.startsWith('--'));
+      await client.query(sql);
       
-      let executedCount = 0;
-      
-      for (const statement of statements) {
-        if (statement.trim()) {
-          try {
-            await client.query(statement);
-            executedCount++;
-          } catch (error: any) {
-            // Skip errors for already existing objects or non-existent columns
-            if (error.code !== '42P07' && error.code !== '42710' && error.code !== '23505' && error.code !== '42703') {
-              console.error(`Error executing statement: ${statement}`, error);
-              throw error;
-            } else {
-              console.warn(`⚠️  Warning executing statement: ${error.message}`);
-            }
-          }
-        }
-      }
-      
-      console.log(`✅ Executed ${executedCount} SQL statements`);
+      console.log(`✅ Executed SQL migration file`);
       
       // Verify tables were created
       const result = await client.query(`

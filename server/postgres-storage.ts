@@ -676,12 +676,12 @@ export class PostgresStorage {
   async getProjectsWithStats(): Promise<any[]> {
     const startTime = Date.now();
     try {
-      // const cacheKey = "projects:stats:all";
-      // const cached = await getCache<any[]>(cacheKey);
-      // if (cached) {
-      //   console.log(`[DB] getProjectsWithStats: cached (${cached.length} projects)`);
-      //   return cached;
-      // }
+      const cacheKey = "projects:stats:all";
+      const cached = await getCache<any[]>(cacheKey);
+      if (cached) {
+        console.log(`[DB] getProjectsWithStats: cached (${cached.length} projects)`);
+        return cached;
+      }
 
       // Optimized: Get projects with board counts in a single efficient query
       const projectsWithBoards = await this.db
