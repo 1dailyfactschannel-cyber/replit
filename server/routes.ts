@@ -8,7 +8,7 @@ import multer from "multer";
 import path from "path";
 import fs from "fs";
 import { eq, and, ne } from "drizzle-orm";
-import { getCache, setCache, invalidatePattern } from "./redis";
+import { getCache, setCache, invalidatePattern, delCache } from "./redis";
 import { format } from "date-fns";
 
 const storage = getStorage();
@@ -214,6 +214,11 @@ export async function registerRoutes(
       console.log("POST /api/projects: Creating project with data:", projectData);
       const project = await storage.createProject(projectData);
       console.log("POST /api/projects: Project created successfully:", project.id);
+      
+      // Очищаем кэш проектов, чтобы новый проект сразу отображался
+      await delCache("projects:stats:all");
+      console.log("POST /api/projects: Cache cleared");
+      
       res.status(201).json(project);
     } catch (error) {
       console.error("POST /api/projects error:", error);

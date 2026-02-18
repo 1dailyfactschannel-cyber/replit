@@ -675,8 +675,38 @@ function ProjectsManagement() {
       const res = await apiRequest("POST", "/api/projects", project);
       return res.json();
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+    onMutate: async (newProjectData) => {
+      // Отменяем перезапросы текущих проектов
+      await queryClient.cancelQueries({ queryKey: ["/api/projects"] });
+      
+      // Сохраняем текущие проекты для отката в случае ошибки
+      const previousProjects = queryClient.getQueryData(["/api/projects"]);
+      
+      // Создаем временный проект для оптимистичного обновления
+      const tempProject = {
+        id: `temp-${Date.now()}`,
+        name: newProjectData.name,
+        color: newProjectData.color || "#3b82f6",
+        priority: newProjectData.priority,
+        status: "active",
+        boardCount: 0,
+        taskCount: 0,
+        progress: 100,
+        createdAt: new Date().toISOString(),
+        ownerId: "current-user",
+      };
+      
+      // Оптимистично добавляем проект в список
+      queryClient.setQueryData(["/api/projects"], (old: any[] = []) => [...old, tempProject]);
+      
+      return { previousProjects };
+    },
+    onSuccess: (data, variables, context) => {
+      // Заменяем временный проект на реальный от сервера
+      queryClient.setQueryData(["/api/projects"], (old: any[] = []) => {
+        return old.map((p) => (p.id?.startsWith("temp-") ? data : p));
+      });
+      
       setIsCreateProjectOpen(false);
       setNewProject({ name: "", color: "bg-blue-500", priority: "Средний" });
       toast({
@@ -684,13 +714,21 @@ function ProjectsManagement() {
         description: "Новый проект успешно добавлен в систему.",
       });
     },
-    onError: (error: any) => {
+    onError: (error: any, variables, context) => {
+      // Возвращаем предыдущие проекты в случае ошибки
+      if (context?.previousProjects) {
+        queryClient.setQueryData(["/api/projects"], context.previousProjects);
+      }
       toast({
         title: "Ошибка",
         description: error.message || "Не удалось создать проект.",
         variant: "destructive",
       });
-    }
+    },
+    onSettled: () => {
+      // Всегда обновляем данные с сервера
+      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+    },
   });
 
   const deleteProjectMutation = useMutation({

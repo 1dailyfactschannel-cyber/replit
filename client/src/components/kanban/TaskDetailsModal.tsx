@@ -696,6 +696,18 @@ export function TaskDetailsModal({
     const trimmedLabel = labelName.trim();
     if (!trimmedLabel || localLabels.some(l => l.name === trimmedLabel)) return;
 
+    // Проверяем, существует ли метка уже в availableLabels
+    const existingLabel = availableLabels.find((l: any) => l.name === trimmedLabel);
+    
+    if (existingLabel) {
+      // Метка уже существует, просто добавляем её к задаче
+      const updatedLabels = [...localLabels, { name: trimmedLabel, pending: false }];
+      setLocalLabels(updatedLabels);
+      handleUpdate({ labels: updatedLabels.map(l => l.name) });
+      return;
+    }
+
+    // Метка не существует, создаем новую
     const tempLabel = { name: trimmedLabel, pending: true };
     setLocalLabels(prev => [...prev, tempLabel]);
 
