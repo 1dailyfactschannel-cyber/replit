@@ -1035,15 +1035,43 @@ function PrioritiesManagement() {
 
   return (
     <section className="space-y-4">
-      <div className="flex items-center justify-between px-1 cursor-pointer" onClick={() => setIsCollapsed(!isCollapsed)}>
-        <div className="flex flex-col gap-1">
+      <div className="flex items-center justify-between px-1">
+        <div className="flex flex-col gap-1 cursor-pointer" onClick={() => setIsCollapsed(!isCollapsed)}>
           <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
             <Flag className="w-3.5 h-3.5" />
             Приоритеты задач
           </h4>
           <p className="text-[11px] text-muted-foreground">Настройка глобальных уровней важности для всех задач</p>
         </div>
-        <ChevronRight className={cn("w-4 h-4 text-muted-foreground transition-transform", isCollapsed && "rotate-90")} />
+        <div className="flex items-center gap-2">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 rounded-lg border border-border/50 hover:bg-primary/10 hover:text-primary hover:border-primary/30 transition-all"
+            onClick={() => {
+              // Раскрываем секцию если свернута
+              if (isCollapsed) {
+                setIsCollapsed(false);
+              }
+              // Сбрасываем режим редактирования
+              setEditingPriority(null);
+              // Сбрасываем форму нового приоритета
+              setNewPriority({ name: "", color: "bg-blue-500", level: 1 });
+              // Фокусируемся на поле ввода названия
+              setTimeout(() => {
+                const nameInput = document.querySelector('input[placeholder="Напр: Срочно"]') as HTMLInputElement;
+                if (nameInput) nameInput.focus();
+              }, 100);
+            }}
+            title="Добавить приоритет"
+          >
+            <Plus className="w-4 h-4" />
+          </Button>
+          <ChevronRight 
+            className={cn("w-4 h-4 text-muted-foreground transition-transform cursor-pointer", isCollapsed && "rotate-90")} 
+            onClick={() => setIsCollapsed(!isCollapsed)}
+          />
+        </div>
       </div>
 
       {!isCollapsed && (

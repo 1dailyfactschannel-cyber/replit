@@ -234,12 +234,15 @@ export function TaskDetailsModal({
     setLocalSubtasks(mappedSubtasks);
   }, [open, serverSubtasks]);
 
-  // Sync labels with task data
+  // Sync labels with task data (tags field in database)
   useEffect(() => {
-    if (effectiveTask?.labels) {
-      setLocalLabels(effectiveTask.labels.map(name => ({ name })));
+    if (effectiveTask?.tags) {
+      setLocalLabels(effectiveTask.tags.map((name: string) => ({ name })));
+    } else if (effectiveTask?.labels) {
+      // Fallback for backward compatibility
+      setLocalLabels(effectiveTask.labels.map((name: string) => ({ name })));
     }
-  }, [effectiveTask?.labels]);
+  }, [effectiveTask?.tags, effectiveTask?.labels]);
 
   // Local state for immediate UI updates
   const [localAssignee, setLocalAssignee] = useState<{ name: string; avatar?: string } | null>(null);
@@ -703,7 +706,7 @@ export function TaskDetailsModal({
       // Метка уже существует, просто добавляем её к задаче
       const updatedLabels = [...localLabels, { name: trimmedLabel, pending: false }];
       setLocalLabels(updatedLabels);
-      handleUpdate({ labels: updatedLabels.map(l => l.name) });
+      handleUpdate({ tags: updatedLabels.map(l => l.name) });
       return;
     }
 
@@ -716,7 +719,7 @@ export function TaskDetailsModal({
         setLocalLabels(prev => {
           const updatedLabels = prev.map(l => l.name === trimmedLabel ? { ...l, pending: false } : l);
           // Update the task with the new labels (including the newly added one)
-          handleUpdate({ labels: updatedLabels.map(l => l.name) });
+          handleUpdate({ tags: updatedLabels.map(l => l.name) });
           return updatedLabels;
         });
         queryClient.invalidateQueries({ queryKey: ["/api/labels"] });
@@ -755,7 +758,7 @@ export function TaskDetailsModal({
     setLocalLabels(prev => {
       const updatedLabels = prev.filter(l => l.name !== labelName);
       // Update the task with the new labels (excluding the removed one)
-      handleUpdate({ labels: updatedLabels.map(l => l.name) });
+      handleUpdate({ tags: updatedLabels.map(l => l.name) });
       return updatedLabels;
     });
   };

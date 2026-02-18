@@ -107,12 +107,28 @@ const getColumnColor = (columnName: string): { bg: string; text: string; border:
 };
 
 // Memoized TaskCard with custom comparison for performance
-const TaskCard = React.memo(({ task, index, onClick, columnColor, availableLabels = [] }: { task: any, index: number, onClick: (task: any) => void, columnColor: { bg: string; text: string; border: string; badge: string }, availableLabels?: any[] }) => {
+const TaskCard = React.memo(({ task, index, onClick, columnColor, availableLabels = [], availablePriorities = [] }: { task: any, index: number, onClick: (task: any) => void, columnColor: { bg: string; text: string; border: string; badge: string }, availableLabels?: any[], availablePriorities?: any[] }) => {
   // Preload avatar image for better perceived performance
   // const avatarSrc = task.assignee?.avatar;
   
   // Extract task number from ID (show last 4-6 chars) or use task.number if available
   const taskNumber = task.number || (task.id ? `#${task.id.toString().slice(-4)}` : '#0000');
+  
+  // Get priority color from priorityId
+  const priorityColor = React.useMemo(() => {
+    if (task.priorityId) {
+      const priority = availablePriorities.find((p: any) => p.id === task.priorityId);
+      if (priority?.color) {
+        return priority.color;
+      }
+    }
+    // Fallback to old priority string-based color
+    if (task.priority?.toLowerCase() === "критический" || task.priority?.toLowerCase() === "critical") return "bg-rose-600";
+    if (task.priority?.toLowerCase() === "высокий" || task.priority?.toLowerCase() === "high") return "bg-rose-500";
+    if (task.priority?.toLowerCase() === "средний" || task.priority?.toLowerCase() === "medium") return "bg-orange-500";
+    if (task.priority?.toLowerCase() === "низкий" || task.priority?.toLowerCase() === "low") return "bg-blue-500";
+    return "bg-slate-400";
+  }, [task.priorityId, task.priority, availablePriorities]);
   
   return (
     <Draggable key={task.id} draggableId={task.id.toString()} index={index}>
@@ -130,11 +146,7 @@ const TaskCard = React.memo(({ task, index, onClick, columnColor, availableLabel
           {/* Bottom border indicator for priority */}
           <div className={cn(
             "absolute inset-x-0 bottom-0 h-1.5 rounded-b-xl",
-            (task.priority?.toLowerCase() === "критический" || task.priority?.toLowerCase() === "critical") ? "bg-rose-600" :
-            (task.priority?.toLowerCase() === "высокий" || task.priority?.toLowerCase() === "high") ? "bg-rose-500" :
-            (task.priority?.toLowerCase() === "средний" || task.priority?.toLowerCase() === "medium") ? "bg-orange-500" :
-            (task.priority?.toLowerCase() === "низкий" || task.priority?.toLowerCase() === "low") ? "bg-blue-500" :
-            "bg-slate-400"
+            priorityColor
           )} />
           
           {/* Task Number */}
@@ -193,16 +205,19 @@ const TaskCard = React.memo(({ task, index, onClick, columnColor, availableLabel
   const nextTags = nextProps.task.tags || [];
   const tagsChanged = prevTags.length !== nextTags.length || !prevTags.every((t: string, i: number) => t === nextTags[i]);
   const labelsChanged = prevProps.availableLabels !== nextProps.availableLabels;
+  const prioritiesChanged = prevProps.availablePriorities !== nextProps.availablePriorities;
 
   return (
     prevProps.task.id === nextProps.task.id &&
     prevProps.task.title === nextProps.task.title &&
     prevProps.task.priority === nextProps.task.priority &&
+    prevProps.task.priorityId === nextProps.task.priorityId &&
     prevProps.task.assignee?.id === nextProps.task.assignee?.id &&
     prevProps.columnColor.border === nextProps.columnColor.border &&
     prevProps.index === nextProps.index &&
     !tagsChanged &&
-    !labelsChanged
+    !labelsChanged &&
+    !prioritiesChanged
   );
 });
 
@@ -215,9 +230,10 @@ interface KanbanColumnProps {
   onCreateTask: (column: string) => void;
   onTaskClick: (task: any) => void;
   availableLabels?: any[];
+  availablePriorities?: any[];
 }
 
-const KanbanColumn = React.memo(({ column, tasks, onCreateTask, onTaskClick, availableLabels = [] }: KanbanColumnProps) => {
+const KanbanColumn = React.memo(({ column, tasks, onCreateTask, onTaskClick, availableLabels = [], availablePriorities = [] }: KanbanColumnProps) => {
   const columnColor = getColumnColor(column);
   
   return (
@@ -263,6 +279,7 @@ const KanbanColumn = React.memo(({ column, tasks, onCreateTask, onTaskClick, ava
                 onClick={onTaskClick}
                 columnColor={columnColor}
                 availableLabels={availableLabels}
+                availablePriorities={availablePriorities}
               />
             ))}
             {taskProvided.placeholder}
@@ -276,12 +293,14 @@ const KanbanColumn = React.memo(({ column, tasks, onCreateTask, onTaskClick, ava
   if (prevProps.column !== nextProps.column) return false;
   if (prevProps.tasks.length !== nextProps.tasks.length) return false;
   if (prevProps.availableLabels !== nextProps.availableLabels) return false;
+  if (prevProps.availablePriorities !== nextProps.availablePriorities) return false;
   
   // Check if any task ID, title, or priority changed
   for (let i = 0; i < prevProps.tasks.length; i++) {
     if (prevProps.tasks[i]?.id !== nextProps.tasks[i]?.id) return false;
     if (prevProps.tasks[i]?.title !== nextProps.tasks[i]?.title) return false;
     if (prevProps.tasks[i]?.priority !== nextProps.tasks[i]?.priority) return false;
+    if (prevProps.tasks[i]?.priorityId !== nextProps.tasks[i]?.priorityId) return false;
     if (prevProps.tasks[i]?.status !== nextProps.tasks[i]?.status) return false;
     if (prevProps.tasks[i]?.assignee?.id !== nextProps.tasks[i]?.assignee?.id) return false;
     
@@ -412,6 +431,11 @@ export default function Projects() {
 
   const { data: availableLabels = [] } = useQuery<any[]>({
     queryKey: ["/api/labels"],
+    staleTime: 1000 * 60 * 60, // 1 hour
+  });
+
+  const { data: availablePriorities = [] } = useQuery<any[]>({
+    queryKey: ["/api/priorities"],
     staleTime: 1000 * 60 * 60, // 1 hour
   });
 
@@ -1150,6 +1174,7 @@ export default function Projects() {
                           onCreateTask={handleCreateTask}
                           onTaskClick={handleTaskClick}
                           availableLabels={availableLabels}
+                          availablePriorities={availablePriorities}
                         />
                       ))}
                       {provided.placeholder}
