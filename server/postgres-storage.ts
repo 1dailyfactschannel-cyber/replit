@@ -1349,9 +1349,16 @@ export class PostgresStorage {
     try {
       const history = await this.getTaskStatusHistory(taskId);
       const summary = new Map<string, { totalSeconds: number; count: number }>();
+      const now = new Date();
       
       for (const entry of history) {
-        const duration = entry.durationSeconds || 0;
+        let duration = entry.durationSeconds || 0;
+        
+        // If still in this status (no exitedAt), calculate current duration
+        if (!entry.exitedAt && entry.enteredAt) {
+          duration = Math.floor((now.getTime() - new Date(entry.enteredAt).getTime()) / 1000);
+        }
+        
         const existing = summary.get(entry.status) || { totalSeconds: 0, count: 0 };
         summary.set(entry.status, {
           totalSeconds: existing.totalSeconds + duration,
@@ -1366,6 +1373,54 @@ export class PostgresStorage {
       }));
     } catch (error) {
       console.error("Error getting task status summary:", error);
+      return [];
+    }
+  }
+
+  // Task History methods
+  async addTaskHistory(entry: {
+    taskId: string;
+    userId?: string;
+    action: string;
+    field?: string;
+    oldValue?: string;
+    newValue?: string;
+  }): Promise<schema.TaskHistory> {
+    try {
+      const [history] = await this.db.insert(schema.taskHistory)
+        .values({
+          taskId: entry.taskId,
+          userId: entry.userId || null,
+          action: entry.action,
+          field: entry.field || null,
+          oldValue: entry.oldValue || null,
+          newValue: entry.newValue || null,
+        })
+        .returning();
+      return history;
+    } catch (error) {
+      console.error("Error adding task history:", error);
+      throw error;
+    }
+  }
+
+  async getTaskHistory(taskId: string): Promise<(schema.TaskHistory & { user?: schema.User })[]> {
+    try {
+      const history = await this.db.select({
+        history: schema.taskHistory,
+        user: schema.users,
+      })
+        .from(schema.taskHistory)
+        .leftJoin(schema.users, eq(schema.taskHistory.userId, schema.users.id))
+        .where(eq(schema.taskHistory.taskId, taskId))
+        .orderBy(desc(schema.taskHistory.createdAt));
+
+      return history.map(h => ({
+        ...h.history,
+        user: h.user || undefined,
+      }));
+    } catch (error) {
+      console.error("Error getting task history:", error);
       return [];
     }
   }

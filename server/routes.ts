@@ -379,6 +379,66 @@ export async function registerRoutes(
 
       const task = await storage.updateTask(taskId, updateData);
       
+      // Get the current user for history
+      const currentUser = req.user;
+      const userId = currentUser?.id;
+      
+      // Record history for each changed field
+      for (const [key, newValue] of Object.entries(updateData)) {
+        try {
+          let action = 'updated';
+          let fieldName = key;
+          let oldValueStr = '';
+          let newValueStr = String(newValue || '');
+          
+          // Special handling for different fields
+          if (key === 'assigneeId') {
+            action = 'assignee_changed';
+            fieldName = 'Исполнитель';
+            if (newValue) {
+              const user = await storage.getUser(String(newValue));
+              newValueStr = user ? `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.username : String(newValue);
+            }
+            oldValueStr = '';
+          } else if (key === 'status') {
+            action = 'status_changed';
+            fieldName = 'Статус';
+            oldValueStr = '';
+          } else if (key === 'priorityId') {
+            action = 'priority_changed';
+            fieldName = 'Приоритет';
+            oldValueStr = '';
+          } else if (key === 'title') {
+            action = 'title_changed';
+            fieldName = 'Название';
+            oldValueStr = '';
+          } else if (key === 'description') {
+            action = 'description_changed';
+            fieldName = 'Описание';
+            oldValueStr = '';
+          } else if (key === 'dueDate') {
+            action = 'due_date_changed';
+            fieldName = 'Срок';
+            oldValueStr = '';
+          } else if (key === 'tags') {
+            action = 'labels_changed';
+            fieldName = 'Метки';
+            oldValueStr = '';
+          }
+          
+          await storage.addTaskHistory({
+            taskId,
+            userId,
+            action,
+            field: fieldName,
+            oldValue: oldValueStr,
+            newValue: newValueStr,
+          });
+        } catch (error) {
+          console.error("Error recording history:", error);
+        }
+      }
+      
       // Record status change for time tracking
       if (updateData.status) {
         try {
@@ -471,6 +531,16 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/tasks/:id/history", async (req, res) => {
+    try {
+      const history = await storage.getTaskHistory(req.params.id);
+      res.json(history);
+    } catch (error) {
+      console.error("Error getting task history:", error);
+      res.status(500).json({ message: "Failed to get task history" });
+    }
+  });
+
   app.get("/api/tasks/:id", async (req, res) => {
     try {
       const task = await storage.getTask(req.params.id);
@@ -529,6 +599,19 @@ export async function registerRoutes(
 
       const task = await storage.createTask(taskData);
       console.log("[API] Task created:", task);
+      
+      // Record task creation in history
+      try {
+        await storage.addTaskHistory({
+          taskId: task.id,
+          userId: user.id,
+          action: 'created',
+          field: 'Задача',
+          newValue: task.title,
+        });
+      } catch (error) {
+        console.error("Error recording task creation history:", error);
+      }
       
       // Обогащаем задачу данными об исполнителе и репортере перед отправкой
       const [assignee, reporter] = await Promise.all([
@@ -1098,6 +1181,19 @@ export async function registerRoutes(
       
       const subtask = await storage.createSubtask(subtaskData);
       
+      // Record subtask creation in task history
+      try {
+        await storage.addTaskHistory({
+          taskId: req.params.taskId,
+          userId: userId,
+          action: 'subtask_created',
+          field: 'Подзадача',
+          newValue: req.body.title,
+        });
+      } catch (error) {
+        console.error("Error recording subtask history:", error);
+      }
+      
       console.log("[Subtasks] Created subtask:", subtask);
       
       // Получаем данные об авторе для ответа
@@ -1201,6 +1297,19 @@ export async function registerRoutes(
         taskId: req.params.taskId,
         authorId: req.user.id
       });
+      
+      // Record comment in task history
+      try {
+        await storage.addTaskHistory({
+          taskId: req.params.taskId,
+          userId: req.user.id,
+          action: 'comment_added',
+          field: 'Комментарий',
+          newValue: req.body.content?.substring(0, 100) || '',
+        });
+      } catch (error) {
+        console.error("Error recording comment history:", error);
+      }
       
       // Возвращаем обогащенный комментарий
       const author = req.user;

@@ -178,6 +178,21 @@ export const taskStatusHistory = pgTable("task_status_history", {
   statusIdx: index("task_status_history_status_idx").on(table.status),
 }));
 
+// Task history table for tracking all changes
+export const taskHistory = pgTable("task_history", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  taskId: uuid("task_id").notNull().references(() => tasks.id, { onDelete: "cascade" }),
+  userId: uuid("user_id").references(() => users.id, { onDelete: "set null" }),
+  action: text("action").notNull(), // created, updated, status_changed, assignee_changed, etc.
+  field: text("field"), // field name that was changed
+  oldValue: text("old_value"),
+  newValue: text("new_value"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  taskIdIdx: index("task_history_task_id_idx").on(table.taskId),
+  createdAtIdx: index("task_history_created_at_idx").on(table.createdAt),
+}));
+
 
 // Subtasks table
 export const subtasks = pgTable("subtasks", {
@@ -234,6 +249,15 @@ export const insertTaskStatusHistorySchema = createInsertSchema(taskStatusHistor
   durationSeconds: true,
 });
 
+export const insertTaskHistorySchema = createInsertSchema(taskHistory).pick({
+  taskId: true,
+  userId: true,
+  action: true,
+  field: true,
+  oldValue: true,
+  newValue: true,
+});
+
 export const insertCommentSchema = createInsertSchema(comments).pick({
   taskId: true,
   projectId: true,
@@ -241,18 +265,6 @@ export const insertCommentSchema = createInsertSchema(comments).pick({
   content: true,
   parentId: true,
   attachments: true,
-});
-
-// Task history table
-export const taskHistory = pgTable("task_history", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  taskId: uuid("task_id").notNull().references(() => tasks.id, { onDelete: "cascade" }),
-  userId: uuid("user_id").notNull().references(() => users.id),
-  action: text("action").notNull(), // created, updated, moved, assigned, etc.
-  fieldName: text("field_name"),
-  oldValue: text("old_value"),
-  newValue: text("new_value"),
-  createdAt: timestamp("created_at").defaultNow(),
 });
 
 // Site settings table
@@ -554,6 +566,9 @@ export type InsertSubtask = z.infer<typeof insertSubtaskSchema>;
 
 export type TaskStatusHistory = typeof taskStatusHistory.$inferSelect;
 export type InsertTaskStatusHistory = z.infer<typeof insertTaskStatusHistorySchema>;
+
+export type TaskHistory = typeof taskHistory.$inferSelect;
+export type InsertTaskHistory = z.infer<typeof insertTaskHistorySchema>;
 
 export type Comment = typeof comments.$inferSelect;
 export type InsertComment = z.infer<typeof insertCommentSchema>;

@@ -89,6 +89,11 @@ const statusNames: Record<string, string> = {
   review: "На проверке",
   done: "Готово",
   backlog: "Бэклог",
+  "К выполнению": "К выполнению",
+  "В работе": "В работе",
+  "На проверке": "На проверке",
+  "Готово": "Готово",
+  "Бэклог": "Бэклог",
 };
 
 // Status colors
@@ -98,6 +103,11 @@ const statusColors: Record<string, string> = {
   review: "bg-amber-500",
   done: "bg-emerald-500",
   backlog: "bg-gray-400",
+  "К выполнению": "bg-slate-500",
+  "В работе": "bg-blue-500",
+  "На проверке": "bg-amber-500",
+  "Готово": "bg-emerald-500",
+  "Бэклог": "bg-gray-400",
 };
 
 // Format seconds to readable time
@@ -169,6 +179,136 @@ function TaskStatusTimer({ taskId }: { taskId: string | number | undefined }) {
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+// Action names in Russian
+const actionNames: Record<string, string> = {
+  created: "создал(-а) задачу",
+  updated: "обновил(-а)",
+  status_changed: "изменил(-а) статус",
+  assignee_changed: "добавил(-а) исполнителя",
+  priority_changed: "изменил(-а) приоритет",
+  title_changed: "изменил(-а) название",
+  description_changed: "изменил(-а) описание",
+  due_date_changed: "изменил(-а) срок",
+  labels_changed: "изменил(-а) метки",
+  comment_added: "добавил(-а) комментарий",
+  subtask_created: "добавил(-а) подзадачу",
+  subtask_completed: "завершил(-а) подзадачу",
+};
+
+// Format date for activity
+function formatActivityDate(dateStr: string): { date: string; time: string } {
+  const date = new Date(dateStr);
+  const today = new Date();
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+  
+  const timeStr = date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+  
+  if (date.toDateString() === today.toDateString()) {
+    return { date: 'Сегодня', time: timeStr };
+  } else if (date.toDateString() === yesterday.toDateString()) {
+    return { date: 'Вчера', time: timeStr };
+  } else {
+    return { 
+      date: date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' }),
+      time: timeStr 
+    };
+  }
+}
+
+// Task Activity History Component
+function TaskActivityHistory({ taskId }: { taskId: string | number | undefined }) {
+  const { data: history = [], isLoading } = useQuery<{
+    id: string;
+    taskId: string;
+    userId: string | null;
+    action: string;
+    field: string | null;
+    oldValue: string | null;
+    newValue: string | null;
+    createdAt: string;
+    user?: {
+      id: string;
+      firstName: string | null;
+      lastName: string | null;
+      username: string;
+      avatar: string | null;
+    };
+  }[]>({
+    queryKey: [`/api/tasks/${taskId}/history`],
+    enabled: !!taskId,
+  });
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-8">
+        <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (history.length === 0) {
+    return (
+      <div className="text-xs text-muted-foreground text-center py-8">
+        Нет истории изменений
+      </div>
+    );
+  }
+
+  // Group by date
+  const groupedHistory = history.reduce((groups, item) => {
+    const { date } = formatActivityDate(item.createdAt);
+    if (!groups[date]) {
+      groups[date] = [];
+    }
+    groups[date].push(item);
+    return groups;
+  }, {} as Record<string, typeof history>);
+
+  return (
+    <div className="space-y-4">
+      {Object.entries(groupedHistory).map(([date, items]) => (
+        <div key={date}>
+          <div className="text-[10px] font-bold text-muted-foreground/60 uppercase tracking-wider mb-2">
+            {date}
+          </div>
+          <div className="space-y-2">
+            {items.map((item) => {
+              const { time } = formatActivityDate(item.createdAt);
+              const userName = item.user 
+                ? `${item.user.firstName || ''} ${item.user.lastName || ''}`.trim() || item.user.username
+                : 'Система';
+              const actionText = actionNames[item.action] || item.action;
+              
+              return (
+                <div key={item.id} className="flex gap-2 text-xs">
+                  <div className="w-1.5 h-1.5 rounded-full bg-primary/40 mt-1.5 shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1 flex-wrap">
+                      <span className="font-medium">{userName}</span>
+                      <span className="text-muted-foreground">{actionText}</span>
+                      {item.field && item.action !== 'created' && item.action !== 'comment_added' && (
+                        <>
+                          <span className="text-muted-foreground">поле</span>
+                          <span className="font-medium">"{item.field}"</span>
+                        </>
+                      )}
+                      {item.newValue && item.action === 'comment_added' && (
+                        <span className="text-muted-foreground truncate max-w-[150px]">"{item.newValue}"</span>
+                      )}
+                    </div>
+                    <div className="text-[10px] text-muted-foreground/50 mt-0.5">{time}</div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
@@ -1389,9 +1529,7 @@ export function TaskDetailsModal({
                   </TabsContent>
                   
                   <TabsContent value="history" className="pt-2 mt-0">
-                    <div className="text-xs text-muted-foreground text-center py-4">
-                      История изменений задачи
-                    </div>
+                    <TaskActivityHistory taskId={task?.id} />
                   </TabsContent>
                 </Tabs>
               </div>
