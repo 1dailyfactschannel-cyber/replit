@@ -494,10 +494,10 @@ export default function Projects() {
       // Сохраняем предыдущее состояние
       const previousBoards = queryClient.getQueryData<any[]>(["/api/projects", activeProject?.id, "boards"]);
 
-      // Оптимистично добавляем новую доску
+      // Оптимистично добавляем новую доску с валидным UUID
       if (previousBoards) {
         const optimisticBoard = {
-          id: `temp-board-${Date.now()}`,
+          id: crypto.randomUUID(),
           name: name,
           projectId: activeProject?.id,
           createdAt: new Date().toISOString()
