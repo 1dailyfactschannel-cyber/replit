@@ -82,6 +82,97 @@ import {
 import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import { toast as sonnerToast } from "sonner";
 
+// Status display names in Russian
+const statusNames: Record<string, string> = {
+  todo: "К выполнению",
+  in_progress: "В работе",
+  review: "На проверке",
+  done: "Готово",
+  backlog: "Бэклог",
+};
+
+// Status colors
+const statusColors: Record<string, string> = {
+  todo: "bg-slate-500",
+  in_progress: "bg-blue-500",
+  review: "bg-amber-500",
+  done: "bg-emerald-500",
+  backlog: "bg-gray-400",
+};
+
+// Format seconds to readable time
+function formatDuration(seconds: number): string {
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const secs = seconds % 60;
+  
+  if (hours > 0) {
+    return `${hours}ч ${minutes}м`;
+  } else if (minutes > 0) {
+    return `${minutes}м ${secs}с`;
+  } else {
+    return `${secs}с`;
+  }
+}
+
+// Task Status Timer Component
+function TaskStatusTimer({ taskId }: { taskId: string | number | undefined }) {
+  const { data: statusSummary = [], isLoading } = useQuery<{
+    status: string;
+    totalSeconds: number;
+    count: number;
+  }[]>({
+    queryKey: [`/api/tasks/${taskId}/status-summary`],
+    enabled: !!taskId,
+  });
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-8">
+        <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (statusSummary.length === 0) {
+    return (
+      <div className="text-xs text-muted-foreground text-center py-8">
+        Нет данных о времени в статусах
+      </div>
+    );
+  }
+
+  // Calculate total time
+  const totalTime = statusSummary.reduce((sum, s) => sum + s.totalSeconds, 0);
+
+  return (
+    <div className="space-y-2">
+      {/* Total time */}
+      <div className="flex items-center justify-between p-2 bg-primary/5 rounded-lg border border-primary/10">
+        <span className="text-xs font-bold text-primary">Общее время</span>
+        <span className="text-sm font-bold text-primary">{formatDuration(totalTime)}</span>
+      </div>
+      
+      {/* Status breakdown */}
+      <div className="space-y-1">
+        {statusSummary.map((item) => (
+          <div 
+            key={item.status}
+            className="flex items-center justify-between p-2 bg-secondary/20 rounded-lg"
+          >
+            <div className="flex items-center gap-2">
+              <div className={cn("w-2 h-2 rounded-full", statusColors[item.status] || "bg-gray-400")} />
+              <span className="text-xs font-medium">{statusNames[item.status] || item.status}</span>
+              <span className="text-[10px] text-muted-foreground">({item.count})</span>
+            </div>
+            <span className="text-xs font-bold">{formatDuration(item.totalSeconds)}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export interface Task {
   id: number | string;
   title: string;
@@ -1290,6 +1381,16 @@ export function TaskDetailsModal({
                           </span>
                         </div>
                       ))}
+                    </div>
+                  </TabsContent>
+                  
+                  <TabsContent value="timer" className="pt-2 mt-0">
+                    <TaskStatusTimer taskId={task?.id} />
+                  </TabsContent>
+                  
+                  <TabsContent value="history" className="pt-2 mt-0">
+                    <div className="text-xs text-muted-foreground text-center py-4">
+                      История изменений задачи
                     </div>
                   </TabsContent>
                 </Tabs>

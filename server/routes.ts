@@ -379,6 +379,15 @@ export async function registerRoutes(
 
       const task = await storage.updateTask(taskId, updateData);
       
+      // Record status change for time tracking
+      if (updateData.status) {
+        try {
+          await storage.recordTaskStatusEntry(taskId, updateData.status);
+        } catch (error) {
+          console.error("Error recording status change:", error);
+        }
+      }
+      
       // Обогащаем задачу данными об исполнителе и репортере перед отправкой
       const [assignee, reporter] = await Promise.all([
         task.assigneeId ? storage.getUser(task.assigneeId) : null,
@@ -438,6 +447,27 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error updating task:", error);
       res.status(500).json({ message: "Failed to update task" });
+    }
+  });
+
+  // Task status history endpoints
+  app.get("/api/tasks/:id/status-history", async (req, res) => {
+    try {
+      const history = await storage.getTaskStatusHistory(req.params.id);
+      res.json(history);
+    } catch (error) {
+      console.error("Error getting task status history:", error);
+      res.status(500).json({ message: "Failed to get status history" });
+    }
+  });
+
+  app.get("/api/tasks/:id/status-summary", async (req, res) => {
+    try {
+      const summary = await storage.getTaskStatusSummary(req.params.id);
+      res.json(summary);
+    } catch (error) {
+      console.error("Error getting task status summary:", error);
+      res.status(500).json({ message: "Failed to get status summary" });
     }
   });
 

@@ -1282,6 +1282,94 @@ export class PostgresStorage {
     }
   }
 
+  // Task Status History methods
+  async recordTaskStatusEntry(taskId: string, status: string): Promise<schema.TaskStatusHistory> {
+    try {
+      // First, close any open status entry for this task
+      await this.closeTaskStatusEntry(taskId);
+      
+      // Create new status entry
+      const [entry] = await this.db.insert(schema.taskStatusHistory)
+        .values({
+          taskId,
+          status,
+          enteredAt: new Date(),
+        })
+        .returning();
+      return entry;
+    } catch (error) {
+      console.error("Error recording task status entry:", error);
+      throw error;
+    }
+  }
+
+  async closeTaskStatusEntry(taskId: string): Promise<void> {
+    try {
+      // Find the most recent open status entry (without exitedAt)
+      const openEntries = await this.db.select()
+        .from(schema.taskStatusHistory)
+        .where(and(
+          eq(schema.taskStatusHistory.taskId, taskId),
+          sql`${schema.taskStatusHistory.exitedAt} IS NULL`
+        ))
+        .orderBy(desc(schema.taskStatusHistory.enteredAt))
+        .limit(1);
+
+      if (openEntries.length > 0) {
+        const entry = openEntries[0];
+        const exitedAt = new Date();
+        const durationSeconds = Math.floor((exitedAt.getTime() - new Date(entry.enteredAt).getTime()) / 1000);
+        
+        await this.db.update(schema.taskStatusHistory)
+          .set({
+            exitedAt,
+            durationSeconds,
+          })
+          .where(eq(schema.taskStatusHistory.id, entry.id));
+      }
+    } catch (error) {
+      console.error("Error closing task status entry:", error);
+      throw error;
+    }
+  }
+
+  async getTaskStatusHistory(taskId: string): Promise<schema.TaskStatusHistory[]> {
+    try {
+      return await this.db.select()
+        .from(schema.taskStatusHistory)
+        .where(eq(schema.taskStatusHistory.taskId, taskId))
+        .orderBy(desc(schema.taskStatusHistory.enteredAt));
+    } catch (error) {
+      console.error("Error getting task status history:", error);
+      return [];
+    }
+  }
+
+  async getTaskStatusSummary(taskId: string): Promise<{ status: string; totalSeconds: number; count: number }[]> {
+    try {
+      const history = await this.getTaskStatusHistory(taskId);
+      const summary = new Map<string, { totalSeconds: number; count: number }>();
+      
+      for (const entry of history) {
+        const duration = entry.durationSeconds || 0;
+        const existing = summary.get(entry.status) || { totalSeconds: 0, count: 0 };
+        summary.set(entry.status, {
+          totalSeconds: existing.totalSeconds + duration,
+          count: existing.count + 1,
+        });
+      }
+      
+      return Array.from(summary.entries()).map(([status, data]) => ({
+        status,
+        totalSeconds: data.totalSeconds,
+        count: data.count,
+      }));
+    } catch (error) {
+      console.error("Error getting task status summary:", error);
+      return [];
+    }
+  }
+
   // Database health check
   async healthCheck(): Promise<boolean> {
     try {

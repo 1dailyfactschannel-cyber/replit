@@ -165,6 +165,19 @@ export const tasks = pgTable("tasks", {
   priorityIdIdx: index("tasks_priority_id_idx").on(table.priorityId), // New index
 }));
 
+// Task status history table for tracking time in each status
+export const taskStatusHistory = pgTable("task_status_history", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  taskId: uuid("task_id").notNull().references(() => tasks.id, { onDelete: "cascade" }),
+  status: text("status").notNull(), // todo, in_progress, review, done
+  enteredAt: timestamp("entered_at").notNull().defaultNow(),
+  exitedAt: timestamp("exited_at"),
+  durationSeconds: integer("duration_seconds"), // Duration in seconds (calculated when exiting)
+}, (table) => ({
+  taskIdIdx: index("task_status_history_task_id_idx").on(table.taskId),
+  statusIdx: index("task_status_history_status_idx").on(table.status),
+}));
+
 
 // Subtasks table
 export const subtasks = pgTable("subtasks", {
@@ -211,6 +224,14 @@ export const insertSubtaskSchema = createInsertSchema(subtasks).pick({
   isCompleted: true,
   order: true,
   authorId: true,
+});
+
+export const insertTaskStatusHistorySchema = createInsertSchema(taskStatusHistory).pick({
+  taskId: true,
+  status: true,
+  enteredAt: true,
+  exitedAt: true,
+  durationSeconds: true,
 });
 
 export const insertCommentSchema = createInsertSchema(comments).pick({
@@ -530,6 +551,9 @@ export type InsertTask = z.infer<typeof insertTaskSchema>;
 
 export type Subtask = typeof subtasks.$inferSelect;
 export type InsertSubtask = z.infer<typeof insertSubtaskSchema>;
+
+export type TaskStatusHistory = typeof taskStatusHistory.$inferSelect;
+export type InsertTaskStatusHistory = z.infer<typeof insertTaskStatusHistorySchema>;
 
 export type Comment = typeof comments.$inferSelect;
 export type InsertComment = z.infer<typeof insertCommentSchema>;
