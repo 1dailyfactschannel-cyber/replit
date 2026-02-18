@@ -1136,11 +1136,11 @@ export function TaskDetailsModal({
               </div>
 
               {/* Attachments Section */}
-              <div className="space-y-4">
+              <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2.5 text-muted-foreground/80">
-                    <Paperclip className="w-4 h-4" />
-                    <span className="text-sm font-semibold tracking-tight uppercase">Вложения</span>
+                  <div className="flex items-center gap-2 text-muted-foreground/80">
+                    <Paperclip className="w-3.5 h-3.5" />
+                    <span className="text-xs font-semibold tracking-tight uppercase">Вложения</span>
                   </div>
                   <div className="relative">
                     <input 
@@ -1153,30 +1153,30 @@ export function TaskDetailsModal({
                     <Button 
                       variant="ghost" 
                       size="sm" 
-                      className="h-8 px-2.5 gap-2 text-muted-foreground/70 hover:text-primary hover:bg-primary/5 transition-all"
+                      className="h-6 px-2 gap-1.5 text-muted-foreground/70 hover:text-primary hover:bg-primary/5 transition-all"
                       onClick={() => document.getElementById("file-upload")?.click()}
                     >
-                      <Plus className="w-3.5 h-3.5" />
-                      <span className="text-xs font-bold">Загрузить</span>
+                      <Plus className="w-3 h-3" />
+                      <span className="text-[10px] font-medium">Загрузить</span>
                     </Button>
                   </div>
                 </div>
 
                 {isUploading && (
-                  <div className="space-y-2 p-4 rounded-xl bg-secondary/10 border border-border/40">
-                    <div className="flex items-center justify-between text-xs font-bold">
-                      <span className="text-muted-foreground animate-pulse">Загрузка файлов...</span>
+                  <div className="space-y-1.5 p-2 rounded-lg bg-secondary/10 border border-border/40">
+                    <div className="flex items-center justify-between text-[10px] font-bold">
+                      <span className="text-muted-foreground animate-pulse">Загрузка...</span>
                       <span>{Math.round(uploadProgress)}%</span>
                     </div>
-                    <Progress value={uploadProgress} className="h-1.5" />
+                    <Progress value={uploadProgress} className="h-1" />
                   </div>
                 )}
 
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-2 gap-2">
                   {attachments.map((file, i) => (
                     <div 
                       key={i}
-                      className="group relative flex items-center gap-3 p-3 rounded-xl bg-secondary/10 border border-border/30 hover:bg-secondary/20 hover:border-primary/20 transition-all cursor-pointer"
+                      className="group relative flex items-center gap-2 p-2 rounded-lg bg-secondary/10 border border-border/30 hover:bg-secondary/20 hover:border-primary/20 transition-all cursor-pointer"
                       onClick={() => {
                         const link = document.createElement('a');
                         link.href = file.url;
@@ -1186,21 +1186,21 @@ export function TaskDetailsModal({
                         document.body.removeChild(link);
                       }}
                     >
-                      <div className="w-10 h-10 rounded-lg bg-background flex items-center justify-center border border-border/50 group-hover:scale-105 transition-transform">
+                      <div className="w-8 h-8 rounded bg-background flex items-center justify-center border border-border/50 group-hover:scale-105 transition-transform shrink-0">
                         {file.type.startsWith("image/") ? (
-                          <img src={file.url} alt="" className="w-full h-full object-cover rounded-lg" />
+                          <img src={file.url} alt="" className="w-full h-full object-cover rounded" />
                         ) : (
-                          <FileIcon className="w-5 h-5 text-primary/60" />
+                          <FileIcon className="w-4 h-4 text-primary/60" />
                         )}
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-bold truncate pr-6">{file.name}</p>
-                        <p className="text-[10px] text-muted-foreground/60 font-bold uppercase tracking-tighter">{file.size}</p>
+                        <p className="text-xs font-medium truncate pr-5">{file.name}</p>
+                        <p className="text-[9px] text-muted-foreground/60 uppercase">{file.size}</p>
                       </div>
                       <Button 
                         variant="ghost" 
                         size="icon" 
-                        className="absolute right-2 top-1/2 -translate-y-1/2 h-7 w-7 opacity-0 group-hover:opacity-100 hover:text-destructive transition-all"
+                        className="absolute right-1.5 top-1/2 -translate-y-1/2 h-5 w-5 opacity-0 group-hover:opacity-100 hover:text-destructive transition-all"
                         onClick={(e) => {
                           e.stopPropagation();
                           const newAttachments = attachments.filter((_, idx) => idx !== i);
@@ -1208,7 +1208,7 @@ export function TaskDetailsModal({
                           handleUpdate({ attachments: newAttachments });
                         }}
                       >
-                        <Trash2 className="w-3.5 h-3.5" />
+                        <Trash2 className="w-3 h-3" />
                       </Button>
                     </div>
                   ))}
