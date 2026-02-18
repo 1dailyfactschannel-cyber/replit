@@ -1030,13 +1030,13 @@ export function TaskDetailsModal({
               </div>
 
               {/* Subtasks Section */}
-              <div className="space-y-5">
+              <div className="space-y-3">
                 <div className="flex items-center justify-between group">
-                  <div className="flex items-center gap-2.5 text-muted-foreground/80">
-                    <CheckSquare className="w-4 h-4" />
-                    <span className="text-sm font-semibold tracking-tight uppercase">
+                  <div className="flex items-center gap-2 text-muted-foreground/80">
+                    <CheckSquare className="w-3.5 h-3.5" />
+                    <span className="text-xs font-semibold tracking-tight uppercase">
                       Подзадачи 
-                      <span className="ml-2 text-primary/60">
+                      <span className="ml-1.5 text-primary/60">
                         {localSubtasks.filter(s => s.completed).length}/{localSubtasks.length}
                       </span>
                     </span>
@@ -1045,26 +1045,26 @@ export function TaskDetailsModal({
                 
                 <Separator className="opacity-40" />
 
-                <div className="space-y-1">
+                <div className="space-y-0.5">
                   {localSubtasks.map((sub) => (
                     <div
                       key={sub.id}
-                      className="flex items-center gap-4 p-2.5 rounded-xl hover:bg-secondary/30 transition-all group"
+                      className="flex items-center gap-3 p-1.5 rounded-lg hover:bg-secondary/30 transition-all group"
                     >
                       <button 
                         onClick={() => toggleSubtask(sub.id)}
                         className="shrink-0 transition-transform active:scale-90"
                       >
                         {sub.completed ? (
-                          <div className="w-5 h-5 rounded-full bg-primary flex items-center justify-center text-primary-foreground">
-                            <Check className="w-3 h-3 stroke-[3]" />
+                          <div className="w-4 h-4 rounded-full bg-primary flex items-center justify-center text-primary-foreground">
+                            <Check className="w-2.5 h-2.5 stroke-[3]" />
                           </div>
                         ) : (
-                          <div className="w-5 h-5 rounded-full border-2 border-muted-foreground/30 hover:border-primary/50 transition-colors" />
+                          <div className="w-4 h-4 rounded-full border-2 border-muted-foreground/30 hover:border-primary/50 transition-colors" />
                         )}
                       </button>
                       <span className={cn(
-                        "text-[15px] flex-1 font-medium transition-all", 
+                        "text-sm flex-1 transition-all", 
                         sub.completed ? "text-muted-foreground line-through opacity-60" : "text-black dark:text-white"
                       )}>
                         {sub.title}
@@ -1073,35 +1073,34 @@ export function TaskDetailsModal({
                       {sub.author && (
                         <Badge 
                           variant="secondary" 
-                          className="text-[10px] px-2 py-0.5 h-6 font-normal shrink-0"
+                          className="text-[9px] px-1.5 py-0 h-5 font-normal shrink-0"
                         >
                           {sub.author.name}
                         </Badge>
                       )}
                       
-                      <div className="flex items-center gap-3 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                         <Button 
                           variant="ghost" 
                           size="icon" 
-                          className="h-7 w-7 text-muted-foreground/60 hover:text-destructive"
+                          className="h-6 w-6 text-muted-foreground/60 hover:text-destructive"
                           onClick={() => handleDeleteSubtask(sub.id)}
                         >
-                          <Trash2 className="w-3.5 h-3.5" />
+                          <Trash2 className="w-3 h-3" />
                         </Button>
                         {sub.dueDate && (
-                          <Badge variant="destructive" className="h-6 gap-1.5 text-[10px] font-bold bg-rose-500/90 hover:bg-rose-500 border-none px-2">
-                            <Calendar className="w-3 h-3" />
+                          <Badge variant="destructive" className="h-5 gap-1 text-[9px] font-bold bg-rose-500/90 hover:bg-rose-500 border-none px-1.5">
+                            <Calendar className="w-2.5 h-2.5" />
                             {sub.dueDate}
                           </Badge>
                         )}
-                        <ChevronRight className="w-4 h-4 text-muted-foreground/40" />
                       </div>
                     </div>
                   ))}
                 </div>
 
                 {isAddingSubtask ? (
-                  <div className="flex items-center gap-2 p-2 rounded-xl bg-secondary/20">
+                  <div className="flex items-center gap-2 p-1.5 rounded-lg bg-secondary/20">
                     <Input 
                       autoFocus
                       placeholder="Название подзадачи..." 
@@ -1114,12 +1113,12 @@ export function TaskDetailsModal({
                           setNewSubtaskTitle("");
                         }
                       }}
-                      className="h-9 border-none bg-transparent focus-visible:ring-0 text-sm text-black dark:text-white placeholder:text-muted-foreground"
+                      className="h-7 border-none bg-transparent focus-visible:ring-0 text-sm text-black dark:text-white placeholder:text-muted-foreground"
                     />
-                    <Button size="sm" onClick={handleAddSubtask} className="h-8">
+                    <Button size="sm" onClick={handleAddSubtask} className="h-7 px-2.5 text-xs">
                       Ок
                     </Button>
-                    <Button variant="ghost" size="sm" onClick={() => setIsAddingSubtask(false)} className="h-8">
+                    <Button variant="ghost" size="sm" onClick={() => setIsAddingSubtask(false)} className="h-7 px-2.5 text-xs">
                       Отмена
                     </Button>
                   </div>
@@ -1127,11 +1126,11 @@ export function TaskDetailsModal({
                   <Button 
                     variant="ghost" 
                     size="sm" 
-                    className="h-9 px-3 gap-2 text-muted-foreground/70 hover:text-primary hover:bg-primary/5 transition-all -ml-1"
+                    className="h-7 px-2.5 gap-1.5 text-muted-foreground/70 hover:text-primary hover:bg-primary/5 transition-all -ml-1"
                     onClick={() => setIsAddingSubtask(true)}
                   >
-                    <Plus className="w-4 h-4" />
-                    <span className="text-sm font-semibold tracking-tight">Добавить подзадачу</span>
+                    <Plus className="w-3.5 h-3.5" />
+                    <span className="text-xs font-medium">Добавить подзадачу</span>
                   </Button>
                 )}
               </div>
