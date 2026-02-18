@@ -1453,7 +1453,6 @@ export function TaskDetailsModal({
                       isDate: true 
                     },
                   { icon: CheckSquare, label: "Подзадачи", value: `${localSubtasks.filter(s => s.completed).length}/${localSubtasks.length}` },
-                  { icon: Paperclip, label: "Файлы", value: attachments.length > 0 ? `${attachments.length}` : "0" },
                 ].map((item, idx) => (
                   <div key={idx}>
                     {(item as any).isObservers ? (
