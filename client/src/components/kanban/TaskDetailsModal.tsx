@@ -1216,68 +1216,68 @@ export function TaskDetailsModal({
               </div>
 
               {/* Activity Section / Tabs */}
-              <div className="pt-6 space-y-6">
+              <div className="pt-3 space-y-3">
                 <Tabs defaultValue="comments" className="w-full">
                   <div className="flex items-center justify-between border-b border-border/40 pb-px">
                     <TabsList className="bg-transparent p-0 h-auto gap-8 border-none">
                       <TabsTrigger 
                         value="comments" 
-                        className="p-0 pb-3 bg-transparent border-b-2 border-transparent rounded-none h-auto data-[state=active]:bg-transparent data-[state=active]:border-primary data-[state=active]:text-primary text-sm font-bold transition-all gap-2"
+                        className="p-0 pb-2 bg-transparent border-b-2 border-transparent rounded-none h-auto data-[state=active]:bg-transparent data-[state=active]:border-primary data-[state=active]:text-primary text-xs font-bold transition-all gap-1.5"
                       >
-                        <MessageSquare className="w-4 h-4" />
+                        <MessageSquare className="w-3.5 h-3.5" />
                         Комментарии 
-                        <span className="text-xs opacity-60 font-medium">{localComments.length}</span>
+                        <span className="text-[10px] opacity-60 font-medium">{localComments.length}</span>
                       </TabsTrigger>
                       <TabsTrigger 
                         value="timer" 
-                        className="p-0 pb-3 bg-transparent border-b-2 border-transparent rounded-none h-auto data-[state=active]:bg-transparent data-[state=active]:border-primary data-[state=active]:text-primary text-sm font-bold transition-all gap-2"
+                        className="p-0 pb-2 bg-transparent border-b-2 border-transparent rounded-none h-auto data-[state=active]:bg-transparent data-[state=active]:border-primary data-[state=active]:text-primary text-xs font-bold transition-all gap-1.5"
                       >
-                        <Clock className="w-4 h-4" />
+                        <Clock className="w-3.5 h-3.5" />
                         Таймер
                       </TabsTrigger>
                       <TabsTrigger 
                         value="history" 
-                        className="p-0 pb-3 bg-transparent border-b-2 border-transparent rounded-none h-auto data-[state=active]:bg-transparent data-[state=active]:border-primary data-[state=active]:text-primary text-sm font-bold transition-all gap-2"
+                        className="p-0 pb-2 bg-transparent border-b-2 border-transparent rounded-none h-auto data-[state=active]:bg-transparent data-[state=active]:border-primary data-[state=active]:text-primary text-xs font-bold transition-all gap-1.5"
                       >
-                        <RefreshCw className="w-4 h-4" />
+                        <RefreshCw className="w-3.5 h-3.5" />
                         Активность
                       </TabsTrigger>
                     </TabsList>
                     
-                    <span className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest pb-3">29.12.2025</span>
+                    <span className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest pb-2">29.12.2025</span>
                   </div>
                   
-                  <TabsContent value="comments" className="pt-6 mt-0">
-                    <div className="space-y-4 mb-24 min-h-[200px]">
+                  <TabsContent value="comments" className="pt-3 mt-0">
+                    <div className="space-y-2 mb-16 min-h-[100px]">
                       {localComments.map((comment) => (
                         <div 
                           key={comment.id} 
                           className={cn(
-                            "flex flex-col gap-1 max-w-[80%]",
+                            "flex flex-col gap-0.5 max-w-[80%]",
                             comment.authorId === (users.find(u => u.username === "admin")?.id || "") ? "ml-auto items-end" : "items-start"
                           )}
                         >
                           <div 
                             className={cn(
-                              "px-4 py-2.5 rounded-2xl text-sm font-medium shadow-sm border",
+                              "px-3 py-1.5 rounded-xl text-xs font-medium shadow-sm border",
                               comment.authorId === (users.find(u => u.username === "admin")?.id || "") 
                                 ? "bg-primary text-primary-foreground border-primary/20 rounded-tr-none" 
                                 : "bg-card text-foreground border-border/50 rounded-tl-none"
                             )}
                           >
-                            <div className="flex flex-col gap-2">
-                              <span className="text-xs opacity-70 mb-1">{comment.author?.name}</span>
-                              {comment.content}
+                            <div className="flex flex-col gap-1">
+                              <span className="text-[10px] opacity-70">{comment.author?.name}</span>
+                              <span className="text-sm">{comment.content}</span>
                               {comment.attachments && comment.attachments.length > 0 && (
-                                <div className="mt-2 flex flex-wrap gap-2">
+                                <div className="mt-1 flex flex-wrap gap-1">
                                   {comment.attachments.map((file: any, i: number) => (
                                     <a 
                                       key={i} 
                                       href={file.url} 
                                       download={file.name}
-                                      className="flex items-center gap-1.5 p-1.5 rounded-lg bg-background/20 hover:bg-background/40 transition-colors text-[10px]"
+                                      className="flex items-center gap-1 p-1 rounded bg-background/20 hover:bg-background/40 transition-colors text-[9px]"
                                     >
-                                      <Paperclip className="w-3 h-3" />
+                                      <Paperclip className="w-2.5 h-2.5" />
                                       {file.name}
                                     </a>
                                   ))}
@@ -1285,8 +1285,8 @@ export function TaskDetailsModal({
                               )}
                             </div>
                           </div>
-                          <div className="flex items-center gap-1.5 px-1">
-                            <span className="text-[10px] text-muted-foreground/60 font-bold uppercase tracking-tighter">
+                          <div className="flex items-center gap-1 px-1">
+                            <span className="text-[9px] text-muted-foreground/50 uppercase">
                               {comment.createdAt ? new Date(comment.createdAt).toLocaleString() : ""}
                             </span>
                           </div>
@@ -1300,20 +1300,20 @@ export function TaskDetailsModal({
           </ScrollArea>
 
           {/* Comment Input Sticky Bottom Area */}
-          <div className="absolute bottom-0 left-0 w-[calc(100%-288px)] p-6 bg-gradient-to-t from-background via-background/95 to-transparent shrink-0 z-10">
-            <div className="max-w-4xl mx-auto space-y-2">
+          <div className="absolute bottom-0 left-0 w-[calc(100%-288px)] p-3 bg-gradient-to-t from-background via-background/95 to-transparent shrink-0 z-10">
+            <div className="max-w-4xl mx-auto space-y-1.5">
               {/* Comment Attachments Preview */}
               {commentAttachments.length > 0 && (
-                <div className="flex flex-wrap gap-2 px-4 py-2 bg-secondary/30 rounded-xl border border-border/40">
+                <div className="flex flex-wrap gap-1.5 px-3 py-1.5 bg-secondary/30 rounded-lg border border-border/40">
                   {commentAttachments.map((file, i) => (
-                    <div key={i} className="flex items-center gap-1.5 bg-background/50 px-2 py-1 rounded-lg text-[10px] font-bold">
-                      <Paperclip className="w-3 h-3" />
-                      <span className="truncate max-w-[100px]">{file.name}</span>
+                    <div key={i} className="flex items-center gap-1 bg-background/50 px-1.5 py-0.5 rounded text-[9px] font-medium">
+                      <Paperclip className="w-2.5 h-2.5" />
+                      <span className="truncate max-w-[80px]">{file.name}</span>
                       <button 
                         onClick={() => setCommentAttachments(commentAttachments.filter((_, idx) => idx !== i))}
                         className="text-destructive hover:text-destructive/80"
                       >
-                        <Trash2 className="w-3 h-3" />
+                        <Trash2 className="w-2.5 h-2.5" />
                       </button>
                     </div>
                   ))}
@@ -1323,12 +1323,12 @@ export function TaskDetailsModal({
               <div className="relative group">
                 <Input 
                   placeholder="Напишите комментарий..." 
-                  className="h-14 pl-4 pr-24 bg-secondary/20 border-border/40 rounded-2xl focus-visible:ring-primary/20 transition-all text-[15px] font-medium placeholder:text-muted-foreground/40 shadow-inner text-black dark:text-white"
+                  className="h-10 pl-3 pr-20 bg-secondary/20 border-border/40 rounded-xl focus-visible:ring-primary/20 transition-all text-sm placeholder:text-muted-foreground/40 shadow-inner text-black dark:text-white"
                   value={newComment}
                   onChange={(e) => setNewComment(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && handleAddComment()}
                 />
-                <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-0.5">
                   <input 
                     type="file" 
                     id="comment-file-upload" 
@@ -1340,22 +1340,22 @@ export function TaskDetailsModal({
                     variant="ghost" 
                     size="icon" 
                     className={cn(
-                      "h-9 w-9 text-muted-foreground/60 hover:text-foreground hover:bg-secondary/40 rounded-xl",
+                      "h-7 w-7 text-muted-foreground/60 hover:text-foreground hover:bg-secondary/40 rounded-lg",
                       isUploadingCommentFile && "animate-pulse"
                     )}
                     asChild
                   >
                     <label htmlFor="comment-file-upload" className="cursor-pointer">
-                      <Paperclip className="w-4 h-4" />
+                      <Paperclip className="w-3.5 h-3.5" />
                     </label>
                   </Button>
                   <Button 
                     size="icon" 
-                    className="h-9 w-9 bg-primary/90 hover:bg-primary shadow-lg shadow-primary/20 rounded-xl"
+                    className="h-7 w-7 bg-primary/90 hover:bg-primary shadow-md shadow-primary/20 rounded-lg"
                     onClick={handleAddComment}
                     disabled={!newComment.trim() && commentAttachments.length === 0}
                   >
-                    <Send className="w-4 h-4 rotate-0" />
+                    <Send className="w-3.5 h-3.5 rotate-0" />
                   </Button>
                 </div>
               </div>
