@@ -600,6 +600,15 @@ export async function registerRoutes(
       const task = await storage.createTask(taskData);
       console.log("[API] Task created:", task);
       
+      // Start timer for initial status
+      try {
+        const initialStatus = task.status || "todo";
+        await storage.recordTaskStatusEntry(task.id, initialStatus);
+        console.log("[API] Started timer for status:", initialStatus);
+      } catch (error) {
+        console.error("Error starting task timer:", error);
+      }
+      
       // Record task creation in history
       try {
         await storage.addTaskHistory({
