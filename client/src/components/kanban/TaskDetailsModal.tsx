@@ -1621,12 +1621,6 @@ export function TaskDetailsModal({
                 </Select>
               </div>
 
-              {/* Custom Fields Button */}
-              <Button variant="ghost" className="w-full h-9 justify-start gap-2.5 bg-secondary/15 hover:bg-secondary/25 rounded-lg px-3 text-foreground/70 transition-all">
-                <AlignLeft className="w-3.5 h-3.5" />
-                <span className="text-[12px] font-bold">Поля пользователя</span>
-              </Button>
-
               <Separator className="my-4 opacity-30" />
 
               {/* Labels Section */}
