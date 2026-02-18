@@ -227,7 +227,7 @@ function TaskActivityHistory({ taskId }: { taskId: string | number | undefined }
     taskId: string;
     userId: string | null;
     action: string;
-    field: string | null;
+    fieldName: string | null;
     oldValue: string | null;
     newValue: string | null;
     createdAt: string;
@@ -291,10 +291,10 @@ function TaskActivityHistory({ taskId }: { taskId: string | number | undefined }
                     <div className="flex items-center gap-1 flex-wrap">
                       <span className="font-medium">{userName}</span>
                       <span className="text-muted-foreground">{actionText}</span>
-                      {item.field && item.action !== 'created' && item.action !== 'comment_added' && (
+                      {item.fieldName && item.action !== 'created' && item.action !== 'comment_added' && (
                         <>
                           <span className="text-muted-foreground">поле</span>
-                          <span className="font-medium">"{item.field}"</span>
+                          <span className="font-medium">"{item.fieldName}"</span>
                         </>
                       )}
                       {item.newValue && item.action === 'comment_added' && (

@@ -1382,7 +1382,7 @@ export class PostgresStorage {
     taskId: string;
     userId?: string;
     action: string;
-    field?: string;
+    fieldName?: string;
     oldValue?: string;
     newValue?: string;
   }): Promise<schema.TaskHistory> {
@@ -1392,7 +1392,7 @@ export class PostgresStorage {
           taskId: entry.taskId,
           userId: entry.userId || null,
           action: entry.action,
-          field: entry.field || null,
+          fieldName: entry.fieldName || null,
           oldValue: entry.oldValue || null,
           newValue: entry.newValue || null,
         })

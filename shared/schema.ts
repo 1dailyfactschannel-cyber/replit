@@ -184,7 +184,7 @@ export const taskHistory = pgTable("task_history", {
   taskId: uuid("task_id").notNull().references(() => tasks.id, { onDelete: "cascade" }),
   userId: uuid("user_id").references(() => users.id, { onDelete: "set null" }),
   action: text("action").notNull(), // created, updated, status_changed, assignee_changed, etc.
-  field: text("field"), // field name that was changed
+  fieldName: text("field_name"), // field name that was changed
   oldValue: text("old_value"),
   newValue: text("new_value"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -253,7 +253,7 @@ export const insertTaskHistorySchema = createInsertSchema(taskHistory).pick({
   taskId: true,
   userId: true,
   action: true,
-  field: true,
+  fieldName: true,
   oldValue: true,
   newValue: true,
 });

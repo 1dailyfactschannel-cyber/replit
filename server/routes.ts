@@ -430,7 +430,7 @@ export async function registerRoutes(
             taskId,
             userId,
             action,
-            field: fieldName,
+            fieldName: fieldName,
             oldValue: oldValueStr,
             newValue: newValueStr,
           });
@@ -606,7 +606,7 @@ export async function registerRoutes(
           taskId: task.id,
           userId: user.id,
           action: 'created',
-          field: 'Задача',
+          fieldName: 'Задача',
           newValue: task.title,
         });
       } catch (error) {
@@ -1187,7 +1187,7 @@ export async function registerRoutes(
           taskId: req.params.taskId,
           userId: userId,
           action: 'subtask_created',
-          field: 'Подзадача',
+          fieldName: 'Подзадача',
           newValue: req.body.title,
         });
       } catch (error) {
@@ -1304,7 +1304,7 @@ export async function registerRoutes(
           taskId: req.params.taskId,
           userId: req.user.id,
           action: 'comment_added',
-          field: 'Комментарий',
+          fieldName: 'Комментарий',
           newValue: req.body.content?.substring(0, 100) || '',
         });
       } catch (error) {
