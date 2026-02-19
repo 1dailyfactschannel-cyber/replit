@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { cn } from "@/lib/utils";
 import {
   Dialog,
@@ -537,13 +537,19 @@ export function TaskDetailsModal({
     queryKey: ["/api/priorities"],
   });
 
+  // Sync server comments only on initial load or when modal opens
+  const prevTaskIdRef = useRef<string | number | undefined>(undefined);
   useEffect(() => {
-    if (serverComments && serverComments.length > 0) {
-      setLocalComments(serverComments);
-    } else {
-      setLocalComments([]);
+    // Only sync when task changes (modal opens with different task)
+    if (task?.id !== prevTaskIdRef.current) {
+      prevTaskIdRef.current = task?.id;
+      if (serverComments && serverComments.length > 0) {
+        setLocalComments(serverComments);
+      } else {
+        setLocalComments([]);
+      }
     }
-  }, [serverComments]);
+  }, [task?.id, serverComments]);
 
   const [newComment, setNewComment] = useState("");
   const [commentAttachments, setCommentAttachments] = useState<{ name: string; url: string; size: string; type: string }[]>([]);
