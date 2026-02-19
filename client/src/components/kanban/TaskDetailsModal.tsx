@@ -540,6 +540,8 @@ export function TaskDetailsModal({
   useEffect(() => {
     if (serverComments && serverComments.length > 0) {
       setLocalComments(serverComments);
+    } else {
+      setLocalComments([]);
     }
   }, [serverComments]);
 
@@ -709,11 +711,15 @@ export function TaskDetailsModal({
       const res = await apiRequest("POST", `/api/tasks/${task.id}/comments`, commentData);
       const savedComment = await res.json();
       
-      setLocalComments([savedComment, ...localComments]);
+      // Add new comment to local state immediately
+      setLocalComments(prev => [savedComment, ...prev]);
       setNewComment("");
       setCommentAttachments([]);
+      
+      // Invalidate to refetch from server
       queryClient.invalidateQueries({ queryKey: [`/api/tasks/${task.id}/comments`] });
     } catch (error) {
+      console.error("Error adding comment:", error);
       sonnerToast.error("Не удалось отправить комментарий");
     }
   };
