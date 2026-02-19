@@ -481,8 +481,7 @@ export const calls = pgTable("calls", {
   endedAt: timestamp("ended_at"),
 });
 
-// Export types
-export type User = typeof users.$inferSelect;
+// Export chat types
 export type Chat = typeof chats.$inferSelect;
 export type ChatParticipant = typeof chatParticipants.$inferSelect;
 export type Message = typeof messages.$inferSelect;
@@ -536,7 +535,7 @@ export type InsertChatFolder = z.infer<typeof insertChatFolderSchema>;
 export type InsertCall = z.infer<typeof insertCallSchema>;
 export type InsertMessageAttachment = z.infer<typeof insertMessageAttachmentSchema>;
 
-// Export types
+// Export core types
 export type User = typeof users.$inferSelect;
 export type InsertUser = z.infer<typeof insertUserSchema>;
 
@@ -575,6 +574,27 @@ export type InsertComment = z.infer<typeof insertCommentSchema>;
 
 export type SiteSettings = typeof siteSettings.$inferSelect;
 export type InsertSiteSettings = z.infer<typeof insertSiteSettingsSchema>;
+
+// Comment mentions table
+export const commentMentions = pgTable("comment_mentions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  commentId: uuid("comment_id").notNull().references(() => comments.id, { onDelete: "cascade" }),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  mentionedName: text("mentioned_name").notNull(), // The @name as written in comment
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  commentIdIdx: index("comment_mentions_comment_id_idx").on(table.commentId),
+  userIdIdx: index("comment_mentions_user_id_idx").on(table.userId),
+}));
+
+export const insertCommentMentionSchema = createInsertSchema(commentMentions).pick({
+  commentId: true,
+  userId: true,
+  mentionedName: true,
+});
+
+export type CommentMention = typeof commentMentions.$inferSelect;
+export type InsertCommentMention = z.infer<typeof insertCommentMentionSchema>;
 
 // Notifications table
 export const notifications = pgTable("notifications", {

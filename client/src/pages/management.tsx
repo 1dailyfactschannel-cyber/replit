@@ -1314,13 +1314,13 @@ function LabelsManagement() {
     <section className="space-y-4">
       <div className="flex items-center justify-between px-1 cursor-pointer" onClick={() => setIsCollapsed(!isCollapsed)}>
         <div className="flex flex-col gap-1">
-          <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+          <h4 className="text-xs font-bold uppercase tracking-wider text-foreground flex items-center gap-2">
             <Tags className="w-3.5 h-3.5" />
             Метки задач
           </h4>
-          <p className="text-[11px] text-muted-foreground">Управление метками для категоризации задач</p>
+          <p className="text-[11px] text-foreground">Управление метками для категоризации задач</p>
         </div>
-        <ChevronRight className={cn("w-4 h-4 text-muted-foreground transition-transform", isCollapsed && "rotate-90")} />
+        <ChevronRight className={cn("w-4 h-4 text-foreground transition-transform", isCollapsed && "rotate-90")} />
       </div>
 
       {!isCollapsed && (
@@ -1329,12 +1329,12 @@ function LabelsManagement() {
             <div className="flex flex-wrap gap-3">
               <Dialog open={isLabelDialogOpen} onOpenChange={setIsLabelDialogOpen}>
                 <DialogTrigger asChild>
-                  <button 
+                  <button
                     className="h-8 px-3 rounded-full border border-dashed border-border hover:border-primary/50 hover:bg-primary/5 flex items-center gap-2 transition-all group"
                     onClick={() => openLabelDialog()}
                   >
-                    <Plus className="w-3.5 h-3.5 text-muted-foreground group-hover:text-primary transition-colors" />
-                    <span className="text-xs font-medium text-muted-foreground group-hover:text-primary transition-colors">Добавить метку</span>
+                    <Plus className="w-3.5 h-3.5 text-foreground group-hover:text-primary transition-colors" />
+                    <span className="text-xs font-medium text-foreground group-hover:text-primary transition-colors">Добавить метку</span>
                   </button>
                 </DialogTrigger>
                 <DialogContent className="sm:max-w-[425px]">
@@ -1406,13 +1406,12 @@ function LabelsManagement() {
                   key={label.id}
                   className={cn(
                     "h-8 px-3 rounded-full flex items-center gap-2 transition-all cursor-pointer hover:ring-2 ring-offset-2 ring-offset-background ring-primary/20",
-                    label.color.replace('bg-', 'bg-').replace('500', '500/10'),
-                    label.color.replace('bg-', 'text-').replace('500', '600')
+                    label.color.replace('bg-', 'bg-').replace('500', '500/10')
                   )}
                   onClick={() => openLabelDialog(label)}
                 >
                   <div className={cn("w-2 h-2 rounded-full", label.color)} />
-                  <span className="text-xs font-medium">{label.name}</span>
+                  <span className="text-xs font-medium text-foreground">{label.name}</span>
                 </div>
               ))}
             </div>

@@ -569,6 +569,40 @@ export function TaskDetailsModal({
   const [newComment, setNewComment] = useState("");
   const [commentAttachments, setCommentAttachments] = useState<{ name: string; url: string; size: string; type: string }[]>([]);
   const [isUploadingCommentFile, setIsUploadingCommentFile] = useState(false);
+  
+  // Mentions functionality
+  const [showMentions, setShowMentions] = useState(false);
+  const [mentionQuery, setMentionQuery] = useState("");
+  const [mentionIndex, setMentionIndex] = useState(0);
+  const inputRef = useRef<HTMLInputElement>(null);
+  
+  // Filter users for mentions
+  const filteredMentionUsers = users.filter((user: any) => {
+    const displayName = user.firstName 
+      ? `${user.firstName} ${user.lastName || ''}`.trim() 
+      : user.username;
+    return displayName.toLowerCase().includes(mentionQuery.toLowerCase());
+  });
+  
+  // Handle mention selection
+  const handleMentionSelect = (user: any) => {
+    const displayName = user.firstName 
+      ? `${user.firstName} ${user.lastName || ''}`.trim() 
+      : user.username;
+    
+    // Find the position of @ in the comment
+    const lastAtIndex = newComment.lastIndexOf('@');
+    if (lastAtIndex !== -1) {
+      const beforeAt = newComment.slice(0, lastAtIndex);
+      const afterQuery = newComment.slice(lastAtIndex + 1 + mentionQuery.length);
+      const newValue = `${beforeAt}@${displayName} ${afterQuery}`;
+      setNewComment(newValue);
+    }
+    
+    setShowMentions(false);
+    setMentionQuery("");
+    inputRef.current?.focus();
+  };
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -1520,9 +1554,20 @@ export function TaskDetailsModal({
                                 : "bg-card text-foreground border-border/50 rounded-tl-sm"
                             )}
                           >
-                            <div className="flex flex-col gap-0.5">
+                             <div className="flex flex-col gap-0.5">
                               <span className="text-[9px] opacity-60 font-medium">{comment.author?.name}</span>
-                              <span className="text-xs leading-relaxed">{comment.content}</span>
+                              <span className="text-xs leading-relaxed">
+                                {comment.content?.split(/(@[^\s]+(?:\s[^\s]+)*)/).map((part: string, idx: number) => {
+                                  if (part.startsWith('@')) {
+                                    return (
+                                      <span key={idx} className="text-primary font-semibold bg-primary/10 px-1 rounded">
+                                        {part}
+                                      </span>
+                                    );
+                                  }
+                                  return part;
+                                })}
+                              </span>
                               {comment.attachments && comment.attachments.length > 0 && (
                                 <div className="mt-0.5 flex flex-wrap gap-0.5">
                                   {comment.attachments.map((file: any, i: number) => (
@@ -1582,13 +1627,80 @@ export function TaskDetailsModal({
               )}
 
               <div className="relative group">
-                <Input 
-                  placeholder="Напишите комментарий..." 
-                  className="h-10 pl-3 pr-20 bg-secondary/20 border-border/40 rounded-xl focus-visible:ring-primary/20 transition-all text-sm placeholder:text-muted-foreground/40 shadow-inner text-black dark:text-white"
+                <Input
+                  ref={inputRef}
+                  placeholder="Напишите комментарий... Используйте @ для упоминания"
+                  className="h-10 pl-3 pr-20 bg-background border-border rounded-xl focus-visible:ring-primary/20 transition-all text-sm placeholder:text-muted-foreground shadow-inner text-foreground"
                   value={newComment}
-                  onChange={(e) => setNewComment(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && handleAddComment()}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setNewComment(value);
+                    
+                    // Check for mentions
+                    const lastAtIndex = value.lastIndexOf('@');
+                    if (lastAtIndex !== -1) {
+                      const afterAt = value.slice(lastAtIndex + 1);
+                      const spaceIndex = afterAt.indexOf(' ');
+                      const query = spaceIndex === -1 ? afterAt : afterAt.slice(0, spaceIndex);
+                      
+                      if (!afterAt.includes(' ') && value.length > lastAtIndex + 1) {
+                        setMentionQuery(query);
+                        setShowMentions(true);
+                        setMentionIndex(0);
+                      } else if (afterAt.includes(' ')) {
+                        setShowMentions(false);
+                      }
+                    } else {
+                      setShowMentions(false);
+                    }
+                  }}
+                  onKeyDown={(e) => {
+                    if (showMentions && filteredMentionUsers.length > 0) {
+                      if (e.key === 'ArrowDown') {
+                        e.preventDefault();
+                        setMentionIndex((prev) => (prev + 1) % filteredMentionUsers.length);
+                      } else if (e.key === 'ArrowUp') {
+                        e.preventDefault();
+                        setMentionIndex((prev) => (prev - 1 + filteredMentionUsers.length) % filteredMentionUsers.length);
+                      } else if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleMentionSelect(filteredMentionUsers[mentionIndex]);
+                      } else if (e.key === 'Escape') {
+                        setShowMentions(false);
+                      }
+                    } else if (e.key === "Enter") {
+                      handleAddComment();
+                    }
+                  }}
                 />
+                
+                {/* Mentions Dropdown */}
+                {showMentions && filteredMentionUsers.length > 0 && (
+                  <div className="absolute bottom-full left-0 mb-1 w-64 bg-popover border border-border rounded-lg shadow-lg z-50 max-h-48 overflow-auto">
+                    <div className="p-1">
+                      {filteredMentionUsers.map((user: any, idx: number) => {
+                        const displayName = user.firstName 
+                          ? `${user.firstName} ${user.lastName || ''}`.trim() 
+                          : user.username;
+                        return (
+                          <button
+                            key={user.id}
+                            onClick={() => handleMentionSelect(user)}
+                            className={cn(
+                              "w-full flex items-center gap-2 px-3 py-2 rounded-md text-left text-sm transition-colors",
+                              idx === mentionIndex ? "bg-primary/10 text-primary" : "hover:bg-secondary"
+                            )}
+                          >
+                            <div className="w-6 h-6 rounded-full bg-primary/20 flex items-center justify-center text-xs font-medium">
+                              {displayName.charAt(0).toUpperCase()}
+                            </div>
+                            <span className="truncate">{displayName}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
                 <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-0.5">
                   <input 
                     type="file" 

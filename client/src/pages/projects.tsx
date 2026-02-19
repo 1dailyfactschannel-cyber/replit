@@ -13,7 +13,8 @@ import {
   Trash2,
   Pencil,
   Loader2,
-  Plus
+  Plus,
+  LayoutGrid
 } from "lucide-react";
 import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd";
 import { Button } from "@/components/ui/button";
@@ -33,7 +34,24 @@ import {
   DialogTrigger,
   DialogDescription
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger
+} from "@/components/ui/dropdown-menu";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle
+} from "@/components/ui/alert-dialog";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
   SelectContent,
@@ -139,7 +157,7 @@ const TaskCard = React.memo(({ task, index, onClick, columnColor, availableLabel
           {...provided.dragHandleProps}
           onClick={() => onClick(task)}
           className={cn(
-            "bg-card border border-border/50 p-4 rounded-xl shadow-sm hover:shadow-md hover:border-primary/30 transition-[box-shadow,border-color,background-color] group/task relative overflow-hidden font-sans",
+            "bg-card border border-border/50 p-3 rounded-xl shadow-sm hover:shadow-md hover:border-primary/30 transition-[box-shadow,border-color,background-color] group/task relative overflow-hidden font-sans",
             snapshot.isDragging ? "shadow-xl ring-2 ring-primary/20 rotate-1 z-50" : ""
           )}
         >
@@ -149,24 +167,30 @@ const TaskCard = React.memo(({ task, index, onClick, columnColor, availableLabel
             priorityColor
           )} />
           
-          {/* Task Number */}
-          <div className="text-xs text-foreground mb-1 font-mono">{taskNumber}</div>
-          
-          <h4 className="text-sm font-normal mb-3 leading-snug text-foreground/90 line-clamp-2">{task.title}</h4>
-          
+          {/* Header with Task Number and Creator Date */}
+          <div className="flex items-center justify-between mb-1.5">
+            <div className="text-xs text-foreground font-mono">{taskNumber}</div>
+            {task.creator && (
+              <div className="text-[10px] text-foreground font-medium">
+                {task.creator.date.split(' ')[0]}
+              </div>
+            )}
+          </div>
+
+          <h4 className="text-sm font-normal mb-2 leading-snug text-foreground/90 line-clamp-2">{task.title}</h4>
+
           {/* Labels */}
           {task.tags && task.tags.length > 0 && (
-            <div className="flex flex-wrap gap-1 mb-3">
+            <div className="flex flex-wrap gap-1 mb-2">
               {task.tags.map((tagName: string) => {
                 const labelInfo = availableLabels.find((l: any) => l.name === tagName);
                 return (
-                  <Badge 
-                    key={tagName} 
-                    variant="secondary" 
+                  <Badge
+                    key={tagName}
+                    variant="secondary"
                     className={cn(
-                      "px-1.5 py-0 text-[9px] font-bold border-none rounded-md pointer-events-none",
-                      labelInfo?.color ? labelInfo.color.replace('bg-', 'bg-').replace('500', '500/10') : "bg-primary/10",
-                      labelInfo?.color ? labelInfo.color.replace('bg-', 'text-').replace('500', '600') : "text-primary"
+                      "px-1.5 py-0 text-[9px] font-bold border-none rounded-md pointer-events-none text-foreground",
+                      labelInfo?.color ? labelInfo.color.replace('bg-', 'bg-').replace('500', '500/10') : "bg-primary/10"
                     )}
                   >
                     {tagName}
@@ -176,22 +200,15 @@ const TaskCard = React.memo(({ task, index, onClick, columnColor, availableLabel
             </div>
           )}
 
-          <div className="flex items-center justify-between">
-            <div className="flex items-center">
-              {task.assignee ? (
-                <span className="text-xs font-medium text-foreground truncate max-w-[150px]">
-                  {task.assignee.name}
-                </span>
-              ) : (
-                <span className="text-xs text-foreground">
-                  Не назначен
-                </span>
-              )}
-            </div>
-            {task.creator && (
-              <div className="text-[10px] text-foreground font-medium">
-                {task.creator.date.split(' ')[0]}
-              </div>
+          <div className="flex items-center">
+            {task.assignee ? (
+              <span className="text-xs font-medium text-foreground truncate max-w-[150px]">
+                {task.assignee.name}
+              </span>
+            ) : (
+              <span className="text-xs text-foreground">
+                Не назначен
+              </span>
             )}
           </div>
         </div>
@@ -226,15 +243,52 @@ TaskCard.displayName = 'TaskCard';
 // Memoized Kanban Column component
 interface KanbanColumnProps {
   column: string;
+  columnId: string;
+  columnIndex: number;
   tasks: any[];
+  allColumns: { id: string; name: string }[];
   onCreateTask: (column: string) => void;
   onTaskClick: (task: any) => void;
+  onEditColumn: (columnId: string, newName: string) => void;
+  onDeleteColumn: (columnId: string, targetColumnId: string) => void;
   availableLabels?: any[];
   availablePriorities?: any[];
 }
 
-const KanbanColumn = React.memo(({ column, tasks, onCreateTask, onTaskClick, availableLabels = [], availablePriorities = [] }: KanbanColumnProps) => {
+const KanbanColumn = React.memo(({ 
+  column, 
+  columnId,
+  columnIndex,
+  tasks, 
+  allColumns,
+  onCreateTask, 
+  onTaskClick, 
+  onEditColumn,
+  onDeleteColumn,
+  availableLabels = [], 
+  availablePriorities = [] 
+}: KanbanColumnProps) => {
   const columnColor = getColumnColor(column);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editName, setEditName] = useState(column);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  
+  // Get left column (previous column)
+  const leftColumn = columnIndex > 0 ? allColumns[columnIndex - 1] : null;
+  
+  const handleEditSubmit = () => {
+    if (editName.trim() && editName !== column && columnId && onEditColumn) {
+      onEditColumn(columnId, editName.trim());
+    }
+    setIsEditing(false);
+  };
+
+  const handleDelete = () => {
+    if (leftColumn && columnId && onDeleteColumn) {
+      onDeleteColumn(columnId, leftColumn.id);
+    }
+    setShowDeleteDialog(false);
+  };
   
   return (
     <div className="w-80 shrink-0 flex flex-col gap-4">
@@ -242,26 +296,110 @@ const KanbanColumn = React.memo(({ column, tasks, onCreateTask, onTaskClick, ava
       <div className="flex flex-col gap-2">
         <div className="flex items-center justify-between px-1">
           <div className="flex items-center gap-2 group/col-title w-full">
-            <h3 className={cn("font-bold text-sm truncate max-w-[150px]", columnColor.text)}>{column}</h3>
+            {isEditing ? (
+              <Input
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+                onBlur={handleEditSubmit}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleEditSubmit();
+                  if (e.key === 'Escape') {
+                    setEditName(column);
+                    setIsEditing(false);
+                  }
+                }}
+                autoFocus
+                className="h-7 text-sm font-bold"
+              />
+            ) : (
+              <h3 
+                className={cn("font-bold text-sm truncate max-w-[150px] cursor-pointer hover:opacity-70", columnColor.text)}
+                onClick={() => setIsEditing(true)}
+              >
+                {column}
+              </h3>
+            )}
             <Badge className={cn("rounded-full px-2 py-0 h-5 text-[10px] font-bold shrink-0 border-0", columnColor.badge)}>
               {tasks.length}
             </Badge>
             
-            <Button 
-              variant="ghost" 
-              size="icon" 
-              className="w-6 h-6 ml-auto text-muted-foreground/50 hover:text-primary hover:bg-primary/10 transition-colors"
-              onClick={() => onCreateTask(column)}
-            >
-              <Plus className="w-3.5 h-3.5" />
-            </Button>
+            <div className="flex items-center ml-auto">
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                className="w-6 h-6 text-muted-foreground/50 hover:text-primary hover:bg-primary/10 transition-colors"
+                onClick={() => onCreateTask(column)}
+              >
+                <Plus className="w-3.5 h-3.5" />
+              </Button>
+              
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    className="w-6 h-6 text-muted-foreground/50 hover:text-foreground hover:bg-secondary transition-colors"
+                  >
+                    <MoreVertical className="w-3.5 h-3.5" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-40">
+                  <DropdownMenuItem onClick={() => setIsEditing(true)}>
+                    <Pencil className="w-4 h-4 mr-2" />
+                    Редактировать
+                  </DropdownMenuItem>
+                  <DropdownMenuItem 
+                    onClick={() => setShowDeleteDialog(true)}
+                    disabled={!leftColumn}
+                    className="text-destructive focus:text-destructive"
+                  >
+                    <Trash2 className="w-4 h-4 mr-2" />
+                    Удалить
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
           </div>
         </div>
         {/* Colored underline for column header */}
         <div className={cn("h-0.5 w-full rounded-full", columnColor.border.replace('border-', 'bg-'))} />
       </div>
+      
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Удалить колонку?</AlertDialogTitle>
+            <AlertDialogDescription>
+              <span className="block mb-2">
+                Вы уверены, что хотите удалить колонку <strong>"{column}"</strong>?
+              </span>
+              {leftColumn ? (
+                <span className="block text-destructive">
+                  Все задачи ({tasks.length}) из этой колонки будут перемещены в колонку <strong>"{leftColumn.name}"</strong>.
+                </span>
+              ) : (
+                <span className="block text-destructive">
+                  Это первая колонка, удаление невозможно.
+                </span>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Отмена</AlertDialogCancel>
+            {leftColumn && (
+              <AlertDialogAction 
+                onClick={handleDelete}
+                className="bg-destructive hover:bg-destructive/90"
+              >
+                Удалить
+              </AlertDialogAction>
+            )}
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
-      <Droppable droppableId={column} type="task">
+      <Droppable droppableId={columnId} type="task">
         {(taskProvided, snapshot) => (
           <div
             {...taskProvided.droppableProps}
@@ -416,10 +554,22 @@ export default function Projects() {
   const [newBoardName, setNewBoardName] = useState("");
   const [editingColumn, setEditingColumn] = useState<{ originalName: string, currentName: string } | null>(null);
   const [collapsedProjects, setCollapsedProjects] = useState<Record<string, boolean>>({});
+  const [showAllTasks, setShowAllTasks] = useState(false);
   
   // Search with debounce for better performance
   const [projectSearchQuery, setProjectSearchQuery] = useState("");
   const debouncedProjectSearch = useDebounce(projectSearchQuery, 300);
+
+  // Task filters state
+  const [isFilterOpen, setIsFilterOpen] = useState(false);
+  const [taskFilters, setTaskFilters] = useState({
+    status: [] as string[],
+    assignee: [] as string[],
+    priority: [] as string[],
+    labels: [] as string[],
+    search: ""
+  });
+  const [activeFiltersCount, setActiveFiltersCount] = useState(0);
 
   // Queries with optimized caching
   const { data: projects = [], isLoading: isLoadingProjects } = useQuery<any[]>({
@@ -437,6 +587,24 @@ export default function Projects() {
   const { data: availablePriorities = [] } = useQuery<any[]>({
     queryKey: ["/api/priorities"],
     staleTime: 1000 * 60 * 60, // 1 hour
+  });
+
+  const { data: users = [] } = useQuery<any[]>({
+    queryKey: ["/api/users"],
+    staleTime: 1000 * 60 * 5, // 5 minutes
+  });
+
+  // All tasks and columns for "All Tasks" view
+  const { data: allTasks = [] } = useQuery<any[]>({
+    queryKey: ["/api/tasks/all"],
+    staleTime: 1000 * 60 * 1, // 1 minute
+    enabled: showAllTasks,
+  });
+
+  const { data: allColumns = [] } = useQuery<any[]>({
+    queryKey: ["/api/board-columns/all"],
+    staleTime: 1000 * 60 * 1, // 1 minute
+    enabled: showAllTasks,
   });
 
   // Filter projects based on debounced search query
@@ -573,6 +741,79 @@ export default function Projects() {
     }
   });
 
+  // Column mutations
+  const updateColumnMutation = useMutation({
+    mutationFn: async ({ id, name }: { id: string; name: string }) => {
+      await apiRequest("PATCH", `/api/board-columns/${id}`, { name });
+    },
+    onSuccess: () => {
+      // Force refetch to update UI immediately
+      queryClient.invalidateQueries({ 
+        queryKey: ["/api/boards", activeBoard?.id, "full"],
+        refetchType: 'active'
+      });
+      toast.success("Колонка обновлена");
+    }
+  });
+
+  const deleteColumnMutation = useMutation({
+    mutationFn: async ({ columnId, targetColumnId }: { columnId: string; targetColumnId: string }) => {
+      await apiRequest("DELETE", `/api/board-columns/${columnId}?targetColumnId=${targetColumnId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/boards", activeBoard?.id, "full"] });
+      toast.success("Колонка удалена");
+    }
+  });
+
+  const handleEditColumn = (columnId: string, newName: string) => {
+    updateColumnMutation.mutate({ id: columnId, name: newName });
+  };
+
+  const handleDeleteColumn = (columnId: string, targetColumnId: string) => {
+    deleteColumnMutation.mutate({ columnId, targetColumnId });
+  };
+
+  // Create column mutation
+  const createColumnMutation = useMutation({
+    mutationFn: async ({ boardId, name }: { boardId: string; name: string }) => {
+      console.log("[Frontend] Creating column:", { boardId, name });
+      const res = await apiRequest("POST", `/api/boards/${boardId}/columns`, { name });
+      console.log("[Frontend] Column created response:", res);
+      return res.json();
+    },
+    onSuccess: (data) => {
+      console.log("[Frontend] Column created successfully:", data);
+      // Force immediate refetch
+      queryClient.refetchQueries({
+        queryKey: ["/api/boards", activeBoard?.id, "full"]
+      });
+      toast.success("Колонка создана");
+      setNewColumnName("");
+      setIsCreateColumnOpen(false);
+    },
+    onError: (error) => {
+      console.error("[Frontend] Error creating column:", error);
+      toast.error("Не удалось создать колонку");
+    }
+  });
+
+  const handleCreateColumn = () => {
+    console.log("[Frontend] handleCreateColumn called", { newColumnName, activeBoard });
+    if (!newColumnName.trim() || !activeBoard) {
+      console.log("[Frontend] Validation failed - missing name or board");
+      return;
+    }
+    console.log("[Frontend] Calling mutation with:", {
+      boardId: activeBoard.id,
+      name: newColumnName.trim()
+    });
+    createColumnMutation.mutate({
+      boardId: activeBoard.id,
+      name: newColumnName.trim()
+    });
+  };
+
   const [editingProject, setEditingProject] = useState<{ id: string, name: string, priority: string, color: string } | null>(null);
 
   const handleUpdateProject = () => {
@@ -625,6 +866,10 @@ export default function Projects() {
   const [isCreateTaskOpen, setIsCreateTaskOpen] = useState(false);
   const [newTask, setNewTask] = useState({ title: "", description: "", priority: "medium", type: "task" });
 
+  // Column creation state
+  const [isCreateColumnOpen, setIsCreateColumnOpen] = useState(false);
+  const [newColumnName, setNewColumnName] = useState("");
+
   const { data: boardData, isLoading: isLoadingBoard } = useQuery<{ columns: any[], tasks: any[] }>({
     queryKey: ["/api/boards", activeBoard?.id, "full"],
     queryFn: async () => {
@@ -641,10 +886,10 @@ export default function Projects() {
     placeholderData: (previousData) => previousData, // Use previous data while loading new
   });
 
-  const columns = boardData?.columns || [];
-  const tasks = boardData?.tasks || [];
-  const isLoadingColumns = isLoadingBoard;
-  const isLoadingTasks = isLoadingBoard;
+  const columns = showAllTasks ? allColumns : (boardData?.columns || []);
+  const tasks = showAllTasks ? allTasks : (boardData?.tasks || []);
+  const isLoadingColumns = showAllTasks ? false : isLoadingBoard;
+  const isLoadingTasks = showAllTasks ? false : isLoadingBoard;
 
   const createTaskMutation = useMutation({
     mutationFn: async (task: any) => {
@@ -790,16 +1035,66 @@ export default function Projects() {
     }
   });
 
+  // Filtered tasks based on active filters
+  const filteredTasks = useMemo(() => {
+    if (!tasks.length) return [];
+    
+    return tasks.filter(task => {
+      // Search filter
+      if (taskFilters.search) {
+        const searchLower = taskFilters.search.toLowerCase();
+        const matchesSearch = 
+          task.title?.toLowerCase().includes(searchLower) ||
+          task.description?.toLowerCase().includes(searchLower) ||
+          task.number?.toLowerCase().includes(searchLower);
+        if (!matchesSearch) return false;
+      }
+      
+      // Status filter
+      if (taskFilters.status.length > 0) {
+        if (!taskFilters.status.includes(task.status)) return false;
+      }
+      
+      // Assignee filter
+      if (taskFilters.assignee.length > 0) {
+        if (!task.assigneeId || !taskFilters.assignee.includes(task.assigneeId)) return false;
+      }
+      
+      // Priority filter
+      if (taskFilters.priority.length > 0) {
+        if (!task.priorityId || !taskFilters.priority.includes(task.priorityId)) return false;
+      }
+      
+      // Labels filter
+      if (taskFilters.labels.length > 0) {
+        if (!task.tags || !task.tags.some((tag: string) => taskFilters.labels.includes(tag))) return false;
+      }
+      
+      return true;
+    });
+  }, [tasks, taskFilters]);
+
   const kanbanData = useMemo(() => {
     if (!columns.length) return {};
     
     const data: Record<string, any[]> = {};
     columns.forEach(col => {
-      const columnTasks = tasks.filter(t => t.columnId === col.id);
-      data[col.name] = columnTasks.sort((a, b) => (a.order || 0) - (b.order || 0));
+      const columnTasks = filteredTasks.filter(t => t.columnId === col.id);
+      data[col.id] = columnTasks.sort((a, b) => (a.order || 0) - (b.order || 0));
     });
     return data;
-  }, [columns, tasks]);
+  }, [columns, filteredTasks]);
+
+  // Update active filters count
+  useEffect(() => {
+    const count = 
+      taskFilters.status.length +
+      taskFilters.assignee.length +
+      taskFilters.priority.length +
+      taskFilters.labels.length +
+      (taskFilters.search ? 1 : 0);
+    setActiveFiltersCount(count);
+  }, [taskFilters]);
 
   const [selectedTask, setSelectedTask] = useState<any>(null);
 
@@ -877,8 +1172,8 @@ export default function Projects() {
     }
 
     if (type === "task") {
-      // Find the target column
-      const targetColumn = columns.find(col => col.name === destination.droppableId);
+      // Find the target column by ID (droppableId is now column ID)
+      const targetColumn = columns.find(col => col.id === destination.droppableId);
       if (!targetColumn) return;
 
       // Optimistically update the UI or just call the mutation
@@ -911,8 +1206,23 @@ export default function Projects() {
             <h2 className="font-semibold text-lg">Проекты</h2>
           </div>
 
-          <div className="p-3">
-             <div className="relative">
+          <div className="p-3 space-y-2">
+            <Button
+              variant={showAllTasks ? "default" : "outline"}
+              size="sm"
+              className="w-full justify-start gap-2"
+              onClick={() => {
+                if (!showAllTasks) {
+                  setActiveProjectId(null);
+                  setActiveBoardId(null);
+                }
+                setShowAllTasks(!showAllTasks);
+              }}
+            >
+              <LayoutGrid className="w-4 h-4" />
+              Все задачи
+            </Button>
+            <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
               <Input 
                 placeholder="Найти проект..." 
@@ -939,6 +1249,7 @@ export default function Projects() {
                     isActive={activeProject?.id === project.id}
                     isCollapsed={!!collapsedProjects[project.id]}
                     onSelect={(projectId) => {
+                      setShowAllTasks(false);
                       setActiveProjectId(projectId);
                       setActiveBoardId(null);
                     }}
@@ -1083,18 +1394,26 @@ export default function Projects() {
         <div className="flex-1 flex flex-col min-w-0 bg-secondary/20">
           {/* Board Header */}
           <div className="h-16 px-6 border-b border-border bg-card flex items-center justify-between">
-            {activeProject ? (
+            {showAllTasks ? (
+              <div className="flex items-center gap-3 overflow-hidden">
+                <LayoutGrid className="w-5 h-5 text-primary" />
+                <h1 className="text-xl font-bold truncate text-foreground">Все задачи</h1>
+                <Badge variant="secondary" className="text-xs">
+                  {tasks.length} задач
+                </Badge>
+              </div>
+            ) : activeProject ? (
               <div className="flex items-center gap-3 overflow-hidden">
                 <div className={cn(
                   "w-3 h-3 rounded-full shadow-sm",
                   activeProject.priority === "Высокий" || activeProject.priority === "Критический" ? "bg-rose-500" :
                   activeProject.priority === "Средний" ? "bg-amber-500" : "bg-emerald-500"
                 )} />
-                <h1 className="text-xl font-bold truncate">{activeProject.name}</h1>
+                <h1 className="text-xl font-bold truncate text-foreground">{activeProject.name}</h1>
                 {activeBoard && (
                   <>
                     <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
-                    <Badge variant="outline" className="text-xs font-semibold px-2 py-0.5 whitespace-nowrap uppercase tracking-wider">
+                    <Badge variant="outline" className="text-xs font-semibold px-2 py-0.5 whitespace-nowrap uppercase tracking-wider text-foreground">
                       {activeBoard.name}
                     </Badge>
                   </>
@@ -1105,11 +1424,164 @@ export default function Projects() {
             )}
             
             <div className="flex items-center gap-2">
-               <Button variant="ghost" size="sm" className="gap-2 text-foreground">
-                 <Filter className="w-4 h-4" />
-                 <span className="hidden sm:inline">Фильтр</span>
-               </Button>
-               <Separator orientation="vertical" className="h-6 mx-2" />
+              <Dialog open={isFilterOpen} onOpenChange={setIsFilterOpen}>
+                <DialogTrigger asChild>
+                  <Button variant="ghost" size="sm" className="gap-2 text-foreground relative">
+                    <Filter className="w-4 h-4" />
+                    <span className="hidden sm:inline">Фильтр</span>
+                    {activeFiltersCount > 0 && (
+                      <Badge className="absolute -top-1 -right-1 h-4 w-4 p-0 text-[10px] flex items-center justify-center bg-primary text-primary-foreground">
+                        {activeFiltersCount}
+                      </Badge>
+                    )}
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="sm:max-w-[500px]">
+                  <DialogHeader>
+                    <DialogTitle>Фильтры</DialogTitle>
+                    <DialogDescription>Отфильтруйте задачи по различным параметрам</DialogDescription>
+                  </DialogHeader>
+                  <div className="space-y-4 py-4 max-h-[60vh] overflow-y-auto">
+                    {/* Search filter */}
+                    <div className="space-y-2">
+                      <Label>Поиск</Label>
+                      <Input
+                        placeholder="Поиск по названию, описанию или номеру..."
+                        value={taskFilters.search}
+                        onChange={(e) => setTaskFilters(prev => ({ ...prev, search: e.target.value }))}
+                      />
+                    </div>
+
+                    {/* Status filter */}
+                    <div className="space-y-2">
+                      <Label>Статус</Label>
+                      <div className="flex flex-wrap gap-2">
+                        {columns.map((col: any) => (
+                          <label
+                            key={col.id}
+                            className="flex items-center gap-2 px-3 py-2 border rounded-lg cursor-pointer hover:bg-secondary/50 transition-colors"
+                          >
+                            <Checkbox
+                              checked={taskFilters.status.includes(col.name)}
+                              onCheckedChange={(checked) => {
+                                setTaskFilters(prev => ({
+                                  ...prev,
+                                  status: checked
+                                    ? [...prev.status, col.name]
+                                    : prev.status.filter(s => s !== col.name)
+                                }));
+                              }}
+                            />
+                            <span className="text-sm">{col.name}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Assignee filter */}
+                    <div className="space-y-2">
+                      <Label>Исполнитель</Label>
+                      <div className="flex flex-wrap gap-2">
+                        {users.map((user: any) => (
+                          <label
+                            key={user.id}
+                            className="flex items-center gap-2 px-3 py-2 border rounded-lg cursor-pointer hover:bg-secondary/50 transition-colors"
+                          >
+                            <Checkbox
+                              checked={taskFilters.assignee.includes(user.id)}
+                              onCheckedChange={(checked) => {
+                                setTaskFilters(prev => ({
+                                  ...prev,
+                                  assignee: checked
+                                    ? [...prev.assignee, user.id]
+                                    : prev.assignee.filter(id => id !== user.id)
+                                }));
+                              }}
+                            />
+                            <span className="text-sm">
+                              {user.firstName ? `${user.firstName} ${user.lastName || ''}`.trim() : user.username}
+                            </span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Priority filter */}
+                    <div className="space-y-2">
+                      <Label>Приоритет</Label>
+                      <div className="flex flex-wrap gap-2">
+                        {availablePriorities.map((priority: any) => (
+                          <label
+                            key={priority.id}
+                            className="flex items-center gap-2 px-3 py-2 border rounded-lg cursor-pointer hover:bg-secondary/50 transition-colors"
+                          >
+                            <Checkbox
+                              checked={taskFilters.priority.includes(priority.id)}
+                              onCheckedChange={(checked) => {
+                                setTaskFilters(prev => ({
+                                  ...prev,
+                                  priority: checked
+                                    ? [...prev.priority, priority.id]
+                                    : prev.priority.filter(id => id !== priority.id)
+                                }));
+                              }}
+                            />
+                            <div className={cn("w-2 h-2 rounded-full", priority.color)} />
+                            <span className="text-sm">{priority.name}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Labels filter */}
+                    <div className="space-y-2">
+                      <Label>Метки</Label>
+                      <div className="flex flex-wrap gap-2">
+                        {availableLabels.map((label: any) => (
+                          <label
+                            key={label.id}
+                            className="flex items-center gap-2 px-3 py-2 border rounded-lg cursor-pointer hover:bg-secondary/50 transition-colors"
+                          >
+                            <Checkbox
+                              checked={taskFilters.labels.includes(label.name)}
+                              onCheckedChange={(checked) => {
+                                setTaskFilters(prev => ({
+                                  ...prev,
+                                  labels: checked
+                                    ? [...prev.labels, label.name]
+                                    : prev.labels.filter(name => name !== label.name)
+                                }));
+                              }}
+                            />
+                            <div className={cn("w-2 h-2 rounded-full", label.color)} />
+                            <span className="text-sm">{label.name}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                  <DialogFooter className="gap-2">
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        setTaskFilters({
+                          status: [],
+                          assignee: [],
+                          priority: [],
+                          labels: [],
+                          search: ""
+                        });
+                      }}
+                    >
+                      Сбросить
+                    </Button>
+                    <Button onClick={() => setIsFilterOpen(false)}>
+                      Применить
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+              <Separator orientation="vertical" className="h-6 mx-2" />
                <Dialog open={isCreateTaskOpen} onOpenChange={setIsCreateTaskOpen}>
                  <Button 
                    className="gap-2 shadow-lg shadow-primary/20" 
@@ -1166,17 +1638,69 @@ export default function Projects() {
                       ref={provided.innerRef}
                       className="flex gap-6 items-start h-full px-6 pb-6"
                     >
-                      {Object.entries(kanbanData).map(([column, columnTasks]: [string, any]) => (
-                        <KanbanColumn
-                          key={column}
-                          column={column}
-                          tasks={columnTasks}
-                          onCreateTask={handleCreateTask}
-                          onTaskClick={handleTaskClick}
-                          availableLabels={availableLabels}
-                          availablePriorities={availablePriorities}
-                        />
-                      ))}
+                      {columns.map((columnData: any, index: number) => {
+                        const columnTasks = kanbanData[columnData.id] || [];
+                        return (
+                          <KanbanColumn
+                            key={columnData.id}
+                            column={columnData.name}
+                            columnId={columnData.id}
+                            columnIndex={index}
+                            tasks={columnTasks}
+                            allColumns={columns.map((c: any) => ({ id: c.id, name: c.name }))}
+                            onCreateTask={handleCreateTask}
+                            onTaskClick={handleTaskClick}
+                            onEditColumn={handleEditColumn}
+                            onDeleteColumn={handleDeleteColumn}
+                            availableLabels={availableLabels}
+                            availablePriorities={availablePriorities}
+                          />
+                        );
+                      })}
+                      
+                      {/* Add Column Button */}
+                      {!showAllTasks && (
+                        <div className="w-80 shrink-0">
+                          <Dialog open={isCreateColumnOpen} onOpenChange={setIsCreateColumnOpen}>
+                            <DialogTrigger asChild>
+                              <button className="w-full h-12 border-2 border-dashed border-border rounded-xl flex items-center justify-center gap-2 text-muted-foreground hover:text-foreground hover:border-primary/50 hover:bg-primary/5 transition-all group">
+                                <Plus className="w-5 h-5" />
+                                <span className="font-medium">Добавить колонку</span>
+                              </button>
+                            </DialogTrigger>
+                            <DialogContent>
+                              <DialogHeader>
+                                <DialogTitle>Создать новую колонку</DialogTitle>
+                                <DialogDescription>Укажите название для новой колонки на доске.</DialogDescription>
+                              </DialogHeader>
+                              <div className="space-y-4 py-4">
+                                <div className="space-y-2">
+                                  <Label htmlFor="column-name">Название колонки</Label>
+                                  <Input
+                                    id="column-name"
+                                    placeholder="Например: В тестировании"
+                                    value={newColumnName}
+                                    onChange={(e) => setNewColumnName(e.target.value)}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter' && newColumnName.trim()) {
+                                        handleCreateColumn();
+                                      }
+                                    }}
+                                  />
+                                </div>
+                              </div>
+                              <DialogFooter>
+                                <Button variant="outline" onClick={() => setIsCreateColumnOpen(false)}>Отмена</Button>
+                                <Button onClick={handleCreateColumn} disabled={createColumnMutation.isPending || !newColumnName.trim()}>
+                                  {createColumnMutation.isPending && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
+                                  Создать колонку
+                                </Button>
+                              </DialogFooter>
+                            </DialogContent>
+                          </Dialog>
+                        </div>
+                      )}
+                      
                       {provided.placeholder}
                     </div>
                   )}

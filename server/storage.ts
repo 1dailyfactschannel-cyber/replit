@@ -1,4 +1,4 @@
-import { type User, type InsertUser, type SiteSettings, type InsertSiteSettings } from "@shared/schema";
+import { type User, type InsertUser, type SiteSettings, type InsertSiteSettings, type CommentMention, type InsertCommentMention } from "@shared/schema";
 import { randomUUID } from "crypto";
 
 // modify the interface with any CRUD methods
@@ -24,6 +24,20 @@ export interface IStorage {
   createLabel(label: any): Promise<any>;
   updateLabel(id: string, label: any): Promise<any>;
   deleteLabel(id: string): Promise<void>;
+
+  // Comments
+  getCommentsByTask(taskId: string): Promise<any[]>;
+  createComment(comment: any): Promise<any>;
+  deleteComment(id: string): Promise<void>;
+
+  // Comment Mentions
+  getMentionsByUser(userId: string): Promise<any[]>;
+  getCommentsWithMentions(userId: string): Promise<any[]>;
+
+  // Board Columns
+  updateBoardColumn(id: string, updates: Partial<any>): Promise<any>;
+  deleteBoardColumn(id: string): Promise<void>;
+  updateTaskColumnId(taskId: string, columnId: string): Promise<void>;
 }
 
 import { PostgresStorage } from "./postgres-storage";

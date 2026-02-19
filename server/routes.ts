@@ -2,6 +2,7 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { getStorage } from "./postgres-storage";
 import { insertSiteSettingsSchema, insertUserSchema, insertNotificationSchema, insertLabelSchema, priorities } from "@shared/schema";
+import * as schema from "@shared/schema";
 import { setupWebSockets } from "./socket";
 import { Server as SocketIOServer } from "socket.io";
 import multer from "multer";
@@ -541,6 +542,17 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/tasks/all", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+    try {
+      const allTasks = await storage.db.select().from(schema.tasks);
+      res.json(allTasks);
+    } catch (error) {
+      console.error("Error fetching all tasks:", error);
+      res.status(500).json({ message: "Failed to fetch tasks" });
+    }
+  });
+
   app.get("/api/tasks/:id", async (req, res) => {
     try {
       const task = await storage.getTask(req.params.id);
@@ -664,6 +676,86 @@ export async function registerRoutes(
       res.json(columns);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch columns" });
+    }
+  });
+
+  app.get("/api/board-columns/all", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+    try {
+      const allColumns = await storage.db.select().from(schema.boardColumns).orderBy(schema.boardColumns.order);
+      res.json(allColumns);
+    } catch (error) {
+      console.error("Error fetching all columns:", error);
+      res.status(500).json({ message: "Failed to fetch columns" });
+    }
+  });
+
+  app.post("/api/boards/:boardId/columns", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
+    try {
+      const { name } = req.body;
+      const boardId = req.params.boardId;
+      
+      // Get current columns to determine order
+      const existingColumns = await storage.getColumnsByBoard(boardId);
+      const maxOrder = existingColumns.length > 0 
+        ? Math.max(...existingColumns.map(c => c.order))
+        : -1;
+      
+      const newColumn = await storage.createColumn({
+        boardId,
+        name,
+        order: maxOrder + 1,
+        color: null
+      });
+      
+      res.status(201).json(newColumn);
+    } catch (error) {
+      console.error("[API] Error creating column:", error);
+      res.status(500).json({ message: "Failed to create column" });
+    }
+  });
+
+  app.patch("/api/board-columns/:columnId", async (req, res) => {
+    console.log("[API] PATCH /api/board-columns/:columnId - Received request");
+    console.log("[API] Column ID:", req.params.columnId);
+    console.log("[API] Body:", req.body);
+    
+    if (!req.isAuthenticated()) {
+      console.log("[API] Unauthorized request");
+      return res.status(401).json({ message: "Не авторизован" });
+    }
+    
+    try {
+      const { name } = req.body;
+      console.log("[API] Attempting to update column with name:", name);
+      const updated = await storage.updateBoardColumn(req.params.columnId, { name });
+      console.log("[API] Column updated successfully:", updated);
+      res.json(updated);
+    } catch (error) {
+      console.error("[API] Error updating column:", error);
+      res.status(500).json({ message: "Failed to update column" });
+    }
+  });
+
+  app.delete("/api/board-columns/:columnId", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
+    try {
+      const { targetColumnId } = req.query;
+      
+      // If targetColumnId is provided, move all tasks to that column first
+      if (targetColumnId) {
+        const tasksToMove = await storage.db.select().from(schema.tasks).where(eq(schema.tasks.columnId, req.params.columnId));
+        for (const task of tasksToMove) {
+          await storage.updateTaskColumnId(task.id, targetColumnId as string);
+        }
+      }
+      
+      await storage.deleteBoardColumn(req.params.columnId);
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting column:", error);
+      res.status(500).json({ message: "Failed to delete column" });
     }
   });
 
@@ -1341,6 +1433,29 @@ export async function registerRoutes(
       res.status(204).end();
     } catch (error) {
       res.status(500).json({ message: "Failed to delete comment" });
+    }
+  });
+
+  // Comment Mentions routes
+  app.get("/api/user/mentions", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
+    try {
+      const mentions = await storage.getMentionsByUser(req.user.id);
+      res.json(mentions);
+    } catch (error) {
+      console.error("Error fetching mentions:", error);
+      res.status(500).json({ message: "Failed to fetch mentions" });
+    }
+  });
+
+  app.get("/api/user/mentioned-comments", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
+    try {
+      const comments = await storage.getCommentsWithMentions(req.user.id);
+      res.json(comments);
+    } catch (error) {
+      console.error("Error fetching mentioned comments:", error);
+      res.status(500).json({ message: "Failed to fetch mentioned comments" });
     }
   });
 

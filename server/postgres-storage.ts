@@ -10,7 +10,9 @@ import {
   type MessageAttachment,
   type InsertMessageAttachment,
   type Notification,
-  type InsertNotification
+  type InsertNotification,
+  type CommentMention,
+  type InsertCommentMention
 } from "@shared/schema";
 import { drizzle } from "drizzle-orm/postgres-js";
 import { eq, and, or, desc, ne, sql, inArray } from "drizzle-orm";
@@ -930,6 +932,41 @@ export class PostgresStorage {
     }
   }
 
+  async updateBoardColumn(id: string, updates: Partial<schema.BoardColumn>): Promise<schema.BoardColumn> {
+    try {
+      const [updated] = await this.db
+        .update(schema.boardColumns)
+        .set({ ...updates, updatedAt: new Date() })
+        .where(eq(schema.boardColumns.id, id))
+        .returning();
+      return updated;
+    } catch (error) {
+      console.error("Error updating board column:", error);
+      throw error;
+    }
+  }
+
+  async deleteBoardColumn(id: string): Promise<void> {
+    try {
+      await this.db.delete(schema.boardColumns).where(eq(schema.boardColumns.id, id));
+    } catch (error) {
+      console.error("Error deleting board column:", error);
+      throw error;
+    }
+  }
+
+  async updateTaskColumnId(taskId: string, columnId: string): Promise<void> {
+    try {
+      await this.db
+        .update(schema.tasks)
+        .set({ columnId, updatedAt: new Date() })
+        .where(eq(schema.tasks.id, taskId));
+    } catch (error) {
+      console.error("Error updating task column:", error);
+      throw error;
+    }
+  }
+
   // Task methods
   async getTask(id: string): Promise<schema.Task | undefined> {
     try {
@@ -1177,6 +1214,94 @@ export class PostgresStorage {
     } catch (error) {
       console.error("Error deleting comment:", error);
       throw error;
+    }
+  }
+
+  // Comment Mentions methods
+  async getMentionsByUser(userId: string): Promise<any[]> {
+    try {
+      const mentions = await this.db.select({
+        mention: schema.commentMentions,
+        comment: schema.comments,
+        task: {
+          id: schema.tasks.id,
+          title: schema.tasks.title,
+        },
+        project: {
+          id: schema.projects.id,
+          name: schema.projects.name,
+        },
+        author: {
+          id: schema.users.id,
+          firstName: schema.users.firstName,
+          lastName: schema.users.lastName,
+          username: schema.users.username,
+          avatar: schema.users.avatar,
+        },
+      })
+        .from(schema.commentMentions)
+        .innerJoin(schema.comments, eq(schema.commentMentions.commentId, schema.comments.id))
+        .innerJoin(schema.tasks, eq(schema.comments.taskId, schema.tasks.id))
+        .innerJoin(schema.boards, eq(schema.tasks.boardId, schema.boards.id))
+        .innerJoin(schema.projects, eq(schema.boards.projectId, schema.projects.id))
+        .innerJoin(schema.users, eq(schema.comments.authorId, schema.users.id))
+        .where(eq(schema.commentMentions.userId, userId))
+        .orderBy(desc(schema.commentMentions.createdAt));
+
+      return mentions.map(m => ({
+        ...m.mention,
+        comment: m.comment,
+        task: m.task,
+        project: m.project,
+        author: {
+          name: `${m.author.firstName || ""} ${m.author.lastName || ""}`.trim() || m.author.username,
+          avatar: m.author.avatar,
+        },
+      }));
+    } catch (error) {
+      console.error("Error getting mentions by user:", error);
+      return [];
+    }
+  }
+
+  async getCommentsWithMentions(userId: string): Promise<any[]> {
+    try {
+      // Get comments where user is mentioned
+      const mentions = await this.db.select({
+        commentId: schema.commentMentions.commentId,
+      })
+        .from(schema.commentMentions)
+        .where(eq(schema.commentMentions.userId, userId));
+
+      const commentIds = mentions.map(m => m.commentId);
+      
+      if (commentIds.length === 0) return [];
+
+      const comments = await this.db.select()
+        .from(schema.comments)
+        .where(inArray(schema.comments.id, commentIds))
+        .orderBy(desc(schema.comments.createdAt));
+
+      // Enrich with authors
+      const authorIds = Array.from(new Set(comments.map(c => c.authorId).filter(Boolean)));
+      const authors = authorIds.length > 0 
+        ? await this.db.select().from(schema.users).where(inArray(schema.users.id, authorIds))
+        : [];
+      const authorMap = new Map(authors.map(a => [a.id, a]));
+
+      return comments.map(comment => {
+        const author = authorMap.get(comment.authorId);
+        return {
+          ...comment,
+          author: author ? {
+            name: `${author.firstName || ""} ${author.lastName || ""}`.trim() || author.username,
+            avatar: author.avatar,
+          } : { name: "Неизвестно" },
+        };
+      });
+    } catch (error) {
+      console.error("Error getting comments with mentions:", error);
+      return [];
     }
   }
 
