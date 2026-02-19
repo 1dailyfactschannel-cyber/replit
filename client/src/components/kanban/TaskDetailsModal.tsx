@@ -133,13 +133,14 @@ function formatDuration(seconds: number): string {
 
 // Task Status Timer Component
 function TaskStatusTimer({ taskId }: { taskId: string | number | undefined }) {
-  const { data: statusSummary = [], isLoading } = useQuery<{
+  const { data: statusSummary = [], isLoading, error } = useQuery<{
     status: string;
     totalSeconds: number;
     count: number;
   }[]>({
-    queryKey: [`/api/tasks/${taskId}/status-summary`],
+    queryKey: ["/api/tasks", taskId, "status-summary"],
     enabled: !!taskId,
+    refetchInterval: 1000, // Refetch every second to update timer
   });
 
   if (isLoading) {
@@ -150,7 +151,15 @@ function TaskStatusTimer({ taskId }: { taskId: string | number | undefined }) {
     );
   }
 
-  if (statusSummary.length === 0) {
+  if (error) {
+    return (
+      <div className="text-xs text-destructive text-center py-8">
+        Ошибка загрузки данных таймера
+      </div>
+    );
+  }
+
+  if (!statusSummary || statusSummary.length === 0) {
     return (
       <div className="text-xs text-muted-foreground text-center py-8">
         Нет данных о времени в статусах
@@ -727,9 +736,8 @@ export function TaskDetailsModal({
       setLocalComments(prev => [savedComment, ...prev]);
       setNewComment("");
       setCommentAttachments([]);
-      
-      // Invalidate to refetch from server
-      queryClient.invalidateQueries({ queryKey: [`/api/tasks/${task.id}/comments`] });
+      // Don't invalidate here - local state is already updated
+      // Query will refetch when modal is reopened
     } catch (error) {
       console.error("Error adding comment:", error);
       sonnerToast.error("Не удалось отправить комментарий");
