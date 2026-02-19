@@ -552,10 +552,17 @@ export function TaskDetailsModal({
     queryKey: ["/api/priorities"],
   });
 
-  // Sync server comments whenever they change and modal is open
+  // Sync server comments only when they actually change
+  const prevCommentsRef = useRef<any[]>([]);
   useEffect(() => {
     if (open && serverComments) {
-      setLocalComments(serverComments);
+      // Only update if comments actually changed
+      const prevIds = prevCommentsRef.current.map((c: any) => c.id).sort().join(',');
+      const currentIds = serverComments.map((c: any) => c.id).sort().join(',');
+      if (prevIds !== currentIds) {
+        prevCommentsRef.current = serverComments;
+        setLocalComments(serverComments);
+      }
     }
   }, [open, serverComments]);
 
