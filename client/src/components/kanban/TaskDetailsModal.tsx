@@ -552,26 +552,12 @@ export function TaskDetailsModal({
     queryKey: ["/api/priorities"],
   });
 
-  // Sync server comments when modal opens or task changes
-  const prevTaskIdRef = useRef<string | number | undefined>(undefined);
-  const prevOpenRef = useRef<boolean>(false);
-  
+  // Sync server comments whenever they change and modal is open
   useEffect(() => {
-    // Sync when modal opens (open changes from false to true) or task changes
-    const taskChanged = task?.id !== prevTaskIdRef.current;
-    const modalOpened = open && !prevOpenRef.current;
-    
-    if (modalOpened || taskChanged) {
-      prevTaskIdRef.current = task?.id;
-      prevOpenRef.current = open;
-      
-      if (serverComments && serverComments.length > 0) {
-        setLocalComments(serverComments);
-      } else {
-        setLocalComments([]);
-      }
+    if (open && serverComments) {
+      setLocalComments(serverComments);
     }
-  }, [task?.id, serverComments, open]);
+  }, [open, serverComments]);
 
   const [newComment, setNewComment] = useState("");
   const [commentAttachments, setCommentAttachments] = useState<{ name: string; url: string; size: string; type: string }[]>([]);
