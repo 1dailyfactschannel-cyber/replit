@@ -94,6 +94,9 @@ const statusNames: Record<string, string> = {
   "На проверке": "На проверке",
   "Готово": "Готово",
   "Бэклог": "Бэклог",
+  "В планах": "В планах",
+  "Сделать": "Сделать",
+  "Выполняется": "Выполняется",
 };
 
 // Status colors
@@ -108,6 +111,9 @@ const statusColors: Record<string, string> = {
   "На проверке": "bg-amber-500",
   "Готово": "bg-emerald-500",
   "Бэклог": "bg-gray-400",
+  "В планах": "bg-purple-500",
+  "Сделать": "bg-slate-500",
+  "Выполняется": "bg-blue-500",
 };
 
 // Format seconds to readable time
