@@ -288,7 +288,8 @@ function TaskActivityHistory({ taskId }: { taskId: string | number | undefined }
                 <div key={item.id} className="flex gap-2 text-xs">
                   <div className="w-1.5 h-1.5 rounded-full bg-primary/40 mt-1.5 shrink-0" />
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-1 flex-wrap">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="text-[10px] text-muted-foreground/60 font-medium shrink-0">{time}</span>
                       <span className="font-medium">{userName}</span>
                       <span className="text-muted-foreground">{actionText}</span>
                       {item.fieldName && item.action !== 'created' && item.action !== 'comment_added' && (
@@ -301,7 +302,6 @@ function TaskActivityHistory({ taskId }: { taskId: string | number | undefined }
                         <span className="text-muted-foreground truncate max-w-[150px]">"{item.newValue}"</span>
                       )}
                     </div>
-                    <div className="text-[10px] text-muted-foreground/50 mt-0.5">{time}</div>
                   </div>
                 </div>
               );
