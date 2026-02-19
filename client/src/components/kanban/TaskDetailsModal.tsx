@@ -1203,32 +1203,14 @@ export function TaskDetailsModal({
             />
           </div>
           
-          <div className="flex items-center gap-1.5">
-            <Button variant="outline" size="sm" className="h-8 gap-2 text-xs font-semibold px-3 border-border/60 hover:bg-secondary/50">
-              <Play className="w-3 h-3 fill-current" />
-              Запустить
-            </Button>
-            <Separator orientation="vertical" className="h-4 mx-1 opacity-50" />
-            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground">
-              <Eye className="w-4 h-4" />
-            </Button>
-            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground relative">
-              <Bell className="w-4 h-4" />
-              <span className="absolute top-2 right-2 w-1.5 h-1.5 bg-rose-500 rounded-full border border-background" />
-            </Button>
-            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground">
-              <RefreshCw className="w-4 h-4" />
-            </Button>
-            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground">
-              <LinkIcon className="w-4 h-4" />
-            </Button>
-            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground">
-              <PanelRight className="w-4 h-4" />
-            </Button>
-            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground">
-              <MoreHorizontal className="w-4 h-4" />
-            </Button>
-          </div>
+          <Button 
+            variant="ghost" 
+            size="icon" 
+            className="h-8 w-8 text-muted-foreground hover:text-foreground"
+            onClick={() => onOpenChange(false)}
+          >
+            <X className="w-4 h-4" />
+          </Button>
         </div>
 
         <div className="flex flex-1 overflow-hidden">
