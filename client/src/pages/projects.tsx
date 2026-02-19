@@ -150,7 +150,7 @@ const TaskCard = React.memo(({ task, index, onClick, columnColor, availableLabel
           )} />
           
           {/* Task Number */}
-          <div className="text-xs text-muted-foreground mb-1 font-mono">{taskNumber}</div>
+          <div className="text-xs text-foreground mb-1 font-mono">{taskNumber}</div>
           
           <h4 className="text-sm font-normal mb-3 leading-snug text-foreground/90 line-clamp-2">{task.title}</h4>
           
@@ -179,17 +179,17 @@ const TaskCard = React.memo(({ task, index, onClick, columnColor, availableLabel
           <div className="flex items-center justify-between">
             <div className="flex items-center">
               {task.assignee ? (
-                <span className="text-xs font-medium text-muted-foreground truncate max-w-[150px]">
+                <span className="text-xs font-medium text-foreground truncate max-w-[150px]">
                   {task.assignee.name}
                 </span>
               ) : (
-                <span className="text-xs text-muted-foreground/50">
+                <span className="text-xs text-foreground">
                   Не назначен
                 </span>
               )}
             </div>
             {task.creator && (
-              <div className="text-[10px] text-muted-foreground font-medium">
+              <div className="text-[10px] text-foreground font-medium">
                 {task.creator.date.split(' ')[0]}
               </div>
             )}
@@ -367,7 +367,7 @@ const ProjectItem = React.memo(({
           </div>
           
           <div className="mt-1.5 ml-5.5 px-2">
-            <div className="flex items-center justify-between text-[10px] text-muted-foreground mb-1">
+            <div className="flex items-center justify-between text-[10px] text-foreground mb-1">
               <span>Прогресс</span>
               <span>{project.progress || 0}%</span>
             </div>
@@ -381,10 +381,10 @@ const ProjectItem = React.memo(({
         </div>
 
         <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1 opacity-0 group-hover/project:opacity-100 transition-opacity">
-          <Button 
-            variant="ghost" 
-            size="icon" 
-            className="h-6 w-6 text-muted-foreground hover:text-foreground"
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-6 w-6 text-foreground hover:text-foreground"
             onClick={(e) => onEdit(project, e)}
           >
             <Pencil className="w-3 h-3" />
@@ -928,7 +928,7 @@ export default function Projects() {
               {isLoadingProjects && filteredProjects.length === 0 ? (
                 <ProjectListLoading />
               ) : filteredProjects.length === 0 ? (
-                <div className="p-4 text-center text-xs text-muted-foreground">
+                <div className="p-4 text-center text-xs text-foreground">
                   {debouncedProjectSearch ? "Проекты не найдены" : "Нет проектов"}
                 </div>
               ) : (
@@ -980,7 +980,7 @@ export default function Projects() {
                                 "w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-[13px] transition-colors text-left pr-8 cursor-pointer",
                                 activeBoard?.id === board.id
                                   ? "bg-secondary text-foreground font-medium"
-                                  : "text-muted-foreground hover:bg-secondary/30 hover:text-foreground"
+                                  : "text-foreground hover:bg-secondary/30 hover:text-foreground"
                               )}
                             >
                               <Hash className="w-3.5 h-3.5 shrink-0 opacity-50" />
@@ -1101,11 +1101,11 @@ export default function Projects() {
                 )}
               </div>
             ) : (
-              <div className="text-muted-foreground italic px-6">Выберите проект</div>
+              <div className="text-foreground italic px-6">Выберите проект</div>
             )}
             
             <div className="flex items-center gap-2">
-               <Button variant="ghost" size="sm" className="gap-2 text-muted-foreground">
+               <Button variant="ghost" size="sm" className="gap-2 text-foreground">
                  <Filter className="w-4 h-4" />
                  <span className="hidden sm:inline">Фильтр</span>
                </Button>
@@ -1184,10 +1184,10 @@ export default function Projects() {
               ) : (
                 <div className="flex flex-col items-center justify-center h-[60vh] text-center">
                   <div className="w-16 h-16 bg-secondary/30 rounded-full flex items-center justify-center mb-4">
-                    <Hash className="w-8 h-8 text-muted-foreground/50" />
+                     <Hash className="w-8 h-8 text-foreground/50" />
                   </div>
                   <h3 className="text-lg font-semibold mb-1">Доска не выбрана</h3>
-                  <p className="text-sm text-muted-foreground max-w-xs">
+                   <p className="text-sm text-foreground max-w-xs">
                     Выберите проект и доску в левом меню, чтобы начать работу над задачами.
                   </p>
                 </div>

@@ -33,7 +33,7 @@ export default function Dashboard() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-bold tracking-tight text-foreground">Обзор</h1>
-            <p className="text-muted-foreground mt-1">Добро пожаловать! Вот что происходит сегодня.</p>
+            <p className="text-foreground mt-1">Добро пожаловать! Вот что происходит сегодня.</p>
           </div>
           <div className="flex gap-3">
              <Button variant="outline" className="hidden sm:flex">Экспортировать отчёт</Button>
@@ -52,7 +52,7 @@ export default function Dashboard() {
             <Card key={i} className="border-border/50 shadow-sm hover:shadow-md transition-shadow">
               <CardContent className="p-6">
                 <div className="flex items-center justify-between space-y-0 pb-2">
-                  <p className="text-sm font-medium text-muted-foreground">{stat.label}</p>
+                  <p className="text-sm font-medium text-foreground">{stat.label}</p>
                   {stat.trend === "up" ? (
                     <span className="text-xs text-emerald-500 font-medium bg-emerald-500/10 px-2 py-0.5 rounded-full flex items-center gap-1">
                       <ArrowUpRight className="w-3 h-3" /> {stat.change}

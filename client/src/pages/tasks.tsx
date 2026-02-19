@@ -174,7 +174,7 @@ export default function Tasks() {
         <div className="flex items-center justify-between">
            <div>
              <h1 className="text-3xl font-bold tracking-tight text-foreground">Мои задачи</h1>
-             <p className="text-muted-foreground mt-1">Все задачи, назначенные лично вам из разных проектов.</p>
+             <p className="text-foreground mt-1">Все задачи, назначенные лично вам из разных проектов.</p>
            </div>
            <div className="flex gap-2">
               <Button variant="outline" className="gap-2"><Filter className="w-4 h-4" /> Фильтр</Button>
@@ -211,11 +211,11 @@ export default function Tasks() {
                   <TableCell className="px-6" onClick={(e) => e.stopPropagation()}>
                     <Checkbox />
                   </TableCell>
-                  <TableCell className="font-mono text-[10px] text-muted-foreground">TS-{task.id}</TableCell>
+                  <TableCell className="font-mono text-[10px] text-foreground">TS-{task.id}</TableCell>
                   <TableCell>
                     <div className="flex flex-col">
                       <span className="font-bold text-sm text-foreground group-hover:text-primary transition-colors">{task.title}</span>
-                      <span className="text-[10px] text-muted-foreground uppercase tracking-wider">{task.type}</span>
+                       <span className="text-[10px] text-foreground uppercase tracking-wider">{task.type}</span>
                     </div>
                   </TableCell>
                   <TableCell>
@@ -233,7 +233,7 @@ export default function Tasks() {
                         task.priority === "Высокий" ? "bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.4)]" :
                         task.priority === "Средний" ? "bg-amber-500" : "bg-emerald-500"
                       }`} />
-                      <span className="text-xs font-medium">{task.priority}</span>
+                       <span className="text-xs font-medium text-foreground">{task.priority}</span>
                     </div>
                   </TableCell>
                   <TableCell>
@@ -242,13 +242,13 @@ export default function Tasks() {
                         <Briefcase className="w-3 h-3 text-primary/70" />
                         <span className="truncate max-w-[150px]">{task.project}</span>
                       </div>
-                      <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
-                        <LayoutIcon className="w-2.5 h-2.5" />
-                        <span className="truncate max-w-[150px]">{task.board}</span>
-                      </div>
+                       <div className="flex items-center gap-1.5 text-[10px] text-foreground">
+                         <LayoutIcon className="w-2.5 h-2.5" />
+                         <span className="truncate max-w-[150px]">{task.board}</span>
+                       </div>
                     </div>
                   </TableCell>
-                  <TableCell className="text-xs text-muted-foreground font-medium">
+                  <TableCell className="text-xs text-foreground font-medium">
                      <div className="flex items-center gap-2">
                        <Calendar className="w-3.5 h-3.5" /> {task.dueDate}
                      </div>

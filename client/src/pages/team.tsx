@@ -124,7 +124,7 @@ export default function EmployeesPage() {
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="text-3xl font-bold tracking-tight">Команда</h1>
-            <p className="text-muted-foreground mt-1">Управление командой и аудит активности.</p>
+            <p className="text-foreground mt-1">Управление командой и аудит активности.</p>
           </div>
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full sm:w-auto">
             <TabsList className="bg-secondary/50">
@@ -175,15 +175,15 @@ export default function EmployeesPage() {
                         setIsDetailsOpen(true);
                       }}
                     >
-                      <TableCell className="font-medium">
+                       <TableCell className="font-medium text-foreground">
                         <div className="flex items-center gap-3">
                           <Avatar className="h-9 w-9 border border-border">
                             <AvatarImage src={employee.avatar} />
                             <AvatarFallback>{employee.name.split(' ').map(n => n[0]).join('')}</AvatarFallback>
                           </Avatar>
                           <div className="flex flex-col">
-                            <span className="text-sm font-semibold">{employee.name}</span>
-                            <span className="text-xs text-muted-foreground">{employee.email}</span>
+                            <span className="text-sm font-semibold text-foreground">{employee.name}</span>
+                            <span className="text-xs text-foreground">{employee.email}</span>
                           </div>
                         </div>
                       </TableCell>
@@ -196,10 +196,10 @@ export default function EmployeesPage() {
                           <span className="text-xs text-muted-foreground">—</span>
                         )}
                       </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">{employee.position}</TableCell>
+                      <TableCell className="text-sm text-foreground">{employee.position}</TableCell>
                       <TableCell>{getStatusBadge(employee.status)}</TableCell>
                       <TableCell>
-                        <div className="flex items-center gap-1.5 font-medium">
+                        <div className="flex items-center gap-1.5 font-medium text-foreground">
                           <Coins className="w-4 h-4 text-amber-500" />
                           {employee.points}
                         </div>
@@ -349,17 +349,17 @@ export default function EmployeesPage() {
                     { name: "Дарья Козлова", in: "09:30", start: "09:35", end: "19:00", out: "19:10", total: "9ч 25м" },
                   ].map((row, i) => (
                     <TableRow key={i} className="hover:bg-secondary/30 transition-colors">
-                      <TableCell className="font-medium">
+                      <TableCell className="font-medium text-foreground">
                         <div className="flex items-center gap-3">
                           <Avatar className="h-8 w-8 border border-border">
                             <AvatarFallback>{row.name.split(' ').map(n => n[0]).join('')}</AvatarFallback>
                           </Avatar>
-                          <span className="text-sm font-semibold">{row.name}</span>
+                          <span className="text-sm font-semibold text-foreground">{row.name}</span>
                         </div>
                       </TableCell>
                       <TableCell className="text-sm font-medium text-emerald-500">{row.in}</TableCell>
-                      <TableCell className="text-sm text-muted-foreground">{row.start}</TableCell>
-                      <TableCell className="text-sm text-muted-foreground">{row.end}</TableCell>
+                      <TableCell className="text-sm text-foreground">{row.start}</TableCell>
+                      <TableCell className="text-sm text-foreground">{row.end}</TableCell>
                       <TableCell className="text-sm font-medium text-rose-500">{row.out}</TableCell>
                       <TableCell className="text-right font-bold text-primary">{row.total}</TableCell>
                     </TableRow>
@@ -440,8 +440,8 @@ export default function EmployeesPage() {
                         <div className="mt-1"><History className="w-4 h-4 text-muted-foreground" /></div>
                         <div className="flex-1 space-y-1">
                           <div className="flex justify-between items-center">
-                            <span className="text-sm font-medium">{entry.date}</span>
-                            <span className="text-xs text-muted-foreground">{entry.actor}</span>
+                            <span className="text-sm font-medium text-foreground">{entry.date}</span>
+                            <span className="text-xs text-foreground">{entry.actor}</span>
                           </div>
                           <p className="text-xs text-muted-foreground">
                             Статус изменен с <span className="text-foreground font-medium">"{entry.old}"</span> на <span className="text-foreground font-medium">"{entry.new}"</span>
@@ -463,13 +463,13 @@ export default function EmployeesPage() {
                         <div className="mt-1"><Coins className="w-4 h-4 text-amber-500" /></div>
                         <div className="flex-1 space-y-1">
                           <div className="flex justify-between items-center">
-                            <span className="text-sm font-medium">{entry.date}</span>
+                            <span className="text-sm font-medium text-foreground">{entry.date}</span>
                             <span className={cn("text-sm font-bold", entry.change.startsWith('+') ? "text-emerald-500" : "text-rose-500")}>
                               {entry.change}
                             </span>
                           </div>
-                          <p className="text-xs font-medium">{entry.reason}</p>
-                          <p className="text-[10px] text-muted-foreground uppercase tracking-tight">Изменил: {entry.actor}</p>
+                          <p className="text-xs font-medium text-foreground">{entry.reason}</p>
+                          <p className="text-[10px] text-foreground uppercase tracking-tight">Изменил: {entry.actor}</p>
                         </div>
                       </div>
                     ))}
