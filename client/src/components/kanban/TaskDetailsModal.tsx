@@ -183,14 +183,14 @@ function TaskStatusTimer({ taskId }: { taskId: string | number | undefined }) {
         {statusSummary.map((item) => (
           <div 
             key={item.status}
-            className="flex items-center justify-between p-2 bg-secondary/20 rounded-lg"
+            className="flex items-center justify-between p-2 bg-secondary/30 rounded-lg"
           >
             <div className="flex items-center gap-2">
               <div className={cn("w-2 h-2 rounded-full", statusColors[item.status] || "bg-gray-400")} />
-              <span className="text-xs font-medium">{statusNames[item.status] || item.status}</span>
+              <span className="text-xs font-medium text-foreground">{statusNames[item.status] || item.status}</span>
               <span className="text-[10px] text-muted-foreground">({item.count})</span>
             </div>
-            <span className="text-xs font-bold">{formatDuration(item.totalSeconds)}</span>
+            <span className="text-xs font-bold text-foreground">{formatDuration(item.totalSeconds)}</span>
           </div>
         ))}
       </div>
@@ -304,13 +304,13 @@ function TaskActivityHistory({ taskId }: { taskId: string | number | undefined }
                   <div className="w-1.5 h-1.5 rounded-full bg-primary/40 mt-1.5 shrink-0" />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1.5 flex-wrap">
-                      <span className="text-[10px] text-muted-foreground/60 font-medium shrink-0">{time}</span>
-                      <span className="font-medium">{userName}</span>
+                      <span className="text-[10px] text-muted-foreground font-medium shrink-0">{time}</span>
+                      <span className="font-medium text-foreground">{userName}</span>
                       <span className="text-muted-foreground">{actionText}</span>
                       {item.fieldName && item.action !== 'created' && item.action !== 'comment_added' && (
                         <>
                           <span className="text-muted-foreground">поле</span>
-                          <span className="font-medium">"{item.fieldName}"</span>
+                          <span className="font-medium text-foreground">"{item.fieldName}"</span>
                         </>
                       )}
                       {item.newValue && item.action === 'comment_added' && (
@@ -1203,14 +1203,30 @@ export function TaskDetailsModal({
             />
           </div>
           
-          <Button 
-            variant="ghost" 
-            size="icon" 
-            className="h-8 w-8 text-muted-foreground hover:text-foreground"
-            onClick={() => onOpenChange(false)}
-          >
-            <X className="w-4 h-4" />
-          </Button>
+          <div className="flex items-center gap-1">
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              className="h-8 w-8 text-muted-foreground hover:text-foreground"
+              onClick={() => {
+                const taskUrl = `${window.location.origin}/projects/${task?.boardId || ''}?task=${task?.id || ''}`;
+                navigator.clipboard.writeText(taskUrl);
+                sonnerToast.success("Ссылка скопирована");
+              }}
+              title="Копировать ссылку"
+            >
+              <LinkIcon className="w-4 h-4" />
+            </Button>
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              className="h-8 w-8 text-muted-foreground hover:text-foreground"
+              onClick={() => onOpenChange(false)}
+              title="Закрыть"
+            >
+              <X className="w-4 h-4" />
+            </Button>
+          </div>
         </div>
 
         <div className="flex flex-1 overflow-hidden">
@@ -1433,8 +1449,8 @@ export function TaskDetailsModal({
                         )}
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="text-xs font-medium truncate pr-5">{file.name}</p>
-                        <p className="text-[9px] text-muted-foreground/60 uppercase">{file.size}</p>
+                        <p className="text-xs font-medium text-foreground truncate pr-5">{file.name}</p>
+                        <p className="text-[9px] text-muted-foreground uppercase">{file.size}</p>
                       </div>
                       <Button 
                         variant="ghost" 
@@ -1455,7 +1471,7 @@ export function TaskDetailsModal({
               </div>
 
               {/* Activity Section / Tabs */}
-              <div className="pt-3 space-y-3">
+              <div className={cn("space-y-3", attachments.length > 0 ? "pt-3" : "pt-1")}>
                 <Tabs defaultValue="comments" className="w-full">
                   <div className="flex items-center justify-between border-b border-border/40 pb-px">
                     <TabsList className="bg-transparent p-0 h-auto gap-8 border-none">
@@ -1835,7 +1851,7 @@ export function TaskDetailsModal({
                       {availablePriorities.find(p => p.id === safeTask.priorityId) ? (
                         <>
                           <div className={cn("w-3 h-3 rounded-full", availablePriorities.find(p => p.id === safeTask.priorityId)?.color)} />
-                          <span style={{ color: availablePriorities.find(p => p.id === safeTask.priorityId)?.color.replace('bg-', '').replace('-500', '') }}>
+                          <span className="text-foreground font-medium">
                             {availablePriorities.find(p => p.id === safeTask.priorityId)?.name}
                           </span>
                         </>
@@ -1850,12 +1866,9 @@ export function TaskDetailsModal({
                   <SelectContent className="rounded-xl min-w-[220px]">
                     {availablePriorities.map((priority: any) => (
                       <SelectItem key={priority.id} value={priority.id} className="text-[14px] py-3">
-                        <div className="flex items-center justify-between w-full">
-                          <div className="flex items-center gap-3">
-                            <div className={cn("w-3 h-3 rounded-full", priority.color)} />
-                            <span style={{ color: priority.color.replace('bg-', '').replace('-500', '') }}>{priority.name}</span>
-                          </div>
-                          {safeTask.priorityId === priority.id && <Check className="w-5 h-5 ml-4" />}
+                        <div className="flex items-center gap-3">
+                          <div className={cn("w-3 h-3 rounded-full", priority.color)} />
+                          <span className="text-foreground font-medium">{priority.name}</span>
                         </div>
                       </SelectItem>
                     ))}
