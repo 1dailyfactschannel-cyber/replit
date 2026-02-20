@@ -178,6 +178,7 @@ export const tasks = pgTable("tasks", {
   parentId: uuid("parent_id").references((): any => tasks.id),
   tags: jsonb("tags").default(sql`'[]'::jsonb`), // This will be replaced with task_labels junction table
   attachments: jsonb("attachments").default(sql`'[]'::jsonb`),
+  archived: boolean("archived").default(false),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => ({

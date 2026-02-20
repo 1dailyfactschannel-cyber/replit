@@ -292,7 +292,8 @@ export async function registerRoutes(
   app.get("/api/projects", async (req, res) => {
     try {
       const workspaceId = req.query.workspaceId as string | undefined;
-      const projectsWithStats = await storage.getProjectsWithStats(workspaceId);
+      const status = req.query.status as string | undefined;
+      const projectsWithStats = await storage.getProjectsWithStats(workspaceId, status);
       res.json(projectsWithStats);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch projects" });
@@ -484,7 +485,7 @@ export async function registerRoutes(
         'title', 'description', 'status', 'priority', 'priorityId', 'type', 
         'storyPoints', 'startDate', 'dueDate', 'completedAt', 
         'order', 'columnId', 'boardId', 'assigneeId', 'reporterId',
-        'parentId', 'tags', 'attachments', 'number'
+        'parentId', 'tags', 'attachments', 'number', 'archived'
       ];
       
       Object.keys(updateData).forEach(key => {
@@ -682,8 +683,17 @@ export async function registerRoutes(
   app.get("/api/tasks/all", async (req, res) => {
     if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
     try {
-      const allTasks = await storage.db.select().from(schema.tasks);
-      res.json(allTasks);
+      // Get only tasks that belong to existing boards with existing projects
+      const allTasks = await storage.db
+        .select({ 
+          task: schema.tasks 
+        })
+        .from(schema.tasks)
+        .innerJoin(schema.boards, eq(schema.tasks.boardId, schema.boards.id))
+        .innerJoin(schema.projects, eq(schema.boards.projectId, schema.projects.id))
+        .where(eq(schema.projects.status, "active"));
+      
+      res.json(allTasks.map(t => t.task));
     } catch (error) {
       console.error("Error fetching all tasks:", error);
       res.status(500).json({ message: "Failed to fetch tasks" });

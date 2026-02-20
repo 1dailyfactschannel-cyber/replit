@@ -58,6 +58,8 @@ import {
   SignalMedium,
   SignalHigh,
   Save,
+  Archive,
+  RotateCcw,
 } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { ru } from "date-fns/locale";
@@ -1253,6 +1255,33 @@ export function TaskDetailsModal({
               title="Копировать ссылку"
             >
               <LinkIcon className="w-4 h-4" />
+            </Button>
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              className={cn(
+                "h-8 w-8",
+                effectiveTask?.archived 
+                  ? "text-amber-500 hover:text-amber-600 hover:bg-amber-50" 
+                  : "text-muted-foreground hover:text-amber-500 hover:bg-amber-50"
+              )}
+              onClick={() => {
+                const newArchived = !effectiveTask?.archived;
+                handleUpdate({ archived: newArchived });
+                sonnerToast.success(newArchived ? "Задача архивирована" : "Задача восстановлена");
+              }}
+              title={effectiveTask?.archived ? "Восстановить" : "В архив"}
+            >
+              {effectiveTask?.archived ? <RotateCcw className="w-4 h-4" /> : <Archive className="w-4 h-4" />}
+            </Button>
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              className="h-8 w-8 text-muted-foreground hover:text-foreground"
+              onClick={() => onOpenChange(false)}
+              title="Закрыть"
+            >
+              <X className="w-4 h-4" />
             </Button>
           </div>
         </div>

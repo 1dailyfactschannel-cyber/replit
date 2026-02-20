@@ -1031,6 +1031,66 @@ function ProjectsManagement() {
         </Card>
       </div>
 
+      {/* Workspaces Section */}
+      <section className="space-y-4">
+        <div className="flex items-center justify-between px-1">
+          <div className="flex flex-col gap-1">
+            <h4 className="text-xs font-bold uppercase tracking-wider text-foreground flex items-center gap-2">
+              <Folder className="w-3.5 h-3.5" />
+              Пространства
+            </h4>
+            <p className="text-[11px] text-muted-foreground">Создание проектов в пространствах</p>
+          </div>
+        </div>
+        
+        <Card className="border-border/50 shadow-sm overflow-hidden bg-card/50">
+          <CardContent className="p-4">
+            <div className="space-y-3">
+              {workspaces.length === 0 ? (
+                <div className="text-center py-6 text-sm text-muted-foreground">
+                  Пространств пока нет. Создайте пространство на странице проектов.
+                </div>
+              ) : (
+                workspaces.map((workspace: any) => {
+                  const projectCount = projects.filter((p: any) => p.workspaceId === workspace.id).length;
+                  return (
+                    <div 
+                      key={workspace.id}
+                      className="flex items-center justify-between p-3 rounded-lg border border-border/50 hover:bg-muted/30 transition-colors"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div 
+                          className="w-3 h-3 rounded-full" 
+                          style={{ backgroundColor: workspace.color || '#3b82f6' }}
+                        />
+                        <div className="flex flex-col">
+                          <span className="text-sm font-medium">{workspace.name}</span>
+                          <span className="text-[10px] text-muted-foreground">
+                            {projectCount} {projectCount === 1 ? 'проект' : projectCount >= 2 && projectCount <= 4 ? 'проекта' : 'проектов'}
+                          </span>
+                        </div>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 text-xs"
+                        onClick={() => {
+                          setSelectedWorkspaceId(workspace.id);
+                          setIsCreateProjectOpen(true);
+                        }}
+                      >
+                        <Plus className="w-3 h-3 mr-1" />
+                        Проект
+                      </Button>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      </section>
+
       {/* Projects Section */}
       <section className="space-y-4">
         <div className="flex items-center justify-between px-1">
