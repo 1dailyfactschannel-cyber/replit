@@ -785,6 +785,58 @@ export async function registerRoutes(
     }
   });
 
+  // Get tasks assigned to current user
+  app.get("/api/tasks/my-tasks", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+    try {
+      const userId = req.user.id;
+      
+      // Get tasks assigned to the user
+      const tasks = await storage.db
+        .select({ 
+          task: schema.tasks,
+          board: schema.boards,
+          project: schema.projects
+        })
+        .from(schema.tasks)
+        .innerJoin(schema.boards, eq(schema.tasks.boardId, schema.boards.id))
+        .innerJoin(schema.projects, eq(schema.boards.projectId, schema.projects.id))
+        .where(
+          and(
+            eq(schema.tasks.assigneeId, userId),
+            eq(schema.projects.status, "active")
+          )
+        );
+      
+      // Enrich tasks with board and project info
+      const enrichedTasks = await Promise.all(tasks.map(async (t) => {
+        const [assignee, reporter] = await Promise.all([
+          t.task.assigneeId ? storage.getUser(t.task.assigneeId) : null,
+          t.task.reporterId ? storage.getUser(t.task.reporterId) : null
+        ]);
+
+        const formatName = (user: any) => {
+          if (!user) return null;
+          return `${user.firstName || ""} ${user.lastName || ""}`.trim() || user.username || "Пользователь";
+        };
+
+        return {
+          ...t.task,
+          board: t.board,
+          project: t.project,
+          assignee: assignee ? { name: formatName(assignee), avatar: assignee.avatar } : null,
+          creator: reporter ? { name: formatName(reporter), avatar: reporter.avatar, date: t.task.createdAt } : null,
+        };
+      }));
+      
+      res.json(enrichedTasks);
+    } catch (error) {
+      console.error("Error fetching my tasks:", error);
+      res.status(500).json({ message: "Failed to fetch tasks" });
+    }
+  });
+
+
   app.get("/api/tasks/:id", async (req, res) => {
     try {
       const task = await storage.getTask(req.params.id);
