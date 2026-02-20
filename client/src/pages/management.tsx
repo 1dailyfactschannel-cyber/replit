@@ -39,7 +39,7 @@ import {
   Folder
 } from "lucide-react";
 import { RolesManagement } from "@/components/settings/RolesManagement";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { User } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
@@ -533,10 +533,35 @@ function IntegrationsManagement() {
 
 function TeamManagement() {
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   
   const { data: users = [], isLoading } = useQuery<User[]>({
     queryKey: ["/api/users"],
   });
+
+  const deleteUserMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await apiRequest("DELETE", `/api/users/${id}`);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+      toast({ title: "Пользователь удалён", description: "Пользователь успешно удалён из команды" });
+    },
+    onError: (error: any) => {
+      toast({ 
+        title: "Ошибка", 
+        description: error?.message || "Не удалось удалить пользователя", 
+        variant: "destructive" 
+      });
+    }
+  });
+
+  const handleDeleteMember = (memberId: string, memberName: string) => {
+    if (confirm(`Вы уверены, что хотите удалить пользователя "${memberName}" из команды?`)) {
+      deleteUserMutation.mutate(memberId);
+    }
+  };
 
   const members = users.map(user => ({
     id: user.id,
@@ -622,7 +647,10 @@ function TeamManagement() {
                             <Mail className="w-3.5 h-3.5" /> Написать письмо
                           </DropdownMenuItem>
                           <DropdownMenuSeparator />
-                          <DropdownMenuItem className="text-xs font-medium gap-2 text-rose-500 focus:text-rose-500 focus:bg-rose-50">
+                          <DropdownMenuItem 
+                            className="text-xs font-medium gap-2 text-rose-500 focus:text-rose-500 focus:bg-rose-50"
+                            onClick={() => handleDeleteMember(member.id, member.name)}
+                          >
                             <Trash2 className="w-3.5 h-3.5" /> Удалить из команды
                           </DropdownMenuItem>
                         </DropdownMenuContent>

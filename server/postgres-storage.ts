@@ -97,6 +97,15 @@ export class PostgresStorage {
     }
   }
 
+  async deleteUser(id: string): Promise<void> {
+    try {
+      await this.db.delete(schema.users).where(eq(schema.users.id, id));
+    } catch (error) {
+      console.error("Error deleting user:", error);
+      throw error;
+    }
+  }
+
   async getAllUsers(): Promise<User[]> {
     try {
       return await this.db.select().from(schema.users);

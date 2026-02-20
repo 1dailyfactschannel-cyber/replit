@@ -166,11 +166,41 @@ export async function registerRoutes(
   });
 
   app.put("/api/users/:id", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
     try {
       const user = await storage.updateUser(req.params.id, req.body);
+      // Invalidate cache
+      await delCache("users:all");
       res.json(user);
     } catch (error) {
       res.status(500).json({ message: "Failed to update user" });
+    }
+  });
+
+  app.delete("/api/users/:id", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+    try {
+      // Check if user exists
+      const user = await storage.getUser(req.params.id);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      
+      // Don't allow self-deletion
+      if (req.user.id === req.params.id) {
+        return res.status(400).json({ message: "Cannot delete yourself" });
+      }
+      
+      // Delete user - this will cascade to related records
+      await storage.deleteUser(req.params.id);
+      
+      // Invalidate cache
+      await delCache("users:all");
+      
+      res.json({ message: "User deleted successfully" });
+    } catch (error) {
+      console.error("Error deleting user:", error);
+      res.status(500).json({ message: "Failed to delete user" });
     }
   });
 
