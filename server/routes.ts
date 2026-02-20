@@ -792,7 +792,7 @@ export async function registerRoutes(
       const userId = req.user.id;
       console.log("[my-tasks] Fetching tasks for user:", userId, "username:", req.user.username);
       
-      // Get tasks assigned to the user
+      // Get tasks assigned to the user - include all projects (not just active)
       const tasks = await storage.db
         .select({ 
           task: schema.tasks,
@@ -805,22 +805,14 @@ export async function registerRoutes(
         .where(
           and(
             eq(schema.tasks.assigneeId, userId),
-            eq(schema.projects.status, "active"),
             eq(schema.tasks.archived, false)
           )
         );
       
-      console.log("[my-tasks] Found tasks:", tasks.length);
+      console.log("[my-tasks] Found tasks (all projects):", tasks.length);
       if (tasks.length > 0) {
-        console.log("[my-tasks] Sample task assigneeId:", tasks[0].task.assigneeId);
+        console.log("[my-tasks] Sample task assigneeId:", tasks[0].task.assigneeId, "project status:", tasks[0].project.status);
       }
-      
-      // Also check if there are ANY tasks with this assigneeId in the database
-      const allTasksWithAssignee = await storage.db
-        .select({ id: schema.tasks.id, title: schema.tasks.title, assigneeId: schema.tasks.assigneeId })
-        .from(schema.tasks)
-        .where(eq(schema.tasks.assigneeId, userId));
-      console.log("[my-tasks] Total tasks with this assigneeId in DB:", allTasksWithAssignee.length);
       
       // Enrich tasks with board and project info
       const enrichedTasks = await Promise.all(tasks.map(async (t) => {
