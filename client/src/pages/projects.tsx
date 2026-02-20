@@ -3,6 +3,7 @@ import React, { useState, useMemo, useEffect, useCallback } from "react";
 import { cn } from "@/lib/utils";
 import { 
   ChevronRight, 
+  ChevronDown,
   MoreVertical,
   Search,
   Hash,
@@ -14,7 +15,10 @@ import {
   Pencil,
   Loader2,
   Plus,
-  LayoutGrid
+  LayoutGrid,
+  Columns,
+  Folder,
+  Check
 } from "lucide-react";
 import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd";
 import { Button } from "@/components/ui/button";
@@ -38,7 +42,8 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuTrigger
+  DropdownMenuTrigger,
+  DropdownMenuSeparator
 } from "@/components/ui/dropdown-menu";
 import {
   AlertDialog,
@@ -465,7 +470,6 @@ interface ProjectItemProps {
   isCollapsed: boolean;
   onSelect: (projectId: string) => void;
   onToggleCollapse: (projectId: string, e: React.MouseEvent) => void;
-  onEdit: (project: any, e: React.MouseEvent) => void;
 }
 
 const ProjectItem = React.memo(({ 
@@ -473,8 +477,7 @@ const ProjectItem = React.memo(({
   isActive, 
   isCollapsed, 
   onSelect, 
-  onToggleCollapse, 
-  onEdit 
+  onToggleCollapse 
 }: ProjectItemProps) => {
   return (
     <div className="space-y-1">
@@ -522,17 +525,6 @@ const ProjectItem = React.memo(({
             </div>
           </div>
         </div>
-
-        <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1 opacity-0 group-hover/project:opacity-100 transition-opacity">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-6 w-6 text-foreground hover:text-foreground"
-            onClick={(e) => onEdit(project, e)}
-          >
-            <Pencil className="w-3 h-3" />
-          </Button>
-        </div>
       </div>
     </div>
   );
@@ -555,8 +547,12 @@ export default function Projects() {
   const [modalOpen, setModalOpen] = useState(false);
   const [isCreateProjectOpen, setIsCreateProjectOpen] = useState(false);
   const [isCreateBoardOpen, setIsCreateBoardOpen] = useState(false);
+  const [isCreateWorkspaceOpen, setIsCreateWorkspaceOpen] = useState(false);
+  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(null);
+  const [isWorkspaceDropdownOpen, setIsWorkspaceDropdownOpen] = useState(false);
   const [newProject, setNewProject] = useState({ name: "", color: "bg-blue-500", priority: "Средний" });
   const [newBoardName, setNewBoardName] = useState("");
+  const [newWorkspaceName, setNewWorkspaceName] = useState("");
   const [editingColumn, setEditingColumn] = useState<{ originalName: string, currentName: string } | null>(null);
   const [collapsedProjects, setCollapsedProjects] = useState<Record<string, boolean>>({});
   const [showAllTasks, setShowAllTasks] = useState(false);
@@ -580,10 +576,22 @@ export default function Projects() {
 
   // Queries with optimized caching
   const { data: projects = [], isLoading: isLoadingProjects } = useQuery<any[]>({
-    queryKey: ["/api/projects"],
+    queryKey: ["/api/projects", selectedWorkspaceId],
+    queryFn: async () => {
+      const url = selectedWorkspaceId 
+        ? `/api/projects?workspaceId=${selectedWorkspaceId}` 
+        : "/api/projects";
+      const res = await apiRequest("GET", url);
+      return res.json();
+    },
     staleTime: 1000 * 60 * 10, // 10 minutes - projects change rarely
     gcTime: 1000 * 60 * 30, // Keep in cache for 30 minutes
     placeholderData: [], // Use empty array while loading to prevent flicker
+  });
+
+  const { data: workspaces = [] } = useQuery<any[]>({
+    queryKey: ["/api/workspaces"],
+    staleTime: 1000 * 60 * 10,
   });
 
   const { data: availableLabels = [] } = useQuery<any[]>({
@@ -655,12 +663,60 @@ export default function Projects() {
       const res = await apiRequest("POST", "/api/projects", project);
       return res.json();
     },
+    onMutate: async (newProjectData) => {
+      await queryClient.cancelQueries({ queryKey: ["/api/projects", selectedWorkspaceId] });
+      const previousProjects = queryClient.getQueryData(["/api/projects", selectedWorkspaceId]);
+      
+      const tempProject = {
+        id: `temp-${Date.now()}`,
+        name: newProjectData.name,
+        color: newProjectData.color || "#3b82f6",
+        priority: newProjectData.priority?.toLowerCase() || "medium",
+        status: "active",
+        boardCount: 0,
+        taskCount: 0,
+        progress: 100,
+        createdAt: new Date().toISOString(),
+        ownerId: "current-user",
+        workspaceId: selectedWorkspaceId,
+      };
+      
+      queryClient.setQueryData(["/api/projects", selectedWorkspaceId], (old: any[] = []) => [...(old || []), tempProject]);
+      
+      return { previousProjects };
+    },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+      queryClient.setQueryData(["/api/projects", selectedWorkspaceId], (old: any[] = []) => 
+        (old || []).map((p: any) => p.id?.startsWith("temp-") ? data : p)
+      );
       setIsCreateProjectOpen(false);
       setNewProject({ name: "", color: "bg-blue-500", priority: "Средний" });
       setActiveProjectId(data.id);
       toast.success("Проект успешно создан");
+    },
+    onError: (error: any, variables: any, context: any) => {
+      if (context?.previousProjects) {
+        queryClient.setQueryData(["/api/projects", selectedWorkspaceId], context.previousProjects);
+      }
+      toast.error("Не удалось создать проект");
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", selectedWorkspaceId] });
+    }
+  });
+
+  const createWorkspaceMutation = useMutation({
+    mutationFn: async (workspace: { name: string; description?: string; color?: string }) => {
+      const res = await apiRequest("POST", "/api/workspaces", workspace);
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/workspaces"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+      setIsCreateWorkspaceOpen(false);
+      setNewWorkspaceName("");
+      setSelectedWorkspaceId(data.id);
+      toast.success("Пространство создано");
     }
   });
 
@@ -671,7 +727,6 @@ export default function Projects() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
-      setEditingProject(null);
       toast.success("Проект успешно обновлен");
     }
   });
@@ -753,11 +808,15 @@ export default function Projects() {
     mutationFn: async ({ id, name }: { id: string; name: string }) => {
       await apiRequest("PATCH", `/api/board-columns/${id}`, { name });
     },
-    onSuccess: () => {
-      // Force refetch to update UI immediately
-      queryClient.invalidateQueries({ 
-        queryKey: ["/api/boards", activeBoard?.id, "full"],
-        refetchType: 'active'
+    onSuccess: (_, { id, name }) => {
+      queryClient.setQueryData(["/api/boards", activeBoard?.id, "full"], (oldData: any) => {
+        if (!oldData) return oldData;
+        return {
+          ...oldData,
+          columns: oldData.columns.map((col: any) => 
+            col.id === id ? { ...col, name } : col
+          )
+        };
       });
       toast.success("Колонка обновлена");
     }
@@ -767,8 +826,19 @@ export default function Projects() {
     mutationFn: async ({ columnId, targetColumnId }: { columnId: string; targetColumnId: string }) => {
       await apiRequest("DELETE", `/api/board-columns/${columnId}?targetColumnId=${targetColumnId}`);
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/boards", activeBoard?.id, "full"] });
+    onSuccess: (_, { columnId, targetColumnId }) => {
+      queryClient.setQueryData(["/api/boards", activeBoard?.id, "full"], (oldData: any) => {
+        if (!oldData) return oldData;
+        return {
+          ...oldData,
+          columns: oldData.columns.filter((col: any) => col.id !== columnId),
+          tasks: targetColumnId 
+            ? oldData.tasks.map((task: any) => 
+                task.columnId === columnId ? { ...task, columnId: targetColumnId } : task
+              )
+            : oldData.tasks
+        };
+      });
       toast.success("Колонка удалена");
     }
   });
@@ -791,9 +861,12 @@ export default function Projects() {
     },
     onSuccess: (data) => {
       console.log("[Frontend] Column created successfully:", data);
-      // Force immediate refetch
-      queryClient.refetchQueries({
-        queryKey: ["/api/boards", activeBoard?.id, "full"]
+      queryClient.setQueryData(["/api/boards", activeBoard?.id, "full"], (oldData: any) => {
+        if (!oldData) return oldData;
+        return {
+          ...oldData,
+          columns: [...oldData.columns, data]
+        };
       });
       toast.success("Колонка создана");
       setNewColumnName("");
@@ -821,23 +894,12 @@ export default function Projects() {
     });
   };
 
-  const [editingProject, setEditingProject] = useState<{ id: string, name: string, priority: string, color: string } | null>(null);
-
-  const handleUpdateProject = () => {
-    if (!editingProject || !editingProject.name) return;
-    updateProjectMutation.mutate({ 
-      id: editingProject.id, 
-      data: { 
-        name: editingProject.name, 
-        priority: editingProject.priority, 
-        color: editingProject.color 
-      } 
-    });
-  };
-
   const handleCreateProject = () => {
     if (!newProject.name) return;
-    createProjectMutation.mutate(newProject);
+    createProjectMutation.mutate({
+      ...newProject,
+      workspaceId: selectedWorkspaceId
+    });
   };
 
   const [editingBoard, setEditingBoard] = useState<{ id: string, currentName: string } | null>(null);
@@ -888,12 +950,21 @@ export default function Projects() {
       return data;
     },
     enabled: !!activeBoard?.id,
-    staleTime: 1000 * 60 * 5, // 5 минут кэша
-    gcTime: 1000 * 60 * 15, // Keep data for 15 minutes
-    placeholderData: (previousData) => previousData, // Use previous data while loading new
+    refetchOnWindowFocus: true
   });
 
-  const columns = showAllTasks ? allColumns : (boardData?.columns || []);
+  // Deduplicate columns by name for "All Tasks" view
+  const uniqueColumns = useMemo(() => {
+    if (!showAllTasks) return [];
+    const seen = new Set<string>();
+    return allColumns.filter((col: any) => {
+      if (seen.has(col.name)) return false;
+      seen.add(col.name);
+      return true;
+    });
+  }, [allColumns, showAllTasks]);
+
+  const columns = showAllTasks ? uniqueColumns : (boardData?.columns || []);
   const tasks = showAllTasks ? allTasks : (boardData?.tasks || []);
   const isLoadingColumns = showAllTasks ? false : isLoadingBoard;
   const isLoadingTasks = showAllTasks ? false : isLoadingBoard;
@@ -1099,16 +1170,35 @@ export default function Projects() {
     });
   }, [tasks, taskFilters]);
 
+  // Create a map of column name to column ID for "All Tasks" view
+  const columnNameToId = useMemo(() => {
+    if (!showAllTasks) return {};
+    const map: Record<string, string> = {};
+    uniqueColumns.forEach(col => {
+      map[col.name] = col.id;
+    });
+    return map;
+  }, [uniqueColumns, showAllTasks]);
+
   const kanbanData = useMemo(() => {
     if (!columns.length) return {};
     
     const data: Record<string, any[]> = {};
     columns.forEach(col => {
-      const columnTasks = filteredTasks.filter(t => t.columnId === col.id);
-      data[col.id] = columnTasks.sort((a, b) => (a.order || 0) - (b.order || 0));
+      if (showAllTasks) {
+        // For "All Tasks" view, group by column name instead of columnId
+        const columnTasks = filteredTasks.filter(t => {
+          const taskColumnName = allColumns.find((c: any) => c.id === t.columnId)?.name;
+          return taskColumnName === col.name;
+        });
+        data[col.id] = columnTasks.sort((a, b) => (a.order || 0) - (b.order || 0));
+      } else {
+        const columnTasks = filteredTasks.filter(t => t.columnId === col.id);
+        data[col.id] = columnTasks.sort((a, b) => (a.order || 0) - (b.order || 0));
+      }
     });
     return data;
-  }, [columns, filteredTasks]);
+  }, [columns, filteredTasks, showAllTasks, allColumns]);
 
   // Update active filters count
   useEffect(() => {
@@ -1163,15 +1253,28 @@ export default function Projects() {
   }, [newTask, activeBoard, createTaskMutation]);
 
   const onTaskUpdate = useCallback((updatedTask: any) => {
-    // Задача уже обновлена на сервере через TaskDetailsModal.
+    console.log("[Frontend] onTaskUpdate called with:", updatedTask);
+    
     // Обновляем локальный кэш, чтобы UI сразу отобразил изменения.
-    queryClient.setQueryData(["/api/boards", activeBoard?.id, "full"], (old: any) => {
-      if (!old || !old.tasks) return old;
-      return {
-        ...old,
-        tasks: old.tasks.map((t: any) => t.id === updatedTask.id ? updatedTask : t)
-      };
+    if (activeBoard?.id) {
+      queryClient.setQueryData(["/api/boards", activeBoard.id, "full"], (old: any) => {
+        if (!old || !old.tasks) return old;
+        console.log("[Frontend] Updating board cache, old tasks count:", old.tasks.length);
+        const newTasks = old.tasks.map((t: any) => t.id === updatedTask.id ? { ...t, ...updatedTask } : t);
+        console.log("[Frontend] Updated tasks count:", newTasks.length);
+        return {
+          ...old,
+          tasks: newTasks
+        };
+      });
+    }
+    
+    // Also update allTasks cache if in "All Tasks" view
+    queryClient.setQueryData(["/api/tasks/all"], (old: any) => {
+      if (!old || !Array.isArray(old)) return old;
+      return old.map((t: any) => t.id === updatedTask.id ? { ...t, ...updatedTask } : t);
     });
+    
     // Обновляем selectedTask, чтобы модальное окно отображало актуальные данные
     setSelectedTask((prev: any) => {
       if (prev && prev.id === updatedTask.id) {
@@ -1229,15 +1332,57 @@ export default function Projects() {
       <div className="flex h-[calc(100vh-4rem)] overflow-hidden">
         {/* Secondary Projects Sidebar */}
         <div className="w-72 bg-card border-r border-border flex flex-col">
-          <div className="p-4 border-b border-border flex items-center justify-between">
-            <h2 className="font-semibold text-lg">Проекты</h2>
+          <div className="p-4 border-b border-border flex items-center justify-between relative">
+            <DropdownMenu open={isWorkspaceDropdownOpen} onOpenChange={setIsWorkspaceDropdownOpen}>
+              <DropdownMenuTrigger asChild>
+                <button 
+                  type="button"
+                  className="flex items-center gap-2 hover:bg-secondary rounded-md px-1 -ml-1 transition-colors"
+                >
+                  <h2 className="font-semibold text-lg text-foreground">
+                    {selectedWorkspaceId 
+                      ? workspaces.find((w: any) => w.id === selectedWorkspaceId)?.name || "Проекты"
+                      : "Проекты"
+                    }
+                  </h2>
+                  <ChevronDown className="w-4 h-4 text-muted-foreground" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-56">
+                <DropdownMenuItem 
+                  onClick={() => {
+                    setSelectedWorkspaceId(null);
+                    setIsWorkspaceDropdownOpen(false);
+                  }}
+                  className={cn(!selectedWorkspaceId && "bg-accent")}
+                >
+                  <Folder className="w-4 h-4 mr-2" />
+                  Все проекты
+                  {selectedWorkspaceId === null && <Check className="w-4 h-4 ml-auto" />}
+                </DropdownMenuItem>
+                {workspaces.map((workspace: any) => (
+                  <DropdownMenuItem 
+                    key={workspace.id}
+                    onClick={() => {
+                      setSelectedWorkspaceId(workspace.id);
+                      setIsWorkspaceDropdownOpen(false);
+                    }}
+                    className={cn(selectedWorkspaceId === workspace.id && "bg-accent")}
+                  >
+                    <div className="w-3 h-3 rounded-full mr-2" style={{ backgroundColor: workspace.color || '#3b82f6' }} />
+                    {workspace.name}
+                    {selectedWorkspaceId === workspace.id && <Check className="w-4 h-4 ml-auto" />}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
 
           <div className="p-3 space-y-2">
             <Button
-              variant={showAllTasks ? "default" : "outline"}
+              variant={showAllTasks ? "default" : "secondary"}
               size="sm"
-              className="w-full justify-start gap-2"
+              className="w-full justify-start gap-2 font-medium"
               onClick={() => {
                 if (!showAllTasks) {
                   setActiveProjectId(null);
@@ -1268,7 +1413,7 @@ export default function Projects() {
                 <div className="p-4 text-center text-xs text-foreground">
                   {debouncedProjectSearch ? "Проекты не найдены" : "Нет проектов"}
                 </div>
-              ) : (
+                ) : (
                 filteredProjects.map((project: any) => (
                 <div key={project.id} className="space-y-1">
                   <ProjectItem
@@ -1281,15 +1426,6 @@ export default function Projects() {
                       setActiveBoardId(null);
                     }}
                     onToggleCollapse={toggleProjectCollapse}
-                    onEdit={(proj, e) => {
-                      e.stopPropagation();
-                      setEditingProject({ 
-                        id: proj.id, 
-                        name: proj.name, 
-                        priority: proj.priority || "Средний", 
-                        color: proj.color || "bg-blue-500"
-                      });
-                    }}
                   />
                   
                   {activeProject?.id === project.id && !collapsedProjects[project.id] && (
@@ -1651,17 +1787,29 @@ export default function Projects() {
                 </DialogContent>
               </Dialog>
               <Separator orientation="vertical" className="h-6 mx-2" />
-               <Dialog open={isCreateTaskOpen} onOpenChange={setIsCreateTaskOpen}>
-                 <Button 
-                   className="gap-2 shadow-lg shadow-primary/20" 
-                   size="sm"
-                   disabled={!activeBoard}
-                   onClick={() => handleCreateTask()}
-                 >
-                   <Plus className="w-4 h-4" />
-                   <span className="hidden sm:inline">Добавить задачу</span>
-                 </Button>
-                 <DialogContent>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button 
+                    className="shadow-lg shadow-primary/20" 
+                    size="icon"
+                    disabled={!activeBoard}
+                  >
+                    <Plus className="w-5 h-5" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-48">
+                  <DropdownMenuItem onClick={() => handleCreateTask()}>
+                    <Plus className="w-4 h-4 mr-2" />
+                    Создать задачу
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setIsCreateColumnOpen(true)}>
+                    <Columns className="w-4 h-4 mr-2" />
+                    Создать колонку
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+              <Dialog open={isCreateTaskOpen} onOpenChange={setIsCreateTaskOpen}>
+                  <DialogContent>
                     <DialogHeader>
                       <DialogTitle>Создать новую задачу</DialogTitle>
                       <DialogDescription>Введите название задачи для добавления на доску.</DialogDescription>
@@ -1689,8 +1837,39 @@ export default function Projects() {
                        Создать задачу
                      </Button>
                    </DialogFooter>
-                 </DialogContent>
-               </Dialog>
+                  </DialogContent>
+                </Dialog>
+                <Dialog open={isCreateWorkspaceOpen} onOpenChange={setIsCreateWorkspaceOpen}>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Создать пространство</DialogTitle>
+                      <DialogDescription>Пространство поможет группировать проекты.</DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-4 py-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="workspace-name">Название</Label>
+                        <Input 
+                          id="workspace-name" 
+                          placeholder="Например: Рабочие проекты" 
+                          value={newWorkspaceName}
+                          onChange={(e) => setNewWorkspaceName(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' && newWorkspaceName.trim()) {
+                              createWorkspaceMutation.mutate({ name: newWorkspaceName.trim() });
+                            }
+                          }}
+                        />
+                      </div>
+                    </div>
+                    <DialogFooter>
+                      <Button variant="outline" onClick={() => setIsCreateWorkspaceOpen(false)}>Отмена</Button>
+                      <Button onClick={() => createWorkspaceMutation.mutate({ name: newWorkspaceName.trim() })} disabled={createWorkspaceMutation.isPending || !newWorkspaceName.trim()}>
+                        {createWorkspaceMutation.isPending && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
+                        Создать
+                      </Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
             </div>
           </div>
 
@@ -1799,66 +1978,6 @@ export default function Projects() {
           onUpdate={onTaskUpdate}
         />
       )}
-
-      {/* Project Edit Dialog */}
-      <Dialog open={!!editingProject} onOpenChange={(open) => !open && setEditingProject(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Редактировать проект</DialogTitle>
-            <DialogDescription>Измените параметры проекта.</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="edit-project-name">Название проекта</Label>
-              <Input 
-                id="edit-project-name" 
-                value={editingProject?.name || ""} 
-                onChange={(e) => setEditingProject(prev => prev ? { ...prev, name: e.target.value } : null)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Приоритет</Label>
-              <Select 
-                value={editingProject?.priority || "Средний"} 
-                onValueChange={(val) => setEditingProject(prev => prev ? { ...prev, priority: val } : null)}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Выберите приоритет" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Низкий">Низкий</SelectItem>
-                  <SelectItem value="Средний">Средний</SelectItem>
-                  <SelectItem value="Высокий">Высокий</SelectItem>
-                  <SelectItem value="Критический">Критический</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>Цвет</Label>
-              <div className="flex gap-2">
-                {["bg-blue-500", "bg-rose-500", "bg-amber-500", "bg-emerald-500", "bg-indigo-500", "bg-slate-500"].map((c) => (
-                  <button
-                    key={c}
-                    onClick={() => setEditingProject(prev => prev ? { ...prev, color: c } : null)}
-                    className={cn(
-                      "w-8 h-8 rounded-full border-2 transition-all",
-                      c,
-                      editingProject?.color === c ? "border-primary scale-110 shadow-lg" : "border-transparent hover:scale-105"
-                    )}
-                  />
-                ))}
-              </div>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setEditingProject(null)}>Отмена</Button>
-            <Button onClick={handleUpdateProject} disabled={updateProjectMutation.isPending || !editingProject?.name}>
-              {updateProjectMutation.isPending && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
-              Сохранить изменения
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </Layout>
   );
 }

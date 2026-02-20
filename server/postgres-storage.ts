@@ -675,10 +675,10 @@ export class PostgresStorage {
     }
   }
 
-  async getProjectsWithStats(): Promise<any[]> {
+  async getProjectsWithStats(workspaceId?: string): Promise<any[]> {
     const startTime = Date.now();
     try {
-      const cacheKey = "projects:stats:all";
+      const cacheKey = workspaceId ? `projects:stats:workspace:${workspaceId}` : "projects:stats:all";
       const cached = await getCache<any[]>(cacheKey);
       if (cached) {
         console.log(`[DB] getProjectsWithStats: cached (${cached.length} projects)`);
@@ -686,14 +686,28 @@ export class PostgresStorage {
       }
 
       // Optimized: Get projects with board counts in a single efficient query
-      const projectsWithBoards = await this.db
-        .select({
-          project: schema.projects,
-          boardCount: sql<number>`count(distinct ${schema.boards.id})`,
-        })
-        .from(schema.projects)
-        .leftJoin(schema.boards, eq(schema.projects.id, schema.boards.projectId))
-        .groupBy(schema.projects.id);
+      let projectsWithBoards: any[];
+      
+      if (workspaceId) {
+        projectsWithBoards = await this.db
+          .select({
+            project: schema.projects,
+            boardCount: sql<number>`count(distinct ${schema.boards.id})`,
+          })
+          .from(schema.projects)
+          .leftJoin(schema.boards, eq(schema.projects.id, schema.boards.projectId))
+          .where(eq(schema.projects.workspaceId, workspaceId))
+          .groupBy(schema.projects.id);
+      } else {
+        projectsWithBoards = await this.db
+          .select({
+            project: schema.projects,
+            boardCount: sql<number>`count(distinct ${schema.boards.id})`,
+          })
+          .from(schema.projects)
+          .leftJoin(schema.boards, eq(schema.projects.id, schema.boards.projectId))
+          .groupBy(schema.projects.id);
+      }
 
       // Get task stats separately to avoid complex joins
       console.log('projectsWithBoards:', projectsWithBoards);

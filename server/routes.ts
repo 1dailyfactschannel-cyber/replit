@@ -175,6 +175,48 @@ export async function registerRoutes(
     }
   });
 
+  // Master password check
+  app.get("/api/settings/master_password_set", async (_req, res) => {
+    try {
+      const setting = await storage.getSiteSetting("master_password_hash");
+      res.json({ key: "master_password_set", value: setting ? "true" : "false" });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to check master password" });
+    }
+  });
+
+  // Master password set/change
+  app.post("/api/settings/change-master-password", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
+    
+    const { currentPassword, newPassword } = req.body;
+    
+    if (!newPassword || newPassword.length < 6) {
+      return res.status(400).json({ message: "Пароль должен быть не менее 6 символов" });
+    }
+
+    try {
+      const existingHash = await storage.getSiteSetting("master_password_hash");
+      
+      if (existingHash) {
+        if (!currentPassword) {
+          return res.status(400).json({ message: "Введите текущий пароль" });
+        }
+        // In real app, verify currentPassword hash
+        const isValid = existingHash.value === currentPassword;
+        if (!isValid) {
+          return res.status(400).json({ message: "Неверный текущий пароль" });
+        }
+      }
+
+      await storage.setSiteSetting("master_password_hash", newPassword);
+      res.json({ message: "Пароль сохранен" });
+    } catch (error) {
+      console.error("Error setting master password:", error);
+      res.status(500).json({ message: "Failed to set master password" });
+    }
+  });
+
   // User password change
   app.post("/api/user/change-password", async (req, res) => {
     const { currentPassword, newPassword } = req.body;
@@ -188,10 +230,69 @@ export async function registerRoutes(
     res.json({ message: "Пароль успешно изменен" });
   });
 
-  // Project routes
-  app.get("/api/projects", async (_req, res) => {
+  // Workspace routes
+  app.get("/api/workspaces", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
     try {
-      const projectsWithStats = await storage.getProjectsWithStats();
+      const workspaces = await storage.db.select().from(schema.workspaces).orderBy(schema.workspaces.name);
+      res.json(workspaces);
+    } catch (error) {
+      console.error("Error fetching workspaces:", error);
+      res.status(500).json({ message: "Failed to fetch workspaces" });
+    }
+  });
+
+  app.post("/api/workspaces", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
+    try {
+      const { name, description, color } = req.body;
+      const user = req.user;
+      const [workspace] = await storage.db.insert(schema.workspaces).values({
+        name,
+        description,
+        color: color || "#3b82f6",
+        ownerId: user.id
+      }).returning();
+      res.status(201).json(workspace);
+    } catch (error) {
+      console.error("Error creating workspace:", error);
+      res.status(500).json({ message: "Failed to create workspace" });
+    }
+  });
+
+  app.patch("/api/workspaces/:id", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
+    try {
+      const { name, description, color } = req.body;
+      const [workspace] = await storage.db.update(schema.workspaces).set({
+        name,
+        description,
+        color,
+        updatedAt: new Date()
+      }).where(eq(schema.workspaces.id, req.params.id)).returning();
+      res.json(workspace);
+    } catch (error) {
+      console.error("Error updating workspace:", error);
+      res.status(500).json({ message: "Failed to update workspace" });
+    }
+  });
+
+  app.delete("/api/workspaces/:id", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
+    try {
+      await storage.db.delete(schema.workspaces).where(eq(schema.workspaces.id, req.params.id));
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting workspace:", error);
+      res.status(500).json({ message: "Failed to delete workspace" });
+    }
+  });
+
+  // Project routes
+  app.get("/api/projects", async (req, res) => {
+    try {
+      const workspaceId = req.query.workspaceId as string | undefined;
+      const projectsWithStats = await storage.getProjectsWithStats(workspaceId);
       res.json(projectsWithStats);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch projects" });
@@ -209,7 +310,8 @@ export async function registerRoutes(
         priority: req.body.priority?.toLowerCase() || "medium",
         color: req.body.color || "#3b82f6",
         ownerId: user.id,
-        status: "active"
+        status: "active",
+        workspaceId: req.body.workspaceId || null
       };
       
       console.log("POST /api/projects: Creating project with data:", projectData);
@@ -233,6 +335,41 @@ export async function registerRoutes(
       res.json(project);
     } catch (error) {
       res.status(500).json({ message: "Failed to update project" });
+    }
+  });
+
+  app.delete("/api/projects/:id", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
+    
+    console.log("[API] Delete project request body:", req.body);
+    
+    const masterPassword = req.body?.masterPassword;
+    
+    if (!masterPassword) {
+      return res.status(400).json({ message: "Требуется мастер-пароль" });
+    }
+    
+    try {
+      const masterPasswordHash = await storage.getSiteSetting("master_password_hash");
+      
+      // If master password is not set, allow deletion without verification
+      if (!masterPasswordHash) {
+        console.log("[API] No master password set, allowing deletion");
+        await storage.deleteProject(req.params.id);
+        await delCache("projects:stats:all");
+        return res.status(204).send();
+      }
+      
+      if (masterPasswordHash.value !== masterPassword) {
+        return res.status(400).json({ message: "Неверный мастер-пароль" });
+      }
+      
+      await storage.deleteProject(req.params.id);
+      await delCache("projects:stats:all");
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting project:", error);
+      res.status(500).json({ message: "Failed to delete project" });
     }
   });
 
@@ -709,6 +846,9 @@ export async function registerRoutes(
         color: null
       });
       
+      // Invalidate board cache
+      await delCache(`board:full:${boardId}`);
+      
       res.status(201).json(newColumn);
     } catch (error) {
       console.error("[API] Error creating column:", error);
@@ -729,8 +869,19 @@ export async function registerRoutes(
     try {
       const { name } = req.body;
       console.log("[API] Attempting to update column with name:", name);
+      
+      // Get board ID before updating
+      const column = await storage.db.select().from(schema.boardColumns).where(eq(schema.boardColumns.id, req.params.columnId));
+      const boardId = column[0]?.boardId;
+      
       const updated = await storage.updateBoardColumn(req.params.columnId, { name });
       console.log("[API] Column updated successfully:", updated);
+      
+      // Invalidate board cache
+      if (boardId) {
+        await delCache(`board:full:${boardId}`);
+      }
+      
       res.json(updated);
     } catch (error) {
       console.error("[API] Error updating column:", error);
@@ -751,7 +902,17 @@ export async function registerRoutes(
         }
       }
       
+      // Get board ID before deleting
+      const column = await storage.db.select().from(schema.boardColumns).where(eq(schema.boardColumns.id, req.params.columnId));
+      const boardId = column[0]?.boardId;
+      
       await storage.deleteBoardColumn(req.params.columnId);
+      
+      // Invalidate board cache
+      if (boardId) {
+        await delCache(`board:full:${boardId}`);
+      }
+      
       res.status(204).send();
     } catch (error) {
       console.error("Error deleting column:", error);

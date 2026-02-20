@@ -530,6 +530,7 @@ export function TaskDetailsModal({
   const handleTaskNumberBlur = () => {
     const originalNumber = effectiveTask?.number || (effectiveTask?.id ? effectiveTask.id.toString().slice(-4) : '');
     if (taskNumber !== originalNumber && effectiveTask?.id) {
+      console.log("[TaskDetails] Updating task number from", originalNumber, "to", taskNumber);
       handleUpdate({ number: taskNumber });
     }
   };
@@ -651,6 +652,7 @@ export function TaskDetailsModal({
   });
 
   const handleUpdate = (updates: Partial<Task>) => {
+    console.log("[TaskDetails] handleUpdate called with updates:", updates);
     
     if (!task?.id) {
       sonnerToast.error("Ошибка: ID задачи не найден");
@@ -692,8 +694,9 @@ export function TaskDetailsModal({
     });
 
     // Optimistic parent update
-    if (onUpdate && task) {
-      onUpdate({ ...task, ...updates });
+    if (onUpdate && effectiveTask) {
+      console.log("[TaskDetails] Calling onUpdate with:", { ...effectiveTask, ...updates });
+      onUpdate({ ...effectiveTask, ...updates });
     }
     
     updateTaskMutation.mutate(updates);
@@ -1250,15 +1253,6 @@ export function TaskDetailsModal({
               title="Копировать ссылку"
             >
               <LinkIcon className="w-4 h-4" />
-            </Button>
-            <Button 
-              variant="ghost" 
-              size="icon" 
-              className="h-8 w-8 text-muted-foreground hover:text-foreground"
-              onClick={() => onOpenChange(false)}
-              title="Закрыть"
-            >
-              <X className="w-4 h-4" />
             </Button>
           </div>
         </div>

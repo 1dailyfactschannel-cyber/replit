@@ -35,7 +35,8 @@ import {
   Check,
   X,
   Palette,
-  Tags
+  Tags,
+  Folder
 } from "lucide-react";
 import { RolesManagement } from "@/components/settings/RolesManagement";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -81,6 +82,7 @@ export default function ManagementPage() {
   const sections = [
     { id: "team", label: "Команда", icon: Users, description: "Участники и приглашения" },
     { id: "projects", label: "Проекты", icon: LayoutGrid, description: "Настройка проектов и приоритетов" },
+    { id: "security", label: "Безопасность", icon: Shield, description: "Настройки безопасности аккаунта" },
     { id: "roles", label: "Роли", icon: Shield, description: "Права доступа и разрешения" },
     { id: "integrations", label: "Интеграции", icon: Puzzle, description: "Внешние сервисы и API" },
   ];
@@ -171,6 +173,8 @@ export default function ManagementPage() {
                 <IntegrationsManagement />
               ) : activeSection === "roles" ? (
                 <RolesManagement />
+              ) : activeSection === "security" ? (
+                <SecurityManagement />
               ) : activeSection === "team" ? (
                 <TeamManagement />
               ) : activeSection === "projects" ? (
@@ -183,6 +187,170 @@ export default function ManagementPage() {
         </main>
       </div>
     </Layout>
+  );
+}
+
+function SecurityManagement() {
+  const { toast } = useToast();
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [isChanging, setIsChanging] = useState(false);
+  const [isPasswordSet, setIsPasswordSet] = useState<boolean | null>(null);
+
+  const { data: hasMasterPassword } = useQuery<any>({
+    queryKey: ["/api/settings/master_password_set"],
+    staleTime: 1000 * 60 * 5,
+  });
+
+  useEffect(() => {
+    if (hasMasterPassword !== undefined) {
+      setIsPasswordSet(hasMasterPassword?.value === "true");
+    }
+  }, [hasMasterPassword]);
+
+  const changePasswordMutation = useMutation({
+    mutationFn: async () => {
+      if (newPassword !== confirmPassword) {
+        throw new Error("Пароли не совпадают");
+      }
+      if (newPassword.length < 6) {
+        throw new Error("Пароль должен быть не менее 6 символов");
+      }
+      await apiRequest("POST", "/api/settings/change-master-password", {
+        currentPassword: isPasswordSet ? currentPassword : null,
+        newPassword
+      });
+    },
+    onSuccess: () => {
+      toast({
+        title: "Пароль сохранен",
+        description: isPasswordSet ? "Мастер-пароль успешно изменен." : "Мастер-пароль установлен.",
+      });
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+      setIsChanging(false);
+      setIsPasswordSet(true);
+      queryClient.invalidateQueries({ queryKey: ["/api/settings/master_password_set"] });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Ошибка",
+        description: error.message || "Не удалось сохранить пароль.",
+        variant: "destructive",
+      });
+    }
+  });
+
+  const handleSubmit = () => {
+    changePasswordMutation.mutate();
+  };
+
+  return (
+    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
+      <Card className="border-border/50 shadow-sm overflow-hidden bg-card/50 max-w-xl">
+        <CardHeader className="pb-3">
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-lg bg-primary/10 text-primary">
+              <Lock className="w-5 h-5" />
+            </div>
+            <div>
+              <CardTitle className="text-base">Мастер пароль</CardTitle>
+              <CardDescription className="text-xs">
+                {isPasswordSet 
+                  ? "Защитите свои данные дополнительным паролем"
+                  : "Установите мастер-пароль для защиты данных"
+                }
+              </CardDescription>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {isPasswordSet === null ? (
+            <div className="flex items-center justify-center py-4">
+              <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+            </div>
+          ) : isChanging || !isPasswordSet ? (
+            <div className="space-y-3">
+              {isPasswordSet && (
+                <div className="space-y-2">
+                  <Label htmlFor="current-password" className="text-xs font-medium">Текущий пароль</Label>
+                  <Input 
+                    id="current-password" 
+                    type="password"
+                    placeholder="Введите текущий пароль" 
+                    value={currentPassword}
+                    onChange={(e) => setCurrentPassword(e.target.value)}
+                    className="bg-background text-foreground"
+                  />
+                </div>
+              )}
+              <div className="space-y-2">
+                <Label htmlFor="new-password" className="text-xs font-medium">Новый пароль</Label>
+                <Input 
+                  id="new-password" 
+                  type="password"
+                  placeholder="Введите новый пароль" 
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  className="bg-background text-foreground"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="confirm-password" className="text-xs font-medium">Подтвердите пароль</Label>
+                <Input 
+                  id="confirm-password" 
+                  type="password"
+                  placeholder="Повторите пароль" 
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  className="bg-background text-foreground"
+                />
+              </div>
+              <div className="flex gap-2 pt-2">
+                {isPasswordSet && (
+                  <Button 
+                    variant="outline" 
+                    onClick={() => {
+                      setIsChanging(false);
+                      setCurrentPassword("");
+                      setNewPassword("");
+                      setConfirmPassword("");
+                    }}
+                    className="flex-1"
+                  >
+                    Отмена
+                  </Button>
+                )}
+                <Button 
+                  onClick={handleSubmit}
+                  disabled={changePasswordMutation.isPending || !newPassword || !confirmPassword || (!isPasswordSet && (!newPassword || !confirmPassword))}
+                  className="flex-1"
+                >
+                  {changePasswordMutation.isPending && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
+                  {isPasswordSet ? "Изменить пароль" : "Установить пароль"}
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex items-center justify-between py-2">
+              <div className="flex items-center gap-2">
+                <Check className="w-4 h-4 text-emerald-500" />
+                <span className="text-sm text-muted-foreground">Мастер-пароль установлен</span>
+              </div>
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={() => setIsChanging(true)}
+              >
+                Изменить
+              </Button>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
   );
 }
 
@@ -653,7 +821,11 @@ function TelegramSettings() {
 function ProjectsManagement() {
   const { toast } = useToast();
   const [isCreateProjectOpen, setIsCreateProjectOpen] = useState(false);
+  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(null);
+  const [newProjectWorkspaceId, setNewProjectWorkspaceId] = useState<string | null>(null);
   const [newProject, setNewProject] = useState({ name: "", color: "bg-blue-500", priority: "Средний" });
+  const [projectToDelete, setProjectToDelete] = useState<{ id: string; name: string } | null>(null);
+  const [deleteMasterPassword, setDeleteMasterPassword] = useState("");
 
   const priorityDisplayMap: Record<string, string> = {
     "low": "Низкий",
@@ -663,7 +835,18 @@ function ProjectsManagement() {
   };
 
   const { data: projects = [], isLoading: isLoadingProjects } = useQuery<any[]>({
-    queryKey: ["/api/projects"],
+    queryKey: ["/api/projects", selectedWorkspaceId],
+    queryFn: async () => {
+      const url = selectedWorkspaceId 
+        ? `/api/projects?workspaceId=${selectedWorkspaceId}` 
+        : "/api/projects";
+      const res = await apiRequest("GET", url);
+      return res.json();
+    },
+  });
+
+  const { data: workspaces = [] } = useQuery<any[]>({
+    queryKey: ["/api/workspaces"],
   });
 
   const { data: users = [] } = useQuery<User[]>({
@@ -677,10 +860,10 @@ function ProjectsManagement() {
     },
     onMutate: async (newProjectData) => {
       // Отменяем перезапросы текущих проектов
-      await queryClient.cancelQueries({ queryKey: ["/api/projects"] });
+      await queryClient.cancelQueries({ queryKey: ["/api/projects", selectedWorkspaceId] });
       
       // Сохраняем текущие проекты для отката в случае ошибки
-      const previousProjects = queryClient.getQueryData(["/api/projects"]);
+      const previousProjects = queryClient.getQueryData(["/api/projects", selectedWorkspaceId]);
       
       // Создаем временный проект для оптимистичного обновления
       const tempProject = {
@@ -694,21 +877,23 @@ function ProjectsManagement() {
         progress: 100,
         createdAt: new Date().toISOString(),
         ownerId: "current-user",
+        workspaceId: newProjectData.workspaceId,
       };
       
       // Оптимистично добавляем проект в список
-      queryClient.setQueryData(["/api/projects"], (old: any[] = []) => [...old, tempProject]);
+      queryClient.setQueryData(["/api/projects", selectedWorkspaceId], (old: any[] = []) => [...old, tempProject]);
       
       return { previousProjects };
     },
     onSuccess: (data, variables, context) => {
       // Заменяем временный проект на реальный от сервера
-      queryClient.setQueryData(["/api/projects"], (old: any[] = []) => {
+      queryClient.setQueryData(["/api/projects", selectedWorkspaceId], (old: any[] = []) => {
         return old.map((p) => (p.id?.startsWith("temp-") ? data : p));
       });
       
       setIsCreateProjectOpen(false);
       setNewProject({ name: "", color: "bg-blue-500", priority: "Средний" });
+      setNewProjectWorkspaceId(null);
       toast({
         title: "Проект создан",
         description: "Новый проект успешно добавлен в систему.",
@@ -717,7 +902,7 @@ function ProjectsManagement() {
     onError: (error: any, variables, context) => {
       // Возвращаем предыдущие проекты в случае ошибки
       if (context?.previousProjects) {
-        queryClient.setQueryData(["/api/projects"], context.previousProjects);
+        queryClient.setQueryData(["/api/projects", selectedWorkspaceId], context.previousProjects);
       }
       toast({
         title: "Ошибка",
@@ -727,22 +912,39 @@ function ProjectsManagement() {
     },
     onSettled: () => {
       // Всегда обновляем данные с сервера
-      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", selectedWorkspaceId] });
     },
   });
 
   const deleteProjectMutation = useMutation({
-    mutationFn: async (id: string) => {
-      await apiRequest("DELETE", `/api/projects/${id}`);
+    mutationFn: async ({ id, masterPassword }: { id: string; masterPassword: string }) => {
+      await apiRequest("DELETE", `/api/projects/${id}`, { masterPassword });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", selectedWorkspaceId] });
+      setProjectToDelete(null);
+      setDeleteMasterPassword("");
       toast({
         title: "Проект удален",
         description: "Проект был успешно удален.",
       });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Ошибка",
+        description: error.message || "Не удалось удалить проект. Проверьте мастер-пароль.",
+        variant: "destructive",
+      });
     }
   });
+
+  const handleDeleteProject = () => {
+    if (!projectToDelete) return;
+    deleteProjectMutation.mutate({ 
+      id: projectToDelete.id, 
+      masterPassword: deleteMasterPassword 
+    });
+  };
 
   const handleCreateProject = () => {
     if (!newProject.name.trim()) {
@@ -764,8 +966,10 @@ function ProjectsManagement() {
 
     const projectToCreate = {
       ...newProject,
-      priority: priorityMap[newProject.priority] || "medium"
+      priority: priorityMap[newProject.priority] || "medium",
+      workspaceId: newProjectWorkspaceId
     };
+
 
     console.log("Creating project with data:", projectToCreate);
     createProjectMutation.mutate(projectToCreate);
@@ -830,13 +1034,32 @@ function ProjectsManagement() {
       {/* Projects Section */}
       <section className="space-y-4">
         <div className="flex items-center justify-between px-1">
-          <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
-            <LayoutGrid className="w-3.5 h-3.5" />
-            Список проектов ({projects.length})
-          </h4>
+          <div className="flex items-center gap-4">
+            <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+              <LayoutGrid className="w-3.5 h-3.5" />
+              Список проектов ({projects.length})
+            </h4>
+            {/* Workspace filter */}
+            <Select value={selectedWorkspaceId || "all"} onValueChange={(val) => setSelectedWorkspaceId(val === "all" ? null : val)}>
+              <SelectTrigger className="h-8 w-48 text-xs bg-background border-input text-foreground">
+                <SelectValue placeholder="Все пространства" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Все пространства</SelectItem>
+                {workspaces.map((workspace: any) => (
+                  <SelectItem key={workspace.id} value={workspace.id}>
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full" style={{ backgroundColor: workspace.color || '#3b82f6' }} />
+                      {workspace.name}
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
           <Dialog open={isCreateProjectOpen} onOpenChange={setIsCreateProjectOpen}>
             <DialogTrigger asChild>
-              <Button size="sm" variant="outline" className="h-8 gap-2 text-[10px] font-bold uppercase tracking-wider border-border/50">
+              <Button size="sm" className="h-8 gap-2 text-[10px] font-bold uppercase tracking-wider">
                 <Plus className="w-3 h-3" /> Создать проект
               </Button>
             </DialogTrigger>
@@ -852,8 +1075,31 @@ function ProjectsManagement() {
                     id="project-name" 
                     placeholder="Введите название проекта" 
                     value={newProject.name}
+                    className="bg-background text-foreground"
                     onChange={(e) => setNewProject({ ...newProject, name: e.target.value })}
                   />
+                </div>
+                <div className="space-y-2">
+                  <Label>Пространство</Label>
+                  <Select 
+                    value={newProjectWorkspaceId || "none"} 
+                    onValueChange={(val) => setNewProjectWorkspaceId(val === "none" ? null : val)}
+                  >
+                    <SelectTrigger className="bg-background text-foreground">
+                      <SelectValue placeholder="Без пространства" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Без пространства</SelectItem>
+                      {workspaces.map((workspace: any) => (
+                        <SelectItem key={workspace.id} value={workspace.id}>
+                          <div className="flex items-center gap-2">
+                            <div className="w-2 h-2 rounded-full" style={{ backgroundColor: workspace.color || '#3b82f6' }} />
+                            {workspace.name}
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className="space-y-2">
                   <Label>Приоритет проекта</Label>
@@ -861,7 +1107,7 @@ function ProjectsManagement() {
                     value={newProject.priority} 
                     onValueChange={(val) => setNewProject({ ...newProject, priority: val })}
                   >
-                    <SelectTrigger>
+                    <SelectTrigger className="bg-background text-foreground">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -875,7 +1121,7 @@ function ProjectsManagement() {
               </div>
               <DialogFooter>
                 <Button variant="outline" onClick={() => setIsCreateProjectOpen(false)}>Отмена</Button>
-                <Button onClick={handleCreateProject} disabled={createProjectMutation.isPending || !newProject.name}>
+                <Button onClick={() => handleCreateProject()} disabled={createProjectMutation.isPending || !newProject.name}>
                   {createProjectMutation.isPending && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
                   Создать проект
                 </Button>
@@ -902,7 +1148,15 @@ function ProjectsManagement() {
                       <LayoutGrid className="w-6 h-6 text-primary" />
                     </div>
                     <div className="flex flex-col gap-1">
-                      <span className="text-sm font-bold tracking-tight group-hover:text-primary transition-colors">{project.name}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-bold tracking-tight group-hover:text-primary transition-colors">{project.name}</span>
+                        {project.workspaceId && (
+                          <Badge variant="secondary" className="text-[10px] h-5 px-1.5 font-normal">
+                            <Folder className="w-3 h-3 mr-1" />
+                            {workspaces.find((w: any) => w.id === project.workspaceId)?.name || 'Пространство'}
+                          </Badge>
+                        )}
+                      </div>
                       <div className="flex items-center gap-3">
                         <div className="flex items-center gap-1.5">
                           <Users className="w-3 h-3 text-muted-foreground/60" />
@@ -939,7 +1193,7 @@ function ProjectsManagement() {
                       )}>
                         {priorityDisplayMap[project.priority] || project.priority || "Средний"}
                       </Badge>
-                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all transform translate-x-2 group-hover:translate-x-0">
+                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all transform translate-x-2 group-hover:translate-x-0">
                         <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-background border border-transparent hover:border-border/50">
                           <Pencil className="w-3.5 h-3.5" />
                         </Button>
@@ -947,10 +1201,9 @@ function ProjectsManagement() {
                           variant="ghost" 
                           size="icon" 
                           className="h-8 w-8 text-rose-500 hover:text-rose-600 hover:bg-rose-50 border border-transparent hover:border-rose-100"
-                          onClick={() => deleteProjectMutation.mutate(project.id)}
-                          disabled={deleteProjectMutation.isPending}
+                          onClick={() => setProjectToDelete({ id: project.id, name: project.name })}
                         >
-                          {deleteProjectMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                          <Trash2 className="w-3.5 h-3.5" />
                         </Button>
                       </div>
                     </div>
@@ -960,6 +1213,61 @@ function ProjectsManagement() {
             )}
           </div>
         </Card>
+
+        {/* Delete Confirmation Dialog */}
+        <Dialog open={!!projectToDelete} onOpenChange={() => setProjectToDelete(null)}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle className="text-rose-500 flex items-center gap-2">
+                <Trash2 className="w-5 h-5" />
+                Удаление проекта
+              </DialogTitle>
+              <DialogDescription className="text-foreground">
+                Вы собираетесь удалить проект <strong>"{projectToDelete?.name}"</strong>. 
+                Все связанные доски и задачи также будут удалены. Это действие необратимо.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-lg">
+                <p className="text-sm text-amber-600 font-medium">
+                  Внимание! В выбранном проекте все задачи будут удалены навсегда!
+                </p>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="delete-master-password" className="text-xs font-medium">Мастер пароль</Label>
+                <Input 
+                  id="delete-master-password" 
+                  type="password"
+                  placeholder="Введите мастер пароль" 
+                  value={deleteMasterPassword}
+                  onChange={(e) => setDeleteMasterPassword(e.target.value)}
+                  className="bg-background text-foreground"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && deleteMasterPassword) {
+                      handleDeleteProject();
+                    }
+                  }}
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => {
+                setProjectToDelete(null);
+                setDeleteMasterPassword("");
+              }}>
+                Отмена
+              </Button>
+              <Button 
+                variant="destructive"
+                onClick={handleDeleteProject}
+                disabled={deleteProjectMutation.isPending || !deleteMasterPassword}
+              >
+                {deleteProjectMutation.isPending && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
+                Удалить проект
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </section>
 
       <PrioritiesManagement />

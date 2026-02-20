@@ -83,6 +83,27 @@ export const teamMembers = pgTable("team_members", {
   pk: primaryKey({ columns: [table.teamId, table.userId] }),
 }));
 
+// Workspaces table (groups multiple projects)
+export const workspaces = pgTable("workspaces", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  name: text("name").notNull(),
+  description: text("description"),
+  ownerId: uuid("owner_id").notNull().references(() => users.id),
+  color: text("color").default("#3b82f6"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Workspace members junction table
+export const workspaceMembers = pgTable("workspace_members", {
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  role: text("role").default("member"), // owner, admin, member, viewer
+  joinedAt: timestamp("joined_at").defaultNow(),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.workspaceId, table.userId] }),
+}));
+
 // Projects table
 export const projects = pgTable("projects", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -92,6 +113,7 @@ export const projects = pgTable("projects", {
   departmentId: uuid("department_id").references(() => departments.id),
   status: text("status").default("active"), // active, paused, completed, archived
   priorityId: uuid("priority_id").references(() => priorities.id), // New foreign key to priorities table
+  workspaceId: uuid("workspace_id").references(() => workspaces.id),
   startDate: timestamp("start_date"),
   endDate: timestamp("end_date"),
   budget: integer("budget"),
