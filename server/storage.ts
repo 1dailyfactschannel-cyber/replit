@@ -38,6 +38,7 @@ export interface IStorage {
   updateBoardColumn(id: string, updates: Partial<any>): Promise<any>;
   deleteBoardColumn(id: string): Promise<void>;
   updateTaskColumnId(taskId: string, columnId: string): Promise<void>;
+  getBoard(id: string): Promise<any>;
 }
 
 import { PostgresStorage } from "./postgres-storage";

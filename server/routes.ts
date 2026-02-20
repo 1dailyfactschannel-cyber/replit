@@ -15,6 +15,29 @@ import { format } from "date-fns";
 const storage = getStorage();
 let io: SocketIOServer;
 
+// Helper function to send notification
+async function sendNotification(userId: string, senderId: string | null, type: string, title: string, message: string, link?: string) {
+  try {
+    await storage.createNotification({
+      userId,
+      senderId,
+      type,
+      title,
+      message,
+      link: link || null,
+    });
+  } catch (error) {
+    console.error("Error sending notification:", error);
+  }
+}
+
+// Helper function to format user name
+function formatUserName(user: any): string {
+  if (!user) return "Пользователь";
+  const fullName = `${user.firstName || ""} ${user.lastName || ""}`.trim();
+  return fullName || user.username || "Пользователь";
+}
+
 // Configure multer for file uploads
 const uploadDir = path.join(process.cwd(), "uploads");
 if (!fs.existsSync(uploadDir)) {
@@ -322,6 +345,27 @@ export async function registerRoutes(
       // Очищаем кэш проектов, чтобы новый проект сразу отображался
       await delCache("projects:stats:all");
       console.log("POST /api/projects: Cache cleared");
+
+      // Get all users to notify about new project
+      try {
+        const users = await storage.getAllUsers();
+        const creatorName = formatUserName(user);
+
+        // Notify all users about new project (limit to avoid too many notifications)
+        const usersToNotify = users.filter((u: any) => u.id !== user.id).slice(0, 20);
+        for (const notifyUser of usersToNotify) {
+          await sendNotification(
+            notifyUser.id,
+            user.id,
+            'project_created',
+            'Новый проект',
+            `${creatorName} создал новый проект "${project.name}"`,
+            `/projects/${project.id}`
+          );
+        }
+      } catch (error) {
+        console.error("Error sending project creation notifications:", error);
+      }
       
       res.status(201).json(project);
     } catch (error) {
@@ -586,6 +630,47 @@ export async function registerRoutes(
           console.error("Error recording status change:", error);
         }
       }
+
+      // Send notifications for assignee changes
+      if (updateData.assigneeId) {
+        const newAssigneeId = updateData.assigneeId;
+        if (newAssigneeId && newAssigneeId !== userId) {
+          const board = await storage.getBoard(task.boardId);
+          await sendNotification(
+            newAssigneeId,
+            userId!,
+            'task_assigned',
+            'Вам назначена задача',
+            `${formatUserName(currentUser!)} назначил(а) вам задачу "${task.title}"${board ? ` в доске "${board.name}"` : ''}`,
+            `/boards/${task.boardId}`
+          );
+        }
+      }
+
+      // Send notification to reporter about task updates (except for assignee changes)
+      if (task.reporterId && task.reporterId !== userId && !updateData.assigneeId) {
+        const changedFields = Object.keys(updateData);
+        if (changedFields.length > 0) {
+          const board = await storage.getBoard(task.boardId);
+          const fieldNames: Record<string, string> = {
+            'status': 'статус',
+            'priority': 'приоритет',
+            'title': 'название',
+            'description': 'описание',
+            'dueDate': 'срок',
+            'columnId': 'колонку'
+          };
+          const changedFieldNames = changedFields.map(f => fieldNames[f] || f).join(', ');
+          await sendNotification(
+            task.reporterId,
+            userId!,
+            'task_updated',
+            'Задача обновлена',
+            `Задача "${task.title}" обновлена: ${changedFieldNames}`,
+            `/boards/${task.boardId}`
+          );
+        }
+      }
       
       // Обогащаем задачу данными об исполнителе и репортере перед отправкой
       const [assignee, reporter] = await Promise.all([
@@ -779,6 +864,39 @@ export async function registerRoutes(
         });
       } catch (error) {
         console.error("Error recording task creation history:", error);
+      }
+
+      // Send notification to assignee if assigned
+      if (task.assigneeId && task.assigneeId !== user.id) {
+        const board = await storage.getBoard(task.boardId);
+        await sendNotification(
+          task.assigneeId,
+          user.id,
+          'task_assigned',
+          'Новая задача',
+          `Вам назначена задача "${task.title}"${board ? ` в доске "${board.name}"` : ''}`,
+          `/boards/${task.boardId}`
+        );
+      }
+
+      // Send notification to project owner
+      try {
+        const board = await storage.getBoard(task.boardId);
+        if (board) {
+          const project = await storage.getProject(board.projectId);
+          if (project && project.ownerId && project.ownerId !== user.id) {
+            await sendNotification(
+              project.ownerId,
+              user.id,
+              'task_created',
+              'Новая задача',
+              `Создана задача "${task.title}" в проекте "${project.name}"`,
+              `/boards/${task.boardId}`
+            );
+          }
+        }
+      } catch (error) {
+        console.error("Error sending project notification:", error);
       }
       
       // Обогащаем задачу данными об исполнителе и репортере перед отправкой
@@ -1581,6 +1699,37 @@ export async function registerRoutes(
         });
       } catch (error) {
         console.error("Error recording comment history:", error);
+      }
+
+      // Get task details for notifications
+      const task = await storage.getTask(req.params.taskId);
+      if (task) {
+        const board = await storage.getBoard(task.boardId);
+        const authorName = `${req.user.firstName || ""} ${req.user.lastName || ""}`.trim() || req.user.username;
+
+        // Notify assignee (if not the comment author)
+        if (task.assigneeId && task.assigneeId !== req.user.id) {
+          await sendNotification(
+            task.assigneeId,
+            req.user.id,
+            'task_comment',
+            'Новый комментарий',
+            `${authorName} прокомментировал задачу "${task.title}"`,
+            `/boards/${task.boardId}`
+          );
+        }
+
+        // Notify reporter (if not the comment author and not already notified as assignee)
+        if (task.reporterId && task.reporterId !== req.user.id && task.reporterId !== task.assigneeId) {
+          await sendNotification(
+            task.reporterId,
+            req.user.id,
+            'task_comment',
+            'Новый комментарий',
+            `${authorName} прокомментировал задачу "${task.title}"`,
+            `/boards/${task.boardId}`
+          );
+        }
       }
       
       // Возвращаем обогащенный комментарий

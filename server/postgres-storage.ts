@@ -811,6 +811,16 @@ export class PostgresStorage {
   }
 
   // Board methods
+  async getBoard(id: string): Promise<schema.Board | undefined> {
+    try {
+      const [board] = await this.db.select().from(schema.boards).where(eq(schema.boards.id, id));
+      return board;
+    } catch (error) {
+      console.error("Error getting board:", error);
+      return undefined;
+    }
+  }
+
   async getBoardsByProject(projectId: string): Promise<schema.Board[]> {
     try {
       return await this.db.select().from(schema.boards).where(eq(schema.boards.projectId, projectId));
