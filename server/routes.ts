@@ -790,7 +790,7 @@ export async function registerRoutes(
     if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
     try {
       const userId = req.user.id;
-      console.log("[my-tasks] Fetching tasks for user:", userId);
+      console.log("[my-tasks] Fetching tasks for user:", userId, "username:", req.user.username);
       
       // Get tasks assigned to the user
       const tasks = await storage.db
@@ -811,6 +811,16 @@ export async function registerRoutes(
         );
       
       console.log("[my-tasks] Found tasks:", tasks.length);
+      if (tasks.length > 0) {
+        console.log("[my-tasks] Sample task assigneeId:", tasks[0].task.assigneeId);
+      }
+      
+      // Also check if there are ANY tasks with this assigneeId in the database
+      const allTasksWithAssignee = await storage.db
+        .select({ id: schema.tasks.id, title: schema.tasks.title, assigneeId: schema.tasks.assigneeId })
+        .from(schema.tasks)
+        .where(eq(schema.tasks.assigneeId, userId));
+      console.log("[my-tasks] Total tasks with this assigneeId in DB:", allTasksWithAssignee.length);
       
       // Enrich tasks with board and project info
       const enrichedTasks = await Promise.all(tasks.map(async (t) => {
