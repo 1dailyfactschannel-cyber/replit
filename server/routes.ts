@@ -790,6 +790,7 @@ export async function registerRoutes(
     if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
     try {
       const userId = req.user.id;
+      console.log("[my-tasks] Fetching tasks for user:", userId);
       
       // Get tasks assigned to the user
       const tasks = await storage.db
@@ -804,9 +805,12 @@ export async function registerRoutes(
         .where(
           and(
             eq(schema.tasks.assigneeId, userId),
-            eq(schema.projects.status, "active")
+            eq(schema.projects.status, "active"),
+            eq(schema.tasks.archived, false)
           )
         );
+      
+      console.log("[my-tasks] Found tasks:", tasks.length);
       
       // Enrich tasks with board and project info
       const enrichedTasks = await Promise.all(tasks.map(async (t) => {
