@@ -52,6 +52,11 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { CalendarIcon } from "lucide-react";
+import { format } from "date-fns";
+import { ru } from "date-fns/locale";
 import {
   Select,
   SelectContent,
@@ -567,7 +572,9 @@ export default function Projects() {
     assignee: [] as string[],
     priority: [] as string[],
     labels: [] as string[],
-    search: ""
+    search: "",
+    dateFrom: undefined as Date | undefined,
+    dateTo: undefined as Date | undefined
   });
   const [activeFiltersCount, setActiveFiltersCount] = useState(0);
 
@@ -1070,6 +1077,24 @@ export default function Projects() {
         if (!task.tags || !task.tags.some((tag: string) => taskFilters.labels.includes(tag))) return false;
       }
       
+      // Date range filter
+      if (taskFilters.dateFrom || taskFilters.dateTo) {
+        const taskDate = task.createdAt ? new Date(task.createdAt) : null;
+        if (!taskDate) return false;
+        
+        if (taskFilters.dateFrom) {
+          const fromStart = new Date(taskFilters.dateFrom);
+          fromStart.setHours(0, 0, 0, 0);
+          if (taskDate < fromStart) return false;
+        }
+        
+        if (taskFilters.dateTo) {
+          const toEnd = new Date(taskFilters.dateTo);
+          toEnd.setHours(23, 59, 59, 999);
+          if (taskDate > toEnd) return false;
+        }
+      }
+      
       return true;
     });
   }, [tasks, taskFilters]);
@@ -1092,7 +1117,9 @@ export default function Projects() {
       taskFilters.assignee.length +
       taskFilters.priority.length +
       taskFilters.labels.length +
-      (taskFilters.search ? 1 : 0);
+      (taskFilters.search ? 1 : 0) +
+      (taskFilters.dateFrom ? 1 : 0) +
+      (taskFilters.dateTo ? 1 : 0);
     setActiveFiltersCount(count);
   }, [taskFilters]);
 
@@ -1459,7 +1486,7 @@ export default function Projects() {
                         {columns.map((col: any) => (
                           <label
                             key={col.id}
-                            className="flex items-center gap-2 px-3 py-2 border rounded-lg cursor-pointer hover:bg-secondary/50 transition-colors"
+                            className="flex items-center gap-2 px-3 py-2 border border-input bg-card rounded-lg cursor-pointer hover:bg-accent transition-colors"
                           >
                             <Checkbox
                               checked={taskFilters.status.includes(col.name)}
@@ -1485,7 +1512,7 @@ export default function Projects() {
                         {users.map((user: any) => (
                           <label
                             key={user.id}
-                            className="flex items-center gap-2 px-3 py-2 border rounded-lg cursor-pointer hover:bg-secondary/50 transition-colors"
+                            className="flex items-center gap-2 px-3 py-2 border border-input bg-card rounded-lg cursor-pointer hover:bg-accent transition-colors"
                           >
                             <Checkbox
                               checked={taskFilters.assignee.includes(user.id)}
@@ -1513,7 +1540,7 @@ export default function Projects() {
                         {availablePriorities.map((priority: any) => (
                           <label
                             key={priority.id}
-                            className="flex items-center gap-2 px-3 py-2 border rounded-lg cursor-pointer hover:bg-secondary/50 transition-colors"
+                            className="flex items-center gap-2 px-3 py-2 border border-input bg-card rounded-lg cursor-pointer hover:bg-accent transition-colors"
                           >
                             <Checkbox
                               checked={taskFilters.priority.includes(priority.id)}
@@ -1540,7 +1567,7 @@ export default function Projects() {
                         {availableLabels.map((label: any) => (
                           <label
                             key={label.id}
-                            className="flex items-center gap-2 px-3 py-2 border rounded-lg cursor-pointer hover:bg-secondary/50 transition-colors"
+                            className="flex items-center gap-2 px-3 py-2 border border-input bg-card rounded-lg cursor-pointer hover:bg-accent transition-colors"
                           >
                             <Checkbox
                               checked={taskFilters.labels.includes(label.name)}
@@ -1559,6 +1586,46 @@ export default function Projects() {
                         ))}
                       </div>
                     </div>
+
+                    {/* Date range filter */}
+                    <div className="space-y-2">
+                      <Label>Дата создания</Label>
+                      <div className="flex gap-2 items-center">
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <Button variant="outline" className="justify-start text-left font-normal flex-1">
+                              <CalendarIcon className="mr-2 h-4 w-4" />
+                              {taskFilters.dateFrom ? format(taskFilters.dateFrom, "dd.MM.yyyy", { locale: ru }) : "От"}
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-auto p-0" align="start">
+                            <Calendar
+                              mode="single"
+                              selected={taskFilters.dateFrom}
+                              onSelect={(date) => setTaskFilters(prev => ({ ...prev, dateFrom: date }))}
+                              initialFocus
+                            />
+                          </PopoverContent>
+                        </Popover>
+                        <span className="text-muted-foreground">—</span>
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <Button variant="outline" className="justify-start text-left font-normal flex-1">
+                              <CalendarIcon className="mr-2 h-4 w-4" />
+                              {taskFilters.dateTo ? format(taskFilters.dateTo, "dd.MM.yyyy", { locale: ru }) : "До"}
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-auto p-0" align="start">
+                            <Calendar
+                              mode="single"
+                              selected={taskFilters.dateTo}
+                              onSelect={(date) => setTaskFilters(prev => ({ ...prev, dateTo: date }))}
+                              initialFocus
+                            />
+                          </PopoverContent>
+                        </Popover>
+                      </div>
+                    </div>
                   </div>
                   <DialogFooter className="gap-2">
                     <Button
@@ -1569,7 +1636,9 @@ export default function Projects() {
                           assignee: [],
                           priority: [],
                           labels: [],
-                          search: ""
+                          search: "",
+                          dateFrom: undefined,
+                          dateTo: undefined
                         });
                       }}
                     >
