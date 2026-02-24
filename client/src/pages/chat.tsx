@@ -543,7 +543,7 @@ export default function ChatPage() {
                 <div className="flex items-center justify-between mb-4">
                   <h2 className="font-semibold text-lg">Общение</h2>
                   <div className="flex gap-1">
-                    <Dialog open={isCreateChatOpen} onOpenChange={setIsCreateChatOpen}>
+                    <Dialog open={isCreateChatOpen} onOpenChange={(open) => { setIsCreateChatOpen(open); if (!open) setSearchQuery(""); }}>
                       <DialogTrigger asChild>
                         <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg hover:bg-primary/10 hover:text-primary transition-colors" title="Начать чат">
                           <MessageSquare className="w-4 h-4 text-foreground" />
@@ -567,7 +567,16 @@ export default function ChatPage() {
                           <ScrollArea className="h-[300px] pr-4">
                             <div className="space-y-2">
                               {allUsers
-                                .filter(u => u.id !== currentUser?.id && u.username.toLowerCase().includes(searchQuery.toLowerCase()))
+                                .filter(u => {
+                                  if (u.id === currentUser?.id) return false;
+                                  const query = searchQuery.toLowerCase();
+                                  const fullName = `${u.firstName || ''} ${u.lastName || ''}`.trim().toLowerCase();
+                                  return u.username.toLowerCase().includes(query) || 
+                                         fullName.includes(query) || 
+                                         (u.email && u.email.toLowerCase().includes(query)) ||
+                                         (u.firstName && u.firstName.toLowerCase().includes(query)) ||
+                                         (u.lastName && u.lastName.toLowerCase().includes(query));
+                                })
                                 .map((user) => (
                                   <div 
                                     key={user.id} 
@@ -593,6 +602,21 @@ export default function ChatPage() {
                                     </Button>
                                   </div>
                                 ))}
+                                {allUsers.filter(u => {
+                                  if (u.id === currentUser?.id) return false;
+                                  const query = searchQuery.toLowerCase();
+                                  const fullName = `${u.firstName || ''} ${u.lastName || ''}`.trim().toLowerCase();
+                                  return u.username.toLowerCase().includes(query) || 
+                                         fullName.includes(query) || 
+                                         (u.email && u.email.toLowerCase().includes(query)) ||
+                                         (u.firstName && u.firstName.toLowerCase().includes(query)) ||
+                                         (u.lastName && u.lastName.toLowerCase().includes(query));
+                                }).length === 0 && searchQuery && (
+                                  <div className="text-center py-8 text-muted-foreground">
+                                    <p className="text-sm">Пользователи не найдены</p>
+                                    <p className="text-xs mt-1">Попробуйте изменить запрос</p>
+                                  </div>
+                                )}
                             </div>
                           </ScrollArea>
                         </div>
