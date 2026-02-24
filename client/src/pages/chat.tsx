@@ -867,7 +867,7 @@ export default function ChatPage() {
                     key={contact.id} 
                     onClick={() => setActiveChatId(contact.id)}
                     className={cn(
-                      "flex gap-3 p-4 cursor-pointer transition-all border-b border-border/40 last:border-0 relative",
+                      "flex gap-3 p-4 cursor-pointer transition-all border-b border-border/40 last:border-0 relative group",
                       activeChatId === contact.id ? "bg-primary/5" : "hover:bg-secondary/50"
                     )}
                   >
@@ -905,7 +905,7 @@ export default function ChatPage() {
                             <Button 
                               variant="ghost" 
                               size="icon" 
-                              className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity:text hover-rose-500"
+                              className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity hover:text-rose-500"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 if (confirm("Вы уверены, что хотите удалить этот чат?")) {
