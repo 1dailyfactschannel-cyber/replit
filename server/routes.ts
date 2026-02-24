@@ -8,7 +8,7 @@ import { Server as SocketIOServer } from "socket.io";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
-import { eq, and, ne } from "drizzle-orm";
+import { eq, and, ne, or, isNull } from "drizzle-orm";
 import { getCache, setCache, invalidatePattern, delCache } from "./redis";
 import { format } from "date-fns";
 
@@ -835,7 +835,10 @@ export async function registerRoutes(
         .where(
           and(
             eq(schema.tasks.assigneeId, userId),
-            eq(schema.tasks.archived, false)
+            or(
+              eq(schema.tasks.archived, false),
+              isNull(schema.tasks.archived)
+            )
           )
         );
       
