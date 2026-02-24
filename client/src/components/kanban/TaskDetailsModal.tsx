@@ -1770,7 +1770,7 @@ export function TaskDetailsModal({
                   <SelectTrigger className="flex-1 h-9 bg-card border-border/50 rounded-lg shadow-sm font-bold text-foreground px-3 focus:ring-primary/20 text-xs">
                     <div className="flex items-center gap-2">
                       <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: safeTask.status === 'Готово' ? '#10b981' : safeTask.status === 'В работе' ? '#3b82f6' : safeTask.status === 'На проверке' ? '#f59e0b' : '#64748b' }} />
-                      <SelectValue />
+                      <SelectValue className="text-foreground" />
                     </div>
                   </SelectTrigger>
                   <SelectContent className="rounded-xl">
