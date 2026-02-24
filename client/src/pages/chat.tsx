@@ -481,6 +481,21 @@ export default function ChatPage() {
   const handleSendMessage = () => {
     if (!activeChatId || (!messageInput.trim() && attachments.length === 0)) return;
     
+    // If editing, update the message
+    if (editingMessageId) {
+      updateMessageMutation.mutate({
+        id: editingMessageId,
+        content: messageInput
+      }, {
+        onSuccess: () => {
+          setEditingMessageId(null);
+          setMessageInput("");
+        }
+      });
+      return;
+    }
+    
+    // Otherwise, send new message
     sendMessageMutation.mutate({
       chatId: activeChatId,
       content: messageInput,
@@ -1230,17 +1245,10 @@ export default function ChatPage() {
                                         <DropdownMenuContent align="end">
                                           <DropdownMenuItem onClick={() => {
                                             setEditingMessageId(msg.id);
-                                            setEditContent(msg.content);
+                                            setMessageInput(msg.content);
                                           }}>
                                             <Edit className="w-3 h-3 mr-2" />
                                             Изменить
-                                          </DropdownMenuItem>
-                                          <DropdownMenuItem onClick={() => {
-                                            setMessageInput(msg.content);
-                                            setEditingMessageId(null);
-                                          }}>
-                                            <MessageSquare className="w-3 h-3 mr-2" />
-                                            Вернуть в поле ввода
                                           </DropdownMenuItem>
                                           <DropdownMenuItem 
                                             className="text-destructive"
@@ -1258,30 +1266,15 @@ export default function ChatPage() {
                                   "max-w-[80%] px-4 py-2.5 rounded-2xl text-sm shadow-sm transition-all hover:shadow-md relative",
                                   isMe ? "bg-primary text-primary-foreground rounded-tr-none" : "bg-card text-foreground border border-border/50 rounded-tl-none"
                                 )}>
-                                  {editingMessageId === msg.id ? (
-                                    <div className="flex flex-col gap-2 min-w-[200px]">
-                                      <textarea 
-                                        className="bg-transparent border-none focus:ring-0 text-sm w-full resize-none p-0"
-                                        value={editContent}
-                                        onChange={(e) => setEditContent(e.target.value)}
-                                        autoFocus
-                                      />
-                                      <div className="flex justify-end gap-1">
-                                        <Button size="sm" variant="ghost" className="h-6 text-[10px]" onClick={() => setEditingMessageId(null)}>Отмена</Button>
-                                        <Button size="sm" className="h-6 text-[10px]" onClick={() => updateMessageMutation.mutate({ id: msg.id, content: editContent })}>Сохранить</Button>
+                                  <>
+                                    {msg.content}
+                                    {isMe && editingMessageId !== msg.id && (
+                                      <div className="absolute bottom-1 right-2 flex gap-0.5">
+                                        <Check className={cn("w-3 h-3", (msg as any).isRead ? "text-blue-400" : "opacity-30")} />
+                                        {(msg as any).isRead && <Check className="w-3 h-3 -ml-2 text-blue-400" />}
                                       </div>
-                                    </div>
-                                  ) : (
-                                    <>
-                                      {msg.content}
-                                      {isMe && (
-                                        <div className="absolute bottom-1 right-2 flex gap-0.5">
-                                          <Check className={cn("w-3 h-3", (msg as any).isRead ? "text-blue-400" : "opacity-30")} />
-                                          {(msg as any).isRead && <Check className="w-3 h-3 -ml-2 text-blue-400" />}
-                                        </div>
-                                      )}
-                                    </>
-                                  )}
+                                    )}
+                                  </>
                                   
                                   {Array.isArray(msg.attachments) && msg.attachments.length > 0 && (
                                     <div className="mt-2 space-y-1">
@@ -1348,18 +1341,33 @@ export default function ChatPage() {
                             <Smile className="w-4 h-4 text-muted-foreground" />
                           </Button>
                         </div>
-                        <Input 
-                          placeholder="Напишите сообщение..." 
-                          className="border-none bg-transparent h-9 focus-visible:ring-0 text-sm"
-                          value={messageInput}
-                          onChange={(e) => {
-                            setMessageInput(e.target.value);
-                            handleTyping();
-                          }}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") handleSendMessage();
-                          }}
-                        />
+                        <div className="flex items-center gap-2 flex-1">
+                          {editingMessageId && (
+                            <Button 
+                              variant="ghost" 
+                              size="sm" 
+                              className="text-xs text-muted-foreground hover:text-destructive h-8"
+                              onClick={() => {
+                                setEditingMessageId(null);
+                                setMessageInput("");
+                              }}
+                            >
+                              Отмена
+                            </Button>
+                          )}
+                          <Input 
+                            placeholder={editingMessageId ? "Редактирование сообщения..." : "Напишите сообщение..."} 
+                            className="border-none bg-transparent h-9 focus-visible:ring-0 text-sm"
+                            value={messageInput}
+                            onChange={(e) => {
+                              setMessageInput(e.target.value);
+                              handleTyping();
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") handleSendMessage();
+                            }}
+                          />
+                        </div>
                         <Button 
                           size="icon" 
                           className="h-9 w-9 rounded-xl shadow-lg shadow-primary/20 bg-primary hover:bg-primary/90"
