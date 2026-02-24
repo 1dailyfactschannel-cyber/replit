@@ -176,8 +176,8 @@ function TaskStatusTimer({ taskId }: { taskId: string | number | undefined }) {
     <div className="space-y-2">
       {/* Total time */}
       <div className="flex items-center justify-between p-2 bg-primary/5 rounded-lg border border-primary/10">
-        <span className="text-xs font-bold text-primary">Общее время</span>
-        <span className="text-sm font-bold text-primary">{formatDuration(totalTime)}</span>
+        <span className="text-xs font-bold text-foreground">Общее время</span>
+        <span className="text-sm font-bold text-foreground">{formatDuration(totalTime)}</span>
       </div>
       
       {/* Status breakdown */}
@@ -1214,7 +1214,7 @@ export function TaskDetailsModal({
           <div className="absolute inset-0 z-50 bg-primary/10 backdrop-blur-[2px] border-2 border-dashed border-primary flex flex-col items-center justify-center pointer-events-none transition-all animate-in fade-in">
             <div className="bg-background/80 p-8 rounded-3xl shadow-2xl flex flex-col items-center gap-4 border border-primary/20">
               <div className="w-16 h-16 rounded-2xl bg-primary/20 flex items-center justify-center">
-                <Paperclip className="w-8 h-8 text-primary animate-bounce" />
+                <Paperclip className="w-8 h-8 text-foreground animate-bounce" />
               </div>
               <div className="text-center">
                 <p className="text-xl font-bold text-foreground">Перенесите файлы сюда</p>
@@ -1316,7 +1316,7 @@ export function TaskDetailsModal({
                       onClick={() => {
                         handleTitleBlur();
                       }}
-                      className="absolute right-0 top-1/2 -translate-y-1/2 h-10 w-10 text-muted-foreground hover:text-primary hover:bg-primary/10"
+                      className="absolute right-0 top-1/2 -translate-y-1/2 h-10 w-10 text-muted-foreground hover:text-foreground hover:bg-primary/10"
                       title="Сохранить (Enter)"
                     >
                       <Save className="w-5 h-5" />
@@ -1348,7 +1348,7 @@ export function TaskDetailsModal({
                     <CheckSquare className="w-3.5 h-3.5" />
                     <span className="text-xs font-semibold tracking-tight uppercase">
                       Подзадачи 
-                      <span className="ml-1.5 text-primary/60">
+                      <span className="ml-1.5 text-foreground/60">
                         {localSubtasks.filter(s => s.completed).length}/{localSubtasks.length}
                       </span>
                     </span>
@@ -1368,7 +1368,7 @@ export function TaskDetailsModal({
                         className="shrink-0 transition-transform active:scale-90"
                       >
                         {sub.completed ? (
-                          <div className="w-4 h-4 rounded-full bg-primary flex items-center justify-center text-primary-foreground">
+                          <div className="w-4 h-4 rounded-full bg-primary flex items-center justify-center text-foreground-foreground">
                             <Check className="w-2.5 h-2.5 stroke-[3]" />
                           </div>
                         ) : (
@@ -1438,7 +1438,7 @@ export function TaskDetailsModal({
                   <Button 
                     variant="ghost" 
                     size="sm" 
-                    className="h-7 px-2.5 gap-1.5 text-muted-foreground/70 hover:text-primary hover:bg-primary/5 transition-all -ml-1"
+                    className="h-7 px-2.5 gap-1.5 text-muted-foreground/70 hover:text-foreground hover:bg-primary/5 transition-all -ml-1"
                     onClick={() => setIsAddingSubtask(true)}
                   >
                     <Plus className="w-3.5 h-3.5" />
@@ -1465,7 +1465,7 @@ export function TaskDetailsModal({
                     <Button 
                       variant="ghost" 
                       size="sm" 
-                      className="h-6 px-2 gap-1.5 text-muted-foreground/70 hover:text-primary hover:bg-primary/5 transition-all"
+                      className="h-6 px-2 gap-1.5 text-muted-foreground/70 hover:text-foreground hover:bg-primary/5 transition-all"
                       onClick={() => document.getElementById("file-upload")?.click()}
                     >
                       <Plus className="w-3 h-3" />
@@ -1502,7 +1502,7 @@ export function TaskDetailsModal({
                         {file.type.startsWith("image/") ? (
                           <img src={file.url} alt="" className="w-full h-full object-cover rounded" />
                         ) : (
-                          <FileIcon className="w-4 h-4 text-primary/60" />
+                          <FileIcon className="w-4 h-4 text-foreground/60" />
                         )}
                       </div>
                       <div className="flex-1 min-w-0">
@@ -1534,7 +1534,7 @@ export function TaskDetailsModal({
                     <TabsList className="bg-transparent p-0 h-auto gap-8 border-none">
                       <TabsTrigger 
                         value="comments" 
-                        className="p-0 pb-2 bg-transparent border-b-2 border-transparent rounded-none h-auto data-[state=active]:bg-transparent data-[state=active]:border-primary data-[state=active]:text-primary text-xs font-bold transition-all gap-1.5"
+                        className="p-0 pb-2 bg-transparent border-b-2 border-transparent rounded-none h-auto data-[state=active]:bg-transparent data-[state=active]:border-primary data-[state=active]:text-foreground text-xs font-bold transition-all gap-1.5"
                       >
                         <MessageSquare className="w-3.5 h-3.5" />
                         Комментарии 
@@ -1542,14 +1542,14 @@ export function TaskDetailsModal({
                       </TabsTrigger>
                       <TabsTrigger 
                         value="timer" 
-                        className="p-0 pb-2 bg-transparent border-b-2 border-transparent rounded-none h-auto data-[state=active]:bg-transparent data-[state=active]:border-primary data-[state=active]:text-primary text-xs font-bold transition-all gap-1.5"
+                        className="p-0 pb-2 bg-transparent border-b-2 border-transparent rounded-none h-auto data-[state=active]:bg-transparent data-[state=active]:border-primary data-[state=active]:text-foreground text-xs font-bold transition-all gap-1.5"
                       >
                         <Clock className="w-3.5 h-3.5" />
                         Таймер
                       </TabsTrigger>
                       <TabsTrigger 
                         value="history" 
-                        className="p-0 pb-2 bg-transparent border-b-2 border-transparent rounded-none h-auto data-[state=active]:bg-transparent data-[state=active]:border-primary data-[state=active]:text-primary text-xs font-bold transition-all gap-1.5"
+                        className="p-0 pb-2 bg-transparent border-b-2 border-transparent rounded-none h-auto data-[state=active]:bg-transparent data-[state=active]:border-primary data-[state=active]:text-foreground text-xs font-bold transition-all gap-1.5"
                       >
                         <RefreshCw className="w-3.5 h-3.5" />
                         Активность
@@ -1573,7 +1573,7 @@ export function TaskDetailsModal({
                             className={cn(
                               "px-2.5 py-1 rounded-lg text-xs shadow-sm border",
                               comment.authorId === (users.find(u => u.username === "admin")?.id || "") 
-                                ? "bg-primary text-primary-foreground border-primary/20 rounded-tr-sm" 
+                                ? "bg-primary text-foreground-foreground border-primary/20 rounded-tr-sm" 
                                 : "bg-card text-foreground border-border/50 rounded-tl-sm"
                             )}
                           >
@@ -1583,7 +1583,7 @@ export function TaskDetailsModal({
                                 {comment.content?.split(/(@[^\s]+(?:\s[^\s]+)*)/).map((part: string, idx: number) => {
                                   if (part.startsWith('@')) {
                                     return (
-                                      <span key={idx} className="text-primary font-semibold bg-primary/10 px-1 rounded">
+                                      <span key={idx} className="text-foreground font-semibold bg-primary/10 px-1 rounded">
                                         {part}
                                       </span>
                                     );
@@ -1711,7 +1711,7 @@ export function TaskDetailsModal({
                             onClick={() => handleMentionSelect(user)}
                             className={cn(
                               "w-full flex items-center gap-2 px-3 py-2 rounded-md text-left text-sm transition-colors",
-                              idx === mentionIndex ? "bg-primary/10 text-primary" : "hover:bg-secondary"
+                              idx === mentionIndex ? "bg-primary/10 text-foreground" : "hover:bg-secondary"
                             )}
                           >
                             <div className="w-6 h-6 rounded-full bg-primary/20 flex items-center justify-center text-xs font-medium">
@@ -1820,7 +1820,7 @@ export function TaskDetailsModal({
                               className="w-full flex items-center gap-2 px-2 py-2 rounded-lg hover:bg-secondary/50 transition-colors text-left"
                             >
                               <span className="text-sm font-medium flex-1">{displayName}</span>
-                              {isSelected && <Check className="w-4 h-4 text-primary" />}
+                              {isSelected && <Check className="w-4 h-4 text-foreground" />}
                             </button>
                           );
                         })
@@ -1877,7 +1877,7 @@ export function TaskDetailsModal({
                                         className="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-secondary/50"
                                       >
                                         <span className="text-sm font-medium flex-1">{displayName}</span>
-                                        {isSelected && <Check className="w-4 h-4 text-primary" />}
+                                        {isSelected && <Check className="w-4 h-4 text-foreground" />}
                                       </CommandItem>
                                     );
                                   })}
@@ -2019,7 +2019,7 @@ export function TaskDetailsModal({
                   <span className="text-[12px] font-bold text-muted-foreground/60">Метки</span>
                   <Popover>
                     <PopoverTrigger asChild>
-                      <Button variant="ghost" size="icon" className="h-5 w-5 rounded-md bg-secondary/15 hover:bg-primary/10 hover:text-primary">
+                      <Button variant="ghost" size="icon" className="h-5 w-5 rounded-md bg-secondary/15 hover:bg-primary/10 hover:text-foreground">
                         <Plus className="w-3 h-3" />
                       </Button>
                     </PopoverTrigger>
@@ -2042,7 +2042,7 @@ export function TaskDetailsModal({
                                   className={cn(
                                     "px-2 py-0.5 text-[9px] font-bold border-none rounded-md cursor-pointer transition-all hover:opacity-80",
                                     label.color ? label.color.replace('bg-', 'bg-').replace('500', '500/10') : "bg-primary/10",
-                                    label.color ? (label.color.includes('red') || label.color.includes('orange') || label.color.includes('rose') ? "text-white" : label.color.replace('bg-', 'text-').replace('500', '600')) : "text-primary"
+                                    label.color ? (label.color.includes('red') || label.color.includes('orange') || label.color.includes('rose') ? "text-white" : label.color.replace('bg-', 'text-').replace('500', '600')) : "text-foreground"
                                   )}
                                   onClick={() => handleAddLabel(label.name)}
                                 >
@@ -2069,7 +2069,7 @@ export function TaskDetailsModal({
                           "px-2 py-0 text-[9px] font-bold border-none rounded-md cursor-pointer hover:bg-destructive/20 hover:text-destructive transition-colors",
                           label.pending && "opacity-50",
                           labelInfo?.color ? labelInfo.color.replace('bg-', 'bg-').replace('500', '500/10') : "bg-primary/10",
-                          labelInfo?.color ? (labelInfo.color.includes('red') || labelInfo.color.includes('orange') || labelInfo.color.includes('rose') ? "text-white" : labelInfo.color.replace('bg-', 'text-').replace('500', '600')) : "text-primary"
+                          labelInfo?.color ? (labelInfo.color.includes('red') || labelInfo.color.includes('orange') || labelInfo.color.includes('rose') ? "text-white" : labelInfo.color.replace('bg-', 'text-').replace('500', '600')) : "text-foreground"
                         )}
                         onClick={() => handleRemoveLabel(label.name)}
                         title="Кликните для удаления"
@@ -2087,12 +2087,12 @@ export function TaskDetailsModal({
                 <div className="flex items-center gap-2">
                   <span className="text-[9px] font-bold text-muted-foreground/40 uppercase tracking-widest">Создатель</span>
                   <div className="flex items-center gap-1">
-                    <span className="text-[9px] font-bold text-primary/70">{safeTask.creator.name}</span>
+                    <span className="text-[9px] font-bold text-foreground/70">{safeTask.creator.name}</span>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="text-[9px] font-bold text-muted-foreground/40 uppercase tracking-widest">Проект</span>
-                  <span className="text-[9px] font-bold text-primary/70">{safeTask.project}</span>
+                  <span className="text-[9px] font-bold text-foreground/70">{safeTask.project}</span>
                 </div>
               </div>
             </div>
