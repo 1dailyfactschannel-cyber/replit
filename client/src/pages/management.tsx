@@ -36,7 +36,9 @@ import {
   X,
   Palette,
   Tags,
-  Folder
+  Folder,
+  Archive,
+  RotateCcw
 } from "lucide-react";
 import { RolesManagement } from "@/components/settings/RolesManagement";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -82,6 +84,7 @@ export default function ManagementPage() {
   const sections = [
     { id: "team", label: "Команда", icon: Users, description: "Участники и приглашения" },
     { id: "projects", label: "Проекты", icon: LayoutGrid, description: "Настройка проектов и приоритетов" },
+    { id: "archive", label: "Архив задач", icon: Archive, description: "Архивированные задачи" },
     { id: "security", label: "Безопасность", icon: Shield, description: "Настройки безопасности аккаунта" },
     { id: "roles", label: "Роли", icon: Shield, description: "Права доступа и разрешения" },
     { id: "integrations", label: "Интеграции", icon: Puzzle, description: "Внешние сервисы и API" },
@@ -175,6 +178,8 @@ export default function ManagementPage() {
                 <RolesManagement />
               ) : activeSection === "security" ? (
                 <SecurityManagement />
+              ) : activeSection === "archive" ? (
+                <ArchiveManagement />
               ) : activeSection === "team" ? (
                 <TeamManagement />
               ) : activeSection === "projects" ? (
@@ -528,6 +533,103 @@ function IntegrationsManagement() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+function ArchiveManagement() {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  
+  const { data: tasks = [], isLoading } = useQuery({
+    queryKey: ["/api/tasks/archived"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/tasks/archived");
+      return res.json();
+    }
+  });
+
+  const restoreMutation = useMutation({
+    mutationFn: async (taskId: string) => {
+      const res = await apiRequest("PATCH", `/api/tasks/${taskId}`, { archived: false });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks/archived"] });
+      toast({ title: "Задача восстановлена", description: "Задача успешно восстановлена из архива" });
+    },
+    onError: () => {
+      toast({ title: "Ошибка", description: "Не удалось восстановить задачу", variant: "destructive" });
+    }
+  });
+
+  const formatDate = (date: any) => {
+    if (!date) return "";
+    const d = new Date(date);
+    return d.toLocaleDateString("ru-RU", { day: 'numeric', month: 'short', year: 'numeric' });
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  return (
+    <section className="space-y-4">
+      <div className="flex items-center justify-between px-1">
+        <div className="flex flex-col gap-1">
+          <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+            <Archive className="w-3.5 h-3.5" />
+            Архив задач
+          </h4>
+          <p className="text-[11px] text-muted-foreground">Задачи, которые были архивированы</p>
+        </div>
+      </div>
+
+      {tasks.length === 0 ? (
+        <Card className="border-border/50 shadow-sm bg-card/50">
+          <CardContent className="p-8 text-center">
+            <Archive className="w-12 h-12 mx-auto mb-4 text-muted-foreground opacity-30" />
+            <p className="text-sm text-muted-foreground">Архив пуст</p>
+            <p className="text-xs text-muted-foreground/70 mt-1">Здесь будут отображаться архивированные задачи</p>
+          </CardContent>
+        </Card>
+      ) : (
+        <Card className="border-border/50 shadow-sm overflow-hidden bg-card/50">
+          <div className="divide-y divide-border/50">
+            {tasks.map((task: any) => (
+              <div key={task.id} className="p-4 flex items-center justify-between hover:bg-muted/30 transition-colors group">
+                <div className="flex flex-col gap-1">
+                  <span className="text-sm font-bold">{task.title}</span>
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <span>{task.project?.name || "Проект"}</span>
+                    <span>•</span>
+                    <span>{task.board?.name || "Доска"}</span>
+                    {task.dueDate && (
+                      <>
+                        <span>•</span>
+                        <span>{formatDate(task.dueDate)}</span>
+                      </>
+                    )}
+                  </div>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-2 text-xs"
+                  onClick={() => restoreMutation.mutate(task.id)}
+                >
+                  <RotateCcw className="w-3 h-3" />
+                  Восстановить
+                </Button>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+    </section>
   );
 }
 
