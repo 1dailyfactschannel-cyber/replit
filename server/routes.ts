@@ -118,10 +118,23 @@ export async function registerRoutes(
 
   app.get("/api/users/:id", async (req, res) => {
     try {
-      const user = await storage.getUser(req.params.id);
+      const userId = req.params.id;
+      const cacheKey = `user:${userId}`;
+      
+      // Try cache first
+      const cached = await getCache(cacheKey);
+      if (cached) {
+        return res.json(cached);
+      }
+      
+      const user = await storage.getUser(userId);
       if (!user) {
         return res.status(404).json({ message: "User not found" });
       }
+      
+      // Cache for 5 minutes
+      await setCache(cacheKey, user, 300);
+      
       res.json(user);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch user" });
@@ -838,6 +851,7 @@ export async function registerRoutes(
       // Инвалидируем кэш статистики проектов и данные доски
       await invalidatePattern("projects:stats:*");
       await invalidatePattern(`board:full:${task.boardId}`);
+      await delCache(`task:${taskId}`);
       
       // Если передан новый порядок (order), нужно обновить порядок остальных задач в той же колонке
       if (updateData.order !== undefined) {
@@ -923,10 +937,19 @@ export async function registerRoutes(
     }
   });
 
- 
+  
   app.get("/api/tasks/:id", async (req, res) => {
     try {
-      const task = await storage.getTask(req.params.id);
+      const taskId = req.params.id;
+      const cacheKey = `task:${taskId}`;
+      
+      // Try cache first
+      const cached = await getCache(cacheKey);
+      if (cached) {
+        return res.json(cached);
+      }
+      
+      const task = await storage.getTask(taskId);
       if (!task) {
         return res.status(404).json({ message: "Task not found" });
       }
@@ -954,7 +977,10 @@ export async function registerRoutes(
           date: task.createdAt ? new Date(task.createdAt).toISOString() : ""
         }
       };
-
+      
+      // Cache for 2 minutes
+      await setCache(cacheKey, enrichedTask, 120);
+      
       res.json(enrichedTask);
     } catch (error) {
       console.error("Error fetching task:", error);
@@ -1286,7 +1312,20 @@ export async function registerRoutes(
 
   app.get("/api/chats/:chatId/messages", async (req, res) => {
     try {
-      const messages = await storage.getMessages(req.params.chatId);
+      const chatId = req.params.chatId;
+      const cacheKey = `chat:${chatId}:messages`;
+      
+      // Try to get from cache first
+      const cached = await getCache(cacheKey);
+      if (cached) {
+        return res.json(cached);
+      }
+      
+      const messages = await storage.getMessages(chatId);
+      
+      // = await storage.get Cache for 30 seconds (short TTL for messages)
+      await setCache(cacheKey, messages, 30);
+      
       res.json(messages);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch messages" });
@@ -1315,6 +1354,11 @@ export async function registerRoutes(
         avatar,
         ownerId: user.id
       }, allParticipants);
+      
+      // Invalidate cache for all participants
+      for (const participantId of allParticipants) {
+        await delCache(`user:${participantId}:chats`);
+      }
       
       // Return chat with participants for immediate UI update
       const participants = (await Promise.all(
@@ -1371,6 +1415,9 @@ export async function registerRoutes(
       
       // Emit to all users in the chat room
       io.to(`chat:${req.params.chatId}`).emit("new-message", message);
+      
+      // Invalidate cache for this chat
+      await delCache(`chat:${req.params.chatId}:messages`);
       
       // Also notify each participant individually (for chat list updates)
       const participants = await storage.getChatParticipants(req.params.chatId);
