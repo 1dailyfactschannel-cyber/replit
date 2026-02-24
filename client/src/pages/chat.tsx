@@ -217,8 +217,19 @@ export default function ChatPage() {
       });
 
       socket.on("new-message", (message: Message) => {
+        // Skip if this message was just sent by us (already added via optimistic update)
         queryClient.setQueryData(["/api/chats", message.chatId, "messages"], (old: Message[] = []) => {
+          // Check if message already exists by ID or by content+sender+time (for optimistic updates)
           if (old.some(m => m.id === message.id)) return old;
+          
+          // Check for optimistic duplicate (same content, same sender, recent)
+          const isDuplicate = old.some(m => 
+            m.id?.startsWith('temp-') && 
+            m.content === message.content && 
+            m.senderId === message.senderId
+          );
+          
+          if (isDuplicate) return old;
           return [...old, message];
         });
         
