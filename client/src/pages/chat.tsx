@@ -546,7 +546,7 @@ export default function ChatPage() {
                     <Dialog open={isCreateChatOpen} onOpenChange={setIsCreateChatOpen}>
                       <DialogTrigger asChild>
                         <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg hover:bg-primary/10 hover:text-primary transition-colors" title="Начать чат">
-                          <MessageSquare className="w-4 h-4" />
+                          <MessageSquare className="w-4 h-4 text-foreground" />
                         </Button>
                       </DialogTrigger>
                       <DialogContent className="sm:max-w-[425px]">
@@ -602,7 +602,7 @@ export default function ChatPage() {
                     <Dialog open={isCreateFolderOpen} onOpenChange={setIsCreateFolderOpen}>
                       <DialogTrigger asChild>
                         <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg hover:bg-primary/10 hover:text-primary transition-colors" title="Создать папку">
-                          <FolderPlus className="w-4 h-4" />
+                          <FolderPlus className="w-4 h-4 text-foreground" />
                         </Button>
                       </DialogTrigger>
                       <DialogContent className="sm:max-w-[425px]">
@@ -666,7 +666,7 @@ export default function ChatPage() {
                     <Dialog open={isCreateChatOpen} onOpenChange={setIsCreateChatOpen}>
                       <DialogTrigger asChild>
                         <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg hover:bg-primary/10 hover:text-primary transition-colors" title="Начать чат">
-                          <UserPlus className="w-4 h-4" />
+                          <UserPlus className="w-4 h-4 text-foreground" />
                         </Button>
                       </DialogTrigger>
                       <DialogContent className="sm:max-w-[425px]">
@@ -703,7 +703,7 @@ export default function ChatPage() {
                     <Dialog open={isCreateGroupOpen} onOpenChange={setIsCreateGroupOpen}>
                       <DialogTrigger asChild>
                         <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg hover:bg-primary/10 hover:text-primary transition-colors" title="Создать группу">
-                          <Plus className="w-4 h-4" />
+                          <Plus className="w-4 h-4 text-foreground" />
                         </Button>
                       </DialogTrigger>
                       <DialogContent className="sm:max-w-[425px]">
