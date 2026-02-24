@@ -125,6 +125,41 @@ export default function ChatPage() {
       const res = await apiRequest("POST", `/api/chats/${data.chatId}/messages`, { content: data.content, attachments: data.attachments });
       return res.json();
     },
+    onMutate: async (newMessage) => {
+      // Cancel outgoing refetches
+      await queryClient.cancelQueries({ queryKey: ["/api/chats", activeChatId, "messages"] });
+      
+      // Snapshot previous value
+      const previousMessages = queryClient.getQueryData([ "/api/chats", activeChatId, "messages" ]);
+      
+      // Optimistically add new message
+      const optimisticMessage = {
+        id: `temp-${Date.now()}`,
+        chatId: newMessage.chatId,
+        senderId: currentUser?.id,
+        content: newMessage.content,
+        attachments: newMessage.attachments || [],
+        createdAt: new Date().toISOString(),
+        sender: {
+          id: currentUser?.id,
+          username: currentUser?.username,
+          firstName: currentUser?.firstName,
+          lastName: currentUser?.lastName,
+          avatar: currentUser?.avatar
+        }
+      };
+      
+      queryClient.setQueryData([ "/api/chats", activeChatId, "messages" ], (old: any[]) => {
+        return old ? [...old, optimisticMessage] : [optimisticMessage];
+      });
+      
+      return { previousMessages };
+    },
+    onError: (err, newMessage, context) => {
+      // Rollback on error
+      queryClient.setQueryData([ "/api/chats", activeChatId, "messages" ], context?.previousMessages);
+      toast.error("Не удалось отправить сообщение");
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/chats", activeChatId, "messages"] });
       setMessageInput("");
