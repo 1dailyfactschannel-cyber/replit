@@ -1235,6 +1235,13 @@ export default function ChatPage() {
                                             <Edit className="w-3 h-3 mr-2" />
                                             Изменить
                                           </DropdownMenuItem>
+                                          <DropdownMenuItem onClick={() => {
+                                            setMessageInput(msg.content);
+                                            setEditingMessageId(null);
+                                          }}>
+                                            <MessageSquare className="w-3 h-3 mr-2" />
+                                            Вернуть в поле ввода
+                                          </DropdownMenuItem>
                                           <DropdownMenuItem 
                                             className="text-destructive"
                                             onClick={() => deleteMessageMutation.mutate(msg.id)}
