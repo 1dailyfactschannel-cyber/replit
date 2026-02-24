@@ -122,7 +122,7 @@ export default function ChatPage() {
 
   const sendMessageMutation = useMutation({
     mutationFn: async (data: { chatId: string, content: string, attachments?: any[] }) => {
-      const res = await apiRequest("POST", "/api/messages", data);
+      const res = await apiRequest("POST", `/api/chats/${data.chatId}/messages`, { content: data.content, attachments: data.attachments });
       return res.json();
     },
     onSuccess: () => {
