@@ -100,6 +100,7 @@ export async function registerRoutes(
   });
 
   app.get("/api/users", async (_req, res) => {
+    console.log("=== USERS ROUTE HIT ===");
     try {
       const cacheKey = "users:all";
       const cached = await getCache(cacheKey);
@@ -535,8 +536,13 @@ export async function registerRoutes(
   // Task routes
   
   // Get tasks assigned to current user - must be before :id routes
-  app.get("/api/tasks/my-tasks", async (req, res) => {
-    console.log("[my-tasks] Route hit! User:", req.user?.username);
+  app.get("/api/tasks/my-tasks", async (req, res, next) => {
+    console.log(">>> MY TASKS ROUTE CALLED <<<");
+    console.log("Path:", req.path);
+    console.log("Original URL:", req.originalUrl);
+    next();
+  }, async (req, res) => {
+    console.log(">>> MY TASKS HANDLER <<<");
     if (!req.isAuthenticated()) {
       console.log("[my-tasks] Not authenticated");
       return res.status(401).json({ message: "Unauthorized" });
