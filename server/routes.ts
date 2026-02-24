@@ -533,6 +533,68 @@ export async function registerRoutes(
   });
 
   // Task routes
+  
+  // Get tasks assigned to current user - must be before :id routes
+  app.get("/api/tasks/my-tasks", async (req, res) => {
+    console.log("[my-tasks] Route hit! User:", req.user?.username);
+    if (!req.isAuthenticated()) {
+      console.log("[my-tasks] Not authenticated");
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+    try {
+      const userId = req.user.id;
+      console.log("[my-tasks] Fetching tasks for user:", userId, "username:", req.user.username);
+      
+      // Get tasks assigned to the user
+      const tasks = await storage.db
+        .select({ 
+          task: schema.tasks,
+          board: schema.boards,
+          project: schema.projects
+        })
+        .from(schema.tasks)
+        .innerJoin(schema.boards, eq(schema.tasks.boardId, schema.boards.id))
+        .innerJoin(schema.projects, eq(schema.boards.projectId, schema.projects.id))
+        .where(
+          and(
+            eq(schema.tasks.assigneeId, userId),
+            or(
+              eq(schema.tasks.archived, false),
+              isNull(schema.tasks.archived)
+            )
+          )
+        );
+      
+      console.log("[my-tasks] Found tasks:", tasks.length);
+      
+      // Enrich tasks with board and project info
+      const enrichedTasks = await Promise.all(tasks.map(async (t) => {
+        const [assignee, reporter] = await Promise.all([
+          t.task.assigneeId ? storage.getUser(t.task.assigneeId) : null,
+          t.task.reporterId ? storage.getUser(t.task.reporterId) : null
+        ]);
+
+        const formatName = (user: any) => {
+          if (!user) return null;
+          return `${user.firstName || ""} ${user.lastName || ""}`.trim() || user.username || "Пользователь";
+        };
+
+        return {
+          ...t.task,
+          board: t.board,
+          project: t.project,
+          assignee: assignee ? { name: formatName(assignee), avatar: assignee.avatar } : null,
+          creator: reporter ? { name: formatName(reporter), avatar: reporter.avatar, date: t.task.createdAt } : null,
+        };
+      }));
+      
+      res.json(enrichedTasks);
+    } catch (error) {
+      console.error("Error fetching my tasks:", error);
+      res.status(500).json({ message: "Failed to fetch tasks" });
+    }
+  });
+
   app.get("/api/boards/:boardId/tasks", async (req, res) => {
     try {
       const tasks = await storage.getTasksByBoard(req.params.boardId);
@@ -815,67 +877,7 @@ export async function registerRoutes(
     }
   });
 
-  // Get tasks assigned to current user
-  app.get("/api/tasks/my-tasks", async (req, res) => {
-    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
-    try {
-      const userId = req.user.id;
-      console.log("[my-tasks] Fetching tasks for user:", userId, "username:", req.user.username);
-      
-      // Get tasks assigned to the user - include all projects (not just active)
-      const tasks = await storage.db
-        .select({ 
-          task: schema.tasks,
-          board: schema.boards,
-          project: schema.projects
-        })
-        .from(schema.tasks)
-        .innerJoin(schema.boards, eq(schema.tasks.boardId, schema.boards.id))
-        .innerJoin(schema.projects, eq(schema.boards.projectId, schema.projects.id))
-        .where(
-          and(
-            eq(schema.tasks.assigneeId, userId),
-            or(
-              eq(schema.tasks.archived, false),
-              isNull(schema.tasks.archived)
-            )
-          )
-        );
-      
-      console.log("[my-tasks] Found tasks (all projects):", tasks.length);
-      if (tasks.length > 0) {
-        console.log("[my-tasks] Sample task assigneeId:", tasks[0].task.assigneeId, "project status:", tasks[0].project.status);
-      }
-      
-      // Enrich tasks with board and project info
-      const enrichedTasks = await Promise.all(tasks.map(async (t) => {
-        const [assignee, reporter] = await Promise.all([
-          t.task.assigneeId ? storage.getUser(t.task.assigneeId) : null,
-          t.task.reporterId ? storage.getUser(t.task.reporterId) : null
-        ]);
-
-        const formatName = (user: any) => {
-          if (!user) return null;
-          return `${user.firstName || ""} ${user.lastName || ""}`.trim() || user.username || "Пользователь";
-        };
-
-        return {
-          ...t.task,
-          board: t.board,
-          project: t.project,
-          assignee: assignee ? { name: formatName(assignee), avatar: assignee.avatar } : null,
-          creator: reporter ? { name: formatName(reporter), avatar: reporter.avatar, date: t.task.createdAt } : null,
-        };
-      }));
-      
-      res.json(enrichedTasks);
-    } catch (error) {
-      console.error("Error fetching my tasks:", error);
-      res.status(500).json({ message: "Failed to fetch tasks" });
-    }
-  });
-
-
+ 
   app.get("/api/tasks/:id", async (req, res) => {
     try {
       const task = await storage.getTask(req.params.id);
