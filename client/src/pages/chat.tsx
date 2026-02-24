@@ -318,6 +318,12 @@ export default function ChatPage() {
   const [messageInput, setMessageInput] = useState("");
   const [uploading, setUploading] = useState(false);
   const [attachments, setAttachments] = useState<{ url: string, name: string, type: string, size: number }[]>([]);
+  
+  // Reset message input when switching chats
+  useEffect(() => {
+    setMessageInput("");
+    setAttachments([]);
+  }, [activeChatId]);
   const [scheduleOpen, setScheduleOpen] = useState(false);
   
   const [isCreateGroupOpen, setIsCreateGroupOpen] = useState(false);
