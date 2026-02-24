@@ -40,6 +40,9 @@ export interface IStorage {
   deleteBoardColumn(id: string): Promise<void>;
   updateTaskColumnId(taskId: string, columnId: string): Promise<void>;
   getBoard(id: string): Promise<any>;
+  
+  // Chat
+  deleteChat(id: string): Promise<void>;
 }
 
 import { PostgresStorage } from "./postgres-storage";

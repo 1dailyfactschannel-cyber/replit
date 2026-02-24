@@ -154,6 +154,16 @@ export default function ChatPage() {
     }
   });
 
+  const deleteChatMutation = useMutation({
+    mutationFn: async (chatId: string) => {
+      await apiRequest("DELETE", `/api/chats/${chatId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/chats"] });
+      toast.success("Чат удалён");
+    }
+  });
+
   // Socket.io initialization
   useEffect(() => {
     if (currentUser && !socketRef.current) {
@@ -882,15 +892,30 @@ export default function ChatPage() {
                           </h4>
                           <span className="text-[10px] text-muted-foreground whitespace-nowrap">{formatTime(contact.lastMessage?.createdAt || contact.updatedAt)}</span>
                         </div>
-                        <div className="flex justify-between items-center">
+                      <div className="flex justify-between items-center">
                           <p className="text-xs text-muted-foreground truncate max-w-[140px] leading-relaxed">
                             {contact.lastMessage?.content || "Нет сообщений"}
                           </p>
-                          {contact.unread && contact.unread > 0 && (
-                            <span className="bg-primary text-primary-foreground text-[10px] font-bold h-5 min-w-[1.25rem] px-1 rounded-full flex items-center justify-center shadow-sm shadow-primary/20">
-                              {contact.unread}
-                            </span>
-                          )}
+                          <div className="flex items-center gap-1">
+                            {contact.unread && contact.unread > 0 && (
+                              <span className="bg-primary text-primary-foreground text-[10px] font-bold h-5 min-w-[1.25rem] px-1 rounded-full flex items-center justify-center shadow-sm shadow-primary/20">
+                                {contact.unread}
+                              </span>
+                            )}
+                            <Button 
+                              variant="ghost" 
+                              size="icon" 
+                              className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity:text hover-rose-500"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (confirm("Вы уверены, что хотите удалить этот чат?")) {
+                                  deleteChatMutation.mutate(contact.id);
+                                }
+                              }}
+                            >
+                              <X className="w-3 h-3" />
+                            </Button>
+                          </div>
                         </div>
                       </div>
                   </div>

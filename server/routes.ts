@@ -1401,6 +1401,29 @@ export async function registerRoutes(
     }
   });
 
+  // Delete chat
+  app.delete("/api/chats/:chatId", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
+    try {
+      const chatId = req.params.chatId;
+      
+      // Delete chat - storage should handle cascade deletion of messages and participants
+      await storage.deleteChat(chatId);
+      
+      // Invalidate cache
+      await delCache(`chat:${chatId}:messages`);
+      await delCache(`user:${req.user.id}:chats`);
+      
+      // Notify participants about chat deletion
+      io.to(`chat:${chatId}`).emit("chat-deleted", { chatId });
+      
+      res.json({ message: "Chat deleted successfully" });
+    } catch (error) {
+      console.error("Error deleting chat:", error);
+      res.status(500).json({ message: "Failed to delete chat" });
+    }
+  });
+
   app.post("/api/chats/:chatId/messages", async (req, res) => {
     if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
     try {
