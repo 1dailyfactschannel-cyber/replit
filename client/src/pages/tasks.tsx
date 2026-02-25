@@ -3,8 +3,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { MoreHorizontal, Calendar, ArrowUpDown, Filter, Layout as LayoutIcon, Briefcase, Play, Clock } from "lucide-react";
-import { useState, useEffect } from "react";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { MoreHorizontal, Calendar, ArrowUpDown, Filter, Layout as LayoutIcon, Briefcase, Play, Clock, X } from "lucide-react";
+import { useState, useEffect, useMemo } from "react";
 import { TaskDetailsModal, Task } from "@/components/kanban/TaskDetailsModal";
 import { toast } from "sonner";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -14,6 +17,12 @@ export default function Tasks() {
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [currentTime, setCurrentTime] = useState(Date.now());
+  const [taskFilters, setTaskFilters] = useState({
+    search: "",
+    projects: [] as string[],
+    status: [] as string[]
+  });
+  const [filterOpen, setFilterOpen] = useState(false);
   const queryClient = useQueryClient();
 
   const { data: tasks = [], isLoading } = useQuery({
@@ -23,6 +32,47 @@ export default function Tasks() {
       return res.json();
     }
   });
+
+  // Get all boards for project filter
+  const { data: boards = [] } = useQuery({
+    queryKey: ["/api/boards"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/boards");
+      return res.json();
+    }
+  });
+
+  // Filter tasks based on selected filters
+  const filteredTasks = useMemo(() => {
+    if (!tasks || tasks.length === 0) return [];
+    
+    return tasks.filter((task: any) => {
+      // Search filter
+      if (taskFilters.search) {
+        const searchLower = taskFilters.search.toLowerCase();
+        const matchTitle = task.title?.toLowerCase().includes(searchLower);
+        const matchDesc = task.description?.toLowerCase().includes(searchLower);
+        const matchNumber = task.number?.toString().includes(searchLower);
+        if (!matchTitle && !matchDesc && !matchNumber) return false;
+      }
+      
+      // Project filter
+      if (taskFilters.projects.length > 0) {
+        if (!task.boardId || !taskFilters.projects.includes(task.boardId)) return false;
+      }
+      
+      // Status filter
+      if (taskFilters.status.length > 0) {
+        const taskStatus = task.status || "todo";
+        if (!taskFilters.status.includes(taskStatus)) return false;
+      }
+      
+      return true;
+    });
+  }, [tasks, taskFilters]);
+
+  // Get active filter count
+  const activeFilterCount = taskFilters.projects.length + taskFilters.status.length + (taskFilters.search ? 1 : 0);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -147,12 +197,108 @@ export default function Tasks() {
              <h1 className="text-3xl font-bold tracking-tight text-foreground">Мои задачи</h1>
              <p className="text-muted-foreground mt-1">Все задачи, назначенные лично вам из разных проектов.</p>
            </div>
-           <div className="flex gap-2">
-              <Button variant="outline" className="gap-2"><Filter className="w-4 h-4" /> Фильтр</Button>
-           </div>
+            <div className="flex gap-2">
+              <Popover open={filterOpen} onOpenChange={setFilterOpen}>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" className="gap-2">
+                    <Filter className="w-4 h-4" /> 
+                    Фильтр
+                    {activeFilterCount > 0 && (
+                      <span className="ml-1 bg-primary text-primary-foreground text-[10px] rounded-full w-5 h-5 flex items-center justify-center">
+                        {activeFilterCount}
+                      </span>
+                    )}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-72 p-4" align="end">
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <Label className="font-bold">Фильтры</Label>
+                      {activeFilterCount > 0 && (
+                        <Button 
+                          variant="ghost" 
+                          size="sm" 
+                          onClick={() => setTaskFilters({ search: "", projects: [], status: [] })}
+                          className="h-6 text-xs text-muted-foreground hover:text-foreground"
+                        >
+                          Очистить
+                        </Button>
+                      )}
+                    </div>
+                    
+                    {/* Search */}
+                    <div className="space-y-2">
+                      <Label className="text-xs text-muted-foreground">Поиск</Label>
+                      <Input
+                        placeholder="Поиск по названию..."
+                        value={taskFilters.search}
+                        onChange={(e) => setTaskFilters(prev => ({ ...prev, search: e.target.value }))}
+                        className="h-8"
+                      />
+                    </div>
+
+                    {/* Project filter */}
+                    <div className="space-y-2">
+                      <Label className="text-xs text-muted-foreground">Проект</Label>
+                      <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto">
+                        {boards.length === 0 ? (
+                          <span className="text-xs text-muted-foreground">Нет проектов</span>
+                        ) : (
+                          boards.map((board: any) => (
+                            <label
+                              key={board.id}
+                              className="flex items-center gap-2 px-2 py-1 border border-input rounded-md cursor-pointer hover:bg-accent transition-colors text-xs"
+                            >
+                              <Checkbox
+                                checked={taskFilters.projects.includes(board.id)}
+                                onCheckedChange={(checked) => {
+                                  setTaskFilters(prev => ({
+                                    ...prev,
+                                    projects: checked
+                                      ? [...prev.projects, board.id]
+                                      : prev.projects.filter(id => id !== board.id)
+                                  }));
+                                }}
+                              />
+                              <span>{board.name}</span>
+                            </label>
+                          ))
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Status filter */}
+                    <div className="space-y-2">
+                      <Label className="text-xs text-muted-foreground">Статус</Label>
+                      <div className="flex flex-wrap gap-2">
+                        {["todo", "in_progress", "review", "done"].map((status) => (
+                          <label
+                            key={status}
+                            className="flex items-center gap-2 px-2 py-1 border border-input rounded-md cursor-pointer hover:bg-accent transition-colors text-xs"
+                          >
+                            <Checkbox
+                              checked={taskFilters.status.includes(status)}
+                              onCheckedChange={(checked) => {
+                                setTaskFilters(prev => ({
+                                  ...prev,
+                                  status: checked
+                                    ? [...prev.status, status]
+                                    : prev.status.filter(s => s !== status)
+                                }));
+                              }}
+                            />
+                            <span>{status === "todo" ? "В планах" : status === "in_progress" ? "В работе" : status === "review" ? "На проверке" : "Готово"}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </PopoverContent>
+              </Popover>
+            </div>
         </div>
 
-        {tasks.length === 0 ? (
+        {filteredTasks.length === 0 ? (
           <div className="text-center py-12 text-muted-foreground">
             <Briefcase className="w-12 h-12 mx-auto mb-4 opacity-50" />
             <p>У вас пока нет назначенных задач</p>
@@ -178,7 +324,7 @@ export default function Tasks() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {tasks.map((task: any) => (
+                {filteredTasks.map((task: any) => (
                   <TableRow 
                     key={task.id} 
                     className="group cursor-pointer hover:bg-secondary/20 transition-colors"

@@ -367,6 +367,16 @@ export async function registerRoutes(
     }
   });
 
+  // Get all boards (for task filters)
+  app.get("/api/boards", async (req, res) => {
+    try {
+      const boards = await storage.getAllBoards();
+      res.json(boards);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch boards" });
+    }
+  });
+
   app.post("/api/projects", async (req, res) => {
     if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
     // console.log("POST /api/projects hit with body:", req.body);
@@ -1421,6 +1431,37 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error deleting chat:", error);
       res.status(500).json({ message: "Failed to delete chat" });
+    }
+  });
+
+  // Leave chat (for groups)
+  app.post("/api/chats/:chatId/leave", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
+    try {
+      const chatId = req.params.chatId;
+      const userId = req.user.id;
+      
+      // Get current participants
+      const participants = await storage.getChatParticipants(chatId);
+      const participantIds = participants.filter(p => p.userId !== userId).map(p => p.userId);
+      
+      if (participantIds.length === 0) {
+        // If no one left, delete the chat
+        await storage.deleteChat(chatId);
+        res.json({ message: "Chat deleted" });
+        return;
+      }
+      
+      // Update chat participants (remove current user)
+      await storage.updateChatParticipants(chatId, participantIds);
+      
+      // Notify
+      io.to(`chat:${chatId}`).emit("chat-update", { chatId, participants: participantIds });
+      
+      res.json({ message: "Left chat successfully" });
+    } catch (error) {
+      console.error("Error leaving chat:", error);
+      res.status(500).json({ message: "Failed to leave chat" });
     }
   });
 

@@ -470,6 +470,8 @@ interface ProjectItemProps {
   isCollapsed: boolean;
   onSelect: (projectId: string) => void;
   onToggleCollapse: (projectId: string, e: React.MouseEvent) => void;
+  onEdit?: (project: any) => void;
+  onDelete?: (projectId: string) => void;
 }
 
 const ProjectItem = React.memo(({ 
@@ -477,14 +479,16 @@ const ProjectItem = React.memo(({
   isActive, 
   isCollapsed, 
   onSelect, 
-  onToggleCollapse 
+  onToggleCollapse,
+  onEdit,
+  onDelete
 }: ProjectItemProps) => {
   return (
     <div className="space-y-1">
       <div
         onClick={() => onSelect(project.id)}
         className={cn(
-          "w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-all group/project relative pr-10 cursor-pointer",
+          "w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-all group/project relative cursor-pointer",
           isActive
             ? "bg-primary/10 text-primary"
             : "text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
@@ -525,6 +529,39 @@ const ProjectItem = React.memo(({
             </div>
           </div>
         </div>
+        
+        {(onEdit || onDelete) && (
+          <div className="absolute right-2 top-1/2 -translate-y-1/2 opacity-0 group-hover/project:opacity-100 transition-opacity">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button 
+                  type="button"
+                  className="p-1 rounded hover:bg-secondary/70 transition-colors"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <MoreVertical className="w-4 h-4 text-muted-foreground" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-40">
+                {onEdit && (
+                  <DropdownMenuItem onClick={() => onEdit(project)}>
+                    <Pencil className="w-4 h-4 mr-2" />
+                    Редактировать
+                  </DropdownMenuItem>
+                )}
+                {onDelete && (
+                  <DropdownMenuItem 
+                    onClick={() => onDelete(project.id)}
+                    className="text-destructive focus:text-destructive"
+                  >
+                    <Trash2 className="w-4 h-4 mr-2" />
+                    Удалить
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -556,6 +593,9 @@ export default function Projects() {
   const [editingColumn, setEditingColumn] = useState<{ originalName: string, currentName: string } | null>(null);
   const [collapsedProjects, setCollapsedProjects] = useState<Record<string, boolean>>({});
   const [showAllTasks, setShowAllTasks] = useState(false);
+  const [editingProject, setEditingProject] = useState<any>(null);
+  const [isEditProjectOpen, setIsEditProjectOpen] = useState(false);
+  const [deletingProjectId, setDeletingProjectId] = useState<string | null>(null);
   
   // Search with debounce for better performance
   const [projectSearchQuery, setProjectSearchQuery] = useState("");
@@ -570,9 +610,17 @@ export default function Projects() {
     labels: [] as string[],
     search: "",
     dateFrom: undefined as Date | undefined,
-    dateTo: undefined as Date | undefined
+    dateTo: undefined as Date | undefined,
+    projects: [] as string[]
   });
   const [activeFiltersCount, setActiveFiltersCount] = useState(0);
+  
+  // Filter dropdown states
+  const [projectFilterOpen, setProjectFilterOpen] = useState(false);
+  const [statusFilterOpen, setStatusFilterOpen] = useState(false);
+  const [assigneeFilterOpen, setAssigneeFilterOpen] = useState(false);
+  const [priorityFilterOpen, setPriorityFilterOpen] = useState(false);
+  const [labelsFilterOpen, setLabelsFilterOpen] = useState(false);
 
   // Queries with optimized caching
   const { data: projects = [], isLoading: isLoadingProjects } = useQuery<any[]>({
@@ -664,8 +712,13 @@ export default function Projects() {
       return res.json();
     },
     onMutate: async (newProjectData) => {
+      // Cancel outgoing refetches
+      await queryClient.cancelQueries({ queryKey: ["/api/projects"] });
       await queryClient.cancelQueries({ queryKey: ["/api/projects", selectedWorkspaceId] });
+      
+      // Snapshot previous values
       const previousProjects = queryClient.getQueryData(["/api/projects", selectedWorkspaceId]);
+      const previousProjectsAll = queryClient.getQueryData(["/api/projects"]);
       
       const tempProject = {
         id: `temp-${Date.now()}`,
@@ -681,12 +734,18 @@ export default function Projects() {
         workspaceId: selectedWorkspaceId,
       };
       
+      // Optimistically update both query keys
       queryClient.setQueryData(["/api/projects", selectedWorkspaceId], (old: any[] = []) => [...(old || []), tempProject]);
+      queryClient.setQueryData(["/api/projects"], (old: any[] = []) => [...(old || []), tempProject]);
       
-      return { previousProjects };
+      return { previousProjects, previousProjectsAll };
     },
     onSuccess: (data) => {
+      // Replace temp project with real data in both query keys
       queryClient.setQueryData(["/api/projects", selectedWorkspaceId], (old: any[] = []) => 
+        (old || []).map((p: any) => p.id?.startsWith("temp-") ? data : p)
+      );
+      queryClient.setQueryData(["/api/projects"], (old: any[] = []) => 
         (old || []).map((p: any) => p.id?.startsWith("temp-") ? data : p)
       );
       setIsCreateProjectOpen(false);
@@ -695,12 +754,18 @@ export default function Projects() {
       toast.success("Проект успешно создан");
     },
     onError: (error: any, variables: any, context: any) => {
+      // Rollback on error
       if (context?.previousProjects) {
         queryClient.setQueryData(["/api/projects", selectedWorkspaceId], context.previousProjects);
+      }
+      if (context?.previousProjectsAll) {
+        queryClient.setQueryData(["/api/projects"], context.previousProjectsAll);
       }
       toast.error("Не удалось создать проект");
     },
     onSettled: () => {
+      // Refetch to ensure consistency
+      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
       queryClient.invalidateQueries({ queryKey: ["/api/projects", selectedWorkspaceId] });
     }
   });
@@ -725,9 +790,65 @@ export default function Projects() {
       const res = await apiRequest("PATCH", `/api/projects/${id}`, data);
       return res.json();
     },
+    onMutate: async ({ id, data }) => {
+      await queryClient.cancelQueries({ queryKey: ["/api/projects"] });
+      const previousProjects = queryClient.getQueryData(["/api/projects"]);
+      
+      // Optimistic update
+      queryClient.setQueryData(["/api/projects"], (old: any[] = []) => 
+        (old || []).map((p: any) => p.id === id ? { ...p, ...data } : p)
+      );
+      queryClient.setQueryData(["/api/projects", selectedWorkspaceId], (old: any[] = []) => 
+        (old || []).map((p: any) => p.id === id ? { ...p, ...data } : p)
+      );
+      
+      return { previousProjects };
+    },
+    onError: (error, variables, context) => {
+      if (context?.previousProjects) {
+        queryClient.setQueryData(["/api/projects"], context.previousProjects);
+      }
+      toast.error("Не удалось обновить проект");
+    },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
       toast.success("Проект успешно обновлен");
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+    }
+  });
+
+  const deleteProjectMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await apiRequest("DELETE", `/api/projects/${id}`);
+      if (!res.ok) throw new Error("Failed to delete");
+    },
+    onMutate: async (id) => {
+      await queryClient.cancelQueries({ queryKey: ["/api/projects"] });
+      const previousProjects = queryClient.getQueryData(["/api/projects"]);
+      
+      // Optimistic delete
+      queryClient.setQueryData(["/api/projects"], (old: any[] = []) => 
+        (old || []).filter((p: any) => p.id !== id)
+      );
+      queryClient.setQueryData(["/api/projects", selectedWorkspaceId], (old: any[] = []) => 
+        (old || []).filter((p: any) => p.id !== id)
+      );
+      
+      return { previousProjects };
+    },
+    onError: (error, variables, context) => {
+      if (context?.previousProjects) {
+        queryClient.setQueryData(["/api/projects"], context.previousProjects);
+      }
+      toast.error("Не удалось удалить проект");
+    },
+    onSuccess: () => {
+      setActiveProjectId(null);
+      toast.success("Проект удален");
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
     }
   });
 
@@ -900,6 +1021,36 @@ export default function Projects() {
       ...newProject,
       workspaceId: selectedWorkspaceId
     });
+  };
+
+  const handleEditProject = (project: any) => {
+    setEditingProject(project);
+    setIsEditProjectOpen(true);
+  };
+
+  const handleDeleteProject = (projectId: string) => {
+    setDeletingProjectId(projectId);
+  };
+
+  const confirmDeleteProject = () => {
+    if (deletingProjectId) {
+      deleteProjectMutation.mutate(deletingProjectId);
+      setDeletingProjectId(null);
+    }
+  };
+
+  const handleUpdateProject = () => {
+    if (!editingProject || !editingProject.name) return;
+    updateProjectMutation.mutate({
+      id: editingProject.id,
+      data: {
+        name: editingProject.name,
+        color: editingProject.color,
+        priority: editingProject.priority
+      }
+    });
+    setIsEditProjectOpen(false);
+    setEditingProject(null);
   };
 
   const [editingBoard, setEditingBoard] = useState<{ id: string, currentName: string } | null>(null);
@@ -1128,6 +1279,12 @@ export default function Projects() {
         if (!matchesSearch) return false;
       }
       
+      // Project filter
+      if (taskFilters.projects.length > 0) {
+        // Filter by projectId (tasks have projectId field)
+        if (!task.projectId || !taskFilters.projects.includes(task.projectId)) return false;
+      }
+      
       // Status filter
       if (taskFilters.status.length > 0) {
         if (!taskFilters.status.includes(task.status)) return false;
@@ -1207,6 +1364,7 @@ export default function Projects() {
       taskFilters.assignee.length +
       taskFilters.priority.length +
       taskFilters.labels.length +
+      taskFilters.projects.length +
       (taskFilters.search ? 1 : 0) +
       (taskFilters.dateFrom ? 1 : 0) +
       (taskFilters.dateTo ? 1 : 0);
@@ -1426,6 +1584,8 @@ export default function Projects() {
                       setActiveBoardId(null);
                     }}
                     onToggleCollapse={toggleProjectCollapse}
+                    onEdit={handleEditProject}
+                    onDelete={handleDeleteProject}
                   />
                   
                   {activeProject?.id === project.id && !collapsedProjects[project.id] && (
@@ -1615,154 +1775,209 @@ export default function Projects() {
                       />
                     </div>
 
-                    {/* Status filter */}
-                    <div className="space-y-2">
-                      <Label>Статус</Label>
-                      <div className="flex flex-wrap gap-2">
-                        {columns.map((col: any) => (
-                          <label
-                            key={col.id}
-                            className="flex items-center gap-2 px-3 py-2 border border-input bg-card rounded-lg cursor-pointer hover:bg-accent transition-colors"
-                          >
-                            <Checkbox
-                              checked={taskFilters.status.includes(col.name)}
-                              onCheckedChange={(checked) => {
-                                setTaskFilters(prev => ({
-                                  ...prev,
-                                  status: checked
-                                    ? [...prev.status, col.name]
-                                    : prev.status.filter(s => s !== col.name)
-                                }));
-                              }}
-                            />
-                            <span className="text-sm">{col.name}</span>
-                          </label>
-                        ))}
-                      </div>
+                    {/* Filters in grid */}
+                    <div className="grid grid-cols-2 gap-3">
+                      {/* Project filter */}
+                      <Popover open={projectFilterOpen} onOpenChange={setProjectFilterOpen}>
+                        <PopoverTrigger asChild>
+                          <Button variant="outline" className="justify-between w-full">
+                            <span>Проект</span>
+                            {taskFilters.projects.length > 0 && (
+                              <Badge variant="secondary" className="ml-2">{taskFilters.projects.length}</Badge>
+                            )}
+                            <ChevronDown className="ml-2 h-4 w-4 opacity-50" />
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-64 p-2" align="start">
+                          <div className="space-y-1 max-h-48 overflow-y-auto">
+                            {projects.length === 0 ? (
+                              <span className="text-xs text-muted-foreground p-2">Нет проектов</span>
+                            ) : (
+                              projects.map((project: any) => (
+                                <label key={project.id} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-accent cursor-pointer">
+                                  <Checkbox
+                                    checked={taskFilters.projects.includes(project.id)}
+                                    onCheckedChange={(checked) => {
+                                      setTaskFilters(prev => ({
+                                        ...prev,
+                                        projects: checked
+                                          ? [...prev.projects, project.id]
+                                          : prev.projects.filter(id => id !== project.id)
+                                      }));
+                                    }}
+                                  />
+                                  <span className="text-sm">{project.name}</span>
+                                </label>
+                              ))
+                            )}
+                          </div>
+                        </PopoverContent>
+                      </Popover>
+
+                      {/* Status filter */}
+                      <Popover open={statusFilterOpen} onOpenChange={setStatusFilterOpen}>
+                        <PopoverTrigger asChild>
+                          <Button variant="outline" className="justify-between w-full">
+                            <span>Статус</span>
+                            {taskFilters.status.length > 0 && (
+                              <Badge variant="secondary" className="ml-2">{taskFilters.status.length}</Badge>
+                            )}
+                            <ChevronDown className="ml-2 h-4 w-4 opacity-50" />
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-64 p-2" align="start">
+                          <div className="space-y-1">
+                            {columns.map((col: any) => (
+                              <label key={col.id} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-accent cursor-pointer">
+                                <Checkbox
+                                  checked={taskFilters.status.includes(col.name)}
+                                  onCheckedChange={(checked) => {
+                                    setTaskFilters(prev => ({
+                                      ...prev,
+                                      status: checked
+                                        ? [...prev.status, col.name]
+                                        : prev.status.filter(s => s !== col.name)
+                                    }));
+                                  }}
+                                />
+                                <span className="text-sm">{col.name}</span>
+                              </label>
+                            ))}
+                          </div>
+                        </PopoverContent>
+                      </Popover>
+
+                      {/* Assignee filter */}
+                      <Popover open={assigneeFilterOpen} onOpenChange={setAssigneeFilterOpen}>
+                        <PopoverTrigger asChild>
+                          <Button variant="outline" className="justify-between w-full">
+                            <span>Исполнитель</span>
+                            {taskFilters.assignee.length > 0 && (
+                              <Badge variant="secondary" className="ml-2">{taskFilters.assignee.length}</Badge>
+                            )}
+                            <ChevronDown className="ml-2 h-4 w-4 opacity-50" />
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-64 p-2" align="start">
+                          <div className="space-y-1 max-h-48 overflow-y-auto">
+                            {users.map((user: any) => (
+                              <label key={user.id} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-accent cursor-pointer">
+                                <Checkbox
+                                  checked={taskFilters.assignee.includes(user.id)}
+                                  onCheckedChange={(checked) => {
+                                    setTaskFilters(prev => ({
+                                      ...prev,
+                                      assignee: checked
+                                        ? [...prev.assignee, user.id]
+                                        : prev.assignee.filter(id => id !== user.id)
+                                    }));
+                                  }}
+                                />
+                                <span className="text-sm">
+                                  {user.firstName ? `${user.firstName} ${user.lastName || ''}`.trim() : user.username}
+                                </span>
+                              </label>
+                            ))}
+                          </div>
+                        </PopoverContent>
+                      </Popover>
+
+                      {/* Priority filter */}
+                      <Popover open={priorityFilterOpen} onOpenChange={setPriorityFilterOpen}>
+                        <PopoverTrigger asChild>
+                          <Button variant="outline" className="justify-between w-full">
+                            <span>Приоритет</span>
+                            {taskFilters.priority.length > 0 && (
+                              <Badge variant="secondary" className="ml-2">{taskFilters.priority.length}</Badge>
+                            )}
+                            <ChevronDown className="ml-2 h-4 w-4 opacity-50" />
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-64 p-2" align="start">
+                          <div className="space-y-1">
+                            {availablePriorities.map((priority: any) => (
+                              <label key={priority.id} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-accent cursor-pointer">
+                                <Checkbox
+                                  checked={taskFilters.priority.includes(priority.id)}
+                                  onCheckedChange={(checked) => {
+                                    setTaskFilters(prev => ({
+                                      ...prev,
+                                      priority: checked
+                                        ? [...prev.priority, priority.id]
+                                        : prev.priority.filter(id => id !== priority.id)
+                                    }));
+                                  }}
+                                />
+                                <div className={cn("w-2 h-2 rounded-full", priority.color)} />
+                                <span className="text-sm">{priority.name}</span>
+                              </label>
+                            ))}
+                          </div>
+                        </PopoverContent>
+                      </Popover>
+
+                      {/* Labels filter */}
+                      <Popover open={labelsFilterOpen} onOpenChange={setLabelsFilterOpen}>
+                        <PopoverTrigger asChild>
+                          <Button variant="outline" className="justify-between w-full">
+                            <span>Метки</span>
+                            {taskFilters.labels.length > 0 && (
+                              <Badge variant="secondary" className="ml-2">{taskFilters.labels.length}</Badge>
+                            )}
+                            <ChevronDown className="ml-2 h-4 w-4 opacity-50" />
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-64 p-2" align="start">
+                          <div className="space-y-1 max-h-48 overflow-y-auto">
+                            {availableLabels.map((label: any) => (
+                              <label key={label.id} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-accent cursor-pointer">
+                                <Checkbox
+                                  checked={taskFilters.labels.includes(label.name)}
+                                  onCheckedChange={(checked) => {
+                                    setTaskFilters(prev => ({
+                                      ...prev,
+                                      labels: checked
+                                        ? [...prev.labels, label.name]
+                                        : prev.labels.filter(l => l !== label.name)
+                                    }));
+                                  }}
+                                />
+                                <div className={cn("w-2 h-2 rounded-full", label.color)} />
+                                <span className="text-sm">{label.name}</span>
+                              </label>
+                            ))}
+                          </div>
+                        </PopoverContent>
+                      </Popover>
                     </div>
 
-                    {/* Assignee filter */}
-                    <div className="space-y-2">
-                      <Label>Исполнитель</Label>
-                      <div className="flex flex-wrap gap-2">
-                        {users.map((user: any) => (
-                          <label
-                            key={user.id}
-                            className="flex items-center gap-2 px-3 py-2 border border-input bg-card rounded-lg cursor-pointer hover:bg-accent transition-colors"
-                          >
-                            <Checkbox
-                              checked={taskFilters.assignee.includes(user.id)}
-                              onCheckedChange={(checked) => {
-                                setTaskFilters(prev => ({
-                                  ...prev,
-                                  assignee: checked
-                                    ? [...prev.assignee, user.id]
-                                    : prev.assignee.filter(id => id !== user.id)
-                                }));
-                              }}
-                            />
-                            <span className="text-sm">
-                              {user.firstName ? `${user.firstName} ${user.lastName || ''}`.trim() : user.username}
-                            </span>
-                          </label>
-                        ))}
+                    {/* Date filters */}
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <Label className="text-xs">Дата от</Label>
+                        <Input
+                          type="date"
+                          value={taskFilters.dateFrom ? taskFilters.dateFrom.toISOString().split('T')[0] : ''}
+                          onChange={(e) => setTaskFilters(prev => ({ 
+                            ...prev, 
+                            dateFrom: e.target.value ? new Date(e.target.value) : undefined 
+                          }))}
+                        />
                       </div>
-                    </div>
-
-                    {/* Priority filter */}
-                    <div className="space-y-2">
-                      <Label>Приоритет</Label>
-                      <div className="flex flex-wrap gap-2">
-                        {availablePriorities.map((priority: any) => (
-                          <label
-                            key={priority.id}
-                            className="flex items-center gap-2 px-3 py-2 border border-input bg-card rounded-lg cursor-pointer hover:bg-accent transition-colors"
-                          >
-                            <Checkbox
-                              checked={taskFilters.priority.includes(priority.id)}
-                              onCheckedChange={(checked) => {
-                                setTaskFilters(prev => ({
-                                  ...prev,
-                                  priority: checked
-                                    ? [...prev.priority, priority.id]
-                                    : prev.priority.filter(id => id !== priority.id)
-                                }));
-                              }}
-                            />
-                            <div className={cn("w-2 h-2 rounded-full", priority.color)} />
-                            <span className="text-sm">{priority.name}</span>
-                          </label>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Labels filter */}
-                    <div className="space-y-2">
-                      <Label>Метки</Label>
-                      <div className="flex flex-wrap gap-2">
-                        {availableLabels.map((label: any) => (
-                          <label
-                            key={label.id}
-                            className="flex items-center gap-2 px-3 py-2 border border-input bg-card rounded-lg cursor-pointer hover:bg-accent transition-colors"
-                          >
-                            <Checkbox
-                              checked={taskFilters.labels.includes(label.name)}
-                              onCheckedChange={(checked) => {
-                                setTaskFilters(prev => ({
-                                  ...prev,
-                                  labels: checked
-                                    ? [...prev.labels, label.name]
-                                    : prev.labels.filter(name => name !== label.name)
-                                }));
-                              }}
-                            />
-                            <div className={cn("w-2 h-2 rounded-full", label.color)} />
-                            <span className="text-sm">{label.name}</span>
-                          </label>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Date range filter */}
-                    <div className="space-y-2">
-                      <Label>Дата создания</Label>
-                      <div className="flex gap-2 items-center">
-                        <Popover>
-                          <PopoverTrigger asChild>
-                            <Button variant="outline" className="justify-start text-left font-normal flex-1">
-                              <CalendarIcon className="mr-2 h-4 w-4" />
-                              {taskFilters.dateFrom ? format(taskFilters.dateFrom, "dd.MM.yyyy", { locale: ru }) : "От"}
-                            </Button>
-                          </PopoverTrigger>
-                          <PopoverContent className="w-auto p-0" align="start">
-                            <Calendar
-                              mode="single"
-                              selected={taskFilters.dateFrom}
-                              onSelect={(date) => setTaskFilters(prev => ({ ...prev, dateFrom: date }))}
-                              initialFocus
-                            />
-                          </PopoverContent>
-                        </Popover>
-                        <span className="text-muted-foreground">—</span>
-                        <Popover>
-                          <PopoverTrigger asChild>
-                            <Button variant="outline" className="justify-start text-left font-normal flex-1">
-                              <CalendarIcon className="mr-2 h-4 w-4" />
-                              {taskFilters.dateTo ? format(taskFilters.dateTo, "dd.MM.yyyy", { locale: ru }) : "До"}
-                            </Button>
-                          </PopoverTrigger>
-                          <PopoverContent className="w-auto p-0" align="start">
-                            <Calendar
-                              mode="single"
-                              selected={taskFilters.dateTo}
-                              onSelect={(date) => setTaskFilters(prev => ({ ...prev, dateTo: date }))}
-                              initialFocus
-                            />
-                          </PopoverContent>
-                        </Popover>
+                      <div className="space-y-1">
+                        <Label className="text-xs">Дата до</Label>
+                        <Input
+                          type="date"
+                          value={taskFilters.dateTo ? taskFilters.dateTo.toISOString().split('T')[0] : ''}
+                          onChange={(e) => setTaskFilters(prev => ({ 
+                            ...prev, 
+                            dateTo: e.target.value ? new Date(e.target.value) : undefined 
+                          }))}
+                        />
                       </div>
                     </div>
                   </div>
+
                   <DialogFooter className="gap-2">
                     <Button
                       variant="outline"
@@ -1774,7 +1989,8 @@ export default function Projects() {
                           labels: [],
                           search: "",
                           dateFrom: undefined,
-                          dateTo: undefined
+                          dateTo: undefined,
+                          projects: []
                         });
                       }}
                     >
@@ -1870,6 +2086,74 @@ export default function Projects() {
                     </DialogFooter>
                   </DialogContent>
                 </Dialog>
+                
+                {/* Edit Project Dialog */}
+                <Dialog open={isEditProjectOpen} onOpenChange={setIsEditProjectOpen}>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Редактировать проект</DialogTitle>
+                      <DialogDescription>Измените название и параметры проекта.</DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-4 py-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="edit-project-name">Название</Label>
+                        <Input 
+                          id="edit-project-name" 
+                          placeholder="Название проекта" 
+                          value={editingProject?.name || ""}
+                          onChange={(e) => setEditingProject((prev: any) => prev ? { ...prev, name: e.target.value } : null)}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Приоритет</Label>
+                        <Select 
+                          value={editingProject?.priority || "Средний"}
+                          onValueChange={(value) => setEditingProject((prev: any) => prev ? { ...prev, priority: value } : null)}
+                        >
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="Низкий">Низкий</SelectItem>
+                            <SelectItem value="Средний">Средний</SelectItem>
+                            <SelectItem value="Высокий">Высокий</SelectItem>
+                            <SelectItem value="Критический">Критический</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                    <DialogFooter>
+                      <Button variant="outline" onClick={() => { setIsEditProjectOpen(false); setEditingProject(null); }}>Отмена</Button>
+                      <Button onClick={handleUpdateProject} disabled={updateProjectMutation.isPending || !editingProject?.name?.trim()}>
+                        {updateProjectMutation.isPending && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
+                        Сохранить
+                      </Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
+                
+                {/* Delete Project Confirmation Dialog */}
+                <AlertDialog open={!!deletingProjectId} onOpenChange={(open) => !open && setDeletingProjectId(null)}>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Удалить проект?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        Вы уверены, что хотите удалить проект? Это действие нельзя отменить.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Отмена</AlertDialogCancel>
+                      <AlertDialogAction 
+                        onClick={confirmDeleteProject}
+                        className="bg-destructive hover:bg-destructive/90"
+                        disabled={deleteProjectMutation.isPending}
+                      >
+                        {deleteProjectMutation.isPending && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
+                        Удалить
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
             </div>
           </div>
 

@@ -380,6 +380,15 @@ export function TaskDetailsModal({
     queryKey: ["/api/users"],
   });
 
+  // Fetch board columns for status selection
+  const { data: boardData } = useQuery<any>({
+    queryKey: ["/api/boards", task?.boardId, "full"],
+    enabled: !!task?.boardId && open,
+  });
+
+  // Get unique status options from board columns
+  const statusOptions = boardData?.columns?.map((col: any) => col.name) || [];
+
   // Fetch observers for the task
   const { data: serverObservers = [] } = useQuery<any[]>({
     queryKey: [`/api/tasks/${task?.id}/observers`],
@@ -493,7 +502,7 @@ export function TaskDetailsModal({
   }, [effectiveTask?.tags, effectiveTask?.labels]);
 
   // Local state for immediate UI updates
-  const [localAssignee, setLocalAssignee] = useState<{ name: string; avatar?: string } | null>(null);
+  const [localAssignee, setLocalAssignee] = useState<{ id?: string; name: string; avatar?: string } | null>(null);
   const [localDueDate, setLocalDueDate] = useState<string | null>(null);
   
   // Sync local assignee with task data
@@ -670,35 +679,71 @@ export function TaskDetailsModal({
     }
     
     // Optimistic local task update via Query Cache
-    // Removed setLocalPriority(updates.priority);
+    // Build the full assignee object for display
+    const newDisplayData: any = {};
+    if (updates.assigneeId && users) {
+      const newAssignee = users.find((u: any) => u.id === updates.assigneeId);
+      if (newAssignee) {
+        const displayName = newAssignee.firstName 
+          ? `${newAssignee.firstName} ${newAssignee.lastName || ''}` 
+          : newAssignee.username;
+        newDisplayData.assignee = { 
+          id: newAssignee.id,
+          name: displayName, 
+          avatar: newAssignee.avatar 
+        };
+      }
+    }
 
+    // Update individual task query cache
     queryClient.setQueryData(["/api/tasks", task.id], (old: any) => {
       if (!old) return old;
-      
-      const newDisplayData: any = {};
-      
-      // Handle Assignee display update
-      if (updates.assigneeId && users) {
-        const newAssignee = users.find((u: any) => u.id === updates.assigneeId);
-        if (newAssignee) {
-          const displayName = newAssignee.firstName 
-            ? `${newAssignee.firstName} ${newAssignee.lastName || ''}` 
-            : newAssignee.username;
-          newDisplayData.assignee = { 
-            id: newAssignee.id,
-            name: displayName, 
-            avatar: newAssignee.avatar 
-          };
-        }
-      }
-
       return { ...old, ...updates, ...newDisplayData };
     });
 
+    // Update board query cache (for kanban board display)
+    if (task.boardId) {
+      queryClient.setQueryData(["/api/boards", task.boardId, "full"], (old: any) => {
+        if (!old) return old;
+        
+        // Handle both array and object formats for columns
+        let newColumns = old.columns;
+        if (Array.isArray(newColumns)) {
+          // Array format
+          newColumns = newColumns.map((column: any) => ({
+            ...column,
+            tasks: (column.tasks || []).map((t: any) => {
+              if (t.id === task.id) {
+                return { ...t, ...updates, ...newDisplayData };
+              }
+              return t;
+            })
+          }));
+        } else if (newColumns && typeof newColumns === 'object') {
+          // Object format (keyed by columnId)
+          newColumns = { ...newColumns };
+          for (const columnId in newColumns) {
+            const columnTasks = newColumns[columnId]?.tasks || [];
+            newColumns[columnId] = {
+              ...newColumns[columnId],
+              tasks: columnTasks.map((t: any) => {
+                if (t.id === task.id) {
+                  return { ...t, ...updates, ...newDisplayData };
+                }
+                return t;
+              })
+            };
+          }
+        }
+        
+        return { ...old, columns: newColumns };
+      });
+    }
+
     // Optimistic parent update
     if (onUpdate && effectiveTask) {
-      console.log("[TaskDetails] Calling onUpdate with:", { ...effectiveTask, ...updates });
-      onUpdate({ ...effectiveTask, ...updates });
+      console.log("[TaskDetails] Calling onUpdate with:", { ...effectiveTask, ...updates, ...newDisplayData });
+      onUpdate({ ...effectiveTask, ...updates, ...newDisplayData });
     }
     
     updateTaskMutation.mutate(updates);
@@ -945,6 +990,42 @@ export function TaskDetailsModal({
       updatedObservers = [...localObservers, user];
     }
     setLocalObservers(updatedObservers);
+
+    // Update board cache for immediate UI update
+    if (task.boardId) {
+      queryClient.setQueryData(["/api/boards", task.boardId, "full"], (old: any) => {
+        if (!old) return old;
+        
+        let newColumns = old.columns;
+        if (Array.isArray(newColumns)) {
+          newColumns = newColumns.map((column: any) => ({
+            ...column,
+            tasks: (column.tasks || []).map((t: any) => {
+              if (t.id === task.id) {
+                return { ...t, observers: updatedObservers };
+              }
+              return t;
+            })
+          }));
+        } else if (newColumns && typeof newColumns === 'object') {
+          newColumns = { ...newColumns };
+          for (const columnId in newColumns) {
+            const columnTasks = newColumns[columnId]?.tasks || [];
+            newColumns[columnId] = {
+              ...newColumns[columnId],
+              tasks: columnTasks.map((t: any) => {
+                if (t.id === task.id) {
+                  return { ...t, observers: updatedObservers };
+                }
+                return t;
+              })
+            };
+          }
+        }
+        
+        return { ...old, columns: newColumns };
+      });
+    }
 
     try {
       // Find userId for the observer
@@ -1758,26 +1839,34 @@ export function TaskDetailsModal({
             </div>
           </div>
 
-          {/* Right Sidebar */}
+            {/* Right Sidebar */}
           <div className="w-72 bg-secondary/5 shrink-0 overflow-y-auto border-l border-border/40 p-4 custom-scrollbar">
             <div className="space-y-3">
               {/* Status Section */}
               <div className="flex items-center gap-2 mb-4">
                 <Select 
-                  value={safeTask.status} 
+                  value={safeTask.status || "В планах"} 
                   onValueChange={(value) => handleUpdate({ status: value })}
                 >
-                  <SelectTrigger className="flex-1 h-9 bg-card border-border/50 rounded-lg shadow-sm font-bold text-foreground px-3 focus:ring-primary/20 text-xs">
+                  <SelectTrigger className="flex-1 h-9 bg-white border border-gray-300 rounded-lg shadow-sm font-bold text-gray-900 px-3 focus:ring-2 focus:ring-primary/20 text-xs">
                     <div className="flex items-center gap-2">
                       <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: safeTask.status === 'Готово' ? '#10b981' : safeTask.status === 'В работе' ? '#3b82f6' : safeTask.status === 'На проверке' ? '#f59e0b' : '#64748b' }} />
-                      <SelectValue className="text-foreground" />
+                      <SelectValue placeholder="Выберите статус" className="text-gray-900 font-medium" />
                     </div>
                   </SelectTrigger>
-                  <SelectContent className="rounded-xl">
-                    <SelectItem value="В планах">В планах</SelectItem>
-                    <SelectItem value="В работе">В работе</SelectItem>
-                    <SelectItem value="На проверке">На проверке</SelectItem>
-                    <SelectItem value="Готово">Готово</SelectItem>
+                  <SelectContent className="rounded-xl bg-white" style={{ zIndex: 9999 }}>
+                    {statusOptions.length > 0 ? (
+                      statusOptions.map((status: string) => (
+                        <SelectItem key={status} value={status} className="text-gray-900">{status}</SelectItem>
+                      ))
+                    ) : (
+                      <>
+                        <SelectItem value="В планах" className="text-gray-900">В планах</SelectItem>
+                        <SelectItem value="В работе" className="text-gray-900">В работе</SelectItem>
+                        <SelectItem value="На проверке" className="text-gray-900">На проверке</SelectItem>
+                        <SelectItem value="Готово" className="text-gray-900">Готово</SelectItem>
+                      </>
+                    )}
                   </SelectContent>
                 </Select>
               </div>
@@ -1786,18 +1875,19 @@ export function TaskDetailsModal({
               <div className="space-y-1">
                 <Popover open={assigneePopoverOpen} onOpenChange={setAssigneePopoverOpen}>
                   <PopoverTrigger asChild>
-                    <div 
-                      className="flex items-center gap-2.5 p-2 rounded-lg bg-secondary/15 hover:bg-secondary/25 transition-colors group cursor-pointer border border-transparent hover:border-border/20"
+                    <button 
+                      type="button" aria-label="Выбрать исполнителя"
+                      className="flex items-center gap-2.5 p-2 rounded-lg bg-secondary/15 hover:bg-secondary/25 transition-colors group cursor-pointer border border-transparent hover:border-border/20 w-full text-left"
                     >
                       <User className="w-3.5 h-3.5 text-muted-foreground/60" />
                       <span className="text-[12px] font-bold text-foreground/70 flex-1">Исполнитель</span>
                       <div className="flex items-center gap-1.5">
                         <span className="text-[10px] font-bold text-muted-foreground/50">{localAssignee?.name || "Не назначен"}</span>
                       </div>
-                    </div>
+                    </button>
                   </PopoverTrigger>
-                  <PopoverContent className="w-64 p-2 rounded-xl overflow-hidden" align="end">
-                    <div className="max-h-64 overflow-y-auto">
+                  <PopoverContent className="w-64 p-2 rounded-xl overflow-hidden" align="end" sideOffset={8} style={{ zIndex: 9999, pointerEvents: 'auto' }}>
+                    <div className="max-h-64 overflow-y-auto" style={{ pointerEvents: 'auto' }}>
                       <div className="text-xs font-medium text-muted-foreground px-2 py-1.5">Выберите исполнителя</div>
                       {users.length === 0 ? (
                         <div className="px-2 py-4 text-sm text-muted-foreground text-center">Нет доступных пользователей</div>
@@ -1812,12 +1902,15 @@ export function TaskDetailsModal({
                               onClick={() => {
                                 console.log("[TaskDetails] Selected assignee:", user.id, displayName);
                                 console.log("[TaskDetails] Current task ID:", task?.id);
+                                // Update local state immediately
+                                setLocalAssignee({ id: user.id, name: displayName, avatar: user.avatar });
                                 handleUpdate({ 
                                   assigneeId: user.id 
                                 });
                                 setAssigneePopoverOpen(false);
                               }}
-                              className="w-full flex items-center gap-2 px-2 py-2 rounded-lg hover:bg-secondary/50 transition-colors text-left"
+                              className="w-full flex items-center gap-2 px-2 py-2 rounded-lg hover:bg-secondary/50 transition-colors text-left cursor-pointer"
+                              style={{ pointerEvents: 'auto', cursor: 'pointer' }}
                             >
                               <span className="text-sm font-medium flex-1">{displayName}</span>
                               {isSelected && <Check className="w-4 h-4 text-foreground" />}
@@ -1853,18 +1946,20 @@ export function TaskDetailsModal({
                       <div className="flex flex-col gap-2">
                         <Popover>
                           <PopoverTrigger asChild>
-                            <div 
-                              className="flex items-center gap-2.5 p-2 rounded-lg bg-secondary/15 hover:bg-secondary/25 transition-colors group cursor-pointer border border-transparent hover:border-border/20"
+                            <button 
+                              type="button" 
+                              aria-label="Наблюдатели" 
+                              className="flex items-center gap-2.5 p-2 rounded-lg bg-secondary/15 hover:bg-secondary/25 transition-colors group cursor-pointer border border-transparent hover:border-border/20 w-full text-left"
                             >
                               <item.icon className="w-3.5 h-3.5 text-muted-foreground/60" />
                               <span className="text-[12px] font-bold text-foreground/70 flex-1">{item.label}</span>
                               <span className="text-[10px] font-bold text-muted-foreground/50">{localObservers.length}</span>
-                            </div>
+                            </button>
                           </PopoverTrigger>
-                          <PopoverContent className="w-64 p-0 rounded-xl overflow-hidden" align="end">
+                          <PopoverContent className="w-64 p-0 rounded-xl overflow-hidden" align="end" style={{ zIndex: 9999, pointerEvents: 'auto' }}>
                             <Command>
                               <CommandInput placeholder="Поиск наблюдателей..." className="h-9 border-none focus:ring-0" />
-                              <CommandList className="max-h-64">
+                              <CommandList className="max-h-64" style={{ pointerEvents: 'auto' }}>
                                 <CommandEmpty>Пользователь не найден</CommandEmpty>
                                 <CommandGroup>
                                   {users.map((user) => {
@@ -1875,6 +1970,7 @@ export function TaskDetailsModal({
                                         key={user.id}
                                         onSelect={() => toggleObserver({ name: displayName, avatar: user.avatar })}
                                         className="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-secondary/50"
+                                        style={{ pointerEvents: 'auto', cursor: 'pointer' }}
                                       >
                                         <span className="text-sm font-medium flex-1">{displayName}</span>
                                         {isSelected && <Check className="w-4 h-4 text-foreground" />}
@@ -1905,15 +2001,17 @@ export function TaskDetailsModal({
                     ) : (item as any).isDate ? (
                       <Popover open={datePopoverOpen} onOpenChange={setDatePopoverOpen}>
                         <PopoverTrigger asChild>
-                          <div 
-                            className="flex items-center gap-2.5 p-2 rounded-lg bg-secondary/15 hover:bg-secondary/25 transition-colors group cursor-pointer border border-transparent hover:border-border/20"
+                          <button 
+                            type="button"
+                            aria-label="Дата"
+                            className="flex items-center gap-2.5 p-2 rounded-lg bg-secondary/15 hover:bg-secondary/25 transition-colors group cursor-pointer border border-transparent hover:border-border/20 w-full text-left"
                           >
                             <item.icon className="w-3.5 h-3.5 text-muted-foreground/60" />
                             <span className="text-[12px] font-bold text-foreground/70 flex-1">{item.label}</span>
                             <span className="text-[10px] font-bold text-muted-foreground/50">{item.value}</span>
-                          </div>
+                          </button>
                         </PopoverTrigger>
-                        <PopoverContent className="w-auto p-3 rounded-xl" align="end">
+                        <PopoverContent className="w-auto p-3 rounded-xl" align="end" style={{ zIndex: 9999, pointerEvents: 'auto' }}>
                           <div className="space-y-3">
                             <CalendarComponent
                               mode="single"
@@ -2023,12 +2121,12 @@ export function TaskDetailsModal({
                         <Plus className="w-3 h-3" />
                       </Button>
                     </PopoverTrigger>
-                    <PopoverContent className="w-64 p-3 rounded-xl" align="end">
+                    <PopoverContent className="w-64 p-3 rounded-xl" align="end" style={{ zIndex: 9999, pointerEvents: 'auto' }}>
                       <div className="space-y-3">
                         <Input
                           placeholder="Новая метка..."
 
-                                                    onKeyDown={handleKeyDown}
+                                                onKeyDown={handleKeyDown}
                         />
                         <div className="flex flex-wrap gap-1">
                           {availableLabels.length > 0 ? (
@@ -2045,6 +2143,7 @@ export function TaskDetailsModal({
                                     label.color ? (label.color.includes('red') || label.color.includes('orange') || label.color.includes('rose') ? "text-white" : label.color.replace('bg-', 'text-').replace('500', '600')) : "text-foreground"
                                   )}
                                   onClick={() => handleAddLabel(label.name)}
+                                  style={{ pointerEvents: 'auto', cursor: 'pointer' }}
                                 >
                                   {label.name}
                                 </Badge>
@@ -2073,6 +2172,7 @@ export function TaskDetailsModal({
                         )}
                         onClick={() => handleRemoveLabel(label.name)}
                         title="Кликните для удаления"
+                        style={{ pointerEvents: 'auto', cursor: 'pointer' }}
                       >
                         {label.name}
                       </Badge>

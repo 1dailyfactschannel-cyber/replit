@@ -901,6 +901,15 @@ export class PostgresStorage {
     }
   }
 
+  async getAllBoards(): Promise<schema.Board[]> {
+    try {
+      return await this.db.select().from(schema.boards);
+    } catch (error) {
+      console.error("Error getting all boards:", error);
+      return [];
+    }
+  }
+
   async createBoard(board: schema.InsertBoard): Promise<schema.Board> {
     try {
       const [newBoard] = await this.db.insert(schema.boards).values(board).returning();

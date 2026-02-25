@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Search, Phone, Video, Info, Paperclip, Smile, Send, Check, Camera, X, MessageSquare, MoreVertical, Edit, Trash, Plus, FolderPlus, UserPlus, Folder, Users, Clock, Play, Reply } from "lucide-react";
+import { Search, Phone, Video, Info, Paperclip, Smile, Send, Check, Camera, X, MessageSquare, MoreVertical, Edit, Trash, Plus, FolderPlus, UserPlus, Folder, Users, Clock, Play, Reply, Copy } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import {
   DropdownMenu,
@@ -58,6 +58,20 @@ export default function ChatPage() {
   const { notify, requestPermission } = useNotifications();
   const socketRef = useRef<Socket | null>(null);
   const [typingUsers, setTypingUsers] = useState<Record<string, string[]>>({});
+  const [contextMenuPos, setContextMenuPos] = useState<{x: number, y: number, msg: any} | null>(null);
+  const [chatContextMenuPos, setChatContextMenuPos] = useState<{x: number, y: number, chat: any} | null>(null);
+  
+  // Close context menu on click outside
+  useEffect(() => {
+    const handleClick = () => {
+      setContextMenuPos(null);
+      setChatContextMenuPos(null);
+    };
+    if (contextMenuPos || chatContextMenuPos) {
+      document.addEventListener('click', handleClick);
+      return () => document.removeEventListener('click', handleClick);
+    }
+  }, [contextMenuPos, chatContextMenuPos]);
   
   const { data: currentUser } = useQuery<DBUser>({
     queryKey: ["/api/user"],
@@ -215,6 +229,16 @@ export default function ChatPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/chats"] });
       toast.success("Чат удалён");
+    }
+  });
+
+  const leaveChatMutation = useMutation({
+    mutationFn: async (chatId: string) => {
+      await apiRequest("POST", `/api/chats/${chatId}/leave`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/chats"] });
+      toast.success("Вы покинули группу");
     }
   });
 
@@ -395,6 +419,8 @@ export default function ChatPage() {
   const [isCreateChatOpen, setIsCreateChatOpen] = useState(false);
   const [isCreateFolderOpen, setIsCreateFolderOpen] = useState(false);
   const [isInfoOpen, setIsInfoOpen] = useState(false);
+  const [isAddMemberOpen, setIsAddMemberOpen] = useState(false);
+  const [leaveChatId, setLeaveChatId] = useState<string | null>(null);
   
   const [newGroupName, setNewGroupName] = useState("");
   const [newFolderName, setNewFolderName] = useState("");
@@ -953,6 +979,10 @@ export default function ChatPage() {
                   <div 
                     key={contact.id} 
                     onClick={() => setActiveChatId(contact.id)}
+                    onContextMenu={(e) => {
+                      e.preventDefault();
+                      setChatContextMenuPos({ x: e.clientX, y: e.clientY, chat: contact });
+                    }}
                     className={cn(
                       "flex gap-3 p-4 cursor-pointer transition-all border-b border-border/40 last:border-0 relative group",
                       activeChatId === contact.id ? "bg-primary/5" : "hover:bg-secondary/50"
@@ -1226,6 +1256,77 @@ export default function ChatPage() {
                             </Tabs>
                           </DialogContent>
                         </Dialog>
+
+                        {/* Add Member Dialog */}
+                        <Dialog open={isAddMemberOpen} onOpenChange={setIsAddMemberOpen}>
+                          <DialogContent className="sm:max-w-[425px]">
+                            <DialogHeader>
+                              <DialogTitle>Добавить участника</DialogTitle>
+                              <DialogDescription>Выберите пользователей для добавления в группу.</DialogDescription>
+                            </DialogHeader>
+                            <ScrollArea className="h-[300px] pr-4">
+                              <div className="space-y-2">
+                                {allUsers.filter(u => !activeChat?.participants?.some(p => p.id === u.id)).map((user) => (
+                                  <div 
+                                    key={user.id} 
+                                    className="flex items-center gap-3 p-3 rounded-xl hover:bg-secondary/50 transition-colors cursor-pointer group"
+                                    onClick={() => {
+                                      setSelectedGroupParticipants(prev => 
+                                        prev.includes(user.id) 
+                                          ? prev.filter(id => id !== user.id)
+                                          : [...prev, user.id]
+                                      );
+                                    }}
+                                  >
+                                    <Avatar className="h-10 w-10">
+                                      <AvatarImage src={user.avatar || undefined} />
+                                      <AvatarFallback>{user.username?.substring(0,2).toUpperCase()}</AvatarFallback>
+                                    </Avatar>
+                                    <div className="flex-1">
+                                      <p className="font-medium text-sm">
+                                        {user.firstName && user.lastName 
+                                          ? `${user.firstName} ${user.lastName}`
+                                          : user.username}
+                                      </p>
+                                      <p className="text-xs text-muted-foreground">@{user.username}</p>
+                                    </div>
+                                    <div className={cn(
+                                      "w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all",
+                                      selectedGroupParticipants.includes(user.id) 
+                                        ? "bg-primary border-primary text-primary-foreground" 
+                                        : "border-muted-foreground/30"
+                                    )}>
+                                      {selectedGroupParticipants.includes(user.id) && <Check className="w-3 h-3" />}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </ScrollArea>
+                            <DialogFooter>
+                              <Button variant="outline" onClick={() => { setIsAddMemberOpen(false); setSelectedGroupParticipants([]); }}>Отмена</Button>
+                              <Button 
+                                onClick={async () => {
+                                  if (!activeChatId || selectedGroupParticipants.length === 0) return;
+                                  try {
+                                    const currentParticipants = activeChat?.participants?.map(p => p.id) || [];
+                                    await updateChatMutation.mutateAsync({
+                                      id: activeChatId,
+                                      participantIds: [...currentParticipants, ...selectedGroupParticipants]
+                                    });
+                                    setIsAddMemberOpen(false);
+                                    setSelectedGroupParticipants([]);
+                                    toast.success("Участники добавлены");
+                                  } catch (err) {
+                                    toast.error("Ошибка при добавлении участников");
+                                  }
+                                }} 
+                                disabled={selectedGroupParticipants.length === 0 || updateChatMutation.isPending}
+                              >
+                                Добавить
+                              </Button>
+                            </DialogFooter>
+                          </DialogContent>
+                        </Dialog>
                       </div>
                   </div>
 
@@ -1245,10 +1346,17 @@ export default function ChatPage() {
                           
                           return (
                             <div className="px-6 py-2">
-                              <div key={msg.id} className={cn(
-                                "flex flex-col gap-1 mb-4 animate-in fade-in slide-in-from-bottom-2 duration-300 group",
-                                isMe ? "ml-auto items-end" : "items-start"
-                              )}>
+                              <div 
+                                key={msg.id} 
+                                className={cn(
+                                  "flex flex-col gap-1 mb-4 animate-in fade-in slide-in-from-bottom-2 duration-300 group",
+                                  isMe ? "ml-auto items-end" : "items-start"
+                                )}
+                                onContextMenu={(e) => {
+                                  e.preventDefault();
+                                  setContextMenuPos({ x: e.clientX, y: e.clientY, msg });
+                                }}
+                              >
                                 <div className="flex items-center gap-2 px-1">
                                   {!isMe && <span className="text-[10px] font-bold text-muted-foreground">{sender?.username}</span>}
                                   <span className="text-[10px] text-muted-foreground opacity-50">
@@ -1389,6 +1497,148 @@ export default function ChatPage() {
                     )}
                     {messages.length === 0 && !messagesLoading && (
                       <div className="absolute inset-0 flex items-center justify-center text-muted-foreground">Нет сообщений. Напишите первым!</div>
+                    )}
+
+                    {/* Context Menu */}
+                    {contextMenuPos && (
+                      <div 
+                        className="fixed z-50 bg-background/95 backdrop-blur-sm border border-border/80 rounded-lg shadow-xl py-1 min-w-[180px] text-foreground"
+                        style={{ left: contextMenuPos.x, top: contextMenuPos.y }}
+                        onClick={() => setContextMenuPos(null)}
+                      >
+                        <div 
+                          className="flex items-center gap-3 px-3 py-2.5 text-sm cursor-pointer hover:bg-muted text-foreground"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const senderName = contextMenuPos.msg.sender?.firstName && contextMenuPos.msg.sender?.lastName 
+                              ? `${contextMenuPos.msg.sender.firstName} ${contextMenuPos.msg.sender.lastName}` 
+                              : contextMenuPos.msg.sender?.username || 'Пользователь';
+                            setReplyingTo({ id: contextMenuPos.msg.id, content: contextMenuPos.msg.content, senderName });
+                            setContextMenuPos(null);
+                          }}
+                        >
+                          <Reply className="w-4 h-4" />
+                          Ответить
+                        </div>
+                        <div 
+                          className="flex items-center gap-3 px-3 py-2.5 text-sm cursor-pointer hover:bg-muted text-foreground"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            navigator.clipboard.writeText(contextMenuPos.msg.content);
+                            setContextMenuPos(null);
+                          }}
+                        >
+                          <Copy className="w-4 h-4" />
+                          Копировать
+                        </div>
+                        <div className="h-px bg-border/50 my-1" />
+                        <div 
+                          className="flex items-center gap-3 px-3 py-2.5 text-sm cursor-pointer hover:bg-muted text-foreground"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setEditingMessageId(contextMenuPos.msg.id);
+                            setMessageInput(contextMenuPos.msg.content);
+                            setContextMenuPos(null);
+                          }}
+                        >
+                          <Edit className="w-4 h-4" />
+                          Изменить
+                        </div>
+                        {contextMenuPos.msg.senderId === currentUser?.id && (
+                          <div 
+                            className="flex items-center gap-3 px-3 py-2.5 text-sm cursor-pointer hover:bg-muted text-red-500"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              deleteMessageMutation.mutate(contextMenuPos.msg.id);
+                              setContextMenuPos(null);
+                            }}
+                          >
+                            <Trash className="w-4 h-4" />
+                            Удалить
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Chat List Context Menu */}
+                    {chatContextMenuPos && (
+                      <div 
+                        className="fixed z-50 bg-background/95 backdrop-blur-sm border border-border/80 rounded-lg shadow-xl py-1 min-w-[200px] text-foreground"
+                        style={{ left: chatContextMenuPos.x, top: chatContextMenuPos.y }}
+                        onClick={() => setChatContextMenuPos(null)}
+                      >
+                        <div 
+                          className="flex items-center gap-3 px-3 py-2.5 text-sm cursor-pointer hover:bg-muted text-foreground"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setActiveChatId(chatContextMenuPos.chat.id);
+                            setChatContextMenuPos(null);
+                          }}
+                        >
+                          <MessageSquare className="w-4 h-4" />
+                          Открыть чат
+                        </div>
+                        <div 
+                          className="flex items-center gap-3 px-3 py-2.5 text-sm cursor-pointer hover:bg-muted text-foreground"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setIsInfoOpen(true);
+                            setActiveChatId(chatContextMenuPos.chat.id);
+                            setChatContextMenuPos(null);
+                          }}
+                        >
+                          <Info className="w-4 h-4" />
+                          Информация
+                        </div>
+                        
+                        {/* Group-specific options */}
+                        {chatContextMenuPos.chat.type === "group" && (
+                          <>
+                            <div className="h-px bg-border/50 my-1" />
+                            <div 
+                              className="flex items-center gap-3 px-3 py-2.5 text-sm cursor-pointer hover:bg-muted text-foreground"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setActiveChatId(chatContextMenuPos.chat.id);
+                                setIsAddMemberOpen(true);
+                                setChatContextMenuPos(null);
+                              }}
+                            >
+                              <UserPlus className="w-4 h-4" />
+                              Добавить участника
+                            </div>
+                            <div 
+                              className="flex items-center gap-3 px-3 py-2.5 text-sm cursor-pointer hover:bg-muted text-red-500"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (confirm('Вы уверены, что хотите покинуть группу?')) {
+                                  leaveChatMutation.mutate(chatContextMenuPos.chat.id);
+                                }
+                                setChatContextMenuPos(null);
+                              }}
+                            >
+                              <Users className="w-4 h-4" />
+                              Покинуть группу
+                            </div>
+                          </>
+                        )}
+                        
+                        <div className="h-px bg-border/50 my-1" />
+                        <div 
+                          className="flex items-center gap-3 px-3 py-2.5 text-sm cursor-pointer hover:bg-muted text-red-500"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const isGroup = chatContextMenuPos.chat.type === "group";
+                            if (confirm(isGroup ? 'Удалить группу?' : 'Удалить чат?')) {
+                              deleteChatMutation.mutate(chatContextMenuPos.chat.id);
+                            }
+                            setChatContextMenuPos(null);
+                          }}
+                        >
+                          <Trash className="w-4 h-4" />
+                          {chatContextMenuPos.chat.type === "group" ? 'Удалить группу' : 'Удалить чат'}
+                        </div>
+                      </div>
                     )}
                   </div>
 
