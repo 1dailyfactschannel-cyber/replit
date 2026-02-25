@@ -1544,6 +1544,9 @@ export default function ChatPage() {
       {/* Image Viewer Modal */}
       <Dialog open={!!selectedImage} onOpenChange={() => setSelectedImage(null)}>
         <DialogContent className="max-w-[90vw] max-h-[90vh] p-0 bg-transparent border-none overflow-hidden">
+          <DialogTitle className="sr-only">
+            {selectedImage?.name || "Просмотр изображения"}
+          </DialogTitle>
           <div className="relative flex items-center justify-center min-h-[50vh]">
             <Button
               variant="ghost"
