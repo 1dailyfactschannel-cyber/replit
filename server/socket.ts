@@ -8,8 +8,8 @@ export function setupWebSockets(httpServer: HttpServer) {
       origin: "*",
       methods: ["GET", "POST"],
     },
-    pingInterval: 10000,
-    pingTimeout: 5000,
+    pingInterval: 25000, // Increased from 10000 to reduce overhead on idle connections
+    pingTimeout: 10000, // Increased from 5000 for more tolerance
   });
 
   log("WebSockets setup complete", "socket.io");

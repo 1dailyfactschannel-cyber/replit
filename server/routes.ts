@@ -8,7 +8,7 @@ import { Server as SocketIOServer } from "socket.io";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
-import { eq, and, ne, or, isNull, inArray, desc } from "drizzle-orm";
+import { eq, and, ne, or, isNull, inArray, desc, sql } from "drizzle-orm";
 import { getCache, setCache, invalidatePattern, delCache } from "./redis";
 import { format } from "date-fns";
 import { formatUserName, formatUserBasic } from "./utils";
@@ -367,11 +367,18 @@ export async function registerRoutes(
       res.status(500).json({ message: "Failed to fetch projects" });
     }
   });
-
+  
   // Get all boards (for task filters)
   app.get("/api/boards", async (req, res) => {
     try {
+      const cacheKey = "boards:all";
+      const cached = await getCache(cacheKey);
+      if (cached) {
+        return res.json(cached);
+      }
+      
       const boards = await storage.getAllBoards();
+      await setCache(cacheKey, boards, 300); // Cache for 5 minutes
       res.json(boards);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch boards" });
@@ -583,8 +590,52 @@ export async function registerRoutes(
       const userId = req.user.id;
       console.log("[my-tasks] Fetching tasks for user:", userId);
       
-      // Get tasks assigned to the user
-      const tasks = await storage.db
+      // Parse filter parameters from query string
+      const search = req.query.search as string || '';
+      const status = req.query.status as string || '';
+      const projectId = req.query.project as string || '';
+      const priority = req.query.priority as string || '';
+      
+      // Build dynamic where conditions
+      const baseConditions = [
+        eq(schema.tasks.assigneeId, userId),
+        or(eq(schema.tasks.archived, false), isNull(schema.tasks.archived))
+      ];
+      
+      // Add search filter
+      if (search) {
+        baseConditions.push(
+          or(
+            sql`${schema.tasks.title} ILIKE ${'%' + search + '%'}`,
+            sql`${schema.tasks.description} ILIKE ${'%' + search + '%'}`,
+            sql`${schema.tasks.number} ILIKE ${'%' + search + '%'}`
+          )
+        );
+      }
+      
+      // Add status filter
+      if (status) {
+        const statusArray = status.split(',');
+        if (statusArray.length === 1) {
+          baseConditions.push(eq(schema.tasks.status, status));
+        } else {
+          baseConditions.push(inArray(schema.tasks.status, statusArray));
+        }
+      }
+      
+      // Add priority filter
+      if (priority) {
+        baseConditions.push(eq(schema.tasks.priorityId, priority));
+      }
+      
+      // Add project filter (via board join)
+      let projectFilter = undefined;
+      if (projectId) {
+        projectFilter = eq(schema.projects.id, projectId);
+      }
+      
+      // Get tasks assigned to the user with filters
+      let query = storage.db
         .select({ 
           task: schema.tasks,
           board: schema.boards,
@@ -593,15 +644,9 @@ export async function registerRoutes(
         .from(schema.tasks)
         .innerJoin(schema.boards, eq(schema.tasks.boardId, schema.boards.id))
         .innerJoin(schema.projects, eq(schema.boards.projectId, schema.projects.id))
-        .where(
-          and(
-            eq(schema.tasks.assigneeId, userId),
-            or(
-              eq(schema.tasks.archived, false),
-              isNull(schema.tasks.archived)
-            )
-          )
-        );
+        .where(and(...baseConditions, projectFilter));
+      
+      const tasks = await query;
       
       console.log("[my-tasks] Found tasks:", tasks.length);
       
@@ -785,6 +830,19 @@ export async function registerRoutes(
         newValue?: string;
       }[] = [];
       
+      // Collect all user IDs that need to be fetched for history entries
+      const userIdsToFetch = new Set<string>();
+      if (updateData.assigneeId) {
+        userIdsToFetch.add(String(updateData.assigneeId));
+      }
+      
+      // Batch fetch all needed users
+      const usersMap = new Map<string, any>();
+      if (userIdsToFetch.size > 0) {
+        const users = await storage.getUsersByIds(Array.from(userIdsToFetch));
+        users.forEach(u => usersMap.set(u.id, u));
+      }
+      
       // Record history for each changed field
       for (const [key, newValue] of Object.entries(updateData)) {
         let action = 'updated';
@@ -797,7 +855,7 @@ export async function registerRoutes(
           action = 'assignee_changed';
           fieldName = 'Исполнитель';
           if (newValue) {
-            const user = await storage.getUser(String(newValue));
+            const user = usersMap.get(String(newValue));
             newValueStr = user ? `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.username : String(newValue);
           }
           oldValueStr = '';
@@ -1125,38 +1183,44 @@ export async function registerRoutes(
         console.error("Error recording task creation history:", error);
       }
 
+      // Send notifications in parallel for better performance
+      const notificationPromises: Promise<void>[] = [];
+      
       // Send notification to assignee if assigned
       if (task.assigneeId && task.assigneeId !== user.id) {
         const board = await storage.getBoard(task.boardId);
-        await sendNotification(
+        notificationPromises.push(sendNotification(
           task.assigneeId,
           user.id,
           'task_assigned',
           'Новая задача',
           `Вам назначена задача "${task.title}"${board ? ` в доске "${board.name}"` : ''}`,
           `/boards/${task.boardId}`
-        );
+        ));
       }
 
-      // Send notification to project owner
+      // Send notification to project owner (parallel)
       try {
         const board = await storage.getBoard(task.boardId);
         if (board) {
           const project = await storage.getProject(board.projectId);
           if (project && project.ownerId && project.ownerId !== user.id) {
-            await sendNotification(
+            notificationPromises.push(sendNotification(
               project.ownerId,
               user.id,
               'task_created',
               'Новая задача',
               `Создана задача "${task.title}" в проекте "${project.name}"`,
               `/boards/${task.boardId}`
-            );
+            ));
           }
         }
       } catch (error) {
         console.error("Error sending project notification:", error);
       }
+      
+      // Execute all notifications in parallel
+      await Promise.all(notificationPromises);
       
       // Обогащаем задачу данными об исполнителе и репортере перед отправкой
       const [assignee, reporter] = await Promise.all([
@@ -1415,19 +1479,21 @@ export async function registerRoutes(
       // If page > 1, don't cache (edge case for older messages)
       const messages = await storage.getMessages(chatId, limit, offset);
       
-      // Get total count
-      const totalCount = await storage.db
-        .select({ id: schema.messages.id })
+      // Get total count using a more efficient single query with COUNT
+      const countResult = await storage.db
+        .select({ count: sql<number>`count(*)` })
         .from(schema.messages)
         .where(eq(schema.messages.chatId, chatId));
+      
+      const total = countResult[0]?.count || 0;
       
       const result = {
         messages,
         pagination: {
           page,
           limit,
-          total: totalCount.length,
-          totalPages: Math.ceil(totalCount.length / limit)
+          total,
+          totalPages: Math.ceil(total / limit)
         }
       };
       

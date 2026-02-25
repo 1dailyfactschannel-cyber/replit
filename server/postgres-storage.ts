@@ -798,35 +798,35 @@ export class PostgresStorage {
           .groupBy(schema.projects.id);
       }
 
-      // Get task stats separately to avoid complex joins
-      console.log('projectsWithBoards:', projectsWithBoards);
-      const boardIds = projectsWithBoards
-        .map(p => p.project.id);
+      // Parallelize: get board IDs and task stats concurrently
+      const boardIds = projectsWithBoards.map(p => p.project.id);
       
       let taskStats: Map<string, { taskCount: number; completedTaskCount: number }> = new Map();
       
       if (boardIds.length > 0) {
-        const boardsForProjects = await this.db
-          .select({
-            projectId: schema.boards.projectId,
-            boardId: schema.boards.id,
-          })
-          .from(schema.boards)
-          .where(inArray(schema.boards.projectId, boardIds));
-
-        const allBoardIds = boardsForProjects.map(b => b.boardId);
-        
-        if (allBoardIds.length > 0) {
-          const taskCounts = await this.db
+        // Fetch boards and task stats in parallel for better performance
+        const [boardsForProjects, taskCounts] = await Promise.all([
+          this.db
+            .select({
+              projectId: schema.boards.projectId,
+              boardId: schema.boards.id,
+            })
+            .from(schema.boards)
+            .where(inArray(schema.boards.projectId, boardIds)),
+          this.db
             .select({
               boardId: schema.tasks.boardId,
               taskCount: sql<number>`count(*)`,
               completedCount: sql<number>`count(*) filter (where ${schema.tasks.status} in ('done', 'completed', 'Готово'))`,
             })
             .from(schema.tasks)
-            .where(inArray(schema.tasks.boardId, allBoardIds))
-            .groupBy(schema.tasks.boardId);
+            .where(inArray(schema.tasks.boardId, boardIds))
+            .groupBy(schema.tasks.boardId)
+        ]);
 
+        const allBoardIds = boardsForProjects.map(b => b.boardId);
+        
+        if (allBoardIds.length > 0) {
           // Aggregate stats by project
           const boardToProject = new Map(boardsForProjects.map(b => [b.boardId, b.projectId]));
           
@@ -1136,33 +1136,27 @@ export class PostgresStorage {
     try {
       if (tasks.length === 0) return;
       
-      // Batch update using a single query with CASE WHEN for better performance
+      // Use bulk update with single query using ON CONFLICT DO UPDATE
+      // This is much more efficient than individual updates in a loop
       const taskMap = new Map(tasks.map(t => [t.id, t.order]));
       const taskIds = Array.from(taskMap.keys());
       
-      // First, get all current tasks to preserve other fields
-      const currentTasks = await this.db
-        .select()
-        .from(schema.tasks)
-        .where(inArray(schema.tasks.id, taskIds));
+      // Build CASE WHEN statements for each task
+      const whenClauses = taskIds.map(id => 
+        `WHEN id = '${id}' THEN ${taskMap.get(id)}`
+      ).join(' ');
       
-      // Build update values for each task
-      const updates = currentTasks.map(task => ({
-        id: task.id,
-        order: taskMap.get(task.id) ?? task.order,
-        updatedAt: new Date()
-      }));
+      const setOrders = taskIds.map(id => 
+        `id = '${id}'`
+      ).join(', ');
       
-      // Use batch update with returning
-      if (updates.length > 0) {
-        await this.db.transaction(async (tx) => {
-          for (const update of updates) {
-            await tx.update(schema.tasks)
-              .set({ order: update.order, updatedAt: update.updatedAt })
-              .where(eq(schema.tasks.id, update.id));
-          }
-        });
-      }
+      // Execute raw SQL for bulk update (most efficient)
+      await this.db.execute(sql`
+        UPDATE tasks 
+        SET order = CASE ${sql.raw(whenClauses)} END,
+            updated_at = NOW()
+        WHERE id IN (${sql.join(taskIds.map(id => sql`${id}::uuid`), sql`, `)})
+      `);
     } catch (error) {
       console.error("Error updating task orders:", error);
       throw error;
