@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Search, Phone, Video, Info, Paperclip, Smile, Send, Check, Camera, X, MessageSquare, MoreVertical, Edit, Trash, Plus, FolderPlus, UserPlus, Folder, Users, Clock, Play } from "lucide-react";
+import { Search, Phone, Video, Info, Paperclip, Smile, Send, Check, Camera, X, MessageSquare, MoreVertical, Edit, Trash, Plus, FolderPlus, UserPlus, Folder, Users, Clock, Play, Reply } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import {
   DropdownMenu,
@@ -394,6 +394,7 @@ export default function ChatPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [messageSearchQuery, setMessageSearchQuery] = useState("");
   const [selectedImage, setSelectedImage] = useState<{ url: string; name: string; type: 'image' | 'video' } | null>(null);
+  const [replyingTo, setReplyingTo] = useState<{ id: string; content: string; senderName: string } | null>(null);
 
   const getChatName = (chat: Contact | undefined) => {
     if (!chat) return "Чат";
@@ -500,7 +501,12 @@ export default function ChatPage() {
     sendMessageMutation.mutate({
       chatId: activeChatId,
       content: messageInput,
-      attachments: attachments.length > 0 ? attachments : undefined
+      attachments: attachments.length > 0 ? attachments : undefined,
+      replyToId: replyingTo?.id
+    } as any, {
+      onSuccess: () => {
+        setReplyingTo(null);
+      }
     });
   };
 
@@ -1245,6 +1251,15 @@ export default function ChatPage() {
                                         </DropdownMenuTrigger>
                                         <DropdownMenuContent align="end">
                                           <DropdownMenuItem onClick={() => {
+                                            const senderName = (msg as any).sender?.firstName && (msg as any).sender?.lastName 
+                                              ? `${(msg as any).sender.firstName} ${(msg as any).sender.lastName}` 
+                                              : (msg as any).sender?.username || 'Пользователь';
+                                            setReplyingTo({ id: msg.id, content: msg.content, senderName });
+                                          }}>
+                                            <Reply className="w-3 h-3 mr-2" />
+                                            Ответить
+                                          </DropdownMenuItem>
+                                          <DropdownMenuItem onClick={() => {
                                             setEditingMessageId(msg.id);
                                             setMessageInput(msg.content);
                                           }}>
@@ -1267,6 +1282,21 @@ export default function ChatPage() {
                                   "max-w-[80%] px-4 py-2.5 rounded-2xl text-sm shadow-sm transition-all hover:shadow-md relative",
                                   isMe ? "bg-primary text-primary-foreground rounded-tr-none" : "bg-card text-foreground border border-border/50 rounded-tl-none"
                                 )}>
+                                  {(msg as any).replyToId && (msg as any).repliedMessage && (
+                                    <div className={cn(
+                                      "mb-2 pb-2 border-l-2 pl-3 text-xs",
+                                      isMe ? "border-primary-foreground/30" : "border-border"
+                                    )}>
+                                      <div className="font-semibold opacity-70">
+                                        {(msg as any).repliedMessage.sender?.firstName && (msg as any).repliedMessage.sender?.lastName 
+                                          ? `${(msg as any).repliedMessage.sender.firstName} ${(msg as any).repliedMessage.sender.lastName}`
+                                          : (msg as any).repliedMessage.sender?.username || 'Пользователь'}
+                                      </div>
+                                      <div className="opacity-70 truncate">
+                                        {(msg as any).repliedMessage.content}
+                                      </div>
+                                    </div>
+                                  )}
                                   <>
                                     {msg.content}
                                     {isMe && editingMessageId !== msg.id && (
@@ -1395,6 +1425,23 @@ export default function ChatPage() {
                             >
                               Отмена
                             </Button>
+                          )}
+                          {replyingTo && (
+                            <div className="flex items-center gap-2 bg-muted/50 rounded-lg px-3 py-1.5 flex-1">
+                              <Reply className="w-3 h-3 text-muted-foreground shrink-0" />
+                              <div className="flex-1 min-w-0">
+                                <span className="text-[10px] font-semibold text-foreground">Ответ {replyingTo.senderName}</span>
+                                <p className="text-[10px] text-muted-foreground truncate">{replyingTo.content}</p>
+                              </div>
+                              <Button 
+                                variant="ghost" 
+                                size="sm" 
+                                className="text-xs text-muted-foreground hover:text-destructive h-6 w-6 p-0 shrink-0"
+                                onClick={() => setReplyingTo(null)}
+                              >
+                                <X className="w-3 h-3" />
+                              </Button>
+                            </div>
                           )}
                           <Input 
                             placeholder={editingMessageId ? "Редактирование сообщения..." : "Напишите сообщение..."} 

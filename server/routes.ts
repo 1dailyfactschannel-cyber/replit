@@ -1433,7 +1433,8 @@ export async function registerRoutes(
         chatId: req.params.chatId,
         senderId: user.id,
         content: req.body.content,
-        attachments: req.body.attachments || []
+        attachments: req.body.attachments || [],
+        replyToId: req.body.replyToId || null
       });
       
       // Emit to all users in the chat room

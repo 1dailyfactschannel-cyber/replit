@@ -472,6 +472,7 @@ export const messages = pgTable("messages", {
   senderId: uuid("sender_id").notNull().references(() => users.id),
   content: text("content").notNull(),
   attachments: jsonb("attachments").default(sql`'[]'::jsonb`),
+  replyToId: uuid("reply_to_id").references(() => messages.id, { onDelete: "set null" }),
   isRead: boolean("is_read").default(false),
   createdAt: timestamp("created_at").defaultNow(),
 }, (table) => ({
