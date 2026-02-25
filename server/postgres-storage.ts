@@ -15,7 +15,7 @@ import {
   type InsertCommentMention
 } from "@shared/schema";
 import { drizzle } from "drizzle-orm/postgres-js";
-import { eq, and, or, desc, ne, sql, inArray } from "drizzle-orm";
+import { eq, and, or, desc, ne, sql, inArray, isNull } from "drizzle-orm";
 import postgres from "postgres";
 import * as schema from "@shared/schema";
 import dotenv from "dotenv";
@@ -1076,7 +1076,7 @@ export class PostgresStorage {
   async getTasksByBoard(boardId: string): Promise<schema.Task[]> {
     try {
       return await this.db.select().from(schema.tasks)
-        .where(eq(schema.tasks.boardId, boardId))
+        .where(and(eq(schema.tasks.boardId, boardId), sql`(${schema.tasks.archived} = false OR ${schema.tasks.archived} IS NULL)`))
         .orderBy(schema.tasks.order);
     } catch (error) {
       console.error("Error getting tasks by board:", error);
@@ -1088,11 +1088,11 @@ export class PostgresStorage {
   async getTasksByBoardWithUsers(boardId: string, limit: number = 100): Promise<any[]> {
     const startTime = Date.now();
     try {
-      // Get tasks first
+      // Get tasks first - exclude archived
       const tasks = await this.db
         .select()
         .from(schema.tasks)
-        .where(eq(schema.tasks.boardId, boardId))
+        .where(and(eq(schema.tasks.boardId, boardId), sql`(${schema.tasks.archived} = false OR ${schema.tasks.archived} IS NULL)`))
         .orderBy(schema.tasks.order)
         .limit(limit);
 
