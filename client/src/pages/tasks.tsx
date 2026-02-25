@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { MoreHorizontal, Calendar, ArrowUpDown, Filter, Layout as LayoutIcon, Briefcase, Play, Clock, X } from "lucide-react";
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { TaskDetailsModal, Task } from "@/components/kanban/TaskDetailsModal";
 import { toast } from "sonner";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -75,9 +75,10 @@ export default function Tasks() {
   const activeFilterCount = taskFilters.projects.length + taskFilters.status.length + (taskFilters.search ? 1 : 0);
 
   useEffect(() => {
+    // Update time every minute instead of every second to reduce re-renders
     const interval = setInterval(() => {
       setCurrentTime(Date.now());
-    }, 1000);
+    }, 60000);
     return () => clearInterval(interval);
   }, []);
 
@@ -95,14 +96,14 @@ export default function Tasks() {
     }
   });
 
-  const formatDuration = (start: number) => {
+  const formatDuration = useCallback((start: number) => {
     const diff = currentTime - start;
     const hours = Math.floor(diff / 3600000);
     const minutes = Math.floor((diff % 3600000) / 60000);
     return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
-  };
+  }, [currentTime]);
 
-  const formatDate = (date: any) => {
+  const formatDate = useCallback((date: any) => {
     if (!date) return "";
     const d = new Date(date);
     const now = new Date();
@@ -114,7 +115,7 @@ export default function Tasks() {
     if (days === 1) return "Завтра";
     if (days < 7) return `${d.toLocaleDateString("ru-RU", { weekday: 'short' })}, ${d.getDate()} ${d.toLocaleDateString("ru-RU", { month: 'short' })}`;
     return d.toLocaleDateString("ru-RU", { day: 'numeric', month: 'short' });
-  };
+  }, []);
 
   const getStatusBadge = (status: string) => {
     const statusMap: Record<string, string> = {

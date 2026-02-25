@@ -1015,31 +1015,31 @@ export default function Projects() {
     });
   };
 
-  const handleCreateProject = () => {
+  const handleCreateProject = useCallback(() => {
     if (!newProject.name) return;
     createProjectMutation.mutate({
       ...newProject,
       workspaceId: selectedWorkspaceId
     });
-  };
+  }, [newProject, selectedWorkspaceId, createProjectMutation]);
 
-  const handleEditProject = (project: any) => {
+  const handleEditProject = useCallback((project: any) => {
     setEditingProject(project);
     setIsEditProjectOpen(true);
-  };
+  }, []);
 
-  const handleDeleteProject = (projectId: string) => {
+  const handleDeleteProject = useCallback((projectId: string) => {
     setDeletingProjectId(projectId);
-  };
+  }, []);
 
-  const confirmDeleteProject = () => {
+  const confirmDeleteProject = useCallback(() => {
     if (deletingProjectId) {
       deleteProjectMutation.mutate(deletingProjectId);
       setDeletingProjectId(null);
     }
-  };
+  }, [deletingProjectId, deleteProjectMutation]);
 
-  const handleUpdateProject = () => {
+  const handleUpdateProject = useCallback(() => {
     if (!editingProject || !editingProject.name) return;
     updateProjectMutation.mutate({
       id: editingProject.id,
@@ -1051,7 +1051,7 @@ export default function Projects() {
     });
     setIsEditProjectOpen(false);
     setEditingProject(null);
-  };
+  }, [editingProject, updateProjectMutation]);
 
   const [editingBoard, setEditingBoard] = useState<{ id: string, currentName: string } | null>(null);
 

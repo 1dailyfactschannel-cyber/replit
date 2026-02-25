@@ -8,9 +8,10 @@ import { Server as SocketIOServer } from "socket.io";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
-import { eq, and, ne, or, isNull } from "drizzle-orm";
+import { eq, and, ne, or, isNull, inArray } from "drizzle-orm";
 import { getCache, setCache, invalidatePattern, delCache } from "./redis";
 import { format } from "date-fns";
+import { formatUserName, formatUserBasic } from "./utils";
 
 const storage = getStorage();
 let io: SocketIOServer;
@@ -29,13 +30,6 @@ async function sendNotification(userId: string, senderId: string | null, type: s
   } catch (error) {
     console.error("Error sending notification:", error);
   }
-}
-
-// Helper function to format user name
-function formatUserName(user: any): string {
-  if (!user) return "Пользователь";
-  const fullName = `${user.firstName || ""} ${user.lastName || ""}`.trim();
-  return fullName || user.username || "Пользователь";
 }
 
 // Configure multer for file uploads
@@ -81,11 +75,18 @@ export async function registerRoutes(
     if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
     console.log("PATCH /api/user hit!");
     try {
-      // console.log("PATCH /api/user request body:", req.body);
       const user = req.user;
       
-      // Маппинг полей из фронтенда (telegram) в поля базы данных (telegram)
-      const updateData = { ...req.body };
+      // Whitelist allowed fields for security
+      const allowedFields = ['firstName', 'lastName', 'avatar', 'department', 'position', 'phone', 'timezone', 'language', 'telegram', 'notes'];
+      const updateData: Record<string, any> = {};
+      
+      for (const field of allowedFields) {
+        if (req.body[field] !== undefined) {
+          updateData[field] = req.body[field];
+        }
+      }
+      
       if (updateData.telegram !== undefined) {
         console.log("Updating telegram field to:", updateData.telegram);
       }
@@ -430,7 +431,17 @@ export async function registerRoutes(
 
   app.patch("/api/projects/:id", async (req, res) => {
     try {
-      const project = await storage.updateProject(req.params.id, req.body);
+      // Whitelist allowed fields for security
+      const allowedFields = ['name', 'description', 'status', 'priorityId', 'workspaceId', 'startDate', 'endDate', 'budget', 'currency', 'color', 'isPublic'];
+      const updateData: Record<string, any> = {};
+      
+      for (const field of allowedFields) {
+        if (req.body[field] !== undefined) {
+          updateData[field] = req.body[field];
+        }
+      }
+      
+      const project = await storage.updateProject(req.params.id, updateData);
       res.json(project);
     } catch (error) {
       res.status(500).json({ message: "Failed to update project" });
@@ -591,26 +602,43 @@ export async function registerRoutes(
       
       console.log("[my-tasks] Found tasks:", tasks.length);
       
+      // Collect all unique user IDs to avoid N+1 queries
+      const userIds = new Set<string>();
+      tasks.forEach(t => {
+        if (t.task.assigneeId) userIds.add(t.task.assigneeId);
+        if (t.task.reporterId) userIds.add(t.task.reporterId);
+      });
+      
+      // Batch fetch all users in a single query
+      const usersMap = new Map<string, any>();
+      if (userIds.size > 0) {
+        const users = await storage.db
+          .select({
+            id: schema.users.id,
+            username: schema.users.username,
+            firstName: schema.users.firstName,
+            lastName: schema.users.lastName,
+            avatar: schema.users.avatar
+          })
+          .from(schema.users)
+          .where(inArray(schema.users.id, Array.from(userIds)));
+        
+        users.forEach(user => usersMap.set(user.id, user));
+      }
+      
       // Enrich tasks with board and project info
-      const enrichedTasks = await Promise.all(tasks.map(async (t) => {
-        const [assignee, reporter] = await Promise.all([
-          t.task.assigneeId ? storage.getUser(t.task.assigneeId) : null,
-          t.task.reporterId ? storage.getUser(t.task.reporterId) : null
-        ]);
-
-        const formatName = (user: any) => {
-          if (!user) return null;
-          return `${user.firstName || ""} ${user.lastName || ""}`.trim() || user.username || "Пользователь";
-        };
-
+      const enrichedTasks = tasks.map((t) => {
+        const assignee = t.task.assigneeId ? usersMap.get(t.task.assigneeId) : null;
+        const reporter = t.task.reporterId ? usersMap.get(t.task.reporterId) : null;
+        
         return {
           ...t.task,
           board: t.board,
           project: t.project,
-          assignee: assignee ? { name: formatName(assignee), avatar: assignee.avatar } : null,
-          creator: reporter ? { name: formatName(reporter), avatar: reporter.avatar, date: t.task.createdAt } : null,
+          assignee: formatUserBasic(assignee),
+          creator: reporter ? { ...formatUserBasic(reporter), date: t.task.createdAt } : null,
         };
-      }));
+      });
       
       res.json(enrichedTasks);
     } catch (error) {
@@ -636,26 +664,43 @@ export async function registerRoutes(
         .innerJoin(schema.projects, eq(schema.boards.projectId, schema.projects.id))
         .where(eq(schema.tasks.archived, true));
       
+      // Collect all unique user IDs to avoid N+1 queries
+      const userIds = new Set<string>();
+      tasks.forEach(t => {
+        if (t.task.assigneeId) userIds.add(t.task.assigneeId);
+        if (t.task.reporterId) userIds.add(t.task.reporterId);
+      });
+      
+      // Batch fetch all users in a single query
+      const usersMap = new Map<string, any>();
+      if (userIds.size > 0) {
+        const users = await storage.db
+          .select({
+            id: schema.users.id,
+            username: schema.users.username,
+            firstName: schema.users.firstName,
+            lastName: schema.users.lastName,
+            avatar: schema.users.avatar
+          })
+          .from(schema.users)
+          .where(inArray(schema.users.id, Array.from(userIds)));
+        
+        users.forEach(user => usersMap.set(user.id, user));
+      }
+      
       // Enrich tasks with user info
-      const enrichedTasks = await Promise.all(tasks.map(async (t) => {
-        const [assignee, reporter] = await Promise.all([
-          t.task.assigneeId ? storage.getUser(t.task.assigneeId) : null,
-          t.task.reporterId ? storage.getUser(t.task.reporterId) : null
-        ]);
-
-        const formatName = (user: any) => {
-          if (!user) return null;
-          return `${user.firstName || ""} ${user.lastName || ""}`.trim() || user.username || "Пользователь";
-        };
-
+      const enrichedTasks = tasks.map((t) => {
+        const assignee = t.task.assigneeId ? usersMap.get(t.task.assigneeId) : null;
+        const reporter = t.task.reporterId ? usersMap.get(t.task.reporterId) : null;
+        
         return {
           ...t.task,
           board: t.board,
           project: t.project,
-          assignee: assignee ? { name: formatName(assignee), avatar: assignee.avatar } : null,
-          creator: reporter ? { name: formatName(reporter), avatar: reporter.avatar, date: t.task.createdAt } : null,
+          assignee: formatUserBasic(assignee),
+          creator: reporter ? { ...formatUserBasic(reporter), date: t.task.createdAt } : null,
         };
-      }));
+      });
       
       res.json(enrichedTasks);
     } catch (error) {
@@ -839,20 +884,11 @@ export async function registerRoutes(
         task.reporterId ? storage.getUser(task.reporterId) : null
       ]);
 
-      const formatName = (user: any) => {
-        if (!user) return null;
-        const fullName = `${user.firstName || ""} ${user.lastName || ""}`.trim();
-        return fullName || user.username || "Пользователь";
-      };
-
       const enrichedTask = {
         ...task,
-        assignee: assignee ? { 
-          name: formatName(assignee), 
-          avatar: assignee.avatar 
-        } : null,
+        assignee: formatUserBasic(assignee),
         creator: { 
-          name: formatName(reporter) || "Система", 
+          name: reporter ? formatUserName(reporter) : "Система", 
           avatar: reporter?.avatar || null,
           date: task.createdAt ? new Date(task.createdAt).toISOString() : ""
         }
@@ -969,20 +1005,11 @@ export async function registerRoutes(
         task.reporterId ? storage.getUser(task.reporterId) : null
       ]);
 
-      const formatName = (user: any) => {
-        if (!user) return null;
-        const fullName = `${user.firstName || ""} ${user.lastName || ""}`.trim();
-        return fullName || user.username || "Пользователь";
-      };
-
       const enrichedTask = {
         ...task,
-        assignee: assignee ? { 
-          name: formatName(assignee), 
-          avatar: assignee.avatar 
-        } : null,
+        assignee: formatUserBasic(assignee),
         creator: { 
-          name: formatName(reporter) || "Система", 
+          name: reporter ? formatUserName(reporter) : "Система", 
           avatar: reporter?.avatar || null,
           date: task.createdAt ? new Date(task.createdAt).toISOString() : ""
         }
@@ -1004,16 +1031,31 @@ export async function registerRoutes(
       const user = req.user;
       console.log("[API] Creating task with data:", req.body);
 
+      // Validate required fields
+      if (!req.body.title || typeof req.body.title !== 'string' || req.body.title.trim() === '') {
+        return res.status(400).json({ message: "Название задачи обязательно" });
+      }
+
       const columns = await storage.getColumnsByBoard(req.params.boardId);
       if (columns.length === 0) return res.status(400).json({ message: "Board has no columns" });
 
+      // Whitelist allowed fields for security (including validated title)
+      const allowedFields = ['title', 'description', 'status', 'priorityId', 'type', 'storyPoints', 'startDate', 'dueDate', 'columnId', 'assigneeId', 'tags', 'parentId'];
+      const sanitizedBody: Record<string, any> = { title: req.body.title.trim() };
+      
+      for (const field of allowedFields.slice(1)) {
+        if (req.body[field] !== undefined) {
+          sanitizedBody[field] = req.body[field];
+        }
+      }
+
       const taskData = {
-        ...req.body,
+        ...sanitizedBody,
         boardId: req.params.boardId,
         columnId: req.body.columnId || columns[0].id,
         reporterId: user.id,
         status: req.body.status || "todo"
-      };
+      } as any;
       console.log("[API] Task data prepared:", taskData);
 
       const task = await storage.createTask(taskData);
@@ -1080,20 +1122,11 @@ export async function registerRoutes(
         task.reporterId ? storage.getUser(task.reporterId) : null
       ]);
 
-      const formatName = (user: any) => {
-        if (!user) return null;
-        const fullName = `${user.firstName || ""} ${user.lastName || ""}`.trim();
-        return fullName || user.username || "Пользователь";
-      };
-
       const enrichedTask = {
         ...task,
-        assignee: assignee ? { 
-          name: formatName(assignee), 
-          avatar: assignee.avatar 
-        } : null,
+        assignee: formatUserBasic(assignee),
         creator: { 
-          name: formatName(reporter) || "Система", 
+          name: reporter ? formatUserName(reporter) : "Система", 
           avatar: reporter?.avatar || null,
           date: task.createdAt ? new Date(task.createdAt).toISOString() : ""
         }

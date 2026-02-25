@@ -142,7 +142,7 @@ function TaskStatusTimer({ taskId }: { taskId: string | number | undefined }) {
   }[]>({
     queryKey: ["/api/tasks", taskId, "status-summary"],
     enabled: !!taskId,
-    refetchInterval: 1000, // Refetch every second to update timer
+    refetchInterval: 60000, // Refetch every minute instead of every second
   });
 
   if (isLoading) {
@@ -399,7 +399,7 @@ export function TaskDetailsModal({
   const { data: serverSubtasks = [] } = useQuery<any[]>({
     queryKey: [`/api/tasks/${task?.id}/subtasks`],
     enabled: !!task?.id && open,
-    staleTime: 0,
+    staleTime: 30000, // Cache for 30 seconds
   });
   
   // Debug log
@@ -413,7 +413,7 @@ export function TaskDetailsModal({
   const { data: serverTask } = useQuery<Task>({
     queryKey: ["/api/tasks", task?.id],
     enabled: !!task?.id && open,
-    staleTime: 0, // Always fetch fresh data
+    staleTime: 30000, // Cache for 30 seconds instead of always fetching fresh
   });
 
   const effectiveTask = serverTask || task;

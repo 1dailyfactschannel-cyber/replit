@@ -92,7 +92,9 @@ export const workspaces = pgTable("workspaces", {
   color: text("color").default("#3b82f6"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-});
+}, (table) => ({
+  ownerIdIdx: index("workspaces_owner_id_idx").on(table.ownerId),
+}));
 
 // Workspace members junction table
 export const workspaceMembers = pgTable("workspace_members", {
@@ -122,7 +124,11 @@ export const projects = pgTable("projects", {
   isPublic: boolean("is_public").default(false),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-});
+}, (table) => ({
+  workspaceIdIdx: index("projects_workspace_id_idx").on(table.workspaceId),
+  statusIdx: index("projects_status_idx").on(table.status),
+  ownerIdIdx: index("projects_owner_id_idx").on(table.ownerId),
+}));
 
 // Project members junction table
 export const projectMembers = pgTable("project_members", {
@@ -144,7 +150,9 @@ export const boards = pgTable("boards", {
   templateId: uuid("template_id").references((): any => boards.id),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-});
+}, (table) => ({
+  projectIdIdx: index("boards_project_id_idx").on(table.projectId),
+}));
 
 // Board columns table
 export const boardColumns = pgTable("board_columns", {
@@ -185,7 +193,9 @@ export const tasks = pgTable("tasks", {
   boardIdIdx: index("tasks_board_id_idx").on(table.boardId),
   columnIdIdx: index("tasks_column_id_idx").on(table.columnId),
   assigneeIdIdx: index("tasks_assignee_id_idx").on(table.assigneeId),
-  priorityIdIdx: index("tasks_priority_id_idx").on(table.priorityId), // New index
+  priorityIdIdx: index("tasks_priority_id_idx").on(table.priorityId),
+  reporterIdIdx: index("tasks_reporter_id_idx").on(table.reporterId),
+  boardColumnOrderIdx: index("tasks_board_column_order_idx").on(table.boardId, table.columnId, table.order),
 }));
 
 // Task status history table for tracking time in each status
@@ -463,6 +473,7 @@ export const chatParticipants = pgTable("chat_participants", {
   lastReadAt: timestamp("last_read_at").defaultNow(),
 }, (table) => ({
   pk: primaryKey({ columns: [table.chatId, table.userId] }),
+  userIdIdx: index("chat_participants_user_id_idx").on(table.userId),
 }));
 
 // Messages table
@@ -479,6 +490,7 @@ export const messages = pgTable("messages", {
   chatIdIdx: index("messages_chat_id_idx").on(table.chatId),
   senderIdIdx: index("messages_sender_id_idx").on(table.senderId),
   createdAtIdx: index("messages_created_at_idx").on(table.createdAt),
+  chatCreatedAtIdx: index("messages_chat_created_at_idx").on(table.chatId, table.createdAt),
 }));
 
 // Message attachments table
@@ -503,7 +515,10 @@ export const calls = pgTable("calls", {
   duration: integer("duration"), // in seconds
   startedAt: timestamp("started_at").defaultNow(),
   endedAt: timestamp("ended_at"),
-});
+}, (table) => ({
+  callerIdIdx: index("calls_caller_id_idx").on(table.callerId),
+  receiverIdIdx: index("calls_receiver_id_idx").on(table.receiverId),
+}));
 
 // Export chat types
 export type Chat = typeof chats.$inferSelect;
@@ -632,7 +647,10 @@ export const notifications = pgTable("notifications", {
   link: text("link"), // Optional link to redirect
   isRead: boolean("is_read").default(false),
   createdAt: timestamp("created_at").defaultNow(),
-});
+}, (table) => ({
+  userIdIdx: index("notifications_user_id_idx").on(table.userId),
+  userIdIsReadIdx: index("notifications_user_is_read_idx").on(table.userId, table.isRead),
+}));
 
 export const insertNotificationSchema = createInsertSchema(notifications).pick({
   userId: true,
