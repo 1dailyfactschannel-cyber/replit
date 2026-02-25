@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Search, Phone, Video, Info, Paperclip, Smile, Send, Check, Camera, X, MessageSquare, MoreVertical, Edit, Trash, Plus, FolderPlus, UserPlus, Folder, Users, Clock } from "lucide-react";
+import { Search, Phone, Video, Info, Paperclip, Smile, Send, Check, Camera, X, MessageSquare, MoreVertical, Edit, Trash, Plus, FolderPlus, UserPlus, Folder, Users, Clock, Play } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import {
   DropdownMenu,
@@ -393,7 +393,7 @@ export default function ChatPage() {
   
   const [searchQuery, setSearchQuery] = useState("");
   const [messageSearchQuery, setMessageSearchQuery] = useState("");
-  const [selectedImage, setSelectedImage] = useState<{ url: string; name: string } | null>(null);
+  const [selectedImage, setSelectedImage] = useState<{ url: string; name: string; type: 'image' | 'video' } | null>(null);
 
   const getChatName = (chat: Contact | undefined) => {
     if (!chat) return "Чат";
@@ -1281,19 +1281,39 @@ export default function ChatPage() {
                                     <div className="mt-2 space-y-1">
                                       {(msg.attachments as any[]).map((file: any, idx: number) => {
                                         const isImage = file.type?.startsWith('image/') || /\.(jpg|jpeg|png|gif|webp|svg)$/i.test(file.name || file.url);
+                                        const isVideo = file.type?.startsWith('video/') || /\.(mp4|webm|mov|avi)$/i.test(file.name || file.url);
                                         
                                         if (isImage) {
                                           return (
                                             <div 
                                               key={idx}
                                               className="cursor-pointer rounded-lg overflow-hidden max-w-[200px]"
-                                              onClick={() => setSelectedImage({ url: file.url, name: file.name })}
+                                              onClick={() => setSelectedImage({ url: file.url, name: file.name, type: 'image' })}
                                             >
                                               <img 
                                                 src={file.url} 
                                                 alt={file.name}
                                                 className="w-full h-auto max-h-[150px] object-cover hover:opacity-90 transition-opacity"
                                               />
+                                            </div>
+                                          );
+                                        }
+                                        
+                                        if (isVideo) {
+                                          return (
+                                            <div 
+                                              key={idx}
+                                              className="cursor-pointer rounded-lg overflow-hidden max-w-[200px] relative"
+                                              onClick={() => setSelectedImage({ url: file.url, name: file.name, type: 'video' })}
+                                            >
+                                              <video 
+                                                src={file.url}
+                                                className="w-full h-auto max-h-[150px] object-cover hover:opacity-90 transition-opacity"
+                                                preload="metadata"
+                                              />
+                                              <div className="absolute inset-0 flex items-center justify-center bg-black/30">
+                                                <Play className="w-8 h-8 text-white" />
+                                              </div>
                                             </div>
                                           );
                                         }
@@ -1556,7 +1576,19 @@ export default function ChatPage() {
             >
               <X className="w-5 h-5" />
             </Button>
-            {selectedImage && (
+            {selectedImage && selectedImage.type === 'video' ? (
+              <>
+                <video 
+                  src={selectedImage.url} 
+                  controls
+                  autoPlay
+                  className="max-w-full max-h-[85vh] object-contain"
+                />
+                <div className="absolute bottom-2 left-1/2 -translate-x-1/2 bg-black/60 text-white text-xs px-3 py-1 rounded-full">
+                  {selectedImage.name}
+                </div>
+              </>
+            ) : selectedImage ? (
               <>
                 <img 
                   src={selectedImage.url} 
@@ -1567,7 +1599,7 @@ export default function ChatPage() {
                   {selectedImage.name}
                 </div>
               </>
-            )}
+            ) : null}
           </div>
         </DialogContent>
       </Dialog>
