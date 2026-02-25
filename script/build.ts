@@ -44,7 +44,13 @@ async function buildAll() {
     ...Object.keys(pkg.dependencies || {}),
     ...Object.keys(pkg.devDependencies || {}),
   ];
-  const externals = allDeps.filter((dep) => !allowlist.includes(dep));
+  let externals = allDeps.filter((dep) => !allowlist.includes(dep));
+
+  // Add Node.js built-ins to externals
+  const nodeBuiltins = ['path', 'fs', 'os', 'url', 'crypto', 'stream', 'util', 'events', 'buffer', 'http', 'https', 'net', 'tls', 'zlib', 'querystring', 'string_decoder', 'assert', 'sys', 'punycode', 'module', 'child_process', 'cluster', 'dgram', 'dns', 'domain', 'readline', 'repl'];
+  externals = [...externals, ...nodeBuiltins];
+
+  console.log('Externals:', externals.slice(0, 10), '...');
 
   await esbuild({
     entryPoints: ["server/index.ts"],

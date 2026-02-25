@@ -1,3 +1,12 @@
+import "dotenv/config";
+import path from "path";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+console.log('DATABASE_URL:', process.env.DATABASE_URL ? 'set' : 'NOT SET');
+
 import "./globals.ts";
 import { setupVite } from "./vite";
 import express, { type Request, Response, NextFunction } from "express";
@@ -5,11 +14,6 @@ import { registerRoutes } from "./routes";
 import { setupAuth } from "./auth";
 import { serveStatic } from "./static";
 import { createServer } from "http";
-import path from "path";
-import { fileURLToPath } from "url";
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 const app = express();
 const httpServer = createServer(app);
