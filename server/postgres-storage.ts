@@ -515,6 +515,8 @@ export class PostgresStorage {
   async createChatFolder(folder: InsertChatFolder): Promise<ChatFolder> {
     try {
       const [newFolder] = await this.db.insert(schema.chatFolders).values(folder).returning();
+      // Invalidate cache
+      await delCache(`user:${folder.userId}:chat_folders`);
       return newFolder;
     } catch (error) {
       console.error("Error creating chat folder:", error);
@@ -525,6 +527,8 @@ export class PostgresStorage {
   async updateChatFolder(id: string, update: Partial<ChatFolder>): Promise<ChatFolder> {
     try {
       const [folder] = await this.db.update(schema.chatFolders).set(update).where(eq(schema.chatFolders.id, id)).returning();
+      // Invalidate cache
+      await delCache(`user:${folder.userId}:chat_folders`);
       return folder;
     } catch (error) {
       console.error("Error updating chat folder:", error);
@@ -534,7 +538,17 @@ export class PostgresStorage {
 
   async deleteChatFolder(id: string): Promise<void> {
     try {
+      // Get userId before deleting
+      const [folder] = await this.db.select({ userId: schema.chatFolders.userId })
+        .from(schema.chatFolders)
+        .where(eq(schema.chatFolders.id, id));
+      
       await this.db.delete(schema.chatFolders).where(eq(schema.chatFolders.id, id));
+      
+      // Invalidate cache
+      if (folder) {
+        await delCache(`user:${folder.userId}:chat_folders`);
+      }
     } catch (error) {
       console.error("Error deleting chat folder:", error);
       throw error;

@@ -1580,6 +1580,7 @@ export async function registerRoutes(
   });
 
   app.delete("/api/chat-folders/:id", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
     try {
       await storage.deleteChatFolder(req.params.id);
       res.status(204).end();

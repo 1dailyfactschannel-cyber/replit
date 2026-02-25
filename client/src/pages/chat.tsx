@@ -179,6 +179,21 @@ export default function ChatPage() {
     }
   });
 
+  const createFolderMutation = useMutation({
+    mutationFn: async (data: { name: string; chatIds: string[] }) => {
+      const res = await apiRequest("POST", "/api/chat-folders", data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/chat-folders"] });
+      toast.success("Папка создана");
+    },
+    onError: (err) => {
+      console.error("Create folder error:", err);
+      toast.error("Ошибка при создании папки");
+    }
+  });
+
   const deleteFolderMutation = useMutation({
     mutationFn: async (id: string) => {
       await apiRequest("DELETE", `/api/chat-folders/${id}`);
@@ -186,6 +201,10 @@ export default function ChatPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/chat-folders"] });
       toast.success("Папка удалена");
+    },
+    onError: (err) => {
+      console.error("Delete folder error:", err);
+      toast.error("Ошибка при удалении папки");
     }
   });
 
@@ -453,19 +472,13 @@ export default function ChatPage() {
 
   const handleCreateFolder = async () => {
     if (!newFolderName.trim()) return;
-    try {
-      await apiRequest("POST", "/api/chat-folders", {
-        name: newFolderName,
-        chatIds: selectedChatIdsForFolder
-      });
-      queryClient.invalidateQueries({ queryKey: ["/api/chat-folders"] });
-      setIsCreateFolderOpen(false);
-      setNewFolderName("");
-      setSelectedChatIdsForFolder([]);
-      toast.success("Папка создана");
-    } catch (err) {
-      toast.error("Ошибка при создании папки");
-    }
+    createFolderMutation.mutate({
+      name: newFolderName,
+      chatIds: selectedChatIdsForFolder
+    });
+    setIsCreateFolderOpen(false);
+    setNewFolderName("");
+    setSelectedChatIdsForFolder([]);
   };
 
   const toggleChatForFolder = (chatId: string) => {
