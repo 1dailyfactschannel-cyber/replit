@@ -226,25 +226,14 @@ const TaskCard = React.memo(({ task, index, onClick, columnColor, availableLabel
     </Draggable>
   );
 }, (prevProps, nextProps) => {
-  // Custom comparison: only re-render if task data actually changed
-  // Deep compare tags
-  const prevTags = prevProps.task.tags || [];
-  const nextTags = nextProps.task.tags || [];
-  const tagsChanged = prevTags.length !== nextTags.length || !prevTags.every((t: string, i: number) => t === nextTags[i]);
-  const labelsChanged = prevProps.availableLabels !== nextProps.availableLabels;
-  const prioritiesChanged = prevProps.availablePriorities !== nextProps.availablePriorities;
-
+  // Simplified comparison - only check essential props
   return (
     prevProps.task.id === nextProps.task.id &&
     prevProps.task.title === nextProps.task.title &&
     prevProps.task.priority === nextProps.task.priority &&
     prevProps.task.priorityId === nextProps.task.priorityId &&
     prevProps.task.assignee?.id === nextProps.task.assignee?.id &&
-    prevProps.columnColor.border === nextProps.columnColor.border &&
-    prevProps.index === nextProps.index &&
-    !tagsChanged &&
-    !labelsChanged &&
-    !prioritiesChanged
+    prevProps.index === nextProps.index
   );
 });
 
@@ -437,27 +426,9 @@ const KanbanColumn = React.memo(({
     </div>
   );
 }, (prevProps, nextProps) => {
-  // Only re-render if column name, task count, or tasks actually changed
+  // Simplified comparison - basic props check only
   if (prevProps.column !== nextProps.column) return false;
   if (prevProps.tasks.length !== nextProps.tasks.length) return false;
-  if (prevProps.availableLabels !== nextProps.availableLabels) return false;
-  if (prevProps.availablePriorities !== nextProps.availablePriorities) return false;
-  
-  // Check if any task ID, title, or priority changed
-  for (let i = 0; i < prevProps.tasks.length; i++) {
-    if (prevProps.tasks[i]?.id !== nextProps.tasks[i]?.id) return false;
-    if (prevProps.tasks[i]?.title !== nextProps.tasks[i]?.title) return false;
-    if (prevProps.tasks[i]?.priority !== nextProps.tasks[i]?.priority) return false;
-    if (prevProps.tasks[i]?.priorityId !== nextProps.tasks[i]?.priorityId) return false;
-    if (prevProps.tasks[i]?.status !== nextProps.tasks[i]?.status) return false;
-    if (prevProps.tasks[i]?.assignee?.id !== nextProps.tasks[i]?.assignee?.id) return false;
-    
-    // Check tags
-    const prevTags = prevProps.tasks[i]?.tags || [];
-    const nextTags = nextProps.tasks[i]?.tags || [];
-    if (prevTags.length !== nextTags.length || !prevTags.every((t: string, k: number) => t === nextTags[k])) return false;
-  }
-  
   return true;
 });
 

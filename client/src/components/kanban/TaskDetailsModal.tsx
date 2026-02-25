@@ -402,13 +402,6 @@ export function TaskDetailsModal({
     staleTime: 30000, // Cache for 30 seconds
   });
   
-  // Debug log
-  useEffect(() => {
-    if (open && serverSubtasks) {
-      console.log("[Subtask] serverSubtasks loaded:", serverSubtasks);
-    }
-  }, [open, serverSubtasks]);
-
   // Fetch task details directly to ensure fresh data
   const { data: serverTask } = useQuery<Task>({
     queryKey: ["/api/tasks", task?.id],

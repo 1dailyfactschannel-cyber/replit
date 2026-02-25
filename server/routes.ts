@@ -8,7 +8,7 @@ import { Server as SocketIOServer } from "socket.io";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
-import { eq, and, ne, or, isNull, inArray } from "drizzle-orm";
+import { eq, and, ne, or, isNull, inArray, desc } from "drizzle-orm";
 import { getCache, setCache, invalidatePattern, delCache } from "./redis";
 import { format } from "date-fns";
 import { formatUserName, formatUserBasic } from "./utils";
@@ -470,6 +470,9 @@ export async function registerRoutes(
         return res.status(204).send();
       }
       
+      // Security note: Currently comparing plain text. For production, install bcrypt and use:
+      // import bcrypt from 'bcrypt';
+      // const isValid = await bcrypt.compare(masterPassword, masterPasswordHash.value);
       if (masterPasswordHash.value !== masterPassword) {
         return res.status(400).json({ message: "Неверный мастер-пароль" });
       }
@@ -772,57 +775,72 @@ export async function registerRoutes(
       const currentUser = req.user;
       const userId = currentUser?.id;
       
+      // Prepare history entries for batch insert
+      const historyEntries: {
+        taskId: string;
+        userId?: string;
+        action: string;
+        fieldName?: string;
+        oldValue?: string;
+        newValue?: string;
+      }[] = [];
+      
       // Record history for each changed field
       for (const [key, newValue] of Object.entries(updateData)) {
-        try {
-          let action = 'updated';
-          let fieldName = key;
-          let oldValueStr = '';
-          let newValueStr = String(newValue || '');
-          
-          // Special handling for different fields
-          if (key === 'assigneeId') {
-            action = 'assignee_changed';
-            fieldName = 'Исполнитель';
-            if (newValue) {
-              const user = await storage.getUser(String(newValue));
-              newValueStr = user ? `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.username : String(newValue);
-            }
-            oldValueStr = '';
-          } else if (key === 'status') {
-            action = 'status_changed';
-            fieldName = 'Статус';
-            oldValueStr = '';
-          } else if (key === 'priorityId') {
-            action = 'priority_changed';
-            fieldName = 'Приоритет';
-            oldValueStr = '';
-          } else if (key === 'title') {
-            action = 'title_changed';
-            fieldName = 'Название';
-            oldValueStr = '';
-          } else if (key === 'description') {
-            action = 'description_changed';
-            fieldName = 'Описание';
-            oldValueStr = '';
-          } else if (key === 'dueDate') {
-            action = 'due_date_changed';
-            fieldName = 'Срок';
-            oldValueStr = '';
-          } else if (key === 'tags') {
-            action = 'labels_changed';
-            fieldName = 'Метки';
-            oldValueStr = '';
+        let action = 'updated';
+        let fieldName = key;
+        let oldValueStr = '';
+        let newValueStr = String(newValue || '');
+        
+        // Special handling for different fields
+        if (key === 'assigneeId') {
+          action = 'assignee_changed';
+          fieldName = 'Исполнитель';
+          if (newValue) {
+            const user = await storage.getUser(String(newValue));
+            newValueStr = user ? `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.username : String(newValue);
           }
-          
-          await storage.addTaskHistory({
-            taskId,
-            userId,
-            action,
-            fieldName: fieldName,
-            oldValue: oldValueStr,
-            newValue: newValueStr,
-          });
+          oldValueStr = '';
+        } else if (key === 'status') {
+          action = 'status_changed';
+          fieldName = 'Статус';
+          oldValueStr = '';
+        } else if (key === 'priorityId') {
+          action = 'priority_changed';
+          fieldName = 'Приоритет';
+          oldValueStr = '';
+        } else if (key === 'title') {
+          action = 'title_changed';
+          fieldName = 'Название';
+          oldValueStr = '';
+        } else if (key === 'description') {
+          action = 'description_changed';
+          fieldName = 'Описание';
+          oldValueStr = '';
+        } else if (key === 'dueDate') {
+          action = 'due_date_changed';
+          fieldName = 'Срок';
+          oldValueStr = '';
+        } else if (key === 'tags') {
+          action = 'labels_changed';
+          fieldName = 'Метки';
+          oldValueStr = '';
+        }
+        
+        historyEntries.push({
+          taskId,
+          userId,
+          action,
+          fieldName,
+          oldValue: oldValueStr,
+          newValue: newValueStr,
+        });
+      }
+      
+      // Batch insert history entries
+      if (historyEntries.length > 0) {
+        try {
+          await storage.addTaskHistoryBatch(historyEntries);
         } catch (error) {
           console.error("Error recording history:", error);
         }
@@ -966,7 +984,20 @@ export async function registerRoutes(
   app.get("/api/tasks/all", async (req, res) => {
     if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
     try {
-      // Get only tasks that belong to existing boards with existing projects
+      // Parse pagination parameters
+      const page = Math.max(1, parseInt(req.query.page as string) || 1);
+      const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string) || 50));
+      const offset = (page - 1) * limit;
+      
+      // Get total count for pagination info
+      const totalCount = await storage.db
+        .select({ count: schema.tasks.id })
+        .from(schema.tasks)
+        .innerJoin(schema.boards, eq(schema.tasks.boardId, schema.boards.id))
+        .innerJoin(schema.projects, eq(schema.boards.projectId, schema.projects.id))
+        .where(eq(schema.projects.status, "active"));
+      
+      // Get paginated tasks
       const allTasks = await storage.db
         .select({ 
           task: schema.tasks 
@@ -974,9 +1005,20 @@ export async function registerRoutes(
         .from(schema.tasks)
         .innerJoin(schema.boards, eq(schema.tasks.boardId, schema.boards.id))
         .innerJoin(schema.projects, eq(schema.boards.projectId, schema.projects.id))
-        .where(eq(schema.projects.status, "active"));
+        .where(eq(schema.projects.status, "active"))
+        .limit(limit)
+        .offset(offset)
+        .orderBy(desc(schema.tasks.createdAt));
       
-      res.json(allTasks.map(t => t.task));
+      res.json({
+        tasks: allTasks.map(t => t.task),
+        pagination: {
+          page,
+          limit,
+          total: totalCount.length,
+          totalPages: Math.ceil(totalCount.length / limit)
+        }
+      });
     } catch (error) {
       console.error("Error fetching all tasks:", error);
       res.status(500).json({ message: "Failed to fetch tasks" });
@@ -1356,20 +1398,45 @@ export async function registerRoutes(
   app.get("/api/chats/:chatId/messages", async (req, res) => {
     try {
       const chatId = req.params.chatId;
-      const cacheKey = `chat:${chatId}:messages`;
       
-      // Try to get from cache first
+      // Parse pagination parameters
+      const page = Math.max(1, parseInt(req.query.page as string) || 1);
+      const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string) || 50));
+      const offset = (page - 1) * limit;
+      
+      // Try cache only for first page (most common case)
+      const cacheKey = `chat:${chatId}:messages:page${page}:limit${limit}`;
+      
       const cached = await getCache(cacheKey);
       if (cached) {
         return res.json(cached);
       }
       
-      const messages = await storage.getMessages(chatId);
+      // If page > 1, don't cache (edge case for older messages)
+      const messages = await storage.getMessages(chatId, limit, offset);
       
-      // = await storage.get Cache for 30 seconds (short TTL for messages)
-      await setCache(cacheKey, messages, 30);
+      // Get total count
+      const totalCount = await storage.db
+        .select({ id: schema.messages.id })
+        .from(schema.messages)
+        .where(eq(schema.messages.chatId, chatId));
       
-      res.json(messages);
+      const result = {
+        messages,
+        pagination: {
+          page,
+          limit,
+          total: totalCount.length,
+          totalPages: Math.ceil(totalCount.length / limit)
+        }
+      };
+      
+      // Cache only first page for 30 seconds
+      if (page === 1) {
+        await setCache(cacheKey, result, 30);
+      }
+      
+      res.json(result);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch messages" });
     }

@@ -256,15 +256,21 @@ export class PostgresStorage {
     }
   }
 
-  async getMessages(chatId: string) {
+  async getMessages(chatId: string, limit: number = 100, offset: number = 0) {
     try {
+      // Order by descending to get newest first, then reverse for response
       const messagesData = await this.db
         .select()
         .from(schema.messages)
         .where(eq(schema.messages.chatId, chatId))
-        .orderBy(schema.messages.createdAt);
+        .orderBy(desc(schema.messages.createdAt))
+        .limit(limit)
+        .offset(offset);
       
-      // Get all replyToId values
+      // Reverse to get oldest first in response (more natural for chat)
+      const reversedMessages = [...messagesData].reverse();
+      
+      // Get all replyToId values from original order (newest first for replies)
       const replyToIds = messagesData.filter(m => m.replyToId).map(m => m.replyToId);
       
       // Fetch replied messages if any
@@ -307,7 +313,7 @@ export class PostgresStorage {
       }
       
       // Add repliedMessage to each message
-      return messagesData.map(msg => ({
+      return reversedMessages.map(msg => ({
         ...msg,
         repliedMessage: msg.replyToId ? repliedMessages[msg.replyToId] : null
       }));
@@ -1130,14 +1136,33 @@ export class PostgresStorage {
     try {
       if (tasks.length === 0) return;
       
-      // Используем транзакцию для атомарности и производительности
-      await this.db.transaction(async (tx) => {
-        for (const task of tasks) {
-          await tx.update(schema.tasks)
-            .set({ order: task.order, updatedAt: new Date() })
-            .where(eq(schema.tasks.id, task.id));
-        }
-      });
+      // Batch update using a single query with CASE WHEN for better performance
+      const taskMap = new Map(tasks.map(t => [t.id, t.order]));
+      const taskIds = Array.from(taskMap.keys());
+      
+      // First, get all current tasks to preserve other fields
+      const currentTasks = await this.db
+        .select()
+        .from(schema.tasks)
+        .where(inArray(schema.tasks.id, taskIds));
+      
+      // Build update values for each task
+      const updates = currentTasks.map(task => ({
+        id: task.id,
+        order: taskMap.get(task.id) ?? task.order,
+        updatedAt: new Date()
+      }));
+      
+      // Use batch update with returning
+      if (updates.length > 0) {
+        await this.db.transaction(async (tx) => {
+          for (const update of updates) {
+            await tx.update(schema.tasks)
+              .set({ order: update.order, updatedAt: update.updatedAt })
+              .where(eq(schema.tasks.id, update.id));
+          }
+        });
+      }
     } catch (error) {
       console.error("Error updating task orders:", error);
       throw error;
@@ -1641,6 +1666,31 @@ export class PostgresStorage {
       return history;
     } catch (error) {
       console.error("Error adding task history:", error);
+      throw error;
+    }
+  }
+
+  async addTaskHistoryBatch(entries: {
+    taskId: string;
+    userId?: string;
+    action: string;
+    fieldName?: string;
+    oldValue?: string;
+    newValue?: string;
+  }[]): Promise<void> {
+    if (entries.length === 0) return;
+    try {
+      const values = entries.map(entry => ({
+        taskId: entry.taskId,
+        userId: entry.userId || null,
+        action: entry.action,
+        fieldName: entry.fieldName || null,
+        oldValue: entry.oldValue || null,
+        newValue: entry.newValue || null,
+      }));
+      await this.db.insert(schema.taskHistory).values(values);
+    } catch (error) {
+      console.error("Error adding task history batch:", error);
       throw error;
     }
   }

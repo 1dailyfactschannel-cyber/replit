@@ -628,15 +628,15 @@ export default function ChatPage() {
     }
   };
 
-  const filteredContacts = chats.filter(chat => {
+  const filteredContacts = useMemo(() => chats.filter(chat => {
     const name = getChatName(chat).toLowerCase();
     const inActiveFolder = !activeFolderId || folders.find(f => f.id === activeFolderId)?.chatIds.includes(chat.id);
     return name.includes(searchQuery.toLowerCase()) && inActiveFolder;
-  });
+  }), [chats, searchQuery, activeFolderId, folders, getChatName]);
 
-  const filteredMessages = messages.filter(msg => 
+  const filteredMessages = useMemo(() => messages.filter(msg => 
     msg.content.toLowerCase().includes(messageSearchQuery.toLowerCase())
-  );
+  ), [messages, messageSearchQuery]);
 
   return (
     <Layout>
