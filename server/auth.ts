@@ -7,9 +7,19 @@ import { type User as SelectUser } from "@shared/schema";
 import connectPg from "connect-pg-simple";
 import crypto from "crypto";
 import { promisify } from "util";
+import rateLimit from "express-rate-limit";
 
 const PostgresSessionStore = connectPg(session);
 const scrypt = promisify(crypto.scrypt);
+
+// Security: Login rate limiter
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 5, // 5 attempts per IP
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: "Too many login attempts, please try again later" }
+});
 
 async function hashPassword(password: string) {
   const salt = crypto.randomBytes(16).toString("hex");
@@ -36,8 +46,13 @@ declare global {
 }
 
 export function setupAuth(app: Express) {
+  // Security: Require SESSION_SECRET environment variable
+  if (!process.env.SESSION_SECRET) {
+    throw new Error("SESSION_SECRET environment variable is required for security");
+  }
+  
   const sessionSettings: session.SessionOptions = {
-    secret: process.env.SESSION_SECRET || "teamsync-secret-key",
+    secret: process.env.SESSION_SECRET,
     resave: false,
     saveUninitialized: false,
     store: new PostgresSessionStore({
@@ -66,27 +81,23 @@ export function setupAuth(app: Express) {
       { usernameField: "email", passwordField: "password" },
       async (email, password, done) => {
         try {
-          console.log(`Login attempt for email: ${email}`);
+          // Security: Don't log full email, just prefix for debugging
+          const emailPrefix = email.substring(0, 3);
+          console.log(`Login attempt for email starting with: ${emailPrefix}***`);
           const user = await storage.getUserByEmail(email);
           if (!user) {
-            console.log(`Login failed: User with email ${email} not found`);
+            console.log(`Login failed: User not found`);
             return done(null, false, { message: "Неверный email или пароль" });
           }
 
           const isPasswordMatch = await comparePasswords(password, user.password);
           if (!isPasswordMatch) {
-            console.log(`Login failed: Password mismatch for ${email}`);
-            // Temporarily allow login if password is plain text (for existing users)
-            if (password === user.password) {
-              console.log(`Login: Plain text password match for ${email}. Re-hashing...`);
-              const hashedPassword = await hashPassword(password);
-              await storage.updateUser(user.id, { password: hashedPassword });
-              return done(null, user);
-            }
+            console.log(`Login failed: Password mismatch`);
+            // Security: Remove plain text password fallback after migration
             return done(null, false, { message: "Неверный email или пароль" });
           }
 
-          console.log(`Login successful for ${email}`);
+          console.log(`Login successful for user: ${user.id}`);
           return done(null, user);
         } catch (err) {
           console.error("Login error:", err);
@@ -141,7 +152,7 @@ export function setupAuth(app: Express) {
     }
   });
 
-  app.post("/api/login", (req, res, next) => {
+  app.post("/api/login", loginLimiter, (req, res, next) => {
     console.log("POST /api/login: Authentication started");
     passport.authenticate("local", (err: any, user: Express.User, info: any) => {
       if (err) {

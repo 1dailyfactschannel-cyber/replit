@@ -12,9 +12,28 @@ import { eq, and, ne, or, isNull, inArray, desc, sql } from "drizzle-orm";
 import { getCache, setCache, invalidatePattern, delCache } from "./redis";
 import { format } from "date-fns";
 import { formatUserName, formatUserBasic } from "./utils";
+import rateLimit from "express-rate-limit";
+import bcrypt from "bcrypt";
 
 const storage = getStorage();
 let io: SocketIOServer;
+
+// Rate limiters
+const globalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 100,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: "Too many requests, please try again later" }
+});
+
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: "Too many login attempts, please try again later" }
+});
 
 // Helper function to send notification
 async function sendNotification(userId: string, senderId: string | null, type: string, title: string, message: string, link?: string) {
@@ -38,21 +57,52 @@ if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
 }
 
+// Security: Allowed file types for upload
+const ALLOWED_MIME_TYPES = [
+  'image/jpeg',
+  'image/png', 
+  'image/gif',
+  'image/webp',
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'text/plain',
+  'text/csv',
+];
+
+// Security: Allowed file extensions
+const ALLOWED_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.txt', '.csv'];
+
 const multerStorage = multer.diskStorage({
   destination: (_req, _file, cb) => {
     cb(null, uploadDir);
   },
   filename: (_req, file, cb) => {
-    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
-    cb(null, uniqueSuffix + path.extname(file.originalname));
+    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1E9);
+    // Get safe extension
+    const originalExt = path.extname(file.originalname).toLowerCase();
+    const safeExt = ALLOWED_EXTENSIONS.includes(originalExt) ? originalExt : '.bin';
+    cb(null, uniqueSuffix + safeExt);
   },
 });
+
+// Security: File filter to validate types
+const fileFilter = (_req: any, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
+  if (ALLOWED_MIME_TYPES.includes(file.mimetype)) {
+    cb(null, true);
+  } else {
+    cb(new Error('Invalid file type. Allowed: images, PDF, documents, spreadsheets, text files'));
+  }
+};
 
 const upload = multer({ 
   storage: multerStorage,
   limits: {
     fileSize: 50 * 1024 * 1024, // 50MB limit
-  }
+  },
+  fileFilter,
 });
 
 export async function registerRoutes(
@@ -61,6 +111,10 @@ export async function registerRoutes(
 ): Promise<Server> {
   io = setupWebSockets(httpServer);
   console.log("Registering API routes...");
+
+  // Apply global rate limiter to all /api routes
+  app.use("/api", globalLimiter);
+  
   // Health check route
   app.get("/api/health", async (_req, res) => {
     const dbHealthy = await storage.healthCheck();
@@ -270,14 +324,17 @@ export async function registerRoutes(
         if (!currentPassword) {
           return res.status(400).json({ message: "Введите текущий пароль" });
         }
-        // In real app, verify currentPassword hash
-        const isValid = existingHash.value === currentPassword;
+        // Security: Verify current password using bcrypt
+        const isValid = await bcrypt.compare(currentPassword, existingHash.value);
         if (!isValid) {
           return res.status(400).json({ message: "Неверный текущий пароль" });
         }
       }
 
-      await storage.setSiteSetting("master_password_hash", newPassword);
+      // Security: Hash new password before storing
+      const saltRounds = 10;
+      const hashedPassword = await bcrypt.hash(newPassword, saltRounds);
+      await storage.setSiteSetting("master_password_hash", hashedPassword);
       res.json({ message: "Пароль сохранен" });
     } catch (error) {
       console.error("Error setting master password:", error);
@@ -287,15 +344,43 @@ export async function registerRoutes(
 
   // User password change
   app.post("/api/user/change-password", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
+    
     const { currentPassword, newPassword } = req.body;
     
     if (!currentPassword || !newPassword) {
       return res.status(400).json({ message: "Необходимы текущий и новый пароли" });
     }
 
-    // В реальном приложении здесь была бы проверка текущего пароля и хеширование нового
-    // Сейчас просто имитируем успех
-    res.json({ message: "Пароль успешно изменен" });
+    if (newPassword.length < 6) {
+      return res.status(400).json({ message: "Новый пароль должен быть не менее 6 символов" });
+    }
+
+    try {
+      const user = await storage.getUser(req.user.id);
+      if (!user) {
+        return res.status(404).json({ message: "Пользователь не найден" });
+      }
+
+      // Security: Verify current password
+      const isValid = user.password.startsWith('$2') || user.password.startsWith('$')
+        ? await bcrypt.compare(currentPassword, user.password)
+        : user.password === currentPassword; // Fallback for old plain text passwords
+
+      if (!isValid) {
+        return res.status(400).json({ message: "Неверный текущий пароль" });
+      }
+
+      // Security: Hash new password before storing
+      const saltRounds = 10;
+      const hashedPassword = await bcrypt.hash(newPassword, saltRounds);
+      await storage.updateUser(user.id, { password: hashedPassword });
+      
+      res.json({ message: "Пароль успешно изменен" });
+    } catch (error) {
+      console.error("Error changing password:", error);
+      res.status(500).json({ message: "Failed to change password" });
+    }
   });
 
   // Workspace routes
@@ -477,10 +562,9 @@ export async function registerRoutes(
         return res.status(204).send();
       }
       
-      // Security note: Currently comparing plain text. For production, install bcrypt and use:
-      // import bcrypt from 'bcrypt';
-      // const isValid = await bcrypt.compare(masterPassword, masterPasswordHash.value);
-      if (masterPasswordHash.value !== masterPassword) {
+      // Security: Verify password using bcrypt
+      const isValid = await bcrypt.compare(masterPassword, masterPasswordHash.value);
+      if (!isValid) {
         return res.status(400).json({ message: "Неверный мастер-пароль" });
       }
       

@@ -3,13 +3,19 @@ import { Server as SocketIOServer } from "socket.io";
 import { log } from "./index";
 
 export function setupWebSockets(httpServer: HttpServer) {
+  // Security: Restrict CORS to specific origins
+  const allowedOrigins = process.env.ALLOWED_ORIGINS 
+    ? process.env.ALLOWED_ORIGINS.split(',') 
+    : ['http://localhost:3005', 'http://localhost:3000'];
+  
   const io = new SocketIOServer(httpServer, {
     cors: {
-      origin: "*",
+      origin: allowedOrigins,
       methods: ["GET", "POST"],
+      credentials: true
     },
-    pingInterval: 25000, // Increased from 10000 to reduce overhead on idle connections
-    pingTimeout: 10000, // Increased from 5000 for more tolerance
+    pingInterval: 25000,
+    pingTimeout: 10000,
   });
 
   log("WebSockets setup complete", "socket.io");
