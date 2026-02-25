@@ -526,6 +526,7 @@ export const insertMessageSchema = createInsertSchema(messages).pick({
   senderId: true,
   content: true,
   attachments: true,
+  replyToId: true,
 });
 
 export const insertChatFolderSchema = createInsertSchema(chatFolders).pick({

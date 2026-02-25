@@ -1,0 +1,62 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  db:
+    image: postgres:16-alpine
+    container_name: teamsync-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: db_test
+      POSTGRES_PASSWORD: D2rGkB6CaIwpb
+      POSTGRES_DB: db_test
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U db_test -d db_test"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Backend API Server
+  server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: teamsync-server
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DATABASE_URL: postgresql://db_test:D2rGkB6CaIwpb@db:5432/db_test
+      SESSION_SECRET: ${SESSION_SECRET:-teamsync_prod_secret_2026}
+    ports:
+      - "3000:3000"
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - teamsync-network
+
+  # Frontend Client with Nginx
+  client:
+    build:
+      context: .
+      dockerfile: Dockerfile.client
+    container_name: teamsync-client
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      - server
+    networks:
+      - teamsync-network
+
+networks:
+  teamsync-network:
+    driver: bridge
+
+volumes:
+  postgres_data:

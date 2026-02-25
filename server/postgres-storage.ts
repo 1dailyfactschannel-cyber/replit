@@ -258,11 +258,59 @@ export class PostgresStorage {
 
   async getMessages(chatId: string) {
     try {
-      return await this.db
+      const messagesData = await this.db
         .select()
         .from(schema.messages)
         .where(eq(schema.messages.chatId, chatId))
         .orderBy(schema.messages.createdAt);
+      
+      // Get all replyToId values
+      const replyToIds = messagesData.filter(m => m.replyToId).map(m => m.replyToId);
+      
+      // Fetch replied messages if any
+      let repliedMessages: Record<string, any> = {};
+      if (replyToIds && replyToIds.length > 0) {
+        const replied = await this.db
+          .select({
+            id: schema.messages.id,
+            content: schema.messages.content,
+            senderId: schema.messages.senderId,
+          })
+          .from(schema.messages)
+          .where(inArray(schema.messages.id, replyToIds));
+        
+        // Also get sender info for replied messages
+        const senderIds = Array.from(new Set(replied.map(m => m.senderId)));
+        let senderMap: Record<string, any> = {};
+        if (senderIds.length > 0) {
+          const senders = await this.db
+            .select()
+            .from(schema.users)
+            .where(inArray(schema.users.id, senderIds));
+          senders.forEach(s => {
+            senderMap[s.id] = {
+              id: s.id,
+              username: s.username,
+              firstName: s.firstName,
+              lastName: s.lastName,
+              avatar: s.avatar
+            };
+          });
+        }
+        
+        replied.forEach(m => {
+          repliedMessages[m.id] = {
+            ...m,
+            sender: senderMap[m.senderId] || null
+          };
+        });
+      }
+      
+      // Add repliedMessage to each message
+      return messagesData.map(msg => ({
+        ...msg,
+        repliedMessage: msg.replyToId ? repliedMessages[msg.replyToId] : null
+      }));
     } catch (error) {
       console.error("Error getting messages:", error);
       return [];

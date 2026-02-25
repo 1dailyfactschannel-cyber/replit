@@ -1,0 +1,17 @@
+node_modules
+dist
+.git
+.github
+.vscode
+*.md
+.env
+.env.local
+.env.production
+docker-compose.yml
+Dockerfile
+Dockerfile.client
+nginx.conf
+migrations
+scripts
+*.log
+.DS_Store
