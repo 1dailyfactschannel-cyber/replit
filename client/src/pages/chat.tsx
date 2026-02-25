@@ -393,6 +393,7 @@ export default function ChatPage() {
   
   const [searchQuery, setSearchQuery] = useState("");
   const [messageSearchQuery, setMessageSearchQuery] = useState("");
+  const [selectedImage, setSelectedImage] = useState<{ url: string; name: string } | null>(null);
 
   const getChatName = (chat: Contact | undefined) => {
     if (!chat) return "Чат";
@@ -1278,22 +1279,42 @@ export default function ChatPage() {
                                   
                                   {Array.isArray(msg.attachments) && msg.attachments.length > 0 && (
                                     <div className="mt-2 space-y-1">
-                                      {(msg.attachments as any[]).map((file: any, idx: number) => (
-                                        <a 
-                                          key={idx} 
-                                          href={file.url} 
-                                          target="_blank" 
-                                          rel="noopener noreferrer"
-                                          className={cn(
-                                            "flex items-center gap-2 p-2 rounded-lg text-[10px] hover:bg-black/5 transition-colors",
-                                            isMe ? "bg-white/10" : "bg-secondary/50"
-                                          )}
-                                        >
-                                          <Paperclip className="w-3 h-3 shrink-0" />
-                                          <span className="truncate">{file.name}</span>
-                                          <span className="opacity-50 shrink-0">({(file.size / 1024).toFixed(1)} KB)</span>
-                                        </a>
-                                      ))}
+                                      {(msg.attachments as any[]).map((file: any, idx: number) => {
+                                        const isImage = file.type?.startsWith('image/') || /\.(jpg|jpeg|png|gif|webp|svg)$/i.test(file.name || file.url);
+                                        
+                                        if (isImage) {
+                                          return (
+                                            <div 
+                                              key={idx}
+                                              className="cursor-pointer rounded-lg overflow-hidden max-w-[200px]"
+                                              onClick={() => setSelectedImage({ url: file.url, name: file.name })}
+                                            >
+                                              <img 
+                                                src={file.url} 
+                                                alt={file.name}
+                                                className="w-full h-auto max-h-[150px] object-cover hover:opacity-90 transition-opacity"
+                                              />
+                                            </div>
+                                          );
+                                        }
+                                        
+                                        return (
+                                          <a 
+                                            key={idx} 
+                                            href={file.url} 
+                                            target="_blank" 
+                                            rel="noopener noreferrer"
+                                            className={cn(
+                                              "flex items-center gap-2 p-2 rounded-lg text-[10px] hover:bg-black/5 transition-colors",
+                                              isMe ? "bg-white/10" : "bg-secondary/50"
+                                            )}
+                                          >
+                                            <Paperclip className="w-3 h-3 shrink-0" />
+                                            <span className="truncate">{file.name}</span>
+                                            <span className="opacity-50 shrink-0">({(file.size / 1024).toFixed(1)} KB)</span>
+                                          </a>
+                                        );
+                                      })}
                                     </div>
                                   )}
                                 </div>
@@ -1519,6 +1540,34 @@ export default function ChatPage() {
           }}
         />
       )}
+
+      {/* Image Viewer Modal */}
+      <Dialog open={!!selectedImage} onOpenChange={() => setSelectedImage(null)}>
+        <DialogContent className="max-w-[90vw] max-h-[90vh] p-0 bg-transparent border-none overflow-hidden">
+          <div className="relative flex items-center justify-center min-h-[50vh]">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="absolute top-2 right-2 z-10 bg-black/50 hover:bg-black/70 text-white rounded-full h-10 w-10"
+              onClick={() => setSelectedImage(null)}
+            >
+              <X className="w-5 h-5" />
+            </Button>
+            {selectedImage && (
+              <>
+                <img 
+                  src={selectedImage.url} 
+                  alt={selectedImage.name}
+                  className="max-w-full max-h-[85vh] object-contain"
+                />
+                <div className="absolute bottom-2 left-1/2 -translate-x-1/2 bg-black/60 text-white text-xs px-3 py-1 rounded-full">
+                  {selectedImage.name}
+                </div>
+              </>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </Layout>
   );
 }
