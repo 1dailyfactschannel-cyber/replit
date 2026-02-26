@@ -374,16 +374,18 @@ export function TaskDetailsModal({
   onAccept,
 }: TaskDetailsModalProps) {
   const queryClient = useQueryClient();
-
+  
   // Fetch all users for observer selection
   const { data: users = [] } = useQuery<any[]>({
     queryKey: ["/api/users"],
+    staleTime: 60000, // Cache users for 1 minute
   });
 
   // Fetch board columns for status selection
   const { data: boardData } = useQuery<any>({
     queryKey: ["/api/boards", task?.boardId, "full"],
     enabled: !!task?.boardId && open,
+    staleTime: 0, // Always fetch fresh data when modal opens
   });
 
   // Get unique status options from board columns
