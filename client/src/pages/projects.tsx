@@ -226,15 +226,8 @@ const TaskCard = React.memo(({ task, index, onClick, columnColor, availableLabel
     </Draggable>
   );
 }, (prevProps, nextProps) => {
-  // Simplified comparison - only check essential props
-  return (
-    prevProps.task.id === nextProps.task.id &&
-    prevProps.task.title === nextProps.task.title &&
-    prevProps.task.priority === nextProps.task.priority &&
-    prevProps.task.priorityId === nextProps.task.priorityId &&
-    prevProps.task.assignee?.id === nextProps.task.assignee?.id &&
-    prevProps.index === nextProps.index
-  );
+  // Always re-render to ensure updates show immediately
+  return false;
 });
 
 TaskCard.displayName = 'TaskCard';
@@ -426,10 +419,8 @@ const KanbanColumn = React.memo(({
     </div>
   );
 }, (prevProps, nextProps) => {
-  // Simplified comparison - basic props check only
-  if (prevProps.column !== nextProps.column) return false;
-  if (prevProps.tasks.length !== nextProps.tasks.length) return false;
-  return true;
+  // Always re-render when tasks change to ensure priority/number/dueDate updates show immediately
+  return false;
 });
 
 KanbanColumn.displayName = 'KanbanColumn';
@@ -1196,6 +1187,11 @@ export default function Projects() {
           // 3. Обновляем данные перемещаемой задачи (новая колонка и временный порядок)
           const updatedMovedTask = { ...movedTask, ...data };
           
+          // Also update selectedTask if this is the task being moved
+          if (selectedTask?.id === id) {
+            setSelectedTask((prev: any) => prev ? { ...prev, ...data } : prev);
+          }
+          
           // 4. Получаем задачи в целевой колонке
           const targetColTasks = otherTasks
             .filter((t: any) => t.columnId === (data.columnId || movedTask.columnId))
@@ -1393,10 +1389,23 @@ export default function Projects() {
     // Обновляем локальный кэш, чтобы UI сразу отобразил изменения.
     if (activeBoard?.id) {
       queryClient.setQueryData(["/api/boards", activeBoard.id, "full"], (old: any) => {
-        if (!old || !old.tasks) return old;
-        console.log("[Frontend] Updating board cache, old tasks count:", old.tasks.length);
-        const newTasks = old.tasks.map((t: any) => t.id === updatedTask.id ? { ...t, ...updatedTask } : t);
-        console.log("[Frontend] Updated tasks count:", newTasks.length);
+        if (!old) return old;
+        console.log("[Frontend] Updating board cache, old tasks count:", old.tasks?.length);
+        
+        // Update flat tasks array
+        let newTasks = old.tasks;
+        if (Array.isArray(newTasks)) {
+          newTasks = newTasks.map((t: any) => t.id === updatedTask.id ? { ...t, ...updatedTask } : t);
+        }
+        
+        // Check updated task in cache
+        const updatedInCache = newTasks.find((t: any) => t.id === updatedTask.id);
+        console.log("[Frontend] Updated task in cache:", updatedInCache);
+        
+        // Force change detection by creating new array reference
+        newTasks = [...newTasks];
+        
+        console.log("[Frontend] Updated tasks count:", newTasks?.length);
         return {
           ...old,
           tasks: newTasks
@@ -1441,13 +1450,24 @@ export default function Projects() {
       const targetColumn = columns.find(col => col.id === destination.droppableId);
       if (!targetColumn) return;
 
+      // Also find the source column to check if status changed
+      const sourceColumn = columns.find(col => col.id === source.droppableId);
+      
+      // Prepare update data - include status if column changed
+      const updateData: any = {
+        columnId: targetColumn.id,
+        order: destination.index
+      };
+      
+      // If column changed, also update status to match new column name
+      if (source.droppableId !== destination.droppableId && targetColumn.name) {
+        updateData.status = targetColumn.name;
+      }
+
       // Optimistically update the UI or just call the mutation
       updateTaskMutation.mutate({
         id: draggableId,
-        data: {
-          columnId: targetColumn.id,
-          order: destination.index
-        }
+        data: updateData
       });
     }
   };

@@ -391,27 +391,33 @@ export function TaskDetailsModal({
   // Get unique status options from board columns
   const statusOptions = boardData?.columns?.map((col: any) => col.name) || [];
 
+  const isTempTask = !!task?.id && typeof task.id === 'string' && task.id.startsWith('temp-');
+
   // Fetch observers for the task
   const { data: serverObservers = [] } = useQuery<any[]>({
     queryKey: [`/api/tasks/${task?.id}/observers`],
-    enabled: !!task?.id && open,
+    enabled: !!task?.id && !isTempTask && open,
   });
 
   // Fetch subtasks for the task
   const { data: serverSubtasks = [] } = useQuery<any[]>({
     queryKey: [`/api/tasks/${task?.id}/subtasks`],
-    enabled: !!task?.id && open,
+    enabled: !!task?.id && !isTempTask && open,
     staleTime: 30000, // Cache for 30 seconds
   });
   
+  // Use task.status directly instead of effectiveTask.status to get updated values
   // Fetch task details directly to ensure fresh data
   const { data: serverTask } = useQuery<Task>({
     queryKey: ["/api/tasks", task?.id],
-    enabled: !!task?.id && open,
+    enabled: !!task?.id && !isTempTask && open,
     staleTime: 30000, // Cache for 30 seconds instead of always fetching fresh
   });
 
   const effectiveTask = serverTask || task;
+
+  // Use task.status directly instead of effectiveTask.status to get updated values from parent
+  const currentStatus = task?.status || effectiveTask?.status || "В планах";
 
   const [newTitle, setNewTitle] = useState(effectiveTask?.title || "");
   const [newDescription, setNewDescription] = useState(effectiveTask?.description || "");
@@ -499,6 +505,7 @@ export function TaskDetailsModal({
   // Local state for immediate UI updates
   const [localAssignee, setLocalAssignee] = useState<{ id?: string; name: string; avatar?: string } | null>(null);
   const [localDueDate, setLocalDueDate] = useState<string | null>(null);
+  const [localStatus, setLocalStatus] = useState<string>("");
   
   // Sync local assignee with task data
   useEffect(() => {
@@ -517,6 +524,13 @@ export function TaskDetailsModal({
       setLocalDueDate(null);
     }
   }, [effectiveTask?.dueDate]);
+
+  // Sync local status with task data
+  useEffect(() => {
+    if (effectiveTask?.status) {
+      setLocalStatus(effectiveTask.status);
+    }
+  }, [effectiveTask?.status]);
 
   // Sync local priority with task data
   // Removed localPriority state to rely on optimistic cache updates for single source of truth
@@ -623,20 +637,26 @@ export function TaskDetailsModal({
       return res.json();
     },
     onSuccess: (data) => {
-      // Update local cache immediately to prevent UI flicker/reversion
-      if (onUpdate && data) {
-        onUpdate(data);
-      }
-
-      if (task?.boardId) {
-        queryClient.invalidateQueries({ queryKey: ["/api/boards", task.boardId, "full"] });
+      // Skip onUpdate call here - optimistic update already happened in handleUpdate
+      // Server data may have old values and would overwrite the optimistic update
+      
+      // Only update task cache with enriched data (for assignee)
+      const enrichedData: any = { ...data };
+      if (data.assigneeId && users) {
+        const user = users.find((u: any) => u.id === data.assigneeId);
+        if (user) {
+          enrichedData.assignee = {
+            id: user.id,
+            name: user.firstName ? `${user.firstName} ${user.lastName || ''}` : user.username,
+            avatar: user.avatar
+          };
+        }
       }
       
-      // Update specific task cache to avoid stale data flicker
+      // Only update specific task cache (not board cache, to avoid overwriting column changes)
       if (task?.id) {
-        queryClient.setQueryData(["/api/tasks", task.id], data);
+        queryClient.setQueryData(["/api/tasks", task.id], enrichedData);
       }
-      queryClient.invalidateQueries({ queryKey: ["/api/tasks", task?.id] });
     },
     onError: (error) => {
       console.error("Update error:", error);
@@ -669,9 +689,7 @@ export function TaskDetailsModal({
       console.log("[TaskDetails] Updating priority to:", updates.priority);
     }
     
-    if (typeof task.id === 'string' && task.id.startsWith('temp-')) {
-      return;
-    }
+    const isTempTask = typeof task.id === 'string' && task.id.startsWith('temp-');
     
     // Optimistic local task update via Query Cache
     // Build the full assignee object for display
@@ -690,6 +708,14 @@ export function TaskDetailsModal({
       }
     }
 
+    // When status changes, also update columnId to match the new column
+    if (updates.status && boardData?.columns) {
+      const matchingColumn = boardData.columns.find((col: any) => col.name === updates.status);
+      if (matchingColumn) {
+        newDisplayData.columnId = matchingColumn.id;
+      }
+    }
+
     // Update individual task query cache
     queryClient.setQueryData(["/api/tasks", task.id], (old: any) => {
       if (!old) return old;
@@ -701,47 +727,127 @@ export function TaskDetailsModal({
       queryClient.setQueryData(["/api/boards", task.boardId, "full"], (old: any) => {
         if (!old) return old;
         
+        // Update flat tasks array
+        let newTasks = old.tasks;
+        if (Array.isArray(newTasks)) {
+          newTasks = newTasks.map((t: any) => t.id === task.id ? { ...t, ...updates, ...newDisplayData } : t);
+        }
+        
         // Handle both array and object formats for columns
         let newColumns = old.columns;
+        const taskToMove = old.columns?.flatMap((c: any) => c.tasks || []).find((t: any) => t.id === task.id);
+        const enrichedTask = taskToMove ? { ...taskToMove, ...updates, ...newDisplayData } : { ...updates, ...newDisplayData };
+        
         if (Array.isArray(newColumns)) {
-          // Array format
-          newColumns = newColumns.map((column: any) => ({
-            ...column,
-            tasks: (column.tasks || []).map((t: any) => {
-              if (t.id === task.id) {
-                return { ...t, ...updates, ...newDisplayData };
+          // When status changes, move task between columns
+          if (newDisplayData.columnId && task.columnId !== newDisplayData.columnId) {
+            newColumns = newColumns.map((column: any) => {
+              const taskInColumn = (column.tasks || []).find((t: any) => t.id === task.id);
+              if (taskInColumn) {
+                // Task is in this column - remove it if it's moving to another column
+                if (column.id !== newDisplayData.columnId) {
+                  return { ...column, tasks: (column.tasks || []).filter((t: any) => t.id !== task.id) };
+                }
               }
-              return t;
-            })
-          }));
-        } else if (newColumns && typeof newColumns === 'object') {
-          // Object format (keyed by columnId)
-          newColumns = { ...newColumns };
-          for (const columnId in newColumns) {
-            const columnTasks = newColumns[columnId]?.tasks || [];
-            newColumns[columnId] = {
-              ...newColumns[columnId],
-              tasks: columnTasks.map((t: any) => {
+              // Add task to the target column
+              if (column.id === newDisplayData.columnId) {
+                const taskExists = (column.tasks || []).some((t: any) => t.id === task.id);
+                if (!taskExists) {
+                  return { ...column, tasks: [...(column.tasks || []), enrichedTask] };
+                } else {
+                  // Task already in column, just update it
+                  return { ...column, tasks: (column.tasks || []).map((t: any) => t.id === task.id ? enrichedTask : t) };
+                }
+              }
+              return column;
+            });
+          } else {
+            // No column change, just update in place
+            newColumns = newColumns.map((column: any) => ({
+              ...column,
+              tasks: (column.tasks || []).map((t: any) => {
                 if (t.id === task.id) {
                   return { ...t, ...updates, ...newDisplayData };
                 }
                 return t;
               })
-            };
+            }));
+          }
+        } else if (newColumns && typeof newColumns === 'object') {
+          // Object format (keyed by columnId)
+          newColumns = { ...newColumns };
+          const enrichedTask = { ...task, ...updates, ...newDisplayData };
+          
+          if (newDisplayData.columnId && task.columnId !== newDisplayData.columnId) {
+            // Moving task between columns
+            for (const columnId in newColumns) {
+              const column = newColumns[columnId];
+              const taskInColumn = (column.tasks || []).find((t: any) => t.id === task.id);
+              if (taskInColumn) {
+                if (columnId !== newDisplayData.columnId) {
+                  // Remove from old column
+                  newColumns[columnId] = {
+                    ...column,
+                    tasks: (column.tasks || []).filter((t: any) => t.id !== task.id)
+                  };
+                }
+              }
+            }
+            // Add to new column
+            if (newColumns[newDisplayData.columnId]) {
+              const targetColumn = newColumns[newDisplayData.columnId];
+              const taskExists = (targetColumn.tasks || []).some((t: any) => t.id === task.id);
+              if (!taskExists) {
+                newColumns[newDisplayData.columnId] = {
+                  ...targetColumn,
+                  tasks: [...(targetColumn.tasks || []), enrichedTask]
+                };
+              }
+            }
+          } else {
+            // No column change, just update in place
+            for (const columnId in newColumns) {
+              const column = newColumns[columnId];
+              newColumns[columnId] = {
+                ...column,
+                tasks: (column.tasks || []).map((t: any) => {
+                  if (t.id === task.id) {
+                    return { ...t, ...updates, ...newDisplayData };
+                  }
+                  return t;
+                })
+              };
+            }
           }
         }
         
-        return { ...old, columns: newColumns };
+        return { ...old, tasks: newTasks, columns: newColumns };
       });
     }
 
-    // Optimistic parent update
-    if (onUpdate && effectiveTask) {
-      console.log("[TaskDetails] Calling onUpdate with:", { ...effectiveTask, ...updates, ...newDisplayData });
-      onUpdate({ ...effectiveTask, ...updates, ...newDisplayData });
+    // Optimistic parent update - use task instead of effectiveTask to get latest values
+    if (onUpdate && task) {
+      console.log("[TaskDetails] Calling onUpdate with:", { ...task, ...updates, ...newDisplayData });
+      onUpdate({ ...task, ...updates, ...newDisplayData });
     }
     
-    updateTaskMutation.mutate(updates);
+    // Update local status for immediate UI feedback
+    if (updates.status) {
+      setLocalStatus(updates.status);
+    }
+    
+    // Skip API call for temp tasks (they'll be created on the server later)
+    if (isTempTask) {
+      return;
+    }
+    
+    // Include columnId in API call if status changed
+    const apiUpdates = { ...updates };
+    if (newDisplayData.columnId) {
+      apiUpdates.columnId = newDisplayData.columnId;
+    }
+    
+    updateTaskMutation.mutate(apiUpdates);
   };
 
   const handleTitleBlur = () => {
@@ -1840,26 +1946,29 @@ export function TaskDetailsModal({
               {/* Status Section */}
               <div className="flex items-center gap-2 mb-4">
                 <Select 
-                  value={safeTask.status || "В планах"} 
-                  onValueChange={(value) => handleUpdate({ status: value })}
+                  value={currentStatus} 
+                  onValueChange={(value) => {
+                    setLocalStatus(value);
+                    handleUpdate({ status: value });
+                  }}
                 >
-                  <SelectTrigger className="flex-1 h-9 bg-white border border-gray-300 rounded-lg shadow-sm font-bold text-gray-900 px-3 focus:ring-2 focus:ring-primary/20 text-xs">
+                  <SelectTrigger className="flex-1 h-9 bg-background border border-input rounded-lg shadow-sm font-bold text-foreground px-3 focus:ring-2 focus:ring-primary/20 text-xs">
                     <div className="flex items-center gap-2">
-                      <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: safeTask.status === 'Готово' ? '#10b981' : safeTask.status === 'В работе' ? '#3b82f6' : safeTask.status === 'На проверке' ? '#f59e0b' : '#64748b' }} />
-                      <SelectValue placeholder="Выберите статус" className="text-gray-900 font-medium" />
+                      <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: currentStatus === 'Готово' ? '#10b981' : currentStatus === 'В работе' ? '#3b82f6' : currentStatus === 'На проверке' ? '#f59e0b' : '#64748b' }} />
+                      <span className="text-foreground font-medium">{currentStatus}</span>
                     </div>
                   </SelectTrigger>
-                  <SelectContent className="rounded-xl bg-white" style={{ zIndex: 9999 }}>
+                  <SelectContent className="rounded-xl bg-background" style={{ zIndex: 9999 }}>
                     {statusOptions.length > 0 ? (
                       statusOptions.map((status: string) => (
-                        <SelectItem key={status} value={status} className="text-gray-900">{status}</SelectItem>
+                        <SelectItem key={status} value={status} className="text-foreground">{status}</SelectItem>
                       ))
                     ) : (
                       <>
-                        <SelectItem value="В планах" className="text-gray-900">В планах</SelectItem>
-                        <SelectItem value="В работе" className="text-gray-900">В работе</SelectItem>
-                        <SelectItem value="На проверке" className="text-gray-900">На проверке</SelectItem>
-                        <SelectItem value="Готово" className="text-gray-900">Готово</SelectItem>
+                        <SelectItem value="В планах" className="text-foreground">В планах</SelectItem>
+                        <SelectItem value="В работе" className="text-foreground">В работе</SelectItem>
+                        <SelectItem value="На проверке" className="text-foreground">На проверке</SelectItem>
+                        <SelectItem value="Готово" className="text-foreground">Готово</SelectItem>
                       </>
                     )}
                   </SelectContent>
