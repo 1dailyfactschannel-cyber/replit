@@ -1126,7 +1126,13 @@ export default function Projects() {
           ...newTaskData,
           id: `temp-${Date.now()}`, // Временный ID
           createdAt: new Date().toISOString(),
-          order: previousBoardData.tasks.filter(t => t.columnId === newTaskData.columnId).length
+          order: previousBoardData.tasks.filter(t => t.columnId === newTaskData.columnId).length,
+          // Добавляем полную информацию об исполнителе для немедленного отображения
+          assignee: newTaskData.assigneeId ? {
+            id: newTaskData.assigneeId,
+            name: user ? (user.firstName ? `${user.firstName} ${user.lastName || ''}` : user.username) : 'Пользователь',
+            avatar: user?.avatar
+          } : null
         };
 
         queryClient.setQueryData(["/api/boards", activeBoard?.id, "full"], {
