@@ -417,7 +417,8 @@ export function TaskDetailsModal({
   const effectiveTask = serverTask || task;
 
   // Use task.status directly instead of effectiveTask.status to get updated values from parent
-  const currentStatus = task?.status || effectiveTask?.status || "В планах";
+  const rawStatus = task?.status || effectiveTask?.status || "todo";
+  const currentStatus = statusNames[rawStatus as string] || rawStatus || "В планах";
 
   const [newTitle, setNewTitle] = useState(effectiveTask?.title || "");
   const [newDescription, setNewDescription] = useState(effectiveTask?.description || "");
@@ -1356,7 +1357,7 @@ export function TaskDetailsModal({
     attachments: effectiveTask?.attachments || [],
     type: effectiveTask?.type || "Задача",
     priorityId: effectiveTask?.priorityId || "",
-    status: effectiveTask?.status || "В планах",
+    status: statusNames[effectiveTask?.status as string] || effectiveTask?.status || "В планах",
     dueDate: effectiveTask?.dueDate || "Не установлен",
     project: effectiveTask?.project || "м4",
     board: effectiveTask?.board || "доска"
