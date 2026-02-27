@@ -595,7 +595,13 @@ export async function registerRoutes(
         storage.getTasksByBoardWithUsers(boardId)
       ]);
       
-      const boardData = { columns, tasks };
+      // Convert "todo" status to "В планах" for backward compatibility
+      const enrichedTasks = tasks.map((task: any) => ({
+        ...task,
+        status: task.status === "todo" ? "В планах" : task.status
+      }));
+      
+      const boardData = { columns, tasks: enrichedTasks };
       
       // Сохраняем в кэш на 5 минут
       await setCache(cacheKey, boardData, 300);
@@ -1046,6 +1052,7 @@ export async function registerRoutes(
 
       const enrichedTask = {
         ...task,
+        status: task.status === "todo" ? "В планах" : task.status,
         assignee: formatUserBasic(assignee),
         creator: { 
           name: reporter ? formatUserName(reporter) : "Система", 
