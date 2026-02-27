@@ -620,11 +620,14 @@ export default function Projects() {
   });
 
   // All tasks and columns for "All Tasks" view
-  const { data: allTasks = [] } = useQuery<any[]>({
+  const { data: allTasksData } = useQuery<any[]>({
     queryKey: ["/api/tasks/all"],
     staleTime: 1000 * 60 * 1, // 1 minute
     enabled: showAllTasks,
   });
+
+  // Handle both array response and object with tasks property
+  const allTasks = Array.isArray(allTasksData) ? allTasksData : (allTasksData?.tasks || []);
 
   const { data: allColumns = [] } = useQuery<any[]>({
     queryKey: ["/api/board-columns/all"],
