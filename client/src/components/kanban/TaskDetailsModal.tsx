@@ -84,29 +84,8 @@ import {
 import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import { toast as sonnerToast } from "sonner";
 
-// Status display names in Russian
-const statusNames: Record<string, string> = {
-  todo: "В планах",
-  in_progress: "В работе",
-  review: "На проверке",
-  done: "Готово",
-  backlog: "Бэклог",
-  "В планах": "В планах",
-  "В работе": "В работе",
-  "На проверке": "На проверке",
-  "Готово": "Готово",
-  "Бэклог": "Бэклог",
-  "Сделать": "Сделать",
-  "Выполняется": "Выполняется",
-};
-
 // Status colors
 const statusColors: Record<string, string> = {
-  todo: "bg-purple-500",
-  in_progress: "bg-blue-500",
-  review: "bg-amber-500",
-  done: "bg-emerald-500",
-  backlog: "bg-gray-400",
   "В планах": "bg-purple-500",
   "В работе": "bg-blue-500",
   "На проверке": "bg-amber-500",
@@ -187,7 +166,7 @@ function TaskStatusTimer({ taskId }: { taskId: string | number | undefined }) {
           >
             <div className="flex items-center gap-2">
               <div className={cn("w-2 h-2 rounded-full", statusColors[item.status] || "bg-gray-400")} />
-              <span className="text-xs font-medium text-foreground">{statusNames[item.status] || item.status}</span>
+              <span className="text-xs font-medium text-foreground">{item.status}</span>
               <span className="text-[10px] text-muted-foreground">({item.count})</span>
             </div>
             <span className="text-xs font-bold text-foreground">{formatDuration(item.totalSeconds)}</span>
@@ -503,8 +482,8 @@ export function TaskDetailsModal({
   // Initialize localStatus with task status from props
   const [localStatus, setLocalStatus] = useState<string>(task?.status || "");
   
-  // Use localStatus for display (synced from task prop in useEffect)
-  const currentStatus = localStatus ? (statusNames[localStatus] || localStatus) : "В планах";
+  // Use localStatus directly for display
+  const currentStatus = localStatus || "В планах";
   
   // Sync local assignee with task data
   useEffect(() => {
@@ -1358,7 +1337,7 @@ export function TaskDetailsModal({
     attachments: effectiveTask?.attachments || [],
     type: effectiveTask?.type || "Задача",
     priorityId: effectiveTask?.priorityId || "",
-    status: statusNames[effectiveTask?.status as string] || effectiveTask?.status || "В планах",
+    status: effectiveTask?.status || "В планах",
     dueDate: effectiveTask?.dueDate || "Не установлен",
     project: effectiveTask?.project || "м4",
     board: effectiveTask?.board || "доска"
