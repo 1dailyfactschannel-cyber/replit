@@ -174,7 +174,7 @@ export const tasks = pgTable("tasks", {
   columnId: uuid("column_id").notNull().references(() => boardColumns.id),
   assigneeId: uuid("assignee_id").references(() => users.id),
   reporterId: uuid("reporter_id").notNull().references(() => users.id),
-  status: text("status").default("todo"), // todo, in_progress, review, done
+  status: text("status").default("В планах"), // todo, in_progress, review, done
   priorityId: uuid("priority_id").references(() => priorities.id), // New foreign key to priorities table
   type: text("type").default("task"), // task, bug, feature, story
   storyPoints: integer("story_points"),

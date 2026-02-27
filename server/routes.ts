@@ -894,7 +894,7 @@ export async function registerRoutes(
           updateData.status = "done";
         } else if (column) {
           // Если перемещаем из "Готово" в другую колонку, меняем статус обратно
-          updateData.status = "todo";
+          updateData.status = "В планах";
         }
       }
 
@@ -1238,7 +1238,7 @@ export async function registerRoutes(
         boardId: req.params.boardId,
         columnId: req.body.columnId || columns[0].id,
         reporterId: user.id,
-        status: req.body.status || "todo"
+        status: req.body.status || "В планах"
       } as any;
       console.log("[API] Task data prepared:", taskData);
 
@@ -1247,7 +1247,7 @@ export async function registerRoutes(
       
       // Start timer for initial status
       try {
-        const initialStatus = task.status || "todo";
+        const initialStatus = task.status || "В планах";
         await storage.recordTaskStatusEntry(task.id, initialStatus);
         console.log("[API] Started timer for status:", initialStatus);
       } catch (error) {
