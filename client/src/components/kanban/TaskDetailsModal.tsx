@@ -86,30 +86,32 @@ import { toast as sonnerToast } from "sonner";
 
 // Status display names in Russian
 const statusNames: Record<string, string> = {
+  todo: "В планах",
   in_progress: "В работе",
   review: "На проверке",
   done: "Готово",
   backlog: "Бэклог",
+  "В планах": "В планах",
   "В работе": "В работе",
   "На проверке": "На проверке",
   "Готово": "Готово",
   "Бэклог": "Бэклог",
-  "В планах": "В планах",
   "Сделать": "Сделать",
   "Выполняется": "Выполняется",
 };
 
 // Status colors
 const statusColors: Record<string, string> = {
+  todo: "bg-purple-500",
   in_progress: "bg-blue-500",
   review: "bg-amber-500",
   done: "bg-emerald-500",
   backlog: "bg-gray-400",
+  "В планах": "bg-purple-500",
   "В работе": "bg-blue-500",
   "На проверке": "bg-amber-500",
   "Готово": "bg-emerald-500",
   "Бэклог": "bg-gray-400",
-  "В планах": "bg-purple-500",
   "Сделать": "bg-slate-500",
   "Выполняется": "bg-blue-500",
 };
