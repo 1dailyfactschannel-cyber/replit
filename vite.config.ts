@@ -95,10 +95,17 @@ export default defineConfig(async ({ mode }): Promise<UserConfig> => ({
   },
   server: {
     host: "0.0.0.0",
+    port: 3005,
     allowedHosts: true,
     fs: {
       strict: false,
       deny: ["**/.*"],
+    },
+    proxy: {
+      '/api': {
+        target: 'http://localhost:3005',
+        changeOrigin: true,
+      },
     },
   },
 }));

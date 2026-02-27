@@ -502,7 +502,8 @@ export function TaskDetailsModal({
   // Local state for immediate UI updates
   const [localAssignee, setLocalAssignee] = useState<{ id?: string; name: string; avatar?: string } | null>(null);
   const [localDueDate, setLocalDueDate] = useState<string | null>(null);
-  const [localStatus, setLocalStatus] = useState<string>("");
+  // Initialize localStatus with task status from props
+  const [localStatus, setLocalStatus] = useState<string>(task?.status || "");
   
   // Use localStatus for display (synced from task prop in useEffect)
   const currentStatus = localStatus ? (statusNames[localStatus] || localStatus) : "В планах";
