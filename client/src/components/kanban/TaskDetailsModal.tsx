@@ -86,12 +86,10 @@ import { toast as sonnerToast } from "sonner";
 
 // Status display names in Russian
 const statusNames: Record<string, string> = {
-  todo: "К выполнению",
   in_progress: "В работе",
   review: "На проверке",
   done: "Готово",
   backlog: "Бэклог",
-  "К выполнению": "К выполнению",
   "В работе": "В работе",
   "На проверке": "На проверке",
   "Готово": "Готово",
@@ -103,12 +101,10 @@ const statusNames: Record<string, string> = {
 
 // Status colors
 const statusColors: Record<string, string> = {
-  todo: "bg-slate-500",
   in_progress: "bg-blue-500",
   review: "bg-amber-500",
   done: "bg-emerald-500",
   backlog: "bg-gray-400",
-  "К выполнению": "bg-slate-500",
   "В работе": "bg-blue-500",
   "На проверке": "bg-amber-500",
   "Готово": "bg-emerald-500",
