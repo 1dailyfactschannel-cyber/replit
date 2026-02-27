@@ -416,10 +416,6 @@ export function TaskDetailsModal({
 
   const effectiveTask = serverTask || task;
 
-  // Use task.status directly instead of effectiveTask.status to get updated values from parent
-  const rawStatus = task?.status || effectiveTask?.status || "todo";
-  const currentStatus = statusNames[rawStatus as string] || rawStatus || "В планах";
-
   const [newTitle, setNewTitle] = useState(effectiveTask?.title || "");
   const [newDescription, setNewDescription] = useState(effectiveTask?.description || "");
   
@@ -508,6 +504,9 @@ export function TaskDetailsModal({
   const [localDueDate, setLocalDueDate] = useState<string | null>(null);
   const [localStatus, setLocalStatus] = useState<string>("");
   
+  // Use localStatus for display (synced from task prop in useEffect)
+  const currentStatus = localStatus ? (statusNames[localStatus] || localStatus) : "В планах";
+  
   // Sync local assignee with task data
   useEffect(() => {
     if (effectiveTask?.assignee) {
@@ -528,10 +527,13 @@ export function TaskDetailsModal({
 
   // Sync local status with task data
   useEffect(() => {
-    if (effectiveTask?.status) {
+    // Sync from task prop first (from parent/board), then fallback to effectiveTask
+    if (task?.status) {
+      setLocalStatus(task.status);
+    } else if (effectiveTask?.status) {
       setLocalStatus(effectiveTask.status);
     }
-  }, [effectiveTask?.status]);
+  }, [task?.status, effectiveTask?.status]);
 
   // Sync local priority with task data
   // Removed localPriority state to rely on optimistic cache updates for single source of truth
