@@ -658,6 +658,12 @@ export default function Projects() {
     placeholderData: [],
   });
 
+  // Get all boards for project filtering
+  const { data: allBoards = [] } = useQuery<any[]>({
+    queryKey: ["/api/boards"],
+    staleTime: 1000 * 60 * 10, // 10 minutes
+  });
+
   const activeBoard = useMemo(() => 
     boards.find(b => b.id === activeBoardId) || boards[0],
     [boards, activeBoardId]
@@ -1255,10 +1261,13 @@ export default function Projects() {
         if (!matchesSearch) return false;
       }
       
-      // Project filter
+      // Project filter - check boardId against selected projects' boards
       if (taskFilters.projects.length > 0) {
-        // Filter by projectId (tasks have projectId field)
-        if (!task.projectId || !taskFilters.projects.includes(task.projectId)) return false;
+        // Get boards for selected projects
+        const selectedProjectBoards = allBoards
+          .filter((b: any) => taskFilters.projects.includes(b.projectId))
+          .map((b: any) => b.id);
+        if (!task.boardId || !selectedProjectBoards.includes(task.boardId)) return false;
       }
       
       // Status filter
@@ -1301,7 +1310,7 @@ export default function Projects() {
       
       return true;
     });
-  }, [tasks, taskFilters]);
+  }, [tasks, taskFilters, allBoards]);
 
   // Create a map of column name to column ID for "All Tasks" view
   const columnNameToId = useMemo(() => {
