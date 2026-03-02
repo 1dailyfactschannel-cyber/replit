@@ -24,7 +24,8 @@ import {
   ChevronLeft,
   ChevronDown,
   Pencil,
-  Trash2
+  Trash2,
+  BarChart2
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -75,6 +76,7 @@ const sidebarItems = [
       { label: "Аналитика", href: "/team?tab=analytics" }
     ]
   },
+  { icon: BarChart2, label: "Отчеты", href: "/reports" },
   { icon: ShoppingBag, label: "Магазин", href: "/shop" },
   { icon: Shield, label: "Управление", href: "/management" },
 ];
