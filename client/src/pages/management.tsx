@@ -1828,7 +1828,7 @@ function LabelsManagement() {
               <Dialog open={isLabelDialogOpen} onOpenChange={setIsLabelDialogOpen}>
                 <DialogTrigger asChild>
                   <button
-                    className="h-8 px-3 rounded-full border border-dashed border-border hover:border-primary/50 hover:bg-primary/5 flex items-center gap-2 transition-all group"
+                    className="h-8 px-3 rounded-sm border border-dashed border-border hover:border-primary/50 hover:bg-primary/5 flex items-center gap-2 transition-all group"
                     onClick={() => openLabelDialog()}
                   >
                     <Plus className="w-3.5 h-3.5 text-foreground group-hover:text-primary transition-colors" />
@@ -1899,19 +1899,31 @@ function LabelsManagement() {
                 </DialogContent>
               </Dialog>
 
-              {labels.map((label) => (
+              {labels.map((label) => {
+                const getColors = (color: string) => {
+                  if (color.includes('red') || color.includes('rose')) return { bg: '#fef2f2', text: '#dc2626' };
+                  if (color.includes('blue')) return { bg: '#dbeafe', text: '#2563eb' };
+                  if (color.includes('green') || color.includes('emerald')) return { bg: '#dcfce7', text: '#16a34a' };
+                  if (color.includes('yellow') || color.includes('amber')) return { bg: '#fef9c3', text: '#ca8a04' };
+                  if (color.includes('purple') || color.includes('indigo')) return { bg: '#f3e8ff', text: '#9333ea' };
+                  if (color.includes('pink')) return { bg: '#fce7f3', text: '#db2777' };
+                  if (color.includes('orange')) return { bg: '#ffedd5', text: '#ea580c' };
+                  if (color.includes('gray') || color.includes('slate')) return { bg: '#f1f5f9', text: '#475569' };
+                  return { bg: '#f1f5f9', text: '#475569' };
+                };
+                const colors = getColors(label.color);
+                return (
                 <div
                   key={label.id}
-                  className={cn(
-                    "h-8 px-3 rounded-full flex items-center gap-2 transition-all cursor-pointer hover:ring-2 ring-offset-2 ring-offset-background ring-primary/20",
-                    label.color.replace('bg-', 'bg-').replace('500', '500/10')
-                  )}
+                  style={{ backgroundColor: colors.bg, color: colors.text }}
+                  className="h-8 px-3 rounded-sm flex items-center gap-2 transition-all cursor-pointer hover:ring-2 ring-offset-2 ring-offset-background ring-primary/20"
                   onClick={() => openLabelDialog(label)}
                 >
-                  <div className={cn("w-2 h-2 rounded-full", label.color)} />
-                  <span className="text-xs font-medium text-foreground">{label.name}</span>
+                  <div className="w-2 h-2 rounded-full" style={{ backgroundColor: colors.text }} />
+                  <span className="text-xs font-medium">{label.name}</span>
                 </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         </Card>

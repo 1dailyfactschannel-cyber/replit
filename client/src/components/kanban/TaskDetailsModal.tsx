@@ -2218,18 +2218,26 @@ export function TaskDetailsModal({
                             availableLabels.map((label: any) => {
                               const isSelected = localLabels.some(l => l.name === label.name);
                               if (isSelected) return null;
+                              const getColors = (color: string) => {
+                                if (color.includes('red') || color.includes('rose')) return { bg: '#fef2f2', text: '#dc2626' };
+                                if (color.includes('blue')) return { bg: '#dbeafe', text: '#2563eb' };
+                                if (color.includes('green') || color.includes('emerald')) return { bg: '#dcfce7', text: '#16a34a' };
+                                if (color.includes('yellow') || color.includes('amber')) return { bg: '#fef9c3', text: '#ca8a04' };
+                                if (color.includes('purple') || color.includes('indigo')) return { bg: '#f3e8ff', text: '#9333ea' };
+                                if (color.includes('pink')) return { bg: '#fce7f3', text: '#db2777' };
+                                if (color.includes('orange')) return { bg: '#ffedd5', text: '#ea580c' };
+                                if (color.includes('gray') || color.includes('slate')) return { bg: '#f1f5f9', text: '#475569' };
+                                return { bg: '#f1f5f9', text: '#475569' };
+                              };
+                              const colors = getColors(label.color || '');
                               return (
                                 <Badge 
-                                  key={label.id} 
-                                  variant="secondary" 
-                                  className={cn(
-                                    "px-2 py-0.5 text-[9px] font-bold border-none rounded-md cursor-pointer transition-all hover:opacity-80",
-                                    label.color ? label.color.replace('bg-', 'bg-').replace('500', '500/10') : "bg-primary/10",
-                                    label.color ? (label.color.includes('red') || label.color.includes('orange') || label.color.includes('rose') ? "text-white" : label.color.replace('bg-', 'text-').replace('500', '600')) : "text-foreground"
-                                  )}
+                                  key={label.id}
+                                  className="px-2 py-0.5 text-[10px] font-medium border-none rounded-sm cursor-pointer hover:opacity-80 transition-all"
+                                  style={{ backgroundColor: colors.bg, color: colors.text }}
                                   onClick={() => handleAddLabel(label.name)}
-                                  style={{ pointerEvents: 'auto', cursor: 'pointer' }}
                                 >
+                                  <span className="w-1.5 h-1.5 rounded-full mr-1.5" style={{ backgroundColor: colors.text }} />
                                   {label.name}
                                 </Badge>
                               );
@@ -2245,20 +2253,30 @@ export function TaskDetailsModal({
                 <div className="flex flex-wrap gap-1">
                   {localLabels.map((label) => {
                     const labelInfo = availableLabels.find((l: any) => l.name === label.name);
+                    const getColors = (color: string) => {
+                      if (color.includes('red') || color.includes('rose')) return { bg: '#fef2f2', text: '#dc2626' };
+                      if (color.includes('blue')) return { bg: '#dbeafe', text: '#2563eb' };
+                      if (color.includes('green') || color.includes('emerald')) return { bg: '#dcfce7', text: '#16a34a' };
+                      if (color.includes('yellow') || color.includes('amber')) return { bg: '#fef9c3', text: '#ca8a04' };
+                      if (color.includes('purple') || color.includes('indigo')) return { bg: '#f3e8ff', text: '#9333ea' };
+                      if (color.includes('pink')) return { bg: '#fce7f3', text: '#db2777' };
+                      if (color.includes('orange')) return { bg: '#ffedd5', text: '#ea580c' };
+                      if (color.includes('gray') || color.includes('slate')) return { bg: '#f1f5f9', text: '#475569' };
+                      return { bg: '#f1f5f9', text: '#475569' };
+                    };
+                    const colors = getColors(labelInfo?.color || '');
                     return (
                       <Badge 
                         key={label.name} 
-                        variant="secondary" 
                         className={cn(
-                          "px-2 py-0 text-[9px] font-bold border-none rounded-md cursor-pointer hover:bg-destructive/20 hover:text-destructive transition-colors",
-                          label.pending && "opacity-50",
-                          labelInfo?.color ? labelInfo.color.replace('bg-', 'bg-').replace('500', '500/10') : "bg-primary/10",
-                          labelInfo?.color ? (labelInfo.color.includes('red') || labelInfo.color.includes('orange') || labelInfo.color.includes('rose') ? "text-white" : labelInfo.color.replace('bg-', 'text-').replace('500', '600')) : "text-foreground"
+                          "px-2 py-0 text-[10px] font-medium border-none rounded-sm cursor-pointer hover:opacity-80 transition-colors",
+                          label.pending && "opacity-50"
                         )}
+                        style={{ backgroundColor: colors.bg, color: colors.text }}
                         onClick={() => handleRemoveLabel(label.name)}
                         title="Кликните для удаления"
-                        style={{ pointerEvents: 'auto', cursor: 'pointer' }}
                       >
+                        <span className="w-1.5 h-1.5 rounded-full mr-1.5" style={{ backgroundColor: colors.text }} />
                         {label.name}
                       </Badge>
                     );

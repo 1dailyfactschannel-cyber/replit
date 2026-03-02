@@ -18,7 +18,8 @@ import {
   LayoutGrid,
   Columns,
   Folder,
-  Check
+  Check,
+  Clock
 } from "lucide-react";
 import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd";
 import { Button } from "@/components/ui/button";
@@ -139,8 +140,8 @@ const TaskCard = React.memo(({ task, index, onClick, columnColor, availableLabel
   // Preload avatar image for better perceived performance
   // const avatarSrc = task.assignee?.avatar;
   
-  // Extract task number from ID (show last 4-6 chars) or use task.number if available
-  const taskNumber = task.number || (task.id ? `#${task.id.toString().slice(-4)}` : '#0000');
+  // Extract task number - always prefix with #
+  const taskNumber = task.number ? `#${task.number}` : (task.id ? `#${task.id.toString().slice(-4)}` : '#0000');
   
   // Get priority color from priorityId
   const priorityColor = React.useMemo(() => {
@@ -167,42 +168,61 @@ const TaskCard = React.memo(({ task, index, onClick, columnColor, availableLabel
           {...provided.dragHandleProps}
           onClick={() => onClick(task)}
           className={cn(
-            "bg-card border border-border/50 p-3 rounded-xl shadow-sm hover:shadow-md hover:border-primary/30 transition-[box-shadow,border-color,background-color] group/task relative overflow-hidden font-sans",
-            snapshot.isDragging ? "shadow-xl ring-2 ring-primary/20 rotate-1 z-50" : ""
+            "bg-card border border-border/60 p-2.5 rounded-lg shadow-sm hover:shadow-lg hover:border-primary/40 hover:-translate-y-0.5 transition-all duration-200 group/task relative overflow-hidden",
+            snapshot.isDragging ? "shadow-2xl ring-2 ring-primary/30 rotate-1 z-50 scale-105" : ""
           )}
         >
           {/* Bottom border indicator for priority */}
           <div className={cn(
-            "absolute inset-x-0 bottom-0 h-1.5 rounded-b-xl",
+            "absolute inset-x-0 bottom-0 h-1 rounded-b-lg",
             priorityColor
           )} />
           
-          {/* Header with Task Number and Creator Date */}
+          {/* Header with Task Number and Deadline */}
           <div className="flex items-center justify-between mb-1.5">
-            <div className="text-xs text-foreground font-mono">{taskNumber}</div>
-            {task.creator && (
-              <div className="text-[10px] text-foreground font-medium">
-                {task.creator.date.split(' ')[0]}
+            <div className="text-xs text-muted-foreground font-mono tracking-wide">{taskNumber}</div>
+            {task.dueDate && (
+              <div className={cn(
+                "text-[10px] font-medium flex items-center gap-1 px-1.5 py-0.5 rounded bg-muted/50",
+                new Date(task.dueDate) < new Date() ? "text-red-600 bg-red-50" : "text-muted-foreground"
+              )}>
+                <Clock className="w-3 h-3" />
+                {new Date(task.dueDate).toLocaleDateString('ru-RU', { 
+                  day: 'numeric', 
+                  month: 'short',
+                  hour: '2-digit',
+                  minute: '2-digit'
+                })}
               </div>
             )}
           </div>
 
-          <h4 className="text-sm font-normal mb-2 leading-snug text-foreground/90 line-clamp-2">{task.title}</h4>
+          <h4 className="text-sm font-medium mb-1.5 leading-relaxed text-foreground/95 line-clamp-2 tracking-tight">{task.title}</h4>
 
           {/* Labels */}
           {task.tags && task.tags.length > 0 && (
             <div className="flex flex-wrap gap-1 mb-2">
               {task.tags.map((tagName: string) => {
                 const labelInfo = availableLabels.find((l: any) => l.name === tagName);
+                const getColors = (color: string) => {
+                  if (color.includes('red') || color.includes('rose')) return { bg: '#fef2f2', text: '#dc2626' };
+                  if (color.includes('blue')) return { bg: '#dbeafe', text: '#2563eb' };
+                  if (color.includes('green') || color.includes('emerald')) return { bg: '#dcfce7', text: '#16a34a' };
+                  if (color.includes('yellow') || color.includes('amber')) return { bg: '#fef9c3', text: '#ca8a04' };
+                  if (color.includes('purple') || color.includes('indigo')) return { bg: '#f3e8ff', text: '#9333ea' };
+                  if (color.includes('pink')) return { bg: '#fce7f3', text: '#db2777' };
+                  if (color.includes('orange')) return { bg: '#ffedd5', text: '#ea580c' };
+                  if (color.includes('gray') || color.includes('slate')) return { bg: '#f1f5f9', text: '#475569' };
+                  return { bg: '#f1f5f9', text: '#475569' };
+                };
+                const colors = getColors(labelInfo?.color || '');
                 return (
                   <Badge
                     key={tagName}
-                    variant="secondary"
-                    className={cn(
-                      "px-1.5 py-0 text-[9px] font-bold border-none rounded-md pointer-events-none text-foreground",
-                      labelInfo?.color ? labelInfo.color.replace('bg-', 'bg-').replace('500', '500/10') : "bg-primary/10"
-                    )}
+                    style={{ backgroundColor: colors.bg, color: colors.text }}
+                    className="px-2 py-0.5 text-[10px] font-medium border-none rounded-sm pointer-events-none"
                   >
+                    <span className="w-1.5 h-1.5 rounded-full mr-1.5" style={{ backgroundColor: colors.text }} />
                     {tagName}
                   </Badge>
                 );
@@ -210,13 +230,28 @@ const TaskCard = React.memo(({ task, index, onClick, columnColor, availableLabel
             </div>
           )}
 
-          <div className="flex items-center">
+          <div className="flex items-center justify-between">
             {task.assignee ? (
-              <span className="text-xs font-medium text-foreground truncate max-w-[150px]">
-                {task.assignee.name}
-              </span>
+              <div className="flex items-center gap-2">
+                {task.assignee.avatar ? (
+                  <img 
+                    src={task.assignee.avatar} 
+                    alt="" 
+                    className="w-5 h-5 rounded-full object-cover ring-1 ring-border"
+                  />
+                ) : (
+                  <div className="w-5 h-5 rounded-full bg-primary/10 flex items-center justify-center ring-1 ring-border">
+                    <span className="text-[10px] font-medium text-primary">
+                      {task.assignee.name?.charAt(0).toUpperCase()}
+                    </span>
+                  </div>
+                )}
+                <span className="text-xs font-medium text-foreground/80 truncate max-w-[140px]">
+                  {task.assignee.name}
+                </span>
+              </div>
             ) : (
-              <span className="text-xs text-foreground">
+              <span className="text-xs text-muted-foreground/60 italic">
                 Не назначен
               </span>
             )}

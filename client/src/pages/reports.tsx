@@ -540,30 +540,26 @@ export default function ReportsPage() {
                     <Card>
                       <CardHeader>
                         <CardTitle>Время в статусах</CardTitle>
+                        <CardDescription>Статистика по статусам задач за выбранный период</CardDescription>
                       </CardHeader>
                       <CardContent>
                         <div className="overflow-x-auto">
                           <table className="w-full">
                             <thead>
                               <tr className="border-b">
-                                <th className="text-left py-3 px-4 font-medium">Задача</th>
                                 <th className="text-left py-3 px-4 font-medium">Статус</th>
-                                <th className="text-right py-3 px-4 font-medium">Время в статусе</th>
+                                <th className="text-right py-3 px-4 font-medium">Количество задач</th>
                                 <th className="text-right py-3 px-4 font-medium">Общее время</th>
                               </tr>
                             </thead>
                             <tbody>
-                              {(tasksTimeData.tasks || []).map((t: any) => (
-                                <tr key={t.id} className="border-b hover:bg-muted/50">
+                              {(tasksTimeData.statusReport || []).map((s: any, idx: number) => (
+                                <tr key={idx} className="border-b hover:bg-muted/50">
                                   <td className="py-3 px-4">
-                                    <div className="font-medium">{t.title}</div>
-                                    <div className="text-xs text-muted-foreground">{t.number}</div>
+                                    <Badge variant="outline">{s.status}</Badge>
                                   </td>
-                                  <td className="py-3 px-4">
-                                    <Badge variant="outline">{t.status}</Badge>
-                                  </td>
-                                  <td className="text-right py-3 px-4">{formatDuration(t.timeInStatus || 0)}</td>
-                                  <td className="text-right py-3 px-4 font-medium">{formatDuration(t.totalTime || 0)}</td>
+                                  <td className="text-right py-3 px-4 font-medium">{s.taskCount}</td>
+                                  <td className="text-right py-3 px-4">{formatDuration(s.totalSeconds || 0)}</td>
                                 </tr>
                               ))}
                             </tbody>
@@ -572,22 +568,50 @@ export default function ReportsPage() {
                       </CardContent>
                     </Card>
 
-                    <Card>
-                      <CardHeader>
-                        <CardTitle>Время по статусам</CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <ResponsiveContainer width="100%" height={300}>
-                          <BarChart data={tasksTimeData.timeByStatus || []} layout="vertical">
-                            <CartesianGrid strokeDasharray="3 3" />
-                            <XAxis type="number" />
-                            <YAxis dataKey="status" type="category" width={100} />
-                            <Tooltip formatter={(value: number) => formatDuration(value)} />
-                            <Bar dataKey="totalSeconds" fill="#3b82f6" name="Время" />
-                          </BarChart>
-                        </ResponsiveContainer>
-                      </CardContent>
-                    </Card>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <Card>
+                        <CardHeader>
+                          <CardTitle>Распределение задач по статусам</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <ResponsiveContainer width="100%" height={300}>
+                            <RechartsPieChart>
+                              <Pie
+                                data={tasksTimeData.statusReport || []}
+                                dataKey="taskCount"
+                                nameKey="status"
+                                cx="50%"
+                                cy="50%"
+                                outerRadius={100}
+                                label={({ status, taskCount }: any) => `${status}: ${taskCount}`}
+                              >
+                                {(tasksTimeData.statusReport || []).map((entry: any, index: number) => (
+                                  <Cell key={`cell-${index}`} fill={['#3b82f6', '#f59e0b', '#8b5cf6', '#22c55e'][index % 4]} />
+                                ))}
+                              </Pie>
+                              <Tooltip />
+                            </RechartsPieChart>
+                          </ResponsiveContainer>
+                        </CardContent>
+                      </Card>
+
+                      <Card>
+                        <CardHeader>
+                          <CardTitle>Распределение времени по статусам</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <ResponsiveContainer width="100%" height={300}>
+                            <BarChart data={tasksTimeData.statusReport || []} layout="vertical">
+                              <CartesianGrid strokeDasharray="3 3" />
+                              <XAxis type="number" />
+                              <YAxis dataKey="status" type="category" width={100} />
+                              <Tooltip formatter={(value: number) => formatDuration(value)} />
+                              <Bar dataKey="totalSeconds" fill="#3b82f6" name="Время" />
+                            </BarChart>
+                          </ResponsiveContainer>
+                        </CardContent>
+                      </Card>
+                    </div>
                   </div>
                 )}
 

@@ -2418,11 +2418,93 @@ export async function registerRoutes(
   app.get("/api/reports/tasks/time-tracking", async (req, res) => {
     if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
     try {
-      // For now, return empty data - time tracking requires more complex queries
-      res.json({ tasks: [], timeByStatus: [] });
+      const { workspaceId, projectId, boardId, userId, dateFrom, dateTo } = req.query;
+      
+      // Get all tasks from database
+      let tasks = await storage.db.select().from(schema.tasks);
+      
+      // Filter by board if specified
+      if (boardId) {
+        tasks = tasks.filter((t: any) => t.boardId === boardId);
+      }
+      
+      // Filter by user if specified
+      if (userId) {
+        tasks = tasks.filter((t: any) => t.assigneeId === userId);
+      }
+
+      const taskIds = tasks.map((t: any) => t.id);
+
+      // Get all status history and filter by task IDs in JS
+      let allHistory = await storage.db.select().from(schema.taskStatusHistory);
+      allHistory = allHistory.filter((h: any) => taskIds.includes(h.taskId));
+      
+      // Filter by date range if specified
+      const fromDate = dateFrom ? new Date(dateFrom as string) : null;
+      const toDate = dateTo ? new Date(dateTo as string) : new Date();
+      
+      if (fromDate && toDate) {
+        allHistory = allHistory.filter((h: any) => {
+          const enteredAt = new Date(h.enteredAt);
+          const exitedAt = h.exitedAt ? new Date(h.exitedAt) : null;
+          
+          // Entry overlaps with period if enteredAt <= toDate AND (exitedAt is null OR exitedAt >= fromDate)
+          if (enteredAt > toDate) return false;
+          if (exitedAt && exitedAt < fromDate) return false;
+          
+          return true;
+        });
+      }
+
+      // Aggregate by status
+      const statusStats = new Map<string, { taskIds: Set<string>, totalSeconds: number }>();
+      const defaultStatuses = ['В планах', 'В работе', 'На проверке', 'Готово'];
+      
+      for (const status of defaultStatuses) {
+        statusStats.set(status, { taskIds: new Set(), totalSeconds: 0 });
+      }
+
+      for (const entry of allHistory) {
+        let russianStatus = entry.status;
+        
+        // Convert English statuses to Russian
+        if (entry.status === 'todo') russianStatus = 'В планах';
+        else if (entry.status === 'in_progress') russianStatus = 'В работе';
+        else if (entry.status === 'done') russianStatus = 'Готово';
+        
+        if (!statusStats.has(russianStatus)) {
+          statusStats.set(russianStatus, { taskIds: new Set(), totalSeconds: 0 });
+        }
+        
+        const stats = statusStats.get(russianStatus)!;
+        stats.taskIds.add(entry.taskId);
+        
+        let duration = entry.durationSeconds || 0;
+        if (!entry.exitedAt && entry.enteredAt) {
+          duration = Math.floor((new Date().getTime() - new Date(entry.enteredAt).getTime()) / 1000);
+        }
+        stats.totalSeconds += duration;
+      }
+
+      const result = Array.from(statusStats.entries())
+        .map(([status, stats]) => ({
+          status,
+          taskCount: stats.taskIds.size,
+          totalSeconds: stats.totalSeconds
+        }))
+        .sort((a, b) => {
+          const order = ['В планах', 'В работе', 'На проверке', 'Готово'];
+          const aIndex = order.indexOf(a.status);
+          const bIndex = order.indexOf(b.status);
+          if (aIndex === -1) return 1;
+          if (bIndex === -1) return -1;
+          return aIndex - bIndex;
+        });
+
+      res.json({ statusReport: result });
     } catch (error) {
       console.error("Error fetching tasks time tracking:", error);
-      res.status(500).json({ message: "Failed to fetch tasks time tracking" });
+      res.status(500).json({ message: "Failed to fetch tasks time tracking", error: String(error) });
     }
   });
 
