@@ -1,6 +1,6 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
-import { getStorage } from "./postgres-storage";
+import { getStorage, getReportOverview, getReportWorkspaces, getReportProjects, getReportBoards, getReportUsers } from "./postgres-storage";
 import { insertSiteSettingsSchema, insertUserSchema, insertNotificationSchema, insertLabelSchema, priorities } from "@shared/schema";
 import * as schema from "@shared/schema";
 import { setupWebSockets } from "./socket";
@@ -2313,6 +2313,118 @@ export async function registerRoutes(
   });
 
   // Note: Label routes are already defined earlier in the file (around line 543)
+
+  // ==================== REPORT ROUTES ====================
+
+  app.get("/api/reports/overview", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+    try {
+      const { workspaceId, projectId, boardId, userId, dateFrom, dateTo } = req.query;
+      const data = await getReportOverview(
+        storage.db,
+        workspaceId as string,
+        projectId as string,
+        boardId as string,
+        userId as string,
+        dateFrom as string,
+        dateTo as string
+      );
+      res.json(data);
+    } catch (error) {
+      console.error("Error fetching overview report:", error);
+      res.status(500).json({ message: "Failed to fetch overview report" });
+    }
+  });
+
+  app.get("/api/reports/workspaces", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+    try {
+      const { workspaceId, projectId, boardId, userId, dateFrom, dateTo } = req.query;
+      const data = await getReportWorkspaces(
+        storage.db,
+        workspaceId as string,
+        projectId as string,
+        boardId as string,
+        userId as string,
+        dateFrom as string,
+        dateTo as string
+      );
+      res.json(data);
+    } catch (error) {
+      console.error("Error fetching workspaces report:", error);
+      res.status(500).json({ message: "Failed to fetch workspaces report" });
+    }
+  });
+
+  app.get("/api/reports/projects", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+    try {
+      const { workspaceId, projectId, boardId, userId, dateFrom, dateTo } = req.query;
+      const data = await getReportProjects(
+        storage.db,
+        workspaceId as string,
+        projectId as string,
+        boardId as string,
+        userId as string,
+        dateFrom as string,
+        dateTo as string
+      );
+      res.json(data);
+    } catch (error) {
+      console.error("Error fetching projects report:", error);
+      res.status(500).json({ message: "Failed to fetch projects report" });
+    }
+  });
+
+  app.get("/api/reports/boards", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+    try {
+      const { projectId, boardId, userId, dateFrom, dateTo } = req.query;
+      const data = await getReportBoards(
+        storage.db,
+        projectId as string,
+        boardId as string,
+        userId as string,
+        dateFrom as string,
+        dateTo as string
+      );
+      res.json(data);
+    } catch (error) {
+      console.error("Error fetching boards report:", error);
+      res.status(500).json({ message: "Failed to fetch boards report" });
+    }
+  });
+
+  app.get("/api/reports/users", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+    try {
+      const { workspaceId, projectId, boardId, userId, dateFrom, dateTo } = req.query;
+      const data = await getReportUsers(
+        storage.db,
+        workspaceId as string,
+        projectId as string,
+        boardId as string,
+        userId as string,
+        dateFrom as string,
+        dateTo as string
+      );
+      res.json(data);
+    } catch (error) {
+      console.error("Error fetching users report:", error);
+      res.status(500).json({ message: "Failed to fetch users report" });
+    }
+  });
+
+  app.get("/api/reports/tasks/time-tracking", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+    try {
+      // For now, return empty data - time tracking requires more complex queries
+      res.json({ tasks: [], timeByStatus: [] });
+    } catch (error) {
+      console.error("Error fetching tasks time tracking:", error);
+      res.status(500).json({ message: "Failed to fetch tasks time tracking" });
+    }
+  });
 
   return httpServer;
 }
