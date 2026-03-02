@@ -220,15 +220,15 @@ export default function ReportsPage() {
             {/* Filters */}
             <div className="mb-6 p-4 bg-muted/30 rounded-xl border border-border/50">
               <div className="flex items-center gap-2 mb-4">
-                <Filter className="w-4 h-4 text-muted-foreground" />
-                <span className="text-sm font-medium">Фильтры</span>
+                <Filter className="w-4 h-4 text-foreground" />
+                <span className="text-sm font-medium text-foreground">Фильтры</span>
               </div>
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
                 <Select value={selectedWorkspace} onValueChange={setSelectedWorkspace}>
-                  <SelectTrigger>
+                  <SelectTrigger className="bg-background text-foreground">
                     <SelectValue placeholder="Пространство" />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent className="bg-background text-foreground">
                     <SelectItem value="all">Все пространства</SelectItem>
                     {workspaces.map((ws: any) => (
                       <SelectItem key={ws.id} value={ws.id}>{ws.name}</SelectItem>
@@ -237,10 +237,10 @@ export default function ReportsPage() {
                 </Select>
 
                 <Select value={selectedProject} onValueChange={setSelectedProject}>
-                  <SelectTrigger>
+                  <SelectTrigger className="bg-background text-foreground">
                     <SelectValue placeholder="Проект" />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent className="bg-background text-foreground">
                     <SelectItem value="all">Все проекты</SelectItem>
                     {projects.filter((p: any) => selectedWorkspace === "all" || p.workspaceId === selectedWorkspace).map((p: any) => (
                       <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
@@ -249,10 +249,10 @@ export default function ReportsPage() {
                 </Select>
 
                 <Select value={selectedBoard} onValueChange={setSelectedBoard}>
-                  <SelectTrigger>
+                  <SelectTrigger className="bg-background text-foreground">
                     <SelectValue placeholder="Доска" />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent className="bg-background text-foreground">
                     <SelectItem value="all">Все доски</SelectItem>
                     {boards.filter((b: any) => 
                       (selectedProject === "all" || b.projectId === selectedProject) &&
@@ -264,10 +264,10 @@ export default function ReportsPage() {
                 </Select>
 
                 <Select value={selectedUser} onValueChange={setSelectedUser}>
-                  <SelectTrigger>
+                  <SelectTrigger className="bg-background text-foreground">
                     <SelectValue placeholder="Сотрудник" />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent className="bg-background text-foreground">
                     <SelectItem value="all">Все сотрудники</SelectItem>
                     {users.map((u: any) => (
                       <SelectItem key={u.id} value={u.id}>
@@ -282,7 +282,7 @@ export default function ReportsPage() {
                   value={dateFrom}
                   onChange={(e) => setDateFrom(e.target.value)}
                   placeholder="Дата от"
-                  className="h-10"
+                  className="h-10 bg-background text-foreground"
                 />
 
                 <Input 
@@ -290,7 +290,7 @@ export default function ReportsPage() {
                   value={dateTo}
                   onChange={(e) => setDateTo(e.target.value)}
                   placeholder="Дата до"
-                  className="h-10"
+                  className="h-10 bg-background text-foreground"
                 />
               </div>
             </div>
