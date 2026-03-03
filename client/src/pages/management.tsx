@@ -1919,7 +1919,6 @@ function LabelsManagement() {
                   className="h-8 px-3 rounded-sm flex items-center gap-2 transition-all cursor-pointer hover:ring-2 ring-offset-2 ring-offset-background ring-primary/20"
                   onClick={() => openLabelDialog(label)}
                 >
-                  <div className="w-2 h-2 rounded-full" style={{ backgroundColor: colors.text }} />
                   <span className="text-xs font-medium">{label.name}</span>
                 </div>
                 );
