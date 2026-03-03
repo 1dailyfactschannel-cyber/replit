@@ -1219,6 +1219,24 @@ export class PostgresStorage {
         subtasksMap.set(subtask.taskId, existing);
       }
 
+      // Get comment counts for all tasks
+      let commentCounts: Record<string, number> = {};
+      if (taskIds.length > 0) {
+        const commentCountResults = await this.db
+          .select({
+            taskId: schema.comments.taskId,
+            count: sql<number>`count(*)::int`
+          })
+          .from(schema.comments)
+          .where(inArray(schema.comments.taskId, taskIds))
+          .groupBy(schema.comments.taskId);
+        
+        commentCounts = commentCountResults.reduce((acc, row) => {
+          acc[row.taskId] = row.count;
+          return acc;
+        }, {} as Record<string, number>);
+      }
+      
       const duration = Date.now() - startTime;
       console.log(`[DB] getTasksByBoardWithUsers: ${tasks.length} tasks, ${subtasks.length} subtasks in ${duration}ms`);
 
@@ -1234,6 +1252,7 @@ export class PostgresStorage {
 
         return {
           ...task,
+          commentCount: commentCounts[task.id] || 0,
           assignee: assignee ? { 
             name: formatName(assignee), 
             avatar: assignee.avatar 

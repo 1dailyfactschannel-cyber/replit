@@ -2,23 +2,44 @@ import { Layout } from "@/components/layout/Layout";
 import React, { useState, useMemo, useEffect, useCallback } from "react";
 import { cn } from "@/lib/utils";
 import { 
-  ChevronRight, 
-  ChevronDown,
-  MoreVertical,
-  Search,
-  Hash,
-  Filter,
-  Users,
-  Flag,
-  GripVertical,
-  Trash2,
-  Pencil,
+  Users, 
+  Shield, 
+  Puzzle, 
+  ChevronRight,
+  Send,
+  Save,
   Loader2,
+  Globe,
+  Lock,
+  Eye,
+  Settings as SettingsIcon,
   Plus,
+  Pencil,
+  Trash2,
+  MessageSquare,
+  Search,
+  Filter,
+  MoreVertical,
+  Mail,
+  UserPlus,
+  Github,
+  Slack,
+  MessageCircle,
+  Hash,
+  Activity,
+  Zap,
+  ExternalLink,
+  Code,
   LayoutGrid,
-  Columns,
-  Folder,
+  Flag,
   Check,
+  X,
+  Palette,
+  Tags,
+  Folder,
+  Archive,
+  RotateCcw,
+  Layers,
   Clock
 } from "lucide-react";
 import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd";
@@ -180,7 +201,15 @@ const TaskCard = React.memo(({ task, index, onClick, columnColor, availableLabel
           
           {/* Header with Task Number and Deadline */}
           <div className="flex items-center justify-between mb-1.5">
-            <div className="text-xs text-muted-foreground font-mono tracking-wide">{taskNumber}</div>
+            <div className="flex items-center gap-2">
+              <div className="text-xs text-muted-foreground font-mono tracking-wide">{taskNumber}</div>
+              {task.commentCount > 0 && (
+                <div className="text-[10px] font-medium flex items-center gap-1 text-muted-foreground/70">
+                  <MessageSquare className="w-3 h-3" />
+                  {task.commentCount}
+                </div>
+              )}
+            </div>
             {task.dueDate && (
               <div className={cn(
                 "text-[10px] font-medium flex items-center gap-1 px-1.5 py-0.5 rounded bg-muted/50",
