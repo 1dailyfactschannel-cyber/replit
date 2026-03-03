@@ -229,31 +229,6 @@ const TaskCard = React.memo(({ task, index, onClick, columnColor, availableLabel
             </div>
           )}
 
-          {/* Task Type */}
-          {task.taskTypeId && availableTaskTypes.length > 0 && (() => {
-            const taskType = availableTaskTypes.find((t: any) => t.id === task.taskTypeId);
-            if (!taskType) return null;
-            const getTypeColors = (color: string) => {
-              if (color.includes('red')) return { bg: '#fef2f2', text: '#dc2626' };
-              if (color.includes('violet') || color.includes('purple')) return { bg: '#f3e8ff', text: '#9333ea' };
-              if (color.includes('orange')) return { bg: '#ffedd5', text: '#ea580c' };
-              if (color.includes('blue')) return { bg: '#dbeafe', text: '#2563eb' };
-              if (color.includes('green')) return { bg: '#dcfce7', text: '#16a34a' };
-              return { bg: '#f1f5f9', text: '#475569' };
-            };
-            const typeColors = getTypeColors(taskType.color || '');
-            return (
-              <div className="mb-2">
-                <Badge
-                  style={{ backgroundColor: typeColors.bg, color: typeColors.text, borderColor: typeColors.text }}
-                  className="px-2 py-0.5 text-[10px] font-medium rounded-sm pointer-events-none border"
-                >
-                  {taskType.name}
-                </Badge>
-              </div>
-            );
-          })()}
-
           <div className="flex items-center justify-between">
             {task.assignee ? (
               <div className="flex items-center gap-2">
@@ -279,6 +254,29 @@ const TaskCard = React.memo(({ task, index, onClick, columnColor, availableLabel
                 Не назначен
               </span>
             )}
+            
+            {/* Task Type - right side */}
+            {task.taskTypeId && availableTaskTypes.length > 0 && (() => {
+              const taskType = availableTaskTypes.find((t: any) => t.id === task.taskTypeId);
+              if (!taskType) return null;
+              const getTypeColors = (color: string) => {
+                if (color.includes('red')) return { bg: '#fef2f2', text: '#dc2626' };
+                if (color.includes('violet') || color.includes('purple')) return { bg: '#f3e8ff', text: '#9333ea' };
+                if (color.includes('orange')) return { bg: '#ffedd5', text: '#ea580c' };
+                if (color.includes('blue')) return { bg: '#dbeafe', text: '#2563eb' };
+                if (color.includes('green')) return { bg: '#dcfce7', text: '#16a34a' };
+                return { bg: '#f1f5f9', text: '#475569' };
+              };
+              const typeColors = getTypeColors(taskType.color || '');
+              return (
+                <Badge
+                  style={{ backgroundColor: typeColors.bg, color: typeColors.text, borderColor: typeColors.text }}
+                  className="px-2 py-0.5 text-[10px] font-medium rounded-sm pointer-events-none border"
+                >
+                  {taskType.name}
+                </Badge>
+              );
+            })()}
           </div>
         </div>
       )}
