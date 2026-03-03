@@ -245,8 +245,8 @@ const TaskCard = React.memo(({ task, index, onClick, columnColor, availableLabel
             return (
               <div className="mb-2">
                 <Badge
-                  style={{ backgroundColor: typeColors.bg, color: typeColors.text }}
-                  className="px-2 py-0.5 text-[10px] font-medium border-none rounded-sm pointer-events-none"
+                  style={{ backgroundColor: typeColors.bg, color: typeColors.text, borderColor: typeColors.text }}
+                  className="px-2 py-0.5 text-[10px] font-medium rounded-sm pointer-events-none border"
                 >
                   {taskType.name}
                 </Badge>
