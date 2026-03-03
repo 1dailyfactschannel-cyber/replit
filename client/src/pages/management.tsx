@@ -38,7 +38,8 @@ import {
   Tags,
   Folder,
   Archive,
-  RotateCcw
+  RotateCcw,
+  Layers
 } from "lucide-react";
 import { RolesManagement } from "@/components/settings/RolesManagement";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -1463,6 +1464,8 @@ function ProjectsManagement() {
       <PrioritiesManagement />
 
       <LabelsManagement />
+
+      <TaskTypesManagement />
     </div>
   );
 }
@@ -1920,6 +1923,220 @@ function LabelsManagement() {
                   onClick={() => openLabelDialog(label)}
                 >
                   <span className="text-xs font-medium">{label.name}</span>
+                </div>
+                );
+              })}
+            </div>
+          </div>
+        </Card>
+      )}
+    </section>
+  )
+}
+
+function TaskTypesManagement() {
+  const { toast } = useToast();
+  const [isCollapsed, setIsCollapsed] = useState(false);
+
+  const { data: taskTypes = [] } = useQuery<any[]>({
+    queryKey: ["/api/task-types"],
+  });
+
+  const createTaskTypeMutation = useMutation({
+    mutationFn: async (taskType: any) => {
+      const res = await apiRequest("POST", "/api/task-types", taskType);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/task-types"] });
+      setNewTaskType({ name: "", color: "bg-blue-500" });
+      setIsTaskTypeDialogOpen(false);
+      toast({ title: "Тип задачи создан" });
+    },
+    onError: (error: any) => {
+      if (error.message?.includes("DUPLICATE")) {
+        toast({ title: "Тип задачи с таким названием уже существует", variant: "destructive" });
+      }
+    },
+  });
+
+  const updateTaskTypeMutation = useMutation({
+    mutationFn: async (taskType: any) => {
+      const res = await apiRequest("PUT", `/api/task-types/${taskType.id}`, taskType);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/task-types"] });
+      setEditingTaskType(null);
+      setIsTaskTypeDialogOpen(false);
+      toast({ title: "Тип задачи обновлён" });
+    },
+    onError: (error: any) => {
+      if (error.message?.includes("DUPLICATE")) {
+        toast({ title: "Тип задачи с таким названием уже существует", variant: "destructive" });
+      }
+    },
+  });
+
+  const deleteTaskTypeMutation = useMutation({
+    mutationFn: async (id: string) => {
+      await apiRequest("DELETE", `/api/task-types/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/task-types"] });
+      if (editingTaskType) {
+        setIsTaskTypeDialogOpen(false);
+        setEditingTaskType(null);
+      }
+      toast({ title: "Тип задачи удалён" });
+    },
+  });
+
+  const [newTaskType, setNewTaskType] = useState({ name: "", color: "bg-blue-500" });
+  const [editingTaskType, setEditingTaskType] = useState<any>(null);
+  const [isTaskTypeDialogOpen, setIsTaskTypeDialogOpen] = useState(false);
+
+  const handleAddTaskType = () => {
+    if (!newTaskType.name) return;
+    createTaskTypeMutation.mutate(newTaskType);
+  };
+
+  const handleUpdateTaskType = () => {
+    if (!editingTaskType) return;
+    updateTaskTypeMutation.mutate(editingTaskType);
+  };
+
+  const handleDeleteTaskType = (id: string) => {
+    deleteTaskTypeMutation.mutate(id);
+  };
+
+  const openTaskTypeDialog = (taskType?: any) => {
+    if (taskType) {
+      setEditingTaskType(taskType);
+    } else {
+      setNewTaskType({ name: "", color: "bg-blue-500" });
+      setEditingTaskType(null);
+    }
+    setIsTaskTypeDialogOpen(true);
+  };
+
+  const colors = [
+    "bg-rose-600", "bg-rose-400", "bg-amber-500", "bg-emerald-500", 
+    "bg-blue-500", "bg-indigo-500", "bg-purple-500", "bg-slate-500"
+  ];
+
+  return (
+    <section className="space-y-4">
+      <div className="flex items-center justify-between px-1 cursor-pointer" onClick={() => setIsCollapsed(!isCollapsed)}>
+        <div className="flex flex-col gap-1">
+          <h4 className="text-xs font-bold uppercase tracking-wider text-foreground flex items-center gap-2">
+            <Layers className="w-3.5 h-3.5" />
+            Типы задач
+          </h4>
+          <p className="text-[11px] text-foreground">Управление типами задач (Ошибка, Доработка, Эпик)</p>
+        </div>
+        <ChevronRight className={cn("w-4 h-4 text-foreground transition-transform", isCollapsed && "rotate-90")} />
+      </div>
+
+      {!isCollapsed && (
+        <Card className="border-border/50 shadow-sm overflow-hidden bg-card/50 animate-in fade-in slide-in-from-top-2 duration-300">
+          <div className="p-6">
+            <div className="flex flex-wrap gap-3">
+              <Dialog open={isTaskTypeDialogOpen} onOpenChange={setIsTaskTypeDialogOpen}>
+                <DialogTrigger asChild>
+                  <button
+                    className="h-8 px-3 rounded-sm border border-dashed border-border hover:border-primary/50 hover:bg-primary/5 flex items-center gap-2 transition-all group"
+                    onClick={() => openTaskTypeDialog()}
+                  >
+                    <Plus className="w-3.5 h-3.5 text-foreground group-hover:text-primary transition-colors" />
+                    <span className="text-xs font-medium text-foreground group-hover:text-primary transition-colors">Добавить тип</span>
+                  </button>
+                </DialogTrigger>
+                <DialogContent className="sm:max-w-[425px]">
+                  <DialogHeader>
+                    <DialogTitle>{editingTaskType ? "Редактировать тип" : "Новый тип задачи"}</DialogTitle>
+                    <DialogDescription>
+                      {editingTaskType ? "Измените название или цвет типа" : "Создайте новый тип задачи"}
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="grid gap-4 py-4">
+                    <div className="grid gap-2">
+                      <Label htmlFor="taskTypeName">Название</Label>
+                      <Input
+                        id="taskTypeName"
+                        value={editingTaskType ? editingTaskType.name : newTaskType.name}
+                        onChange={(e) => editingTaskType 
+                          ? setEditingTaskType({ ...editingTaskType, name: e.target.value })
+                          : setNewTaskType({ ...newTaskType, name: e.target.value })
+                        }
+                        placeholder="Например: Ошибка"
+                      />
+                    </div>
+                    <div className="grid gap-2">
+                      <Label>Цвет</Label>
+                      <div className="flex flex-wrap gap-2">
+                        {colors.map((color) => (
+                          <button
+                            key={color}
+                            onClick={() => editingTaskType 
+                              ? setEditingTaskType({ ...editingTaskType, color })
+                              : setNewTaskType({ ...newTaskType, color })
+                            }
+                            className={cn(
+                              "w-6 h-6 rounded-full transition-all ring-offset-2 ring-offset-background relative",
+                              color,
+                              (editingTaskType ? editingTaskType.color === color : newTaskType.color === color)
+                                ? "ring-2 ring-primary scale-110" 
+                                : "hover:scale-110 opacity-70 hover:opacity-100"
+                            )}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                  <DialogFooter>
+                    {editingTaskType && (
+                       <Button 
+                        type="button" 
+                        variant="destructive" 
+                        size="sm"
+                        className="mr-auto"
+                        onClick={() => {
+                          handleDeleteTaskType(editingTaskType.id);
+                          setIsTaskTypeDialogOpen(false);
+                        }}
+                      >
+                        Удалить
+                      </Button>
+                    )}
+                    <Button onClick={editingTaskType ? handleUpdateTaskType : handleAddTaskType}>
+                      {editingTaskType ? "Сохранить" : "Создать"}
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+
+              {taskTypes.map((taskType) => {
+                const getColors = (color: string) => {
+                  if (color.includes('red') || color.includes('rose')) return { bg: '#fef2f2', text: '#dc2626' };
+                  if (color.includes('blue')) return { bg: '#dbeafe', text: '#2563eb' };
+                  if (color.includes('green') || color.includes('emerald')) return { bg: '#dcfce7', text: '#16a34a' };
+                  if (color.includes('yellow') || color.includes('amber')) return { bg: '#fef9c3', text: '#ca8a04' };
+                  if (color.includes('purple') || color.includes('indigo')) return { bg: '#f3e8ff', text: '#9333ea' };
+                  if (color.includes('pink')) return { bg: '#fce7f3', text: '#db2777' };
+                  if (color.includes('orange')) return { bg: '#ffedd5', text: '#ea580c' };
+                  if (color.includes('gray') || color.includes('slate')) return { bg: '#f1f5f9', text: '#475569' };
+                  return { bg: '#f1f5f9', text: '#475569' };
+                };
+                const colors = getColors(taskType.color);
+                return (
+                <div
+                  key={taskType.id}
+                  style={{ backgroundColor: colors.bg, color: colors.text }}
+                  className="h-8 px-3 rounded-sm flex items-center gap-2 transition-all cursor-pointer hover:ring-2 ring-offset-2 ring-offset-background ring-primary/20"
+                  onClick={() => openTaskTypeDialog(taskType)}
+                >
+                  <span className="text-xs font-medium">{taskType.name}</span>
                 </div>
                 );
               })}
