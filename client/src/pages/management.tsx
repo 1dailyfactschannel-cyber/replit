@@ -2132,8 +2132,8 @@ function TaskTypesManagement() {
                 return (
                 <div
                   key={taskType.id}
-                  style={{ backgroundColor: colors.bg, color: colors.text }}
-                  className="h-8 px-3 rounded-sm flex items-center gap-2 transition-all cursor-pointer hover:ring-2 ring-offset-2 ring-offset-background ring-primary/20"
+                  style={{ backgroundColor: colors.bg, color: colors.text, borderColor: colors.text }}
+                  className="h-8 px-3 rounded-sm flex items-center gap-2 transition-all cursor-pointer hover:ring-2 ring-offset-2 ring-offset-background ring-primary/20 border"
                   onClick={() => openTaskTypeDialog(taskType)}
                 >
                   <span className="text-xs font-medium">{taskType.name}</span>
