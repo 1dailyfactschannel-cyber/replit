@@ -1363,7 +1363,7 @@ export async function registerRoutes(
   app.post("/api/boards/:boardId/columns", async (req, res) => {
     if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
     try {
-      const { name } = req.body;
+      const { name, color } = req.body;
       const boardId = req.params.boardId;
       
       // Get current columns to determine order
@@ -1376,7 +1376,7 @@ export async function registerRoutes(
         boardId,
         name,
         order: maxOrder + 1,
-        color: null
+        color: color || null
       });
       
       // Invalidate board cache
@@ -1400,14 +1400,14 @@ export async function registerRoutes(
     }
     
     try {
-      const { name } = req.body;
-      console.log("[API] Attempting to update column with name:", name);
+      const { name, color } = req.body;
+      console.log("[API] Attempting to update column with name:", name, "color:", color);
       
       // Get board ID before updating
       const column = await storage.db.select().from(schema.boardColumns).where(eq(schema.boardColumns.id, req.params.columnId));
       const boardId = column[0]?.boardId;
       
-      const updated = await storage.updateBoardColumn(req.params.columnId, { name });
+      const updated = await storage.updateBoardColumn(req.params.columnId, { name, color });
       console.log("[API] Column updated successfully:", updated);
       
       // Invalidate board cache

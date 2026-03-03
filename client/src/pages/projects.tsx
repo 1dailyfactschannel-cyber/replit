@@ -6,6 +6,8 @@ import {
   Shield, 
   Puzzle, 
   ChevronRight,
+  ChevronDown,
+  Columns,
   Send,
   Save,
   Loader2,
@@ -113,8 +115,31 @@ const ProjectListLoading = () => (
   </div>
 );
 
-// Function to determine column color based on column name
-const getColumnColor = (columnName: string): { bg: string; text: string; border: string; badge: string } => {
+// Function to determine column color based on column name or custom color
+const getColumnColor = (columnName: string, customColor?: string | null): { bg: string; text: string; border: string; badge: string } => {
+  // If custom color is provided from database, use it
+  if (customColor) {
+    // Map Tailwind color classes to corresponding styles
+    const colorMap: Record<string, { bg: string; text: string; border: string; badge: string }> = {
+      'bg-blue-500': { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-500', badge: 'bg-blue-100 text-blue-700' },
+      'bg-emerald-500': { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-500', badge: 'bg-emerald-100 text-emerald-700' },
+      'bg-amber-500': { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-500', badge: 'bg-amber-100 text-amber-700' },
+      'bg-rose-500': { bg: 'bg-rose-50', text: 'text-rose-700', border: 'border-rose-500', badge: 'bg-rose-100 text-rose-700' },
+      'bg-purple-500': { bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-500', badge: 'bg-purple-100 text-purple-700' },
+      'bg-indigo-500': { bg: 'bg-indigo-50', text: 'text-indigo-700', border: 'border-indigo-500', badge: 'bg-indigo-100 text-indigo-700' },
+      'bg-pink-500': { bg: 'bg-pink-50', text: 'text-pink-700', border: 'border-pink-500', badge: 'bg-pink-100 text-pink-700' },
+      'bg-slate-500': { bg: 'bg-slate-50', text: 'text-slate-700', border: 'border-slate-500', badge: 'bg-slate-100 text-slate-700' },
+    };
+    
+    return colorMap[customColor] || {
+      bg: 'bg-gray-50',
+      text: 'text-gray-700',
+      border: 'border-gray-500',
+      badge: 'bg-gray-100 text-gray-700'
+    };
+  }
+  
+  // Fallback to automatic color based on name
   const name = columnName.toLowerCase();
   
   if (name.includes('сделать') || name.includes('план') || name.includes('todo') || name.includes('to do') || name.includes('backlog')) {
@@ -324,11 +349,13 @@ interface KanbanColumnProps {
   columnId: string;
   columnIndex: number;
   tasks: any[];
-  allColumns: { id: string; name: string }[];
+  allColumns: { id: string; name: string; color?: string | null }[];
   onCreateTask: (column: string) => void;
   onTaskClick: (task: any) => void;
   onEditColumn: (columnId: string, newName: string) => void;
   onDeleteColumn: (columnId: string, targetColumnId: string) => void;
+  onOpenEditColumnDialog: (column: any) => void;
+  columnColor?: string | null;
   availableLabels?: any[];
   availablePriorities?: any[];
   availableTaskTypes?: any[];
@@ -344,11 +371,13 @@ const KanbanColumn = React.memo(({
   onTaskClick, 
   onEditColumn,
   onDeleteColumn,
+  onOpenEditColumnDialog,
+  columnColor: customColumnColor,
   availableLabels = [], 
   availablePriorities = [],
   availableTaskTypes = []
 }: KanbanColumnProps) => {
-  const columnColor = getColumnColor(column);
+  const columnColor = getColumnColor(column, customColumnColor);
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState(column);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
@@ -424,7 +453,7 @@ const KanbanColumn = React.memo(({
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-40">
-                  <DropdownMenuItem onClick={() => setIsEditing(true)}>
+                  <DropdownMenuItem onClick={() => onOpenEditColumnDialog({ id: columnId, name: column, color: undefined })}>
                     <Pencil className="w-4 h-4 mr-2" />
                     Редактировать
                   </DropdownMenuItem>
@@ -946,16 +975,16 @@ export default function Projects() {
 
   // Column mutations
   const updateColumnMutation = useMutation({
-    mutationFn: async ({ id, name }: { id: string; name: string }) => {
-      await apiRequest("PATCH", `/api/board-columns/${id}`, { name });
+    mutationFn: async ({ id, name, color }: { id: string; name: string; color?: string }) => {
+      await apiRequest("PATCH", `/api/board-columns/${id}`, { name, color });
     },
-    onSuccess: (_, { id, name }) => {
+    onSuccess: (_, { id, name, color }) => {
       queryClient.setQueryData(["/api/boards", activeBoard?.id, "full"], (oldData: any) => {
         if (!oldData) return oldData;
         return {
           ...oldData,
           columns: oldData.columns.map((col: any) => 
-            col.id === id ? { ...col, name } : col
+            col.id === id ? { ...col, name, color: color || col.color } : col
           )
         };
       });
@@ -984,8 +1013,25 @@ export default function Projects() {
     }
   });
 
-  const handleEditColumn = (columnId: string, newName: string) => {
-    updateColumnMutation.mutate({ id: columnId, name: newName });
+  const handleEditColumn = (columnId: string, newName: string, newColor?: string) => {
+    updateColumnMutation.mutate({ id: columnId, name: newName, color: newColor });
+  };
+
+  const handleOpenEditColumnDialog = (column: any) => {
+    setEditingKanbanColumn(column);
+    setEditColumnName(column.name);
+    setEditColumnColor(column.color || "");
+    setIsEditColumnOpen(true);
+  };
+
+  const handleSaveEditColumn = () => {
+    if (editingKanbanColumn && editColumnName.trim()) {
+      handleEditColumn(editingKanbanColumn.id, editColumnName.trim(), editColumnColor);
+      setIsEditColumnOpen(false);
+      setEditingKanbanColumn(null);
+      setEditColumnName("");
+      setEditColumnColor("");
+    }
   };
 
   const handleDeleteColumn = (columnId: string, targetColumnId: string) => {
@@ -1127,6 +1173,12 @@ export default function Projects() {
   // Column creation state
   const [isCreateColumnOpen, setIsCreateColumnOpen] = useState(false);
   const [newColumnName, setNewColumnName] = useState("");
+  
+  // Column editing state
+  const [isEditColumnOpen, setIsEditColumnOpen] = useState(false);
+  const [editingKanbanColumn, setEditingKanbanColumn] = useState<{ id: string; name: string; color?: string } | null>(null);
+  const [editColumnName, setEditColumnName] = useState("");
+  const [editColumnColor, setEditColumnColor] = useState("");
 
   const { data: boardData, isLoading: isLoadingBoard } = useQuery<{ columns: any[], tasks: any[] }>({
     queryKey: ["/api/boards", activeBoard?.id, "full"],
@@ -2303,11 +2355,13 @@ export default function Projects() {
                             columnId={columnData.id}
                             columnIndex={index}
                             tasks={columnTasks}
-                            allColumns={columns.map((c: any) => ({ id: c.id, name: c.name }))}
+                            allColumns={columns.map((c: any) => ({ id: c.id, name: c.name, color: c.color }))}
                             onCreateTask={handleCreateTask}
                             onTaskClick={handleTaskClick}
                             onEditColumn={handleEditColumn}
                             onDeleteColumn={handleDeleteColumn}
+                            onOpenEditColumnDialog={handleOpenEditColumnDialog}
+                            columnColor={columnData.color}
                             availableLabels={availableLabels}
                             availablePriorities={availablePriorities}
                             availableTaskTypes={availableTaskTypes}
@@ -2318,6 +2372,59 @@ export default function Projects() {
                       {/* Add Column Button */}
                       {!showAllTasks && (
                         <div className="w-80 shrink-0">
+                          {/* Edit Column Dialog */}
+                          <Dialog open={isEditColumnOpen} onOpenChange={setIsEditColumnOpen}>
+                            <DialogContent>
+                              <DialogHeader>
+                                <DialogTitle>Редактировать колонку</DialogTitle>
+                                <DialogDescription>Измените название и цвет колонки.</DialogDescription>
+                              </DialogHeader>
+                              <div className="space-y-4 py-4">
+                                <div className="space-y-2">
+                                  <Label htmlFor="edit-column-name">Название колонки</Label>
+                                  <Input
+                                    id="edit-column-name"
+                                    placeholder="Например: В тестировании"
+                                    value={editColumnName}
+                                    onChange={(e) => setEditColumnName(e.target.value)}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter' && editColumnName.trim()) {
+                                        handleSaveEditColumn();
+                                      }
+                                    }}
+                                  />
+                                </div>
+                                <div className="space-y-2">
+                                  <Label>Цвет колонки</Label>
+                                  <div className="flex flex-wrap gap-2">
+                                    {[
+                                      "bg-blue-500", "bg-emerald-500", "bg-amber-500", "bg-rose-500",
+                                      "bg-purple-500", "bg-indigo-500", "bg-pink-500", "bg-slate-500"
+                                    ].map((color) => (
+                                      <button
+                                        key={color}
+                                        onClick={() => setEditColumnColor(color)}
+                                        className={cn(
+                                          "w-6 h-6 rounded-full transition-all ring-offset-2 ring-offset-background relative",
+                                          color,
+                                          editColumnColor === color
+                                            ? "ring-2 ring-primary scale-110" 
+                                            : "hover:scale-110 opacity-70 hover:opacity-100"
+                                        )}
+                                      />
+                                    ))}
+                                  </div>
+                                </div>
+                              </div>
+                              <DialogFooter>
+                                <Button variant="outline" onClick={() => setIsEditColumnOpen(false)}>Отмена</Button>
+                                <Button onClick={handleSaveEditColumn} disabled={!editColumnName.trim()}>
+                                  Сохранить
+                                </Button>
+                              </DialogFooter>
+                            </DialogContent>
+                          </Dialog>
+                          
                           <Dialog open={isCreateColumnOpen} onOpenChange={setIsCreateColumnOpen}>
                             <DialogTrigger asChild>
                               <button className="w-full h-12 border-2 border-dashed border-border rounded-xl flex items-center justify-center gap-2 text-muted-foreground hover:text-foreground hover:border-primary/50 hover:bg-primary/5 transition-all group">
