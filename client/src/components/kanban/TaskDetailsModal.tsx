@@ -2277,7 +2277,6 @@ export function TaskDetailsModal({
                                   style={{ backgroundColor: colors.bg, color: colors.text }}
                                   onClick={() => handleAddLabel(label.name)}
                                 >
-                                  <span className="w-1.5 h-1.5 rounded-full mr-1.5" style={{ backgroundColor: colors.text }} />
                                   {label.name}
                                 </Badge>
                               );
@@ -2316,7 +2315,6 @@ export function TaskDetailsModal({
                         onClick={() => handleRemoveLabel(label.name)}
                         title="Кликните для удаления"
                       >
-                        <span className="w-1.5 h-1.5 rounded-full mr-1.5" style={{ backgroundColor: colors.text }} />
                         {label.name}
                       </Badge>
                     );
