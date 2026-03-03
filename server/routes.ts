@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { getStorage, getReportOverview, getReportWorkspaces, getReportProjects, getReportBoards, getReportUsers } from "./postgres-storage";
-import { insertSiteSettingsSchema, insertUserSchema, insertNotificationSchema, insertLabelSchema, priorities } from "@shared/schema";
+import { insertSiteSettingsSchema, insertUserSchema, insertNotificationSchema, insertLabelSchema, priorities, taskTypes } from "@shared/schema";
 import * as schema from "@shared/schema";
 import { setupWebSockets } from "./socket";
 import { Server as SocketIOServer } from "socket.io";
@@ -870,7 +870,7 @@ export async function registerRoutes(
       
       // Удаляем поля, которых нет в таблице tasks (обогащенные данные)
       const allowedFields = [
-        'title', 'description', 'status', 'priority', 'priorityId', 'type', 
+        'title', 'description', 'status', 'priority', 'priorityId', 'taskTypeId', 'type', 
         'storyPoints', 'startDate', 'dueDate', 'completedAt', 
         'order', 'columnId', 'boardId', 'assigneeId', 'reporterId',
         'parentId', 'tags', 'attachments', 'number', 'archived'
@@ -1231,7 +1231,7 @@ export async function registerRoutes(
       if (columns.length === 0) return res.status(400).json({ message: "Board has no columns" });
 
       // Whitelist allowed fields for security (including validated title)
-      const allowedFields = ['title', 'description', 'status', 'priorityId', 'type', 'storyPoints', 'startDate', 'dueDate', 'columnId', 'assigneeId', 'tags', 'parentId'];
+      const allowedFields = ['title', 'description', 'status', 'priorityId', 'taskTypeId', 'type', 'storyPoints', 'startDate', 'dueDate', 'columnId', 'assigneeId', 'tags', 'parentId'];
       const sanitizedBody: Record<string, any> = { title: req.body.title.trim() };
       
       for (const field of allowedFields.slice(1)) {
@@ -1475,6 +1475,41 @@ export async function registerRoutes(
   app.delete("/api/priorities/:id", async (req, res) => {
     const { id } = req.params;
     await storage.db.delete(priorities).where(eq(priorities.id, id));
+    res.status(204).send();
+  });
+
+  // Task Types API
+  app.get("/api/task-types", async (req, res) => {
+    const taskTypesList = await storage.db.select().from(taskTypes);
+    res.json(taskTypesList);
+  });
+
+  app.post("/api/task-types", async (req, res) => {
+    const { name, color } = req.body;
+    try {
+      const newTaskType = await storage.db.insert(taskTypes).values({ name, color }).returning();
+      res.status(201).json(newTaskType[0]);
+    } catch (error: any) {
+      if (error.code === '23505' || error.constraint_name === 'task_types_name_unique') {
+        return res.status(409).json({ 
+          message: "Task type with this name already exists",
+          error: "DUPLICATE_TASK_TYPE_NAME"
+        });
+      }
+      res.status(500).json({ message: "Failed to create task type" });
+    }
+  });
+
+  app.put("/api/task-types/:id", async (req, res) => {
+    const { id } = req.params;
+    const { name, color } = req.body;
+    const updatedTaskType = await storage.db.update(taskTypes).set({ name, color }).where(eq(taskTypes.id, id)).returning();
+    res.json(updatedTaskType[0]);
+  });
+
+  app.delete("/api/task-types/:id", async (req, res) => {
+    const { id } = req.params;
+    await storage.db.delete(taskTypes).where(eq(taskTypes.id, id));
     res.status(204).send();
   });
 

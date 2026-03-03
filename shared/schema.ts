@@ -176,6 +176,7 @@ export const tasks = pgTable("tasks", {
   reporterId: uuid("reporter_id").notNull().references(() => users.id),
   status: text("status").default("В планах"), // todo, in_progress, review, done
   priorityId: uuid("priority_id").references(() => priorities.id), // New foreign key to priorities table
+  taskTypeId: uuid("task_type_id").references(() => taskTypes.id), // New foreign key to task_types table
   type: text("type").default("task"), // task, bug, feature, story
   storyPoints: integer("story_points"),
   startDate: timestamp("start_date"),
@@ -194,6 +195,7 @@ export const tasks = pgTable("tasks", {
   columnIdIdx: index("tasks_column_id_idx").on(table.columnId),
   assigneeIdIdx: index("tasks_assignee_id_idx").on(table.assigneeId),
   priorityIdIdx: index("tasks_priority_id_idx").on(table.priorityId),
+  taskTypeIdIdx: index("tasks_task_type_id_idx").on(table.taskTypeId),
   reporterIdIdx: index("tasks_reporter_id_idx").on(table.reporterId),
   boardColumnOrderIdx: index("tasks_board_column_order_idx").on(table.boardId, table.columnId, table.order),
 }));
@@ -421,6 +423,21 @@ export const insertPrioritySchema = createInsertSchema(priorities).pick({
 
 export type Priority = typeof priorities.$inferSelect;
 export type InsertPriority = z.infer<typeof insertPrioritySchema>;
+
+// Task types table
+export const taskTypes = pgTable("task_types", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  name: text("name").notNull().unique(),
+  color: text("color").default("bg-blue-500"),
+});
+
+export const insertTaskTypeSchema = createInsertSchema(taskTypes).pick({
+  name: true,
+  color: true,
+});
+
+export type TaskType = typeof taskTypes.$inferSelect;
+export type InsertTaskType = z.infer<typeof insertTaskTypeSchema>;
 
 // Chat folders table
 export const labels = pgTable("labels", {

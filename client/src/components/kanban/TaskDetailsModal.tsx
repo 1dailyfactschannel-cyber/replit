@@ -554,6 +554,10 @@ export function TaskDetailsModal({
     queryKey: ["/api/priorities"],
   });
 
+  const { data: availableTaskTypes = [] } = useQuery<any[]>({
+    queryKey: ["/api/task-types"],
+  });
+
   // Sync server comments only when they actually change
   const prevCommentsRef = useRef<any[]>([]);
   useEffect(() => {
@@ -2187,6 +2191,42 @@ export function TaskDetailsModal({
                         <div className="flex items-center gap-3">
                           <div className={cn("w-3 h-3 rounded-full", priority.color)} />
                           <span className="text-foreground font-medium">{priority.name}</span>
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Task Type Section */}
+              <div className="space-y-1.5">
+                <Select 
+                  value={safeTask.taskTypeId || ""}
+                  onValueChange={(value) => handleUpdate({ taskTypeId: value || null })}
+                >
+                  <SelectTrigger className="w-full h-10 bg-secondary/15 border-none rounded-lg px-3 hover:bg-secondary/25 transition-all font-bold text-[13px]">
+                    <div className="flex items-center gap-3">
+                      {availableTaskTypes.find(t => t.id === safeTask.taskTypeId) ? (
+                        <>
+                          <div className={cn("w-3 h-3 rounded-full", availableTaskTypes.find(t => t.id === safeTask.taskTypeId)?.color)} />
+                          <span className="text-foreground font-medium">
+                            {availableTaskTypes.find(t => t.id === safeTask.taskTypeId)?.name}
+                          </span>
+                        </>
+                      ) : (
+                        <>
+                          <span className="w-5 h-5" />
+                          <span className="text-foreground/70">Тип задачи</span>
+                        </>
+                      )}
+                    </div>
+                  </SelectTrigger>
+                  <SelectContent className="rounded-xl min-w-[220px]">
+                    {availableTaskTypes.map((taskType: any) => (
+                      <SelectItem key={taskType.id} value={taskType.id} className="text-[14px] py-3">
+                        <div className="flex items-center gap-3">
+                          <div className={cn("w-3 h-3 rounded-full", taskType.color)} />
+                          <span className="text-foreground font-medium">{taskType.name}</span>
                         </div>
                       </SelectItem>
                     ))}

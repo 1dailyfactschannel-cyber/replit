@@ -136,7 +136,7 @@ const getColumnColor = (columnName: string): { bg: string; text: string; border:
 };
 
 // Memoized TaskCard with custom comparison for performance
-const TaskCard = React.memo(({ task, index, onClick, columnColor, availableLabels = [], availablePriorities = [] }: { task: any, index: number, onClick: (task: any) => void, columnColor: { bg: string; text: string; border: string; badge: string }, availableLabels?: any[], availablePriorities?: any[] }) => {
+const TaskCard = React.memo(({ task, index, onClick, columnColor, availableLabels = [], availablePriorities = [], availableTaskTypes = [] }: { task: any, index: number, onClick: (task: any) => void, columnColor: { bg: string; text: string; border: string; badge: string }, availableLabels?: any[], availablePriorities?: any[], availableTaskTypes?: any[] }) => {
   // Preload avatar image for better perceived performance
   // const avatarSrc = task.assignee?.avatar;
   
@@ -230,6 +230,31 @@ const TaskCard = React.memo(({ task, index, onClick, columnColor, availableLabel
             </div>
           )}
 
+          {/* Task Type */}
+          {task.taskTypeId && availableTaskTypes.length > 0 && (() => {
+            const taskType = availableTaskTypes.find((t: any) => t.id === task.taskTypeId);
+            if (!taskType) return null;
+            const getTypeColors = (color: string) => {
+              if (color.includes('red')) return { bg: '#fef2f2', text: '#dc2626' };
+              if (color.includes('violet') || color.includes('purple')) return { bg: '#f3e8ff', text: '#9333ea' };
+              if (color.includes('orange')) return { bg: '#ffedd5', text: '#ea580c' };
+              if (color.includes('blue')) return { bg: '#dbeafe', text: '#2563eb' };
+              if (color.includes('green')) return { bg: '#dcfce7', text: '#16a34a' };
+              return { bg: '#f1f5f9', text: '#475569' };
+            };
+            const typeColors = getTypeColors(taskType.color || '');
+            return (
+              <div className="mb-2">
+                <Badge
+                  style={{ backgroundColor: typeColors.bg, color: typeColors.text }}
+                  className="px-2 py-0.5 text-[10px] font-medium border-none rounded-sm pointer-events-none"
+                >
+                  {taskType.name}
+                </Badge>
+              </div>
+            );
+          })()}
+
           <div className="flex items-center justify-between">
             {task.assignee ? (
               <div className="flex items-center gap-2">
@@ -280,6 +305,7 @@ interface KanbanColumnProps {
   onDeleteColumn: (columnId: string, targetColumnId: string) => void;
   availableLabels?: any[];
   availablePriorities?: any[];
+  availableTaskTypes?: any[];
 }
 
 const KanbanColumn = React.memo(({ 
@@ -293,7 +319,8 @@ const KanbanColumn = React.memo(({
   onEditColumn,
   onDeleteColumn,
   availableLabels = [], 
-  availablePriorities = [] 
+  availablePriorities = [],
+  availableTaskTypes = []
 }: KanbanColumnProps) => {
   const columnColor = getColumnColor(column);
   const [isEditing, setIsEditing] = useState(false);
@@ -445,6 +472,7 @@ const KanbanColumn = React.memo(({
                 columnColor={columnColor}
                 availableLabels={availableLabels}
                 availablePriorities={availablePriorities}
+                availableTaskTypes={availableTaskTypes}
               />
             ))}
             {taskProvided.placeholder}
@@ -512,53 +540,7 @@ const ProjectItem = React.memo(({
             )} />
             <span className="truncate text-left">{project.name}</span>
           </div>
-          
-          <div className="mt-1.5 ml-5.5 px-2">
-            <div className="flex items-center justify-between text-[10px] text-foreground mb-1">
-              <span>Прогресс</span>
-              <span>{project.progress || 0}%</span>
-            </div>
-            <div className="h-1 w-full bg-secondary rounded-full overflow-hidden">
-              <div 
-                className="h-full bg-primary transition-all duration-500" 
-                style={{ width: `${project.progress || 0}%` }}
-              />
-            </div>
-          </div>
         </div>
-        
-        {(onEdit || onDelete) && (
-          <div className="absolute right-2 top-1/2 -translate-y-1/2 opacity-0 group-hover/project:opacity-100 transition-opacity">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button 
-                  type="button"
-                  className="p-1 rounded hover:bg-secondary/70 transition-colors"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <MoreVertical className="w-4 h-4 text-muted-foreground" />
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-40">
-                {onEdit && (
-                  <DropdownMenuItem onClick={() => onEdit(project)}>
-                    <Pencil className="w-4 h-4 mr-2" />
-                    Редактировать
-                  </DropdownMenuItem>
-                )}
-                {onDelete && (
-                  <DropdownMenuItem 
-                    onClick={() => onDelete(project.id)}
-                    className="text-destructive focus:text-destructive"
-                  >
-                    <Trash2 className="w-4 h-4 mr-2" />
-                    Удалить
-                  </DropdownMenuItem>
-                )}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-        )}
       </div>
     </div>
   );
@@ -593,6 +575,7 @@ export default function Projects() {
   const [editingProject, setEditingProject] = useState<any>(null);
   const [isEditProjectOpen, setIsEditProjectOpen] = useState(false);
   const [deletingProjectId, setDeletingProjectId] = useState<string | null>(null);
+  const [deletingBoardId, setDeletingBoardId] = useState<string | null>(null);
   
   // Search with debounce for better performance
   const [projectSearchQuery, setProjectSearchQuery] = useState("");
@@ -646,6 +629,11 @@ export default function Projects() {
 
   const { data: availablePriorities = [] } = useQuery<any[]>({
     queryKey: ["/api/priorities"],
+    staleTime: 1000 * 60 * 60, // 1 hour
+  });
+
+  const { data: availableTaskTypes = [] } = useQuery<any[]>({
+    queryKey: ["/api/task-types"],
     staleTime: 1000 * 60 * 60, // 1 hour
   });
 
@@ -1074,7 +1062,25 @@ export default function Projects() {
       toast.error("Нельзя удалить последнюю доску");
       return;
     }
-    deleteBoardMutation.mutate(id);
+    setDeletingBoardId(id);
+  };
+
+  const handleConfirmDeleteBoard = () => {
+    if (!deletingBoardId) return;
+    deleteBoardMutation.mutate(deletingBoardId);
+    setDeletingBoardId(null);
+  };
+
+  const handleArchiveBoardProjects = () => {
+    if (!deletingBoardId || !activeProject) return;
+    // Архивируем текущий проект
+    updateProjectMutation.mutate({
+      id: activeProject.id,
+      data: { archived: true }
+    });
+    // Удаляем доску
+    deleteBoardMutation.mutate(deletingBoardId);
+    setDeletingBoardId(null);
   };
 
   const handleCreateBoard = () => {
@@ -1718,6 +1724,54 @@ export default function Projects() {
                           </div>
                         ))
                       )}
+
+                      {/* Dialog подтверждения удаления доски */}
+                      <Dialog open={!!deletingBoardId} onOpenChange={(open) => !open && setDeletingBoardId(null)}>
+                        <DialogContent>
+                          <DialogHeader>
+                            <DialogTitle>Удалить доску?</DialogTitle>
+                            <DialogDescription className="text-base">
+                              При удалении доски <strong>"{boards.find(b => b.id === deletingBoardId)?.name}"</strong> будут удалены все связанные проекты.
+                            </DialogDescription>
+                          </DialogHeader>
+                          <div className="py-4 space-y-3">
+                            <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                              <p className="text-sm text-amber-800">
+                                <strong>Внимание:</strong> Все проекты на этой доске будут удалены безвозвратно.
+                              </p>
+                            </div>
+                            <p className="text-sm text-muted-foreground">
+                              Вместо удаления вы можете перенести текущий проект в архив.
+                            </p>
+                          </div>
+                          <DialogFooter className="flex flex-col gap-2">
+                            <Button 
+                              variant="outline" 
+                              className="w-full"
+                              onClick={handleConfirmDeleteBoard}
+                              disabled={deleteBoardMutation.isPending}
+                            >
+                              {deleteBoardMutation.isPending && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
+                              Удалить всё
+                            </Button>
+                            <Button 
+                              className="w-full bg-amber-600 hover:bg-amber-700"
+                              onClick={handleArchiveBoardProjects}
+                              disabled={updateProjectMutation.isPending || deleteBoardMutation.isPending}
+                            >
+                              {(updateProjectMutation.isPending || deleteBoardMutation.isPending) && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
+                              Перенести проект в архив и удалить доску
+                            </Button>
+                            <Button 
+                              variant="ghost" 
+                              className="w-full"
+                              onClick={() => setDeletingBoardId(null)}
+                            >
+                              Отмена
+                            </Button>
+                          </DialogFooter>
+                        </DialogContent>
+                      </Dialog>
                       
                       <Dialog open={isCreateBoardOpen} onOpenChange={setIsCreateBoardOpen}>
                         <DialogTrigger asChild>
@@ -2230,6 +2284,7 @@ export default function Projects() {
                             onDeleteColumn={handleDeleteColumn}
                             availableLabels={availableLabels}
                             availablePriorities={availablePriorities}
+                            availableTaskTypes={availableTaskTypes}
                           />
                         );
                       })}
