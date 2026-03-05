@@ -807,8 +807,8 @@ export async function registerRoutes(
       const prioritiesList = await storage.db.select().from(schema.priorities);
       const taskTypesList = await storage.db.select().from(schema.taskTypes);
       
-      const prioritiesMap = new Map(prioritiesList.map((p: any) => [p.id, p.name.toLowerCase()]));
-      const taskTypesMap = new Map(taskTypesList.map((t: any) => [t.id, t.name]));
+      const prioritiesMap = new Map(prioritiesList.map((p: any) => [p.id, { name: p.name.toLowerCase(), color: p.color }]));
+      const taskTypesMap = new Map(taskTypesList.map((t: any) => [t.id, { name: t.name, color: t.color }]));
       
       // Enrich tasks with board, project, column, priority, and task type info
       const enrichedTasks = await Promise.all(tasks.map(async (t) => {
@@ -821,19 +821,21 @@ export async function registerRoutes(
           column = await storage.getColumn(t.task.columnId);
         }
         
-        // Get priority name from mapping
-        const priority = t.task.priorityId ? prioritiesMap.get(t.task.priorityId) : null;
+        // Get priority info from mapping
+        const priorityInfo = t.task.priorityId ? prioritiesMap.get(t.task.priorityId) : null;
         
-        // Get task type name from mapping
-        const taskType = t.task.taskTypeId ? taskTypesMap.get(t.task.taskTypeId) : null;
+        // Get task type info from mapping
+        const taskTypeInfo = t.task.taskTypeId ? taskTypesMap.get(t.task.taskTypeId) : null;
         
         return {
           ...t.task,
           board: t.board,
           project: t.project,
           column: column,
-          priority: priority,
-          taskType: taskType,
+          priority: priorityInfo?.name || null,
+          priorityColor: priorityInfo?.color || null,
+          taskType: taskTypeInfo?.name || null,
+          taskTypeColor: taskTypeInfo?.color || null,
           assignee: formatUserBasic(assignee),
           creator: reporter ? { ...formatUserBasic(reporter), date: t.task.createdAt } : null
         };

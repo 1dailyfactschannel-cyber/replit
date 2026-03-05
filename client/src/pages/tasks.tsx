@@ -424,6 +424,9 @@ export default function Tasks() {
                     <TableCell>
                       <div className="flex items-center gap-2">
                         <div className={`w-1.5 h-1.5 rounded-full ${
+                          task.priorityColor?.includes('rose') || task.priorityColor?.includes('red') ? "bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.4)]" :
+                          task.priorityColor?.includes('amber') || task.priorityColor?.includes('orange') ? "bg-amber-500" :
+                          task.priorityColor?.includes('emerald') || task.priorityColor?.includes('green') ? "bg-emerald-500" :
                           task.priority === "high" ? "bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.4)]" :
                           task.priority === "medium" ? "bg-amber-500" : "bg-emerald-500"
                         }`} />
