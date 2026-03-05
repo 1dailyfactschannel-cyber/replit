@@ -803,19 +803,41 @@ export async function registerRoutes(
         users.forEach(user => usersMap.set(user.id, user));
       }
       
-      // Enrich tasks with board and project info
-      const enrichedTasks = tasks.map((t) => {
+      // Fetch all priorities and task types for mapping
+      const prioritiesList = await storage.db.select().from(schema.priorities);
+      const taskTypesList = await storage.db.select().from(schema.taskTypes);
+      
+      const prioritiesMap = new Map(prioritiesList.map((p: any) => [p.id, p.name.toLowerCase()]));
+      const taskTypesMap = new Map(taskTypesList.map((t: any) => [t.id, t.name]));
+      
+      // Enrich tasks with board, project, column, priority, and task type info
+      const enrichedTasks = await Promise.all(tasks.map(async (t) => {
         const assignee = t.task.assigneeId ? usersMap.get(t.task.assigneeId) : null;
         const reporter = t.task.reporterId ? usersMap.get(t.task.reporterId) : null;
+        
+        // Fetch column info
+        let column = null;
+        if (t.task.columnId) {
+          column = await storage.getColumn(t.task.columnId);
+        }
+        
+        // Get priority name from mapping
+        const priority = t.task.priorityId ? prioritiesMap.get(t.task.priorityId) : null;
+        
+        // Get task type name from mapping
+        const taskType = t.task.taskTypeId ? taskTypesMap.get(t.task.taskTypeId) : null;
         
         return {
           ...t.task,
           board: t.board,
           project: t.project,
+          column: column,
+          priority: priority,
+          taskType: taskType,
           assignee: formatUserBasic(assignee),
-          creator: reporter ? { ...formatUserBasic(reporter), date: t.task.createdAt } : null,
+          creator: reporter ? { ...formatUserBasic(reporter), date: t.task.createdAt } : null
         };
-      });
+      }));
       
       res.json(enrichedTasks);
     } catch (error) {
