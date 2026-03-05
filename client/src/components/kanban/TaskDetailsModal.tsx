@@ -60,6 +60,7 @@ import {
   Save,
   Archive,
   RotateCcw,
+  ListChecks,
 } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { ru } from "date-fns/locale";
@@ -612,6 +613,8 @@ export function TaskDetailsModal({
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [showSubtasks, setShowSubtasks] = useState(false);
+  const [showAttachments, setShowAttachments] = useState(false);
 
   // Update mutation for database synchronization
   const updateTaskMutation = useMutation({
@@ -1310,7 +1313,7 @@ export function TaskDetailsModal({
   if (updateTaskMutation.isPending && !task) {
     return (
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="max-w-5xl p-0 overflow-hidden bg-background border-none shadow-2xl h-[90vh] flex items-center justify-center">
+        <DialogContent className="max-w-5xl p-0 overflow-hidden bg-background border-none shadow-2xl h-[95vh] flex items-center justify-center">
           <DialogHeader className="sr-only">
             <DialogTitle>Загрузка задачи</DialogTitle>
             <DialogDescription>Пожалуйста, подождите, пока загружаются детали задачи.</DialogDescription>
@@ -1509,6 +1512,7 @@ export function TaskDetailsModal({
               </div>
 
               {/* Subtasks Section */}
+              {showSubtasks && (
               <div className="space-y-3">
                 <div className="flex items-center justify-between group">
                   <div className="flex items-center gap-2 text-muted-foreground/80">
@@ -1614,7 +1618,10 @@ export function TaskDetailsModal({
                 )}
               </div>
 
+              )}
+
               {/* Attachments Section */}
+              {showAttachments && (
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2 text-muted-foreground/80">
@@ -1693,6 +1700,7 @@ export function TaskDetailsModal({
                   ))}
                 </div>
               </div>
+              )}
 
               {/* Activity Section / Tabs */}
               <div className={cn("space-y-3", attachments.length > 0 ? "pt-3" : "pt-1")}>
@@ -2013,10 +2021,22 @@ export function TaskDetailsModal({
 
                 {[
                   { 
+                    icon: ListChecks, 
+                    label: "Подзадачи", 
+                    value: localSubtasks.length > 0 ? `${localSubtasks.filter(s => s.completed).length}/${localSubtasks.length}` : "0",
+                    isSubtasks: true 
+                  },
+                  { 
                     icon: Eye, 
                     label: "Наблюдатели", 
                     value: localObservers.length > 0 ? `${localObservers.length}` : "0",
                     isObservers: true 
+                  },
+                  { 
+                    icon: Paperclip, 
+                    label: "Вложения", 
+                    value: attachments.length > 0 ? `${attachments.length}` : "0",
+                    isAttachments: true 
                   },
                    {
                       icon: Calendar, 
@@ -2031,7 +2051,33 @@ export function TaskDetailsModal({
                     },
                 ].map((item, idx) => (
                   <div key={idx}>
-                    {(item as any).isObservers ? (
+                    {(item as any).isSubtasks ? (
+                      <button 
+                        type="button" 
+                        onClick={() => setShowSubtasks(!showSubtasks)}
+                        className={cn(
+                          "flex items-center gap-2.5 p-2 rounded-lg transition-colors w-full text-left",
+                          showSubtasks ? "bg-secondary/25" : "bg-secondary/15 hover:bg-secondary/25"
+                        )}
+                      >
+                        <item.icon className={cn("w-3.5 h-3.5 shrink-0", showSubtasks ? "text-primary" : "text-muted-foreground/60")} />
+                        <span className={cn("text-[12px] font-bold flex-1 truncate", showSubtasks ? "text-primary" : "text-foreground/70")}>{item.label}</span>
+                        <span className="text-[10px] font-bold text-muted-foreground/50 shrink-0">{item.value}</span>
+                      </button>
+                    ) : (item as any).isAttachments ? (
+                      <button 
+                        type="button" 
+                        onClick={() => setShowAttachments(!showAttachments)}
+                        className={cn(
+                          "flex items-center gap-2.5 p-2 rounded-lg transition-colors w-full text-left",
+                          showAttachments ? "bg-secondary/25" : "bg-secondary/15 hover:bg-secondary/25"
+                        )}
+                      >
+                        <item.icon className={cn("w-3.5 h-3.5 shrink-0", showAttachments ? "text-primary" : "text-muted-foreground/60")} />
+                        <span className={cn("text-[12px] font-bold flex-1 truncate", showAttachments ? "text-primary" : "text-foreground/70")}>{item.label}</span>
+                        <span className="text-[10px] font-bold text-muted-foreground/50 shrink-0">{item.value}</span>
+                      </button>
+                    ) : (item as any).isObservers ? (
                       <div className="flex flex-col gap-2">
                         <Popover>
                           <PopoverTrigger asChild>
@@ -2040,9 +2086,9 @@ export function TaskDetailsModal({
                               aria-label="Наблюдатели" 
                               className="flex items-center gap-2.5 p-2 rounded-lg bg-secondary/15 hover:bg-secondary/25 transition-colors group cursor-pointer border border-transparent hover:border-border/20 w-full text-left"
                             >
-                              <item.icon className="w-3.5 h-3.5 text-muted-foreground/60" />
-                              <span className="text-[12px] font-bold text-foreground/70 flex-1">{item.label}</span>
-                              <span className="text-[10px] font-bold text-muted-foreground/50">{localObservers.length}</span>
+                              <item.icon className="w-3.5 h-3.5 shrink-0 text-muted-foreground/60" />
+                              <span className="text-[12px] font-bold text-foreground/70 flex-1 truncate">{item.label}</span>
+                              <span className="text-[10px] font-bold text-muted-foreground/50 shrink-0">{localObservers.length}</span>
                             </button>
                           </PopoverTrigger>
                           <PopoverContent className="w-64 p-0 rounded-xl overflow-hidden" align="end" style={{ zIndex: 9999, pointerEvents: 'auto' }}>
@@ -2095,9 +2141,9 @@ export function TaskDetailsModal({
                             aria-label="Дата"
                             className="flex items-center gap-2.5 p-2 rounded-lg bg-secondary/15 hover:bg-secondary/25 transition-colors group cursor-pointer border border-transparent hover:border-border/20 w-full text-left"
                           >
-                            <item.icon className="w-3.5 h-3.5 text-muted-foreground/60" />
-                            <span className="text-[12px] font-bold text-foreground/70 flex-1">{item.label}</span>
-                            <span className="text-[10px] font-bold text-muted-foreground/50">{item.value}</span>
+                            <item.icon className="w-3.5 h-3.5 shrink-0 text-muted-foreground/60" />
+                            <span className="text-[12px] font-bold text-foreground/70 flex-1 truncate">{item.label}</span>
+                            <span className="text-[10px] font-bold text-muted-foreground/50 shrink-0">{item.value}</span>
                           </button>
                         </PopoverTrigger>
                         <PopoverContent className="w-auto p-3 rounded-xl" align="end" style={{ zIndex: 9999, pointerEvents: 'auto' }}>
@@ -2147,11 +2193,11 @@ export function TaskDetailsModal({
                       </Popover>
                     ) : (
                       <div 
-                        className="flex items-center gap-2.5 p-2 rounded-lg bg-secondary/15 hover:bg-secondary/25 transition-colors group cursor-pointer border border-transparent hover:border-border/20"
+                        className="flex items-center gap-2.5 p-2 rounded-lg bg-secondary/15 hover:bg-secondary/25 transition-colors group cursor-pointer border border-transparent hover:border-border/20 w-full text-left"
                       >
-                        <item.icon className="w-3.5 h-3.5 text-muted-foreground/60" />
-                        <span className="text-[12px] font-bold text-foreground/70 flex-1">{item.label}</span>
-                        <div className="flex items-center gap-1.5">
+                        <item.icon className="w-3.5 h-3.5 shrink-0 text-muted-foreground/60" />
+                        <span className="text-[12px] font-bold text-foreground/70 flex-1 truncate">{item.label}</span>
+                        <div className="flex items-center gap-1.5 shrink-0">
                           <span className="text-[10px] font-bold text-muted-foreground/50">{item.value}</span>
                         </div>
                       </div>
@@ -2164,7 +2210,8 @@ export function TaskDetailsModal({
 
               {/* Priority Section */}
               <div className="space-y-1.5">
-                <Select 
+                <label className="text-[10px] font-semibold text-muted-foreground/60 uppercase tracking-wider">Приоритет</label>
+                <Select
                   value={safeTask.priorityId}
                   onValueChange={(value) => handleUpdate({ priorityId: value })}
                 >
@@ -2200,7 +2247,8 @@ export function TaskDetailsModal({
 
               {/* Task Type Section */}
               <div className="space-y-1.5">
-                <Select 
+                <label className="text-[10px] font-semibold text-muted-foreground/60 uppercase tracking-wider">Тип задачи</label>
+                <Select
                   value={safeTask.taskTypeId || ""}
                   onValueChange={(value) => handleUpdate({ taskTypeId: value || null })}
                 >
@@ -2281,7 +2329,7 @@ export function TaskDetailsModal({
                                 </Badge>
                               );
                             })
-                          ) : (
+                    ) : (
                             <span className="text-xs text-muted-foreground">Нет доступных меток</span>
                           )}
                         </div>
