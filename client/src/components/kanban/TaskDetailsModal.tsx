@@ -66,6 +66,7 @@ import { format, parseISO } from "date-fns";
 import { ru } from "date-fns/locale";
 import { Calendar as CalendarComponent } from "@/components/ui/calendar";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { getDisplayNameByStatus } from "@shared/column-status-mapping";
 import { apiRequest } from "@/lib/queryClient";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -480,8 +481,10 @@ export function TaskDetailsModal({
   // Local state for immediate UI updates
   const [localAssignee, setLocalAssignee] = useState<{ id?: string; name: string; avatar?: string } | null>(null);
   const [localDueDate, setLocalDueDate] = useState<string | null>(null);
-  // Initialize localStatus with task status from props
-  const [localStatus, setLocalStatus] = useState<string>(task?.status || "");
+  // Initialize localStatus with task status from props (use column name directly)
+  const [localStatus, setLocalStatus] = useState<string>(() => {
+    return task?.status || "В планах";
+  });
   
   // Use localStatus directly for display
   const currentStatus = localStatus || "В планах";
@@ -504,13 +507,11 @@ export function TaskDetailsModal({
     }
   }, [effectiveTask?.dueDate]);
 
-  // Sync local status with task data
+  // Sync local status with task data (use status directly from task)
   useEffect(() => {
-    // Sync from task prop first (from parent/board), then fallback to effectiveTask
-    if (task?.status) {
-      setLocalStatus(task.status);
-    } else if (effectiveTask?.status) {
-      setLocalStatus(effectiveTask.status);
+    const rawStatus = task?.status || effectiveTask?.status;
+    if (rawStatus) {
+      setLocalStatus(rawStatus);
     }
   }, [task?.status, effectiveTask?.status]);
 
@@ -701,6 +702,8 @@ export function TaskDetailsModal({
       const matchingColumn = boardData.columns.find((col: any) => col.name === updates.status);
       if (matchingColumn) {
         newDisplayData.columnId = matchingColumn.id;
+        // Optimistically update localStatus for immediate UI feedback
+        setLocalStatus(updates.status);
       }
     }
 

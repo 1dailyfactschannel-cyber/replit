@@ -1153,7 +1153,7 @@ export class PostgresStorage {
       // Execute raw SQL for bulk update (most efficient)
       await this.db.execute(sql`
         UPDATE tasks 
-        SET order = CASE ${sql.raw(whenClauses)} END,
+        SET "order" = CASE ${sql.raw(whenClauses)} END,
             updated_at = NOW()
         WHERE id IN (${sql.join(taskIds.map(id => sql`${id}::uuid`), sql`, `)})
       `);
@@ -1693,14 +1693,19 @@ export class PostgresStorage {
   }[]): Promise<void> {
     if (entries.length === 0) return;
     try {
-      const values = entries.map(entry => ({
-        taskId: entry.taskId,
-        userId: entry.userId || null,
-        action: entry.action,
-        fieldName: entry.fieldName || null,
-        oldValue: entry.oldValue || null,
-        newValue: entry.newValue || null,
-      }));
+      const values = entries
+        .filter(entry => entry.userId)
+        .map(entry => ({
+          taskId: entry.taskId,
+          userId: entry.userId!,
+          action: entry.action,
+          fieldName: entry.fieldName || null,
+          oldValue: entry.oldValue || null,
+          newValue: entry.newValue || null,
+        }));
+      
+      if (values.length === 0) return;
+      
       await this.db.insert(schema.taskHistory).values(values);
     } catch (error) {
       console.error("Error adding task history batch:", error);

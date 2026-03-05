@@ -376,6 +376,7 @@ export const insertTaskSchema = createInsertSchema(tasks).pick({
   reporterId: true,
   status: true,
   priorityId: true,
+  taskTypeId: true,
   type: true,
   storyPoints: true,
   startDate: true,
@@ -383,6 +384,7 @@ export const insertTaskSchema = createInsertSchema(tasks).pick({
   parentId: true,
   tags: true,
   attachments: true,
+  archived: true,
 });
 
 export const insertSiteSettingsSchema = createInsertSchema(siteSettings).pick({

@@ -314,11 +314,12 @@ const TaskCard = React.memo(({ task, index, onClick, columnColor, availableLabel
               const taskType = availableTaskTypes.find((t: any) => t.id === task.taskTypeId);
               if (!taskType) return null;
               const getTypeColors = (color: string) => {
-                if (color.includes('red')) return { bg: '#fef2f2', text: '#dc2626' };
-                if (color.includes('violet') || color.includes('purple')) return { bg: '#f3e8ff', text: '#9333ea' };
-                if (color.includes('orange')) return { bg: '#ffedd5', text: '#ea580c' };
+                if (color.includes('red') || color.includes('rose')) return { bg: '#fef2f2', text: '#dc2626' };
+                if (color.includes('purple') || color.includes('violet') || color.includes('indigo')) return { bg: '#f3e8ff', text: '#9333ea' };
+                if (color.includes('orange') || color.includes('amber')) return { bg: '#ffedd5', text: '#ea580c' };
                 if (color.includes('blue')) return { bg: '#dbeafe', text: '#2563eb' };
-                if (color.includes('green')) return { bg: '#dcfce7', text: '#16a34a' };
+                if (color.includes('green') || color.includes('emerald')) return { bg: '#dcfce7', text: '#16a34a' };
+                if (color.includes('slate') || color.includes('gray')) return { bg: '#f1f5f9', text: '#475569' };
                 return { bg: '#f1f5f9', text: '#475569' };
               };
               const typeColors = getTypeColors(taskType.color || '');
@@ -1590,10 +1591,6 @@ export default function Projects() {
         order: destination.index
       };
       
-      // If column changed, also update status to match new column name
-      if (source.droppableId !== destination.droppableId && targetColumn.name) {
-        updateData.status = targetColumn.name;
-      }
 
       // Optimistically update the UI or just call the mutation
       updateTaskMutation.mutate({

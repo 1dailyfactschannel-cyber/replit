@@ -3,6 +3,7 @@ import { createServer, type Server } from "http";
 import { getStorage, getReportOverview, getReportWorkspaces, getReportProjects, getReportBoards, getReportUsers } from "./postgres-storage";
 import { insertSiteSettingsSchema, insertUserSchema, insertNotificationSchema, insertLabelSchema, priorities, taskTypes } from "@shared/schema";
 import * as schema from "@shared/schema";
+import { getStatusByColumnName } from "../shared/column-status-mapping";
 import { setupWebSockets } from "./socket";
 import { Server as SocketIOServer } from "socket.io";
 import multer from "multer";
@@ -17,6 +18,44 @@ import bcrypt from "bcrypt";
 
 const storage = getStorage();
 let io: SocketIOServer;
+
+/**
+ * Обеспечивает соответствие статуса задачи названию колонки
+ * Если статус не соответствует - обновляет его и логирует изменение
+ */
+async function ensureTaskStatusMatchesColumn(task: any): Promise<any> {
+  if (!task.columnId || !task.status) return task;
+  
+  try {
+    const column = await storage.getColumn(task.columnId);
+    if (column && column.name) {
+      const expectedStatus = getStatusByColumnName(column.name);
+      if (task.status !== expectedStatus) {
+        console.warn(
+          `[STATUS FIX] Task ${task.id}: status "${task.status}" doesn't match column "${column.name}". Expected: "${expectedStatus}". Updating...`
+        );
+        // Обновляем статус задачи в базе данных
+        await storage.updateTask(task.id, { status: expectedStatus });
+        return { ...task, status: expectedStatus };
+      }
+    }
+  } catch (error) {
+    console.error('[STATUS FIX] Error checking task status:', error);
+  }
+  
+  return task;
+}
+
+/**
+ * Обеспечивает соответствие статусов для списка задач
+ */
+async function ensureAllTasksStatusMatch(tasks: any[]): Promise<any[]> {
+  const updatedTasks = await Promise.all(
+    tasks.map(task => ensureTaskStatusMatchesColumn(task))
+  );
+  return updatedTasks;
+}
+
 
 // Rate limiters
 const globalLimiter = rateLimit({
@@ -893,14 +932,38 @@ export async function registerRoutes(
         updateData.completedAt = new Date(updateData.completedAt);
       }
       
-      // Если задача перемещается в колонку "Готово", обновляем её статус
+      // Если задача перемещается в колонку, обновляем её статус на название колонки
       if (updateData.columnId) {
         const column = await storage.getColumn(updateData.columnId);
-        if (column && column.name === "Готово") {
-          updateData.status = "done";
-        } else if (column) {
-          // Если перемещаем из "Готово" в другую колонку, меняем статус обратно
-          updateData.status = "В планах";
+        if (column && column.name) {
+          updateData.status = column.name;
+          console.log('[PATCH] Column:', column.name, '-> status:', updateData.status);
+        }
+      }
+      
+      // Если обновляется статус (из модального окна), нужно также обновить columnId
+      if (updateData.status && !updateData.columnId) {
+        // Находим колонку с подходящим названием
+        const currentTask = await storage.getTask(taskId);
+        if (currentTask) {
+          const columns = await storage.getColumnsByBoard(currentTask.boardId);
+          // Сначала ищем точное совпадение
+          let matchingColumn = columns.find(col => col.name === updateData.status);
+          
+          // Если не нашли, ищем по маппингу (для обратной совместимости)
+          if (!matchingColumn) {
+            const normalizedStatus = getStatusByColumnName(updateData.status);
+            matchingColumn = columns.find(col => {
+              const columnStatus = getStatusByColumnName(col.name);
+              return columnStatus === normalizedStatus;
+            });
+          }
+          
+          if (matchingColumn) {
+            updateData.columnId = matchingColumn.id;
+            updateData.status = matchingColumn.name; // Используем точное название колонки
+            console.log('[PATCH] Found matching column:', matchingColumn.name, '-> columnId:', matchingColumn.id);
+          }
         }
       }
 
@@ -1095,7 +1158,10 @@ export async function registerRoutes(
       res.json(enrichedTask);
     } catch (error) {
       console.error("Error updating task:", error);
-      res.status(500).json({ message: "Failed to update task" });
+      console.error("Error stack:", error instanceof Error ? error.stack : 'No stack trace');
+      console.error("Request body:", req.body);
+      console.error("Task ID:", req.params.id);
+      res.status(500).json({ message: "Failed to update task", error: error instanceof Error ? error.message : 'Unknown error' });
     }
   });
 
@@ -1240,12 +1306,19 @@ export async function registerRoutes(
         }
       }
 
+      // Determine status based on column
+      const targetColumnId = req.body.columnId || columns[0].id;
+      const targetColumn = await storage.getColumn(targetColumnId);
+      const determinedStatus = targetColumn && targetColumn.name 
+        ? getStatusByColumnName(targetColumn.name)
+        : 'todo';
+      
       const taskData = {
         ...sanitizedBody,
         boardId: req.params.boardId,
-        columnId: req.body.columnId || columns[0].id,
+        columnId: targetColumnId,
         reporterId: user.id,
-        status: req.body.status || "В планах"
+        status: req.body.status || determinedStatus
       } as any;
       console.log("[API] Task data prepared:", taskData);
 

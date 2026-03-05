@@ -11,6 +11,7 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 import { TaskDetailsModal, Task } from "@/components/kanban/TaskDetailsModal";
 import { toast } from "sonner";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { getDisplayNameByStatus } from "@shared/column-status-mapping";
 import { apiRequest } from "@/lib/queryClient";
 
 export default function Tasks() {
@@ -114,17 +115,68 @@ export default function Tasks() {
     if (days === 0) return "Сегодня";
     if (days === 1) return "Завтра";
     if (days < 7) return `${d.toLocaleDateString("ru-RU", { weekday: 'short' })}, ${d.getDate()} ${d.toLocaleDateString("ru-RU", { month: 'short' })}`;
-    return d.toLocaleDateString("ru-RU", { day: 'numeric', month: 'short' });
+    return d.toLocaleDateString("ru-RU", { day: 'numeric', month: 'long', year: 'numeric' });
   }, []);
 
   const getStatusBadge = (status: string) => {
-    const statusMap: Record<string, string> = {
-      "done": "Готово",
-      "in_progress": "В работе",
-      "todo": "В планах",
-      "review": "На проверке"
+    // Use centralized function for consistent status display names
+    return getDisplayNameByStatus(status, status);
+  };
+
+  // Function to get column color by status name or custom color
+  const getColumnColorByStatus = (status: string, customColor?: string | null): { bg: string; text: string; border: string; badge: string } => {
+    // If custom color is provided from database, use it directly
+    if (customColor) {
+      // Map Tailwind color classes to corresponding styles
+      const colorMap: Record<string, { bg: string; text: string; border: string; badge: string }> = {
+        'bg-blue-500': { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-500', badge: 'bg-blue-100 text-blue-700' },
+        'bg-emerald-500': { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-500', badge: 'bg-emerald-100 text-emerald-700' },
+        'bg-amber-500': { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-500', badge: 'bg-amber-100 text-amber-700' },
+        'bg-rose-500': { bg: 'bg-rose-50', text: 'text-rose-700', border: 'border-rose-500', badge: 'bg-rose-100 text-rose-700' },
+        'bg-purple-500': { bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-500', badge: 'bg-purple-100 text-purple-700' },
+        'bg-pink-500': { bg: 'bg-pink-50', text: 'text-pink-700', border: 'border-pink-500', badge: 'bg-pink-100 text-pink-700' },
+        'bg-indigo-500': { bg: 'bg-indigo-50', text: 'text-indigo-700', border: 'border-indigo-500', badge: 'bg-indigo-100 text-indigo-700' },
+        'bg-green-500': { bg: 'bg-green-50', text: 'text-green-700', border: 'border-green-500', badge: 'bg-green-100 text-green-700' },
+        'bg-red-500': { bg: 'bg-red-50', text: 'text-red-700', border: 'border-red-500', badge: 'bg-red-100 text-red-700' },
+        'bg-orange-500': { bg: 'bg-orange-50', text: 'text-orange-700', border: 'border-orange-500', badge: 'bg-orange-100 text-orange-700' },
+        'bg-yellow-500': { bg: 'bg-yellow-50', text: 'text-yellow-700', border: 'border-yellow-500', badge: 'bg-yellow-100 text-yellow-700' },
+        'bg-teal-500': { bg: 'bg-teal-50', text: 'text-teal-700', border: 'border-teal-500', badge: 'bg-teal-100 text-teal-700' },
+        'bg-cyan-500': { bg: 'bg-cyan-50', text: 'text-cyan-700', border: 'border-cyan-500', badge: 'bg-cyan-100 text-cyan-700' },
+        'bg-slate-500': { bg: 'bg-slate-50', text: 'text-slate-700', border: 'border-slate-500', badge: 'bg-slate-100 text-slate-700' },
+        'bg-gray-500': { bg: 'bg-gray-50', text: 'text-gray-700', border: 'border-gray-500', badge: 'bg-gray-100 text-gray-700' },
+      };
+      
+      // Try to match the custom color
+      if (colorMap[customColor]) {
+        return colorMap[customColor];
+      }
+      
+      // If color not found in map, try to extract base color name
+      // e.g., "bg-pink-500" -> look for pink
+      const match = customColor.match(/bg-(\w+)-\d+/);
+      if (match && match[1]) {
+        const baseColor = match[1];
+        // Find any key that contains this base color
+        const foundKey = Object.keys(colorMap).find(key => key.includes(baseColor));
+        if (foundKey && colorMap[foundKey]) {
+          return colorMap[foundKey];
+        }
+      }
+    }
+    
+    // Default color mapping based on status name (fallback)
+    const defaultColorMap: Record<string, { bg: string; text: string; border: string; badge: string }> = {
+      'Готово': { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-500', badge: 'bg-emerald-100 text-emerald-700' },
+      'В работе': { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-500', badge: 'bg-blue-100 text-blue-700' },
+      'На проверке': { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-500', badge: 'bg-amber-100 text-amber-700' },
+      'В планах': { bg: 'bg-slate-50', text: 'text-slate-700', border: 'border-slate-500', badge: 'bg-slate-100 text-slate-700' },
+      'done': { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-500', badge: 'bg-emerald-100 text-emerald-700' },
+      'in_progress': { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-500', badge: 'bg-blue-100 text-blue-700' },
+      'review': { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-500', badge: 'bg-amber-100 text-amber-700' },
+      'todo': { bg: 'bg-slate-50', text: 'text-slate-700', border: 'border-slate-500', badge: 'bg-slate-100 text-slate-700' },
     };
-    return statusMap[status] || status;
+    
+    return defaultColorMap[status] || defaultColorMap['todo'];
   };
 
   const getPriorityLabel = (priority: string) => {
@@ -317,7 +369,7 @@ export default function Tasks() {
                   <TableHead className="w-[180px]">Проект / Доска</TableHead>
                   <TableHead className="w-[150px]">
                     <div className="flex items-center gap-1 cursor-pointer hover:text-foreground">
-                      Срок <ArrowUpDown className="w-3 h-3" />
+                      Срок <Calendar className="w-3 h-3" />
                     </div>
                   </TableHead>
                   <TableHead className="w-[140px]">Подтверждение</TableHead>
@@ -342,13 +394,29 @@ export default function Tasks() {
                       </div>
                     </TableCell>
                     <TableCell>
-                      <Badge variant="outline" className={
-                        task.status === "done" ? "border-emerald-500/30 text-emerald-600 bg-emerald-500/5 font-bold" :
-                        task.status === "in_progress" ? "border-blue-500/30 text-blue-600 bg-blue-500/5 font-bold" :
-                        "border-slate-500/30 text-slate-600 bg-slate-500/5 font-bold"
-                      }>
-                        {getStatusBadge(task.status || "todo")}
-                      </Badge>
+                      {(() => {
+                        // Try to get color from column first
+                        const columnColor = task.column?.color;
+                        if (columnColor) {
+                          const colors = getColumnColorByStatus(task.status, columnColor);
+                          return (
+                            <Badge variant="outline" className={`${colors.border} ${colors.badge}`}>
+                              {getStatusBadge(task.status || "todo")}
+                            </Badge>
+                          );
+                        }
+                        // Fallback to default colors based on status
+                        return (
+                          <Badge variant="outline" className={
+                            task.status === "done" || task.status === "Готово" ? "border-emerald-500/30 text-emerald-600 bg-emerald-500/5 font-bold"
+                            : task.status === "in_progress" || task.status === "В работе" ? "border-blue-500/30 text-blue-600 bg-blue-500/5 font-bold"
+                            : task.status === "review" || task.status === "На проверке" ? "border-amber-500/30 text-amber-600 bg-amber-500/5 font-bold"
+                            : "border-slate-500/30 text-slate-600 bg-slate-500/5 font-bold"
+                          }>
+                            {getStatusBadge(task.status || "todo")}
+                          </Badge>
+                        );
+                      })()}
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-2">
@@ -372,8 +440,32 @@ export default function Tasks() {
                       </div>
                     </TableCell>
                     <TableCell className="text-xs text-foreground font-medium">
-                       <div className="flex items-center gap-2">
-                         <Calendar className="w-3.5 h-3.5" /> {task.dueDate ? formatDate(task.dueDate) : "—"}
+                       <div className="flex flex-col gap-1">
+                         <div className="flex items-center gap-2">
+                           <Calendar className="w-3.5 h-3.5" /> 
+                           {task.dueDate ? formatDate(task.dueDate) : "—"}
+                         </div>
+                         {task.dueDate && (() => {
+                           const dueDate = new Date(task.dueDate);
+                           const now = new Date();
+                           const diffTime = dueDate.getTime() - now.getTime();
+                           const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                           
+                           if (diffDays < 0) {
+                             return (
+                               <span className="text-[10px] text-destructive font-semibold">
+                                 Просрочено ({Math.abs(diffDays)} дн.)
+                               </span>
+                             );
+                           } else if (diffDays <= 3) {
+                             return (
+                               <span className="text-[10px] text-amber-600 font-semibold">
+                                 Осталось дней: {diffDays}
+                               </span>
+                             );
+                           }
+                           return null;
+                         })()}
                        </div>
                     </TableCell>
                     <TableCell>
