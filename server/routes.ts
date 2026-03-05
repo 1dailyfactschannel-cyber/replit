@@ -932,7 +932,7 @@ export async function registerRoutes(
       // Удаляем поля, которых нет в таблице tasks (обогащенные данные)
       const allowedFields = [
         'title', 'description', 'status', 'priority', 'priorityId', 'taskTypeId', 'type', 
-        'storyPoints', 'startDate', 'dueDate', 'completedAt', 
+        'storyPoints', 'startDate', 'dueDate', 'acceptedAt', 'completedAt', 'timeSpent',
         'order', 'columnId', 'boardId', 'assigneeId', 'reporterId',
         'parentId', 'tags', 'attachments', 'number', 'archived'
       ];
@@ -949,6 +949,9 @@ export async function registerRoutes(
       }
       if (updateData.startDate && typeof updateData.startDate === 'string') {
         updateData.startDate = new Date(updateData.startDate);
+      }
+      if (updateData.acceptedAt && typeof updateData.acceptedAt === 'string') {
+        updateData.acceptedAt = new Date(updateData.acceptedAt);
       }
       if (updateData.completedAt && typeof updateData.completedAt === 'string') {
         updateData.completedAt = new Date(updateData.completedAt);

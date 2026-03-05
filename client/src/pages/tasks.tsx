@@ -190,11 +190,14 @@ export default function Tasks() {
 
   const handleTakeTask = (e: React.MouseEvent | null, task: any) => {
     if (e) e.stopPropagation();
+    
     updateTaskMutation.mutate({
-      id: String(task.id),
-      updates: { status: "in_progress" }
+      id: task.id,
+      updates: { 
+        status: "in_progress",
+        acceptedAt: new Date().toISOString() 
+      }
     });
-    toast.success("Задача принята в работу");
   };
 
   const handleTaskClick = (task: any) => {
@@ -469,10 +472,10 @@ export default function Tasks() {
                        </div>
                     </TableCell>
                     <TableCell>
-                      {task.status === "in_progress" ? (
+                      {task.acceptedAt ? (
                         <div className="flex items-center gap-2 text-primary font-mono text-sm font-bold bg-primary/5 px-3 py-1.5 rounded-lg border border-primary/10 w-fit">
                           <div className="w-2 h-2 rounded-full bg-primary animate-pulse" />
-                          {task.updatedAt ? formatDuration(new Date(task.updatedAt).getTime()) : "00:00"}
+                          {formatDuration(new Date(task.acceptedAt).getTime())}
                         </div>
                       ) : (
                         <Button 

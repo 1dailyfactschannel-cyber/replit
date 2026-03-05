@@ -181,7 +181,9 @@ export const tasks = pgTable("tasks", {
   storyPoints: integer("story_points"),
   startDate: timestamp("start_date"),
   dueDate: timestamp("due_date"),
+  acceptedAt: timestamp("accepted_at"), // When task was accepted by assignee
   completedAt: timestamp("completed_at"),
+  timeSpent: integer("time_spent").default(0), // Time spent in seconds
   order: integer("order").notNull().default(0),
   number: text("number"),
   parentId: uuid("parent_id").references((): any => tasks.id),
