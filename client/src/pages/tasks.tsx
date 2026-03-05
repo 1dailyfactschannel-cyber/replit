@@ -13,6 +13,7 @@ import { toast } from "sonner";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { getDisplayNameByStatus } from "@shared/column-status-mapping";
 import { apiRequest } from "@/lib/queryClient";
+import { cn } from "@/lib/utils";
 
 export default function Tasks() {
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
@@ -423,13 +424,10 @@ export default function Tasks() {
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-2">
-                        <div className={`w-1.5 h-1.5 rounded-full ${
-                          task.priorityColor?.includes('rose') || task.priorityColor?.includes('red') ? "bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.4)]" :
-                          task.priorityColor?.includes('amber') || task.priorityColor?.includes('orange') ? "bg-amber-500" :
-                          task.priorityColor?.includes('emerald') || task.priorityColor?.includes('green') ? "bg-emerald-500" :
-                          task.priority === "high" ? "bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.4)]" :
-                          task.priority === "medium" ? "bg-amber-500" : "bg-emerald-500"
-                        }`} />
+                        <div className={cn(
+                          "w-1.5 h-1.5 rounded-full",
+                          task.priorityColor || (task.priority === "high" ? "bg-rose-500" : task.priority === "medium" ? "bg-amber-500" : "bg-emerald-500")
+                        )} />
                          <span className="text-xs font-medium text-foreground">{getPriorityLabel(task.priority || "medium")}</span>
                       </div>
                     </TableCell>
