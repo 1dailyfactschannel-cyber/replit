@@ -34,7 +34,7 @@ services:
       SESSION_SECRET: teamsync_prod_secret_2026
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}
     ports:
-      - "3001:3000"
+      - "3245:3000"
     depends_on:
       db:
         condition: service_healthy
