@@ -254,7 +254,7 @@ function TaskStatusTimer({ taskId }: { taskId: string | number | undefined }) {
 // Action names in Russian - simplified to just show the action type
 const actionNames: Record<string, string> = {
   created: "создал(-а) задачу",
-  updated: "обновил(-а)",
+  updated: "изменил(-а)",
   status_changed: "изменил(-а)",
   assignee_changed: "изменил(-а)",
   priority_changed: "изменил(-а)",
@@ -266,6 +266,7 @@ const actionNames: Record<string, string> = {
   subtask_created: "добавил(-а) подзадачу",
   subtask_completed: "завершил(-а) подзадачу",
   column_changed: "изменил(-а)",
+  order_changed: "изменил(-а)",
 };
 
 // Format date for activity
@@ -353,6 +354,39 @@ function TaskActivityHistory({ taskId }: { taskId: string | number | undefined }
                 : 'Система';
               const actionText = actionNames[item.action] || item.action;
               
+              // Field translations for old records
+              const fieldTranslations: Record<string, string> = {
+                columnId: 'Колонка',
+                order: 'Порядок',
+                assigneeId: 'Исполнитель',
+                status: 'Статус',
+                priorityId: 'Приоритет',
+                title: 'Название',
+                description: 'Описание',
+                dueDate: 'Срок',
+                tags: 'Метки',
+                boardId: 'Доска',
+                type: 'Тип',
+                storyPoints: 'Story Points',
+                startDate: 'Дата начала',
+                completedAt: 'Дата завершения',
+                timeSpent: 'Затраченное время',
+                archived: 'Архив',
+              };
+              
+              // Translate field name if needed
+              const displayFieldName = fieldTranslations[item.fieldName || ''] || item.fieldName;
+              
+              // Format values (remove quotes if they look like UUIDs)
+              const formatValue = (val: string | null) => {
+                if (!val) return '';
+                // If it looks like a UUID, show it shortened
+                if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val)) {
+                  return `ID:${val.substring(0, 8)}...`;
+                }
+                return val;
+              };
+              
               return (
                 <div key={item.id} className="flex gap-2 text-xs">
                   <div className="w-1.5 h-1.5 rounded-full bg-primary/40 mt-1.5 shrink-0" />
@@ -368,16 +402,16 @@ function TaskActivityHistory({ taskId }: { taskId: string | number | undefined }
                       )}
                       
                       {/* For field changes with old and new values */}
-                      {item.fieldName && item.action !== 'created' && item.action !== 'comment_added' && (
+                      {displayFieldName && item.action !== 'created' && item.action !== 'comment_added' && (
                         <>
-                          <span className="font-medium text-foreground">{item.fieldName}</span>
+                          <span className="font-medium text-foreground">{displayFieldName}</span>
                           {item.oldValue && item.newValue ? (
                             <span className="text-muted-foreground">
-                              с <span className="line-through text-muted-foreground/60">"{item.oldValue}"</span> на <span className="font-medium text-primary">"{item.newValue}"</span>
+                              с <span className="line-through text-muted-foreground/60">"{formatValue(item.oldValue)}"</span> на <span className="font-medium text-primary">"{formatValue(item.newValue)}"</span>
                             </span>
                           ) : item.newValue ? (
                             <span className="text-muted-foreground">
-                              на <span className="font-medium text-primary">"{item.newValue}"</span>
+                              на <span className="font-medium text-primary">"{formatValue(item.newValue)}"</span>
                             </span>
                           ) : null}
                         </>

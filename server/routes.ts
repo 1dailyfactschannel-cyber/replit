@@ -1163,11 +1163,20 @@ export async function registerRoutes(
           if (oldValue) {
             const oldColumn = await storage.getColumn(String(oldValue));
             oldValueStr = oldColumn?.name || String(oldValue);
+          } else {
+            oldValueStr = '';
           }
           if (newValue) {
             const newColumn = await storage.getColumn(String(newValue));
             newValueStr = newColumn?.name || String(newValue);
+          } else {
+            newValueStr = '';
           }
+        } else if (key === 'order') {
+          action = 'order_changed';
+          fieldName = 'Порядок';
+          oldValueStr = oldValue !== undefined ? String(oldValue) : '';
+          newValueStr = newValue !== undefined ? String(newValue) : '';
         } else {
           // Generic field update
           oldValueStr = oldValue !== undefined && oldValue !== null ? String(oldValue) : '';
