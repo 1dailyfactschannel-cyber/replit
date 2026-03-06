@@ -1782,21 +1782,58 @@ export function TaskDetailsModal({
                                     
                                     {/* Content */}
                                     <p className="text-[13px] leading-relaxed">
-                                      {comment.content?.split(/(@[^\s]+(?:\s[^\s]+)*)/).map((part: string, idx: number) => {
-                                        if (part.startsWith('@')) {
-                                          return (
-                                            <span key={idx} className={cn(
-                                              "font-semibold px-1.5 py-0.5 rounded-md",
-                                              isOwn 
-                                                ? "bg-primary-foreground/20 text-primary-foreground" 
-                                                : "bg-primary/10 text-primary"
-                                            )}>
-                                              {part}
-                                            </span>
-                                          );
+                                      {(() => {
+                                        // Find all @mentions in the comment
+                                        const mentionPattern = /@([^\s@]+(?:\s+[^\s@]+)*)/g;
+                                        const parts: React.ReactNode[] = [];
+                                        let lastIndex = 0;
+                                        let match;
+                                        
+                                        // Check if this mention matches any user
+                                        const isValidMention = (mentionText: string) => {
+                                          const name = mentionText.slice(1); // Remove @
+                                          return users.some((user: any) => {
+                                            const displayName = user.firstName 
+                                              ? `${user.firstName} ${user.lastName || ''}`.trim() 
+                                              : user.username;
+                                            return displayName === name;
+                                          });
+                                        };
+                                        
+                                        while ((match = mentionPattern.exec(comment.content || '')) !== null) {
+                                          // Add text before mention
+                                          if (match.index > lastIndex) {
+                                            parts.push(comment.content?.slice(lastIndex, match.index));
+                                          }
+                                          
+                                          const mentionText = match[0];
+                                          const isValid = isValidMention(mentionText);
+                                          
+                                          if (isValid) {
+                                            parts.push(
+                                              <span key={match.index} className={cn(
+                                                "font-semibold px-1.5 py-0.5 rounded-md",
+                                                isOwn 
+                                                  ? "bg-primary-foreground/20 text-primary-foreground" 
+                                                  : "bg-primary/10 text-primary"
+                                              )}>
+                                                {mentionText}
+                                              </span>
+                                            );
+                                          } else {
+                                            parts.push(mentionText);
+                                          }
+                                          
+                                          lastIndex = mentionPattern.lastIndex;
                                         }
-                                        return part;
-                                      })}
+                                        
+                                        // Add remaining text
+                                        if (lastIndex < (comment.content?.length || 0)) {
+                                          parts.push(comment.content?.slice(lastIndex));
+                                        }
+                                        
+                                        return parts.length > 0 ? parts : comment.content;
+                                      })()}
                                     </p>
                                     
                                     {/* Attachments */}
