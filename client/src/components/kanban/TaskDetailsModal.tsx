@@ -251,20 +251,21 @@ function TaskStatusTimer({ taskId }: { taskId: string | number | undefined }) {
   );
 }
 
-// Action names in Russian
+// Action names in Russian - simplified to just show the action type
 const actionNames: Record<string, string> = {
   created: "создал(-а) задачу",
   updated: "обновил(-а)",
-  status_changed: "изменил(-а) статус",
-  assignee_changed: "добавил(-а) исполнителя",
-  priority_changed: "изменил(-а) приоритет",
-  title_changed: "изменил(-а) название",
-  description_changed: "изменил(-а) описание",
-  due_date_changed: "изменил(-а) срок",
-  labels_changed: "изменил(-а) метки",
+  status_changed: "изменил(-а)",
+  assignee_changed: "изменил(-а)",
+  priority_changed: "изменил(-а)",
+  title_changed: "изменил(-а)",
+  description_changed: "изменил(-а)",
+  due_date_changed: "изменил(-а)",
+  labels_changed: "изменил(-а)",
   comment_added: "добавил(-а) комментарий",
   subtask_created: "добавил(-а) подзадачу",
   subtask_completed: "завершил(-а) подзадачу",
+  column_changed: "изменил(-а)",
 };
 
 // Format date for activity
@@ -360,13 +361,30 @@ function TaskActivityHistory({ taskId }: { taskId: string | number | undefined }
                       <span className="text-[10px] text-muted-foreground font-medium shrink-0">{time}</span>
                       <span className="font-medium text-foreground">{userName}</span>
                       <span className="text-muted-foreground">{actionText}</span>
+                      
+                      {/* For created action */}
+                      {item.action === 'created' && (
+                        <span className="text-muted-foreground">задачу</span>
+                      )}
+                      
+                      {/* For field changes with old and new values */}
                       {item.fieldName && item.action !== 'created' && item.action !== 'comment_added' && (
                         <>
-                          <span className="text-muted-foreground">поле</span>
-                          <span className="font-medium text-foreground">"{item.fieldName}"</span>
+                          <span className="font-medium text-foreground">{item.fieldName}</span>
+                          {item.oldValue && item.newValue ? (
+                            <span className="text-muted-foreground">
+                              с <span className="line-through text-muted-foreground/60">"{item.oldValue}"</span> на <span className="font-medium text-primary">"{item.newValue}"</span>
+                            </span>
+                          ) : item.newValue ? (
+                            <span className="text-muted-foreground">
+                              на <span className="font-medium text-primary">"{item.newValue}"</span>
+                            </span>
+                          ) : null}
                         </>
                       )}
-                      {item.newValue && item.action === 'comment_added' && (
+                      
+                      {/* For comments */}
+                      {item.action === 'comment_added' && item.newValue && (
                         <span className="text-muted-foreground truncate max-w-[150px]">"{item.newValue}"</span>
                       )}
                     </div>

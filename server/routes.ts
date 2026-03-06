@@ -1079,6 +1079,9 @@ export async function registerRoutes(
       if (updateData.assigneeId) {
         userIdsToFetch.add(String(updateData.assigneeId));
       }
+      if (currentTask?.assigneeId) {
+        userIdsToFetch.add(String(currentTask.assigneeId));
+      }
       
       // Batch fetch all needed users
       const usersMap = new Map<string, any>();
@@ -1087,46 +1090,87 @@ export async function registerRoutes(
         users.forEach(u => usersMap.set(u.id, u));
       }
       
+      // Field name translations
+      const fieldTranslations: Record<string, string> = {
+        assigneeId: 'Исполнитель',
+        status: 'Статус',
+        priorityId: 'Приоритет',
+        title: 'Название',
+        description: 'Описание',
+        dueDate: 'Срок',
+        tags: 'Метки',
+        columnId: 'Колонка',
+        boardId: 'Доска',
+        type: 'Тип',
+        storyPoints: 'Story Points',
+        startDate: 'Дата начала',
+        completedAt: 'Дата завершения',
+        timeSpent: 'Затраченное время',
+        archived: 'Архив',
+      };
+      
       // Record history for each changed field
       for (const [key, newValue] of Object.entries(updateData)) {
+        // Skip internal fields
+        if (['id', 'createdAt', 'updatedAt', 'reporterId'].includes(key)) continue;
+        
         let action = 'updated';
-        let fieldName = key;
+        let fieldName = fieldTranslations[key] || key;
         let oldValueStr = '';
         let newValueStr = String(newValue || '');
+        
+        // Get old value from current task
+        const oldValue = currentTask?.[key as keyof typeof currentTask];
         
         // Special handling for different fields
         if (key === 'assigneeId') {
           action = 'assignee_changed';
-          fieldName = 'Исполнитель';
-          if (newValue) {
-            const user = usersMap.get(String(newValue));
-            newValueStr = user ? `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.username : String(newValue);
+          if (oldValue) {
+            const oldUser = usersMap.get(String(oldValue));
+            oldValueStr = oldUser ? `${oldUser.firstName || ''} ${oldUser.lastName || ''}`.trim() || oldUser.username : String(oldValue);
+          } else {
+            oldValueStr = 'не назначен';
           }
-          oldValueStr = '';
+          if (newValue) {
+            const newUser = usersMap.get(String(newValue));
+            newValueStr = newUser ? `${newUser.firstName || ''} ${newUser.lastName || ''}`.trim() || newUser.username : String(newValue);
+          } else {
+            newValueStr = 'не назначен';
+          }
         } else if (key === 'status') {
           action = 'status_changed';
-          fieldName = 'Статус';
-          oldValueStr = '';
+          oldValueStr = oldValue ? String(oldValue) : '';
         } else if (key === 'priorityId') {
           action = 'priority_changed';
-          fieldName = 'Приоритет';
-          oldValueStr = '';
+          oldValueStr = oldValue ? String(oldValue) : '';
         } else if (key === 'title') {
           action = 'title_changed';
-          fieldName = 'Название';
-          oldValueStr = '';
+          oldValueStr = oldValue ? String(oldValue) : '';
         } else if (key === 'description') {
           action = 'description_changed';
-          fieldName = 'Описание';
-          oldValueStr = '';
+          oldValueStr = oldValue ? String(oldValue) : '';
         } else if (key === 'dueDate') {
           action = 'due_date_changed';
-          fieldName = 'Срок';
-          oldValueStr = '';
+          oldValueStr = oldValue ? String(oldValue) : '';
+          newValueStr = newValue ? String(newValue) : '';
         } else if (key === 'tags') {
           action = 'labels_changed';
-          fieldName = 'Метки';
-          oldValueStr = '';
+          oldValueStr = oldValue ? String(oldValue) : '';
+          newValueStr = newValue ? String(newValue) : '';
+        } else if (key === 'columnId') {
+          action = 'column_changed';
+          // Get column names
+          if (oldValue) {
+            const oldColumn = await storage.getColumn(String(oldValue));
+            oldValueStr = oldColumn?.name || String(oldValue);
+          }
+          if (newValue) {
+            const newColumn = await storage.getColumn(String(newValue));
+            newValueStr = newColumn?.name || String(newValue);
+          }
+        } else {
+          // Generic field update
+          oldValueStr = oldValue !== undefined && oldValue !== null ? String(oldValue) : '';
         }
         
         historyEntries.push({
