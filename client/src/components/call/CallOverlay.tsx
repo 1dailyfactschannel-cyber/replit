@@ -6,6 +6,7 @@ import { Socket } from "socket.io-client";
 import Peer from "simple-peer";
 import { cn } from "@/lib/utils";
 import { apiRequest } from "@/lib/queryClient";
+import { toast } from "sonner";
 
 interface CallOverlayProps {
   socket: Socket;

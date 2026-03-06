@@ -393,7 +393,7 @@ export function TaskDetailsModal({
     staleTime: 30000, // Cache for 30 seconds instead of always fetching fresh
   });
 
-  const effectiveTask = serverTask || task;
+  const effectiveTask: any = serverTask || task;
 
   const [newTitle, setNewTitle] = useState(effectiveTask?.title || "");
   const [newDescription, setNewDescription] = useState(effectiveTask?.description || "");
@@ -578,6 +578,9 @@ export function TaskDetailsModal({
   const [commentAttachments, setCommentAttachments] = useState<{ name: string; url: string; size: string; type: string }[]>([]);
   const [isUploadingCommentFile, setIsUploadingCommentFile] = useState(false);
   
+  // Image viewer state
+  const [selectedImage, setSelectedImage] = useState<{ url: string; name: string } | null>(null);
+  
   // Mentions functionality
   const [showMentions, setShowMentions] = useState(false);
   const [mentionQuery, setMentionQuery] = useState("");
@@ -674,8 +677,8 @@ export function TaskDetailsModal({
       return;
     }
 
-    if (updates.priority) {
-      console.log("[TaskDetails] Updating priority to:", updates.priority);
+    if (updates.priorityId) {
+      console.log("[TaskDetails] Updating priority to:", updates.priorityId);
     }
     
     const isTempTask = typeof task.id === 'string' && task.id.startsWith('temp-');
@@ -1327,49 +1330,15 @@ export function TaskDetailsModal({
               <Skeleton className="h-4 w-[250px]" />
               <Skeleton className="h-4 w-[200px]" />
             </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-    );
-  }
-
-  if (!task) {
-    return null;
-  }
-
-  const safeTask = {
-    ...effectiveTask,
-    creator: effectiveTask?.creator || { name: "Неизвестно", date: "", avatar: null },
-    history: effectiveTask?.history || [],
-    labels: effectiveTask?.labels || [],
-    subtasks: effectiveTask?.subtasks || [],
-    comments: effectiveTask?.comments || [],
-    attachments: effectiveTask?.attachments || [],
-    type: effectiveTask?.type || "Задача",
-    priorityId: effectiveTask?.priorityId || "",
-    status: effectiveTask?.status || "В планах",
-    dueDate: effectiveTask?.dueDate || "Не установлен",
-    project: effectiveTask?.project || "м4",
-    board: effectiveTask?.board || "доска"
-  };
-
-  const handleOpenChangeWrapper = (newOpen: boolean) => {
-    if (!newOpen) {
-      // Closing the modal - save unsaved changes
-      if (task) {
-        if (newTitle !== task.title) {
-          handleUpdate({ title: newTitle });
-        }
-        if (newDescription !== task.description) {
-          handleUpdate({ description: newDescription });
-        }
-      }
-    }
-    onOpenChange(newOpen);
-  };
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
 
   return (
-    <Dialog open={open} onOpenChange={handleOpenChangeWrapper}>
+    <>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent 
         className="fixed left-[50%] top-[50%] translate-x-[-50%] translate-y-[-50%] max-w-[1200px] w-[95vw] h-[90vh] max-h-[900px] flex flex-col p-0 gap-0 overflow-hidden bg-background border-none shadow-2xl font-sans"
         onDragOver={handleDragOver}
@@ -1377,9 +1346,9 @@ export function TaskDetailsModal({
         onDrop={handleDrop}
       >
         <DialogHeader className="sr-only">
-          <DialogTitle>{safeTask.title || "Детали задачи"}</DialogTitle>
+          <DialogTitle>{effectiveTask.title || "Детали задачи"}</DialogTitle>
           <DialogDescription>
-            Просмотр и редактирование деталей задачи {safeTask.title}.
+            Просмотр и редактирование деталей задачи {effectiveTask.title}.
           </DialogDescription>
         </DialogHeader>
         {/* Drag and Drop Overlay */}
@@ -1440,7 +1409,7 @@ export function TaskDetailsModal({
               )}
               onClick={() => {
                 const newArchived = !effectiveTask?.archived;
-                handleUpdate({ archived: newArchived });
+                handleUpdate({ archived: newArchived } as any);
                 sonnerToast.success(newArchived ? "Задача архивирована" : "Задача восстановлена");
               }}
               title={effectiveTask?.archived ? "Восстановить" : "В архив"}
@@ -1737,60 +1706,172 @@ export function TaskDetailsModal({
                     <span className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest pb-2">29.12.2025</span>
                   </div>
                   
-                  <TabsContent value="comments" className="pt-2 mt-0">
-                    <div className="space-y-1.5 mb-16 min-h-[80px]">
-                      {localComments.map((comment) => (
-                        <div 
-                          key={comment.id} 
-                          className={cn(
-                            "flex flex-col gap-0 max-w-[85%]",
-                            comment.authorId === (users.find(u => u.username === "admin")?.id || "") ? "ml-auto items-end" : "items-start"
-                          )}
-                        >
-                          <div 
-                            className={cn(
-                              "px-2.5 py-1 rounded-lg text-xs shadow-sm border",
-                              comment.authorId === (users.find(u => u.username === "admin")?.id || "") 
-                                ? "bg-primary text-foreground-foreground border-primary/20 rounded-tr-sm" 
-                                : "bg-card text-foreground border-border/50 rounded-tl-sm"
-                            )}
-                          >
-                             <div className="flex flex-col gap-0.5">
-                              <span className="text-[9px] opacity-60 font-medium">{comment.author?.name}</span>
-                              <span className="text-xs leading-relaxed">
-                                {comment.content?.split(/(@[^\s]+(?:\s[^\s]+)*)/).map((part: string, idx: number) => {
-                                  if (part.startsWith('@')) {
-                                    return (
-                                      <span key={idx} className="text-foreground font-semibold bg-primary/10 px-1 rounded">
-                                        {part}
-                                      </span>
-                                    );
-                                  }
-                                  return part;
-                                })}
-                              </span>
-                              {comment.attachments && comment.attachments.length > 0 && (
-                                <div className="mt-0.5 flex flex-wrap gap-0.5">
-                                  {comment.attachments.map((file: any, i: number) => (
-                                    <a 
-                                      key={i} 
-                                      href={file.url} 
-                                      download={file.name}
-                                      className="flex items-center gap-0.5 px-1 py-0.5 rounded bg-background/20 hover:bg-background/40 transition-colors text-[8px]"
-                                    >
-                                      <Paperclip className="w-2 h-2" />
-                                      {file.name}
-                                    </a>
-                                  ))}
+                  <TabsContent value="comments" className="pt-4 mt-0 flex flex-col h-full">
+                    {/* Modern Chat Messages Area */}
+                    <div className="flex-1 space-y-4 mb-20 px-2 overflow-y-auto">
+                      {localComments.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center h-full text-center py-12">
+                          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center mb-4">
+                            <MessageSquare className="w-7 h-7 text-primary/60" />
+                          </div>
+                          <p className="text-sm font-medium text-muted-foreground">Нет сообщений</p>
+                          <p className="text-xs text-muted-foreground/60 mt-1">Начните переписку прямо сейчас</p>
+                        </div>
+                      ) : (
+                        localComments.map((comment, index) => {
+                          const isOwn = comment.authorId === (users.find(u => u.username === "admin")?.id || "");
+                          const showDate = index === 0 || new Date(comment.createdAt).toDateString() !== new Date(localComments[index - 1]?.createdAt).toDateString();
+                          
+                          return (
+                            <div key={comment.id}>
+                              {/* Date separator */}
+                              {showDate && (
+                                <div className="flex items-center gap-3 my-6">
+                                  <div className="flex-1 h-px bg-gradient-to-r from-transparent via-border to-transparent" />
+                                  <span className="text-[10px] font-medium text-muted-foreground/50 uppercase tracking-wider">
+                                    {new Date(comment.createdAt).toLocaleDateString("ru-RU", { day: "numeric", month: "long" })}
+                                  </span>
+                                  <div className="flex-1 h-px bg-gradient-to-r from-transparent via-border to-transparent" />
                                 </div>
                               )}
+                              
+                              <div className={cn(
+                                "flex gap-3 max-w-[88%]",
+                                isOwn ? "ml-auto flex-row-reverse" : "flex-row"
+                              )}>
+                                {/* Avatar */}
+                                <div className={cn(
+                                  "flex-shrink-0 w-8 h-8 rounded-xl flex items-center justify-center text-xs font-semibold shadow-sm overflow-hidden",
+                                  !comment.author?.avatar && (isOwn 
+                                    ? "bg-gradient-to-br from-primary to-primary/80 text-primary-foreground" 
+                                    : "bg-gradient-to-br from-secondary to-muted text-foreground")
+                                )}>
+                                  {comment.author?.avatar ? (
+                                    <img 
+                                      src={comment.author.avatar} 
+                                      alt={comment.author?.name} 
+                                      className="w-full h-full object-cover"
+                                      onError={(e) => {
+                                        // Fallback to initials if image fails to load
+                                        (e.target as HTMLImageElement).style.display = 'none';
+                                      }}
+                                    />
+                                  ) : (
+                                    comment.author?.name?.charAt(0).toUpperCase() || "U"
+                                  )}
+                                </div>
+                                
+                                {/* Message bubble */}
+                                <div className={cn(
+                                  "flex flex-col gap-1",
+                                  isOwn ? "items-end" : "items-start"
+                                )}>
+                                  <div className={cn(
+                                    "relative px-4 py-2.5 rounded-2xl shadow-sm",
+                                    isOwn 
+                                      ? "bg-gradient-to-br from-primary to-primary/90 text-primary-foreground rounded-br-sm" 
+                                      : "bg-gradient-to-br from-card to-secondary/50 text-foreground border border-border/30 rounded-bl-sm"
+                                  )}>
+                                    {/* Author name */}
+                                    <div className={cn(
+                                      "text-[10px] font-semibold mb-1",
+                                      isOwn ? "text-primary-foreground/70" : "text-primary/70"
+                                    )}>
+                                      {comment.author?.name}
+                                    </div>
+                                    
+                                    {/* Content */}
+                                    <p className="text-[13px] leading-relaxed">
+                                      {comment.content?.split(/(@[^\s]+(?:\s[^\s]+)*)/).map((part: string, idx: number) => {
+                                        if (part.startsWith('@')) {
+                                          return (
+                                            <span key={idx} className={cn(
+                                              "font-semibold px-1.5 py-0.5 rounded-md",
+                                              isOwn 
+                                                ? "bg-primary-foreground/20 text-primary-foreground" 
+                                                : "bg-primary/10 text-primary"
+                                            )}>
+                                              {part}
+                                            </span>
+                                          );
+                                        }
+                                        return part;
+                                      })}
+                                    </p>
+                                    
+                                    {/* Attachments */}
+                                    {comment.attachments && comment.attachments.length > 0 && (
+                                      <div className="mt-2 space-y-1">
+                                        {comment.attachments.map((file: any, i: number) => {
+                                          // Check if file is an image
+                                          const isImage = file.type?.startsWith('image/') || 
+                                            /\.(jpg|jpeg|png|gif|webp|svg)$/i.test(file.name);
+                                          
+                                          if (isImage) {
+                                            return (
+                                              <div
+                                                key={i}
+                                                onClick={() => setSelectedImage({ url: file.url, name: file.name })}
+                                                className={cn(
+                                                  "relative cursor-pointer overflow-hidden rounded-xl transition-all hover:scale-[1.02] hover:shadow-lg group",
+                                                  isOwn 
+                                                    ? "bg-primary-foreground/10" 
+                                                    : "bg-background/50 border border-border/20"
+                                                )}
+                                              >
+                                                <img
+                                                  src={file.url}
+                                                  alt={file.name}
+                                                  className="w-full max-w-[200px] h-auto max-h-[150px] object-cover"
+                                                  onError={(e) => {
+                                                    // Fallback to file icon if image fails to load
+                                                    (e.target as HTMLImageElement).style.display = 'none';
+                                                  }}
+                                                />
+                                                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors flex items-center justify-center">
+                                                  <Eye className="w-6 h-6 text-white opacity-0 group-hover:opacity-100 transition-opacity drop-shadow-lg" />
+                                                </div>
+                                              </div>
+                                            );
+                                          }
+                                          
+                                          // Non-image files - show as before
+                                          return (
+                                            <a 
+                                              key={i} 
+                                              href={file.url} 
+                                              download={file.name}
+                                              className={cn(
+                                                "flex items-center gap-2 px-3 py-2 rounded-xl text-xs transition-all hover:scale-[1.02]",
+                                                isOwn 
+                                                  ? "bg-primary-foreground/15 hover:bg-primary-foreground/25" 
+                                                  : "bg-background/50 hover:bg-background/80 border border-border/20"
+                                              )}
+                                            >
+                                              <div className={cn(
+                                                "w-7 h-7 rounded-lg flex items-center justify-center",
+                                                isOwn ? "bg-primary-foreground/20" : "bg-primary/10"
+                                              )}>
+                                                <Paperclip className="w-3.5 h-3.5" />
+                                              </div>
+                                              <span className="truncate max-w-[120px] font-medium">{file.name}</span>
+                                            </a>
+                                          );
+                                        })}
+                                      </div>
+                                    )}
+                                  </div>
+                                  
+                                  {/* Timestamp */}
+                                  <span className="text-[10px] text-muted-foreground/40 font-medium px-1">
+                                    {new Date(comment.createdAt).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}
+                                  </span>
+                                </div>
+                              </div>
                             </div>
-                          </div>
-                          <span className="text-[8px] text-muted-foreground/40 uppercase px-1">
-                            {comment.createdAt ? new Date(comment.createdAt).toLocaleString() : ""}
-                          </span>
-                        </div>
-                      ))}
+                          );
+                        })
+                      )}
                     </div>
                   </TabsContent>
                   
@@ -1806,103 +1887,69 @@ export function TaskDetailsModal({
             </div>
           </ScrollArea>
 
-          {/* Comment Input Sticky Bottom Area */}
-          <div className="absolute bottom-0 left-0 w-[calc(100%-288px)] p-3 bg-gradient-to-t from-background via-background/95 to-transparent shrink-0 z-10">
-            <div className="max-w-4xl mx-auto space-y-1.5">
-              {/* Comment Attachments Preview */}
+          {/* Modern Comment Input Sticky Bottom Area */}
+          <div className="absolute bottom-0 left-0 w-[calc(100%-288px)] p-4 bg-gradient-to-t from-background via-background to-background/95 backdrop-blur-sm shrink-0 z-10 border-t border-border/30">
+            <div className="max-w-4xl mx-auto space-y-3">
+              {/* Modern Comment Attachments Preview */}
               {commentAttachments.length > 0 && (
-                <div className="flex flex-wrap gap-1.5 px-3 py-1.5 bg-secondary/30 rounded-lg border border-border/40">
-                  {commentAttachments.map((file, i) => (
-                    <div key={i} className="flex items-center gap-1 bg-background/50 px-1.5 py-0.5 rounded text-[9px] font-medium">
-                      <Paperclip className="w-2.5 h-2.5" />
-                      <span className="truncate max-w-[80px]">{file.name}</span>
-                      <button 
-                        onClick={() => setCommentAttachments(commentAttachments.filter((_, idx) => idx !== i))}
-                        className="text-destructive hover:text-destructive/80"
-                      >
-                        <Trash2 className="w-2.5 h-2.5" />
-                      </button>
-                    </div>
-                  ))}
+                <div className="flex flex-wrap gap-2 p-3 bg-secondary/20 rounded-2xl border border-border/30">
+                  {commentAttachments.map((file, i) => {
+                    // Check if file is an image
+                    const isImage = file.type?.startsWith('image/') || 
+                      /\.(jpg|jpeg|png|gif|webp|svg)$/i.test(file.name);
+                    
+                    if (isImage) {
+                      return (
+                        <div key={i} className="relative group">
+                          <div 
+                            className="w-20 h-20 rounded-xl overflow-hidden bg-background shadow-sm border border-border/20 cursor-pointer"
+                            onClick={() => setSelectedImage({ url: file.url, name: file.name })}
+                          >
+                            <img
+                              src={file.url}
+                              alt={file.name}
+                              className="w-full h-full object-cover"
+                            />
+                            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
+                              <Eye className="w-5 h-5 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+                            </div>
+                          </div>
+                          <button 
+                            onClick={() => setCommentAttachments(commentAttachments.filter((_, idx) => idx !== i))}
+                            className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center shadow-md hover:bg-destructive/90 transition-colors"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                      );
+                    }
+                    
+                    // Non-image files
+                    return (
+                      <div key={i} className="flex items-center gap-2 bg-background px-3 py-1.5 rounded-xl text-xs font-medium shadow-sm border border-border/20">
+                        <div className="w-6 h-6 rounded-lg bg-primary/10 flex items-center justify-center">
+                          <Paperclip className="w-3 h-3 text-primary" />
+                        </div>
+                        <span className="truncate max-w-[100px]">{file.name}</span>
+                        <button 
+                          onClick={() => setCommentAttachments(commentAttachments.filter((_, idx) => idx !== i))}
+                          className="w-5 h-5 rounded-full bg-secondary hover:bg-destructive/20 text-muted-foreground hover:text-destructive flex items-center justify-center transition-colors"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
 
-              <div className="relative group">
-                <Input
-                  ref={inputRef}
-                  placeholder="Напишите комментарий... Используйте @ для упоминания"
-                  className="h-10 pl-3 pr-20 bg-background border-border rounded-xl focus-visible:ring-primary/20 transition-all text-sm placeholder:text-muted-foreground shadow-inner text-foreground"
-                  value={newComment}
-                  onChange={(e) => {
-                    const value = e.target.value;
-                    setNewComment(value);
-                    
-                    // Check for mentions
-                    const lastAtIndex = value.lastIndexOf('@');
-                    if (lastAtIndex !== -1) {
-                      const afterAt = value.slice(lastAtIndex + 1);
-                      const spaceIndex = afterAt.indexOf(' ');
-                      const query = spaceIndex === -1 ? afterAt : afterAt.slice(0, spaceIndex);
-                      
-                      if (!afterAt.includes(' ') && value.length > lastAtIndex + 1) {
-                        setMentionQuery(query);
-                        setShowMentions(true);
-                        setMentionIndex(0);
-                      } else if (afterAt.includes(' ')) {
-                        setShowMentions(false);
-                      }
-                    } else {
-                      setShowMentions(false);
-                    }
-                  }}
-                  onKeyDown={(e) => {
-                    if (showMentions && filteredMentionUsers.length > 0) {
-                      if (e.key === 'ArrowDown') {
-                        e.preventDefault();
-                        setMentionIndex((prev) => (prev + 1) % filteredMentionUsers.length);
-                      } else if (e.key === 'ArrowUp') {
-                        e.preventDefault();
-                        setMentionIndex((prev) => (prev - 1 + filteredMentionUsers.length) % filteredMentionUsers.length);
-                      } else if (e.key === 'Enter') {
-                        e.preventDefault();
-                        handleMentionSelect(filteredMentionUsers[mentionIndex]);
-                      } else if (e.key === 'Escape') {
-                        setShowMentions(false);
-                      }
-                    } else if (e.key === "Enter") {
-                      handleAddComment();
-                    }
-                  }}
-                />
-                
-                {/* Mentions Dropdown */}
-                {showMentions && filteredMentionUsers.length > 0 && (
-                  <div className="absolute bottom-full left-0 mb-1 w-64 bg-popover border border-border rounded-lg shadow-lg z-50 max-h-48 overflow-auto">
-                    <div className="p-1">
-                      {filteredMentionUsers.map((user: any, idx: number) => {
-                        const displayName = user.firstName 
-                          ? `${user.firstName} ${user.lastName || ''}`.trim() 
-                          : user.username;
-                        return (
-                          <button
-                            key={user.id}
-                            onClick={() => handleMentionSelect(user)}
-                            className={cn(
-                              "w-full flex items-center gap-2 px-3 py-2 rounded-md text-left text-sm transition-colors",
-                              idx === mentionIndex ? "bg-primary/10 text-foreground" : "hover:bg-secondary"
-                            )}
-                          >
-                            <div className="w-6 h-6 rounded-full bg-primary/20 flex items-center justify-center text-xs font-medium">
-                              {displayName.charAt(0).toUpperCase()}
-                            </div>
-                            <span className="truncate">{displayName}</span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-                <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-0.5">
+              {/* Modern Input Container */}
+              <div className="relative">
+                <div className={cn(
+                  "flex items-end gap-2 bg-card/80 backdrop-blur-sm rounded-2xl border shadow-sm transition-all duration-200",
+                  "focus-within:border-primary/40 focus-within:shadow-md focus-within:shadow-primary/5"
+                )}>
+                  {/* Attachment Button */}
                   <input 
                     type="file" 
                     id="comment-file-upload" 
@@ -1914,24 +1961,126 @@ export function TaskDetailsModal({
                     variant="ghost" 
                     size="icon" 
                     className={cn(
-                      "h-7 w-7 text-muted-foreground/60 hover:text-foreground hover:bg-secondary/40 rounded-lg",
+                      "h-10 w-10 ml-2 my-1.5 flex-shrink-0 rounded-xl text-muted-foreground/70 hover:text-foreground hover:bg-secondary transition-all",
                       isUploadingCommentFile && "animate-pulse"
                     )}
                     asChild
                   >
                     <label htmlFor="comment-file-upload" className="cursor-pointer">
-                      <Paperclip className="w-3.5 h-3.5" />
+                      <Paperclip className="w-[18px] h-[18px]" />
                     </label>
                   </Button>
+                  
+                  {/* Modern Text Input */}
+                  <div className="flex-1 min-h-[52px] max-h-[200px] py-3 relative">
+                    <textarea
+                      ref={inputRef as any}
+                      placeholder="Напишите сообщение..."
+                      className="w-full h-full bg-transparent border-0 resize-none focus:ring-0 focus:outline-none text-[14px] leading-relaxed placeholder:text-muted-foreground/50 py-0.5"
+                      value={newComment}
+                      rows={1}
+                      onInput={(e: any) => {
+                        e.target.style.height = 'auto';
+                        e.target.style.height = Math.min(e.target.scrollHeight, 200) + 'px';
+                      }}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        setNewComment(value);
+                        
+                        // Check for mentions
+                        const lastAtIndex = value.lastIndexOf('@');
+                        if (lastAtIndex !== -1) {
+                          const afterAt = value.slice(lastAtIndex + 1);
+                          const spaceIndex = afterAt.indexOf(' ');
+                          const query = spaceIndex === -1 ? afterAt : afterAt.slice(0, spaceIndex);
+                          
+                          if (!afterAt.includes(' ') && value.length > lastAtIndex + 1) {
+                            setMentionQuery(query);
+                            setShowMentions(true);
+                            setMentionIndex(0);
+                          } else if (afterAt.includes(' ')) {
+                            setShowMentions(false);
+                          }
+                        } else {
+                          setShowMentions(false);
+                        }
+                      }}
+                      onKeyDown={(e) => {
+                        if (showMentions && filteredMentionUsers.length > 0) {
+                          if (e.key === 'ArrowDown') {
+                            e.preventDefault();
+                            setMentionIndex((prev) => (prev + 1) % filteredMentionUsers.length);
+                          } else if (e.key === 'ArrowUp') {
+                            e.preventDefault();
+                            setMentionIndex((prev) => (prev - 1 + filteredMentionUsers.length) % filteredMentionUsers.length);
+                          } else if (e.key === 'Enter' && !e.shiftKey) {
+                            e.preventDefault();
+                            handleMentionSelect(filteredMentionUsers[mentionIndex]);
+                          } else if (e.key === 'Escape') {
+                            setShowMentions(false);
+                          }
+                        } else if (e.key === "Enter" && !e.shiftKey) {
+                          e.preventDefault();
+                          handleAddComment();
+                        }
+                      }}
+                    />
+                  </div>
+                  
+                  {/* Modern Send Button */}
                   <Button 
                     size="icon" 
-                    className="h-7 w-7 bg-primary/90 hover:bg-primary shadow-md shadow-primary/20 rounded-lg"
+                    className={cn(
+                      "h-10 w-10 mr-2 my-1.5 flex-shrink-0 rounded-xl transition-all duration-200",
+                      (newComment.trim() || commentAttachments.length > 0)
+                        ? "bg-primary hover:bg-primary/90 shadow-md shadow-primary/25 text-primary-foreground scale-100"
+                        : "bg-secondary text-muted-foreground scale-95"
+                    )}
                     onClick={handleAddComment}
                     disabled={!newComment.trim() && commentAttachments.length === 0}
                   >
-                    <Send className="w-3.5 h-3.5 rotate-0" />
+                    <Send className={cn(
+                      "w-[18px] h-[18px] transition-transform",
+                      (newComment.trim() || commentAttachments.length > 0) && "rotate-0"
+                    )} />
                   </Button>
                 </div>
+                
+                {/* Modern Mentions Dropdown */}
+                {showMentions && filteredMentionUsers.length > 0 && (
+                  <div className="absolute bottom-full left-0 mb-2 w-72 bg-popover/95 backdrop-blur-sm border border-border/50 rounded-2xl shadow-xl z-50 max-h-60 overflow-auto">
+                    <div className="p-2">
+                      <div className="text-[10px] font-semibold text-muted-foreground/60 uppercase tracking-wider px-2 py-1.5">
+                        Упомянуть пользователя
+                      </div>
+                      {filteredMentionUsers.map((user: any, idx: number) => {
+                        const displayName = user.firstName 
+                          ? `${user.firstName} ${user.lastName || ''}`.trim() 
+                          : user.username;
+                        return (
+                          <button
+                            key={user.id}
+                            onClick={() => handleMentionSelect(user)}
+                            className={cn(
+                              "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left text-sm transition-all",
+                              idx === mentionIndex 
+                                ? "bg-primary/10 text-foreground shadow-sm" 
+                                : "hover:bg-secondary/60"
+                            )}
+                          >
+                            <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center text-sm font-semibold">
+                              {displayName.charAt(0).toUpperCase()}
+                            </div>
+                            <div className="flex flex-col">
+                              <span className="font-medium truncate">{displayName}</span>
+                              <span className="text-[10px] text-muted-foreground/60">@{user.username}</span>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -2215,16 +2364,16 @@ export function TaskDetailsModal({
               <div className="space-y-1.5">
                 <label className="text-[10px] font-semibold text-muted-foreground/60 uppercase tracking-wider">Приоритет</label>
                 <Select
-                  value={safeTask.priorityId}
+                  value={effectiveTask.priorityId}
                   onValueChange={(value) => handleUpdate({ priorityId: value })}
                 >
                   <SelectTrigger className="w-full h-10 bg-secondary/15 border-none rounded-lg px-3 hover:bg-secondary/25 transition-all font-bold text-[13px]">
                     <div className="flex items-center gap-3">
-                      {availablePriorities.find(p => p.id === safeTask.priorityId) ? (
+                      {availablePriorities.find(p => p.id === effectiveTask.priorityId) ? (
                         <>
-                          <div className={cn("w-3 h-3 rounded-full", availablePriorities.find(p => p.id === safeTask.priorityId)?.color)} />
+                          <div className={cn("w-3 h-3 rounded-full", availablePriorities.find(p => p.id === effectiveTask.priorityId)?.color)} />
                           <span className="text-foreground font-medium">
-                            {availablePriorities.find(p => p.id === safeTask.priorityId)?.name}
+                            {availablePriorities.find(p => p.id === effectiveTask.priorityId)?.name}
                           </span>
                         </>
                       ) : (
@@ -2252,16 +2401,16 @@ export function TaskDetailsModal({
               <div className="space-y-1.5">
                 <label className="text-[10px] font-semibold text-muted-foreground/60 uppercase tracking-wider">Тип задачи</label>
                 <Select
-                  value={safeTask.taskTypeId || ""}
-                  onValueChange={(value) => handleUpdate({ taskTypeId: value || null })}
+                  value={effectiveTask.taskTypeId || ""}
+                  onValueChange={(value) => handleUpdate({ taskTypeId: value || null } as any)}
                 >
                   <SelectTrigger className="w-full h-10 bg-secondary/15 border-none rounded-lg px-3 hover:bg-secondary/25 transition-all font-bold text-[13px]">
                     <div className="flex items-center gap-3">
-                      {availableTaskTypes.find(t => t.id === safeTask.taskTypeId) ? (
+                      {availableTaskTypes.find(t => t.id === effectiveTask.taskTypeId) ? (
                         <>
-                          <div className={cn("w-3 h-3 rounded-full", availableTaskTypes.find(t => t.id === safeTask.taskTypeId)?.color)} />
+                          <div className={cn("w-3 h-3 rounded-full", availableTaskTypes.find(t => t.id === effectiveTask.taskTypeId)?.color)} />
                           <span className="text-foreground font-medium">
-                            {availableTaskTypes.find(t => t.id === safeTask.taskTypeId)?.name}
+                            {availableTaskTypes.find(t => t.id === effectiveTask.taskTypeId)?.name}
                           </span>
                         </>
                       ) : (
@@ -2375,16 +2524,16 @@ export function TaskDetailsModal({
 
               {/* Footer Metadata */}
               <div className="pt-6 space-y-1.5 px-1">
-                <div className="text-[9px] font-bold text-muted-foreground/40 uppercase tracking-widest">Создано {safeTask.creator.date}</div>
+                <div className="text-[9px] font-bold text-muted-foreground/40 uppercase tracking-widest">Создано {effectiveTask.creator.date}</div>
                 <div className="flex items-center gap-2">
                   <span className="text-[9px] font-bold text-muted-foreground/40 uppercase tracking-widest">Создатель</span>
                   <div className="flex items-center gap-1">
-                    <span className="text-[9px] font-bold text-foreground/70">{safeTask.creator.name}</span>
+                    <span className="text-[9px] font-bold text-foreground/70">{effectiveTask.creator.name}</span>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="text-[9px] font-bold text-muted-foreground/40 uppercase tracking-widest">Проект</span>
-                  <span className="text-[9px] font-bold text-foreground/70">{safeTask.project}</span>
+                  <span className="text-[9px] font-bold text-foreground/70">{effectiveTask.project}</span>
                 </div>
               </div>
             </div>
@@ -2392,5 +2541,50 @@ export function TaskDetailsModal({
         </div>
       </DialogContent>
     </Dialog>
+
+    {/* Image Lightbox Dialog */}
+    <Dialog open={!!selectedImage} onOpenChange={(open) => !open && setSelectedImage(null)}>
+      <DialogContent className="max-w-[90vw] max-h-[90vh] p-0 overflow-hidden bg-background/95 backdrop-blur-sm">
+        <div className="relative flex items-center justify-center min-h-[200px] max-h-[85vh]">
+          {selectedImage && (
+            <>
+              <img
+                src={selectedImage.url}
+                alt={selectedImage.name}
+                className="max-w-full max-h-[85vh] object-contain"
+                onClick={() => setSelectedImage(null)}
+              />
+              <div className="absolute top-4 right-4 flex gap-2">
+                <Button
+                  variant="secondary"
+                  size="icon"
+                  className="rounded-full bg-background/80 backdrop-blur-sm hover:bg-background shadow-lg"
+                  onClick={() => {
+                    const link = document.createElement('a');
+                    link.href = selectedImage.url;
+                    link.download = selectedImage.name;
+                    link.click();
+                  }}
+                >
+                  <Download className="w-4 h-4" />
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="icon"
+                  className="rounded-full bg-background/80 backdrop-blur-sm hover:bg-background shadow-lg"
+                  onClick={() => setSelectedImage(null)}
+                >
+                  <X className="w-4 h-4" />
+                </Button>
+              </div>
+              <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-background/80 backdrop-blur-sm px-4 py-2 rounded-full text-sm font-medium shadow-lg">
+                {selectedImage.name}
+              </div>
+            </>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+    </>
   );
 }

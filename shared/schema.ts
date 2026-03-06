@@ -498,12 +498,14 @@ export const chatParticipants = pgTable("chat_participants", {
 }));
 
 // Messages table
+// @ts-ignore - recursive type reference
 export const messages = pgTable("messages", {
   id: uuid("id").primaryKey().defaultRandom(),
   chatId: uuid("chat_id").notNull().references(() => chats.id, { onDelete: "cascade" }),
   senderId: uuid("sender_id").notNull().references(() => users.id),
   content: text("content").notNull(),
   attachments: jsonb("attachments").default(sql`'[]'::jsonb`),
+  // @ts-ignore - recursive reference
   replyToId: uuid("reply_to_id").references(() => messages.id, { onDelete: "set null" }),
   isRead: boolean("is_read").default(false),
   createdAt: timestamp("created_at").defaultNow(),

@@ -77,66 +77,66 @@ export default function ReportsPage() {
   }, [selectedWorkspace, selectedProject, selectedBoard, selectedUser, dateFrom, dateTo]);
 
   // Fetch workspaces
-  const { data: workspaces = [] } = useQuery({
+  const { data: workspaces = [] } = useQuery<any[]>({
     queryKey: ["/api/workspaces"],
     staleTime: 1000 * 60 * 5,
   });
 
   // Fetch projects
-  const { data: projects = [] } = useQuery({
+  const { data: projects = [] } = useQuery<any[]>({
     queryKey: ["/api/projects"],
     staleTime: 1000 * 60 * 5,
   });
 
   // Fetch boards
-  const { data: boards = [] } = useQuery({
+  const { data: boards = [] } = useQuery<any[]>({
     queryKey: ["/api/boards"],
     staleTime: 1000 * 60 * 5,
   });
 
   // Fetch users
-  const { data: users = [] } = useQuery({
+  const { data: users = [] } = useQuery<any[]>({
     queryKey: ["/api/users"],
     staleTime: 1000 * 60 * 5,
   });
 
   // Fetch overview report
-  const { data: overviewData, isLoading: isLoadingOverview } = useQuery({
+  const { data: overviewData, isLoading: isLoadingOverview } = useQuery<any>({
     queryKey: [`/api/reports/overview?${queryParams}`],
     enabled: activeReport === "overview",
     staleTime: 1000 * 60 * 2,
   });
 
   // Fetch workspaces report
-  const { data: workspacesReport, isLoading: isLoadingWorkspaces } = useQuery({
+  const { data: workspacesReport, isLoading: isLoadingWorkspaces } = useQuery<any>({
     queryKey: [`/api/reports/workspaces?${queryParams}`],
     enabled: activeReport === "workspaces",
     staleTime: 1000 * 60 * 2,
   });
 
   // Fetch projects report
-  const { data: projectsReport, isLoading: isLoadingProjects } = useQuery({
+  const { data: projectsReport, isLoading: isLoadingProjects } = useQuery<any>({
     queryKey: [`/api/reports/projects?${queryParams}`],
     enabled: activeReport === "projects",
     staleTime: 1000 * 60 * 2,
   });
 
   // Fetch boards report
-  const { data: boardsReport, isLoading: isLoadingBoards } = useQuery({
+  const { data: boardsReport, isLoading: isLoadingBoards } = useQuery<any>({
     queryKey: [`/api/reports/boards?${queryParams}`],
     enabled: activeReport === "boards",
     staleTime: 1000 * 60 * 2,
   });
 
   // Fetch tasks time tracking
-  const { data: tasksTimeData, isLoading: isLoadingTasksTime } = useQuery({
+  const { data: tasksTimeData, isLoading: isLoadingTasksTime } = useQuery<any>({
     queryKey: [`/api/reports/tasks/time-tracking?${queryParams}`],
     enabled: activeReport === "tasks",
     staleTime: 1000 * 60 * 2,
   });
 
   // Fetch users report
-  const { data: usersReport, isLoading: isLoadingUsers } = useQuery({
+  const { data: usersReport, isLoading: isLoadingUsers } = useQuery<any>({
     queryKey: [`/api/reports/users?${queryParams}`],
     enabled: activeReport === "users",
     staleTime: 1000 * 60 * 2,

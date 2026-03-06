@@ -365,7 +365,7 @@ interface KanbanColumnProps {
   onSortChange?: (columnId: string, sortBy: string) => void;
 }
 
-const KanbanColumn = React.memo({ 
+const KanbanColumn = React.memo(({
   column, 
   columnId,
   columnIndex,
@@ -380,7 +380,7 @@ const KanbanColumn = React.memo({
   availableLabels = [], 
   availablePriorities = [],
   availableTaskTypes = [],
-  sortBy = 'default',
+  sortBy,
   onSortChange
 }: KanbanColumnProps) => {
   const columnColor = getColumnColor(column, customColumnColor);
@@ -390,11 +390,11 @@ const KanbanColumn = React.memo({
   
   // Get left column (previous column)
   const leftColumn = columnIndex > 0 ? allColumns[columnIndex - 1] : null;
-  
+
   // Sort tasks based on sortBy option
   const sortedTasks = React.useMemo(() => {
     const sorted = [...tasks];
-    
+
     switch (sortBy) {
       case 'title':
         return sorted.sort((a, b) => (a.title || '').localeCompare(b.title || ''));
@@ -423,7 +423,7 @@ const KanbanColumn = React.memo({
         return sorted.sort((a, b) => (a.order || 0) - (b.order || 0));
     }
   }, [tasks, sortBy, availablePriorities]);
-  
+
   const handleEditSubmit = () => {
     if (editName.trim() && editName !== column && columnId && onEditColumn) {
       onEditColumn(columnId, editName.trim());
@@ -486,7 +486,7 @@ const KanbanColumn = React.memo({
                   <Button 
                     variant="ghost" 
                     size="icon" 
-                    className={cn("w-6 h-6 text-muted-foreground/50 hover:text-primary hover:bg-primary/10 transition-colors", sortBy !== 'default' && "text-primary")}
+                    className={cn("w-6 h-6 text-muted-foreground/50 hover:text-primary hover:bg-primary/10 transition-colors", sortBy && sortBy !== 'default' && "text-primary")}
                   >
                     <ArrowUpDown className="w-3.5 h-3.5" />
                   </Button>
@@ -706,7 +706,7 @@ ProjectItem.displayName = 'ProjectItem';
 
 export default function Projects() {
   const { data: user } = useQuery<any>({ queryKey: ["/api/user"] });
-  const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
+  const [activeProjectId, setActiveProjectId] = useState<any>(null);
   const [activeBoardId, setActiveBoardId] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [isCreateProjectOpen, setIsCreateProjectOpen] = useState(false);
@@ -724,10 +724,10 @@ export default function Projects() {
   const [isEditProjectOpen, setIsEditProjectOpen] = useState(false);
   const [deletingProjectId, setDeletingProjectId] = useState<string | null>(null);
   const [deletingBoardId, setDeletingBoardId] = useState<string | null>(null);
-  
+
   // Column sorting state
   const [columnSortBy, setColumnSortBy] = useState<Record<string, string>>({});
-  
+
   // Search with debounce for better performance
   const [projectSearchQuery, setProjectSearchQuery] = useState("");
   const debouncedProjectSearch = useDebounce(projectSearchQuery, 300);
@@ -794,7 +794,7 @@ export default function Projects() {
   });
 
   // All tasks and columns for "All Tasks" view
-  const { data: allTasksData } = useQuery<any[]>({
+  const { data: allTasksData } = useQuery<any>({
     queryKey: ["/api/tasks/all"],
     staleTime: 1000 * 60 * 1, // 1 minute
     enabled: showAllTasks,
@@ -1465,7 +1465,7 @@ export default function Projects() {
   const filteredTasks = useMemo(() => {
     if (!tasks.length) return [];
     
-    return tasks.filter(task => {
+    return tasks.filter((task: any) => {
       // Search filter
       if (taskFilters.search) {
         const searchLower = taskFilters.search.toLowerCase();
@@ -1544,14 +1544,14 @@ export default function Projects() {
     columns.forEach(col => {
       if (showAllTasks) {
         // For "All Tasks" view, group by column name instead of columnId
-        const columnTasks = filteredTasks.filter(t => {
+        const columnTasks = filteredTasks.filter((t: any) => {
           const taskColumnName = allColumns.find((c: any) => c.id === t.columnId)?.name;
           return taskColumnName === col.name;
         });
-        data[col.id] = columnTasks.sort((a, b) => (a.order || 0) - (b.order || 0));
+        data[col.id] = columnTasks.sort((a: any, b: any) => (a.order || 0) - (b.order || 0));
       } else {
-        const columnTasks = filteredTasks.filter(t => t.columnId === col.id);
-        data[col.id] = columnTasks.sort((a, b) => (a.order || 0) - (b.order || 0));
+        const columnTasks = filteredTasks.filter((t: any) => t.columnId === col.id);
+        data[col.id] = columnTasks.sort((a: any, b: any) => (a.order || 0) - (b.order || 0));
       }
     });
     return data;
@@ -1900,7 +1900,7 @@ export default function Projects() {
                         <DialogContent>
                           <DialogHeader>
                             <DialogTitle>Удалить доску?</DialogTitle>
-                            <DialogDescription className="text-base">
+                            <DialogDescription className="text-base break-words">
                               При удалении доски <strong>"{boards.find(b => b.id === deletingBoardId)?.name}"</strong> будут удалены все связанные проекты.
                             </DialogDescription>
                           </DialogHeader>
@@ -1917,7 +1917,7 @@ export default function Projects() {
                           <DialogFooter className="flex flex-col gap-2">
                             <Button 
                               variant="outline" 
-                              className="w-full"
+                              className="w-full whitespace-normal h-auto py-2"
                               onClick={handleConfirmDeleteBoard}
                               disabled={deleteBoardMutation.isPending}
                             >
@@ -1925,7 +1925,7 @@ export default function Projects() {
                               Удалить всё
                             </Button>
                             <Button 
-                              className="w-full bg-amber-600 hover:bg-amber-700"
+                              className="w-full bg-amber-600 hover:bg-amber-700 whitespace-normal h-auto py-2"
                               onClick={handleArchiveBoardProjects}
                               disabled={updateProjectMutation.isPending || deleteBoardMutation.isPending}
                             >

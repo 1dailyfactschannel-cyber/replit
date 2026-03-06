@@ -352,7 +352,7 @@ export class PostgresStorage {
     }
   }
 
-  async createMessage(insertMessage: schema.InsertMessage) {
+  async createMessage(insertMessage: any) {
     try {
       const [message] = await this.db.insert(schema.messages).values(insertMessage).returning();
       
@@ -362,7 +362,7 @@ export class PostgresStorage {
         .where(eq(schema.chats.id, message.chatId));
 
       // Handle message attachments if they are in the JSONB field
-      const attachments = insertMessage.attachments as any[];
+      const attachments = (insertMessage as any).attachments;
       if (attachments && Array.isArray(attachments)) {
         for (const attachment of attachments) {
           await this.createMessageAttachment({
@@ -1232,7 +1232,9 @@ export class PostgresStorage {
           .groupBy(schema.comments.taskId);
         
         commentCounts = commentCountResults.reduce((acc, row) => {
-          acc[row.taskId] = row.count;
+          if (row.taskId) {
+            acc[row.taskId] = row.count;
+          }
           return acc;
         }, {} as Record<string, number>);
       }
