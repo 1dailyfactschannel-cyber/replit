@@ -1754,6 +1754,36 @@ export class PostgresStorage {
     // Drizzle doesn't expose the underlying client directly
     // In production, you might want to manage the postgres client separately
   }
+
+  // File attachment methods
+  async createFileAttachment(insertAttachment: InsertFileAttachment): Promise<FileAttachment> {
+    try {
+      const [attachment] = await this.db.insert(schema.fileAttachments).values(insertAttachment).returning();
+      return attachment;
+    } catch (error) {
+      console.error("Error creating file attachment:", error);
+      throw error;
+    }
+  }
+
+  async getFileAttachment(id: string): Promise<FileAttachment | undefined> {
+    try {
+      const result = await this.db.select().from(schema.fileAttachments).where(eq(schema.fileAttachments.id, id)).limit(1);
+      return result[0];
+    } catch (error) {
+      console.error("Error getting file attachment:", error);
+      return undefined;
+    }
+  }
+
+  async deleteFileAttachment(id: string): Promise<void> {
+    try {
+      await this.db.delete(schema.fileAttachments).where(eq(schema.fileAttachments.id, id));
+    } catch (error) {
+      console.error("Error deleting file attachment:", error);
+      throw error;
+    }
+  }
 }
 
 // ==================== REPORT FUNCTIONS ====================
@@ -2039,37 +2069,6 @@ export async function getReportUsers(
   } catch (error) {
     console.error("Error getting users report:", error);
     throw error;
-  }
-}
-
-  // File attachment methods
-  async createFileAttachment(insertAttachment: InsertFileAttachment): Promise<FileAttachment> {
-    try {
-      const [attachment] = await this.db.insert(schema.fileAttachments).values(insertAttachment).returning();
-      return attachment;
-    } catch (error) {
-      console.error("Error creating file attachment:", error);
-      throw error;
-    }
-  }
-
-  async getFileAttachment(id: string): Promise<FileAttachment | undefined> {
-    try {
-      const result = await this.db.select().from(schema.fileAttachments).where(eq(schema.fileAttachments.id, id)).limit(1);
-      return result[0];
-    } catch (error) {
-      console.error("Error getting file attachment:", error);
-      return undefined;
-    }
-  }
-
-  async deleteFileAttachment(id: string): Promise<void> {
-    try {
-      await this.db.delete(schema.fileAttachments).where(eq(schema.fileAttachments.id, id));
-    } catch (error) {
-      console.error("Error deleting file attachment:", error);
-      throw error;
-    }
   }
 }
 
