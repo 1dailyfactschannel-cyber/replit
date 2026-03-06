@@ -360,6 +360,8 @@ interface KanbanColumnProps {
   availableLabels?: any[];
   availablePriorities?: any[];
   availableTaskTypes?: any[];
+  sortBy?: string;
+  onSortChange?: (columnId: string, sortBy: string) => void;
 }
 
 const KanbanColumn = React.memo(({ 
@@ -376,7 +378,9 @@ const KanbanColumn = React.memo(({
   columnColor: customColumnColor,
   availableLabels = [], 
   availablePriorities = [],
-  availableTaskTypes = []
+  availableTaskTypes = [],
+  sortBy = 'default',
+  onSortChange
 }: KanbanColumnProps) => {
   const columnColor = getColumnColor(column, customColumnColor);
   const [isEditing, setIsEditing] = useState(false);
@@ -385,6 +389,39 @@ const KanbanColumn = React.memo(({
   
   // Get left column (previous column)
   const leftColumn = columnIndex > 0 ? allColumns[columnIndex - 1] : null;
+  
+  // Sort tasks based on sortBy option
+  const sortedTasks = React.useMemo(() => {
+    const sorted = [...tasks];
+    
+    switch (sortBy) {
+      case 'title':
+        return sorted.sort((a, b) => (a.title || '').localeCompare(b.title || ''));
+      case 'priority':
+        const priorityOrder: Record<string, number> = { high: 0, medium: 1, low: 2 };
+        return sorted.sort((a, b) => {
+          const aPriority = a.priorityId ? priorityOrder[availablePriorities.find((p: any) => p.id === a.priorityId)?.name.toLowerCase()] ?? 3 : 3;
+          const bPriority = b.priorityId ? priorityOrder[availablePriorities.find((p: any) => p.id === b.priorityId)?.name.toLowerCase()] ?? 3 : 3;
+          return aPriority - bPriority;
+        });
+      case 'dueDate':
+        return sorted.sort((a, b) => {
+          if (!a.dueDate && !b.dueDate) return 0;
+          if (!a.dueDate) return 1;
+          if (!b.dueDate) return -1;
+          return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
+        });
+      case 'created':
+        return sorted.sort((a, b) => {
+          if (!a.createdAt && !b.createdAt) return 0;
+          if (!a.createdAt) return 1;
+          if (!b.createdAt) return -1;
+          return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+        });
+      default:
+        return sorted.sort((a, b) => (a.order || 0) - (b.order || 0));
+    }
+  }, [tasks, sortBy, availablePriorities]);
   
   const handleEditSubmit = () => {
     if (editName.trim() && editName !== column && columnId && onEditColumn) {
@@ -433,356 +470,140 @@ const KanbanColumn = React.memo(({
               {tasks.length}
             </Badge>
             
+              <div className="flex items-center ml-auto group/col-title w-full">
+             <div className="flex items-center gap-2 group/col-title">
+               <h3 
+                className={cn("font-bold text-sm truncate max-w-[150px] cursor-pointer hover:opacity-70", columnColor.text)}
+               </h3>
+             )}
+             <Badge className={cn("rounded-full px-2 py-0 h-5 text-[10px] font-bold shrink-0 border-0", columnColor.badge)}>
+               {tasks.length}
+             </Badge>
+           
             <div className="flex items-center ml-auto">
-              <Button 
-                variant="ghost" 
-                size="icon" 
-                className="w-6 h-6 text-muted-foreground/50 hover:text-primary hover:bg-primary/10 transition-colors"
-                onClick={() => onCreateTask(column)}
-              >
-                <Plus className="w-3.5 h-3.5" />
-              </Button>
-              
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button 
-                    variant="ghost" 
-                    size="icon" 
-                    className="w-6 h-6 text-muted-foreground/50 hover:text-foreground hover:bg-secondary transition-colors"
-                  >
-                    <MoreVertical className="w-3.5 h-3.5" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-40">
-                  <DropdownMenuItem onClick={() => onOpenEditColumnDialog({ id: columnId, name: column, color: undefined })}>
-                    <Pencil className="w-4 h-4 mr-2" />
-                    Редактировать
-                  </DropdownMenuItem>
-                  <DropdownMenuItem 
-                    onClick={() => setShowDeleteDialog(true)}
-                    disabled={!leftColumn}
-                    className="text-destructive focus:text-destructive"
-                  >
-                    <Trash2 className="w-4 h-4 mr-2" />
-                    Удалить
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              className="w-6 h-6 text-muted-foreground/50 hover:text-primary hover:bg-primary/10 transition-colors"
+              onClick={() => onCreateTask(column)}
+            >
+              <Plus className="w-3.5 h-3.5" />
+            </Button>
+
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button 
+                  variant="ghost" 
+                  size="icon" 
+                  className="w-6 h-6 text-muted-foreground/50 hover:text-foreground hover:bg-secondary transition-colors"
+                >
+                  <ArrowUpDown className="w-3.33- />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-40">
+                <DropdownMenuItem onClick={() => onSortChange?.(columnId, 'default')}>
+                  <div className="flex items-center gap-2">
+                    <AlignStart className="w-4 h-4" />
+                    Сортировка по умолчанию                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => onSortChange?.(columnId, 'priority')}>
+                  <div className="flex items-center gap-2">
+                    <Flag className={cn(
+                      "w-3.5 h-3.5",
+                      sortBy === 'priority' ? '🟢' : '⚪'
+                    )}
+                    <span className="text-xs">По приоритету</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => onSortChange?.(columnId, 'dueDate')}>
+                  <div className="flex items-center gap-2">
+                    <Calendar className="w-3.5 h-3.5" />
+                    <span className="text-xs">По дате</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => onSortChange?.(columnId, 'created')}>
+                  <div className="flex items-center gap-2">
+                    <Clock className="w-3.5 h-3.5" />
+                    <span className="text-xs">по дате созданияления</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => onSortChange?.(columnId, 'title')}>
+                  <div className="flex items-center gap-2">
+                    <Type className="w-3.5 h-3.5" />
+                    <span className="text-xs">по названию (А-я)</span>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </Button>
+            
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button 
+                  variant="ghost" 
+                  size="icon" 
+                  className="w-6 h-6 text-muted-foreground/50 hover:text-foreground hover:bg-secondary transition-colors"
+                >
+                  <MoreVertical className="w-3.5 h-3.5" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-40">
+                <DropdownMenuItem onClick={() => onOpenEditColumnDialog({ id: columnId, name: column, color: undefined })}>
+                  <Pencil className="w-4 h-4 mr-2" />
+                  Редактировать
+                </DropdownMenuItem>
+                <DropdownMenuItem 
+                  onClick={() => setShowDeleteDialog(true)}
+                  disabled={!leftColumn}
+                  className="text-destructive focus:text-destructive"
+                >
+                  <Trash2 className="w-4 h-4 mr-2" />
+                  Удалить
+                </DropdownMenuItem>
               </DropdownMenu>
             </div>
           </div>
         </div>
-        {/* Colored underline for column header */}
-        <div className={cn("h-0.5 w-full rounded-full", columnColor.border.replace('border-', 'bg-'))} />
       </div>
-      
-      {/* Delete Confirmation Dialog */}
-      <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Удалить колонку?</AlertDialogTitle>
-            <AlertDialogDescription>
-              <span className="block mb-2">
-                Вы уверены, что хотите удалить колонку <strong>"{column}"</strong>?
-              </span>
-              {leftColumn ? (
-                <span className="block text-destructive">
-                  Все задачи ({tasks.length}) из этой колонки будут перемещены в колонку <strong>"{leftColumn.name}"</strong>.
-                </span>
-              ) : (
-                <span className="block text-destructive">
-                  Это первая колонка, удаление невозможно.
-                </span>
-              )}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Отмена</AlertDialogCancel>
-            {leftColumn && (
-              <AlertDialogAction 
-                onClick={handleDelete}
-                className="bg-destructive hover:bg-destructive/90"
-              >
-                Удалить
-              </AlertDialogAction>
-            )}
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+    </div>
+  );
+};
 
-      <Droppable droppableId={columnId} type="task">
-        {(taskProvided, snapshot) => (
-          <div
-            {...taskProvided.droppableProps}
-            ref={taskProvided.innerRef}
-            className={cn(
-              "flex flex-col gap-3 min-h-[150px] rounded-xl p-1",
-              snapshot.isDraggingOver ? "bg-primary/5 ring-1 ring-primary/20" : ""
-            )}
-          >
-            {tasks.map((task: any, index: number) => (
-              <TaskCard 
-                key={task.id} 
-                task={task} 
-                index={index} 
-                onClick={onTaskClick}
-                columnColor={columnColor}
-                availableLabels={availableLabels}
-                availablePriorities={availablePriorities}
-                availableTaskTypes={availableTaskTypes}
-              />
-            ))}
-            {taskProvided.placeholder}
-          </div>
-        )}
+// Sorted tasks
+const sortedTasks = React.useMemo(() => {
+  switch (sortBy) {
+    case 'priority':
+      return [...tasks].sort((a: any, b) => {
+        const aPriority = availablePriorities.find((p: any) => p.id === b.priorityId);
+        const bPriority = availablePriorities.find((p: any) => p.id === a.priorityId);
+        return (aPriority || 0) - (bPriority || 0);
+      });
+    case 'dueDate':
+      return [...tasks].sort((a: any, b) => {
+        const dateA = b.dueDate ? new Date(b.dueDate) : null;
+        const bDateA = new Date(b.dueDate);
+        return aDateA - b.dateB;
+      });
+    case 'created':
+      return [...tasks].sort((a: any, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      });
+    case 'title':
+    default:
+      return tasks;
+  }, [tasks,]);
+
+  return (
+    <Droppable droppableId={columnId} type="task">
+    <div className="flex flex-col gap-2 min-h-[calc(100vh-120)]">
+      <ScrollArea className="flex-1 overflow-y-auto px-2 pb-2">
+        {sortedTasks.map((task, index) => (
+          <TaskCard
+            key={task.id}
+            task={task}
+            index={index}
+            onClick={() => onTaskClick(task)}
+            columnColor={columnColor.text}
+            availableLabels={availableLabels}
+            availablePriorities={availablePriorities}
+            availableTaskTypes={availableTaskTypes}
+          />
+        ))}
       </Droppable>
     </div>
   );
-}, (prevProps, nextProps) => {
-  // Always re-render when tasks change to ensure priority/number/dueDate updates show immediately
-  return false;
-});
-
-KanbanColumn.displayName = 'KanbanColumn';
-
-// Memoized Project Item component
-interface ProjectItemProps {
-  project: any;
-  isActive: boolean;
-  isCollapsed: boolean;
-  onSelect: (projectId: string) => void;
-  onToggleCollapse: (projectId: string, e: React.MouseEvent) => void;
-  onEdit?: (project: any) => void;
-  onDelete?: (projectId: string) => void;
-}
-
-const ProjectItem = React.memo(({ 
-  project, 
-  isActive, 
-  isCollapsed, 
-  onSelect, 
-  onToggleCollapse,
-  onEdit,
-  onDelete
-}: ProjectItemProps) => {
-  return (
-    <div className="space-y-1">
-      <div
-        onClick={() => onSelect(project.id)}
-        className={cn(
-          "w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-all group/project relative cursor-pointer",
-          isActive
-            ? "bg-primary/10 text-primary"
-            : "text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
-        )}
-      >
-        <div 
-          className="flex flex-col flex-1 min-w-0"
-          onClick={(e) => {
-            if (isActive) {
-              onToggleCollapse(project.id, e);
-            }
-          }}
-        >
-          <div className="flex items-center gap-2">
-            <ChevronRight className={cn(
-              "w-3.5 h-3.5 shrink-0 transition-transform duration-200 opacity-50",
-              !isCollapsed && "rotate-90"
-            )} />
-            <div className={cn(
-              "w-2 h-2 rounded-full shrink-0 shadow-[0_0_8px_rgba(0,0,0,0.1)]",
-              project.priority === "Высокий" || project.priority === "Критический" ? "bg-rose-500 shadow-rose-500/40" :
-              project.priority === "Средний" ? "bg-amber-500 shadow-amber-500/40" :
-              "bg-emerald-500 shadow-emerald-500/40"
-            )} />
-            <span className="truncate text-left">{project.name}</span>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}, (prevProps, nextProps) => {
-  return (
-    prevProps.project.id === nextProps.project.id &&
-    prevProps.project.name === nextProps.project.name &&
-    prevProps.project.progress === nextProps.project.progress &&
-    prevProps.isActive === nextProps.isActive &&
-    prevProps.isCollapsed === nextProps.isCollapsed
-  );
-});
-
-ProjectItem.displayName = 'ProjectItem';
-
-export default function Projects() {
-  const { data: user } = useQuery<any>({ queryKey: ["/api/user"] });
-  const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
-  const [activeBoardId, setActiveBoardId] = useState<string | null>(null);
-  const [modalOpen, setModalOpen] = useState(false);
-  const [isCreateProjectOpen, setIsCreateProjectOpen] = useState(false);
-  const [isCreateBoardOpen, setIsCreateBoardOpen] = useState(false);
-  const [isCreateWorkspaceOpen, setIsCreateWorkspaceOpen] = useState(false);
-  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(null);
-  const [isWorkspaceDropdownOpen, setIsWorkspaceDropdownOpen] = useState(false);
-  const [newProject, setNewProject] = useState({ name: "", color: "bg-blue-500", priority: "Средний" });
-  const [newBoardName, setNewBoardName] = useState("");
-  const [newWorkspaceName, setNewWorkspaceName] = useState("");
-  const [editingColumn, setEditingColumn] = useState<{ originalName: string, currentName: string } | null>(null);
-  const [collapsedProjects, setCollapsedProjects] = useState<Record<string, boolean>>({});
-  const [showAllTasks, setShowAllTasks] = useState(false);
-  const [editingProject, setEditingProject] = useState<any>(null);
-  const [isEditProjectOpen, setIsEditProjectOpen] = useState(false);
-  const [deletingProjectId, setDeletingProjectId] = useState<string | null>(null);
-  const [deletingBoardId, setDeletingBoardId] = useState<string | null>(null);
-  
-  // Search with debounce for better performance
-  const [projectSearchQuery, setProjectSearchQuery] = useState("");
-  const debouncedProjectSearch = useDebounce(projectSearchQuery, 300);
-
-  // Task filters state
-  const [isFilterOpen, setIsFilterOpen] = useState(false);
-  const [taskFilters, setTaskFilters] = useState({
-    status: [] as string[],
-    assignee: [] as string[],
-    priority: [] as string[],
-    labels: [] as string[],
-    search: "",
-    dateFrom: undefined as Date | undefined,
-    dateTo: undefined as Date | undefined,
-    projects: [] as string[]
-  });
-  const [activeFiltersCount, setActiveFiltersCount] = useState(0);
-  
-  // Filter dropdown states
-  const [projectFilterOpen, setProjectFilterOpen] = useState(false);
-  const [statusFilterOpen, setStatusFilterOpen] = useState(false);
-  const [assigneeFilterOpen, setAssigneeFilterOpen] = useState(false);
-  const [priorityFilterOpen, setPriorityFilterOpen] = useState(false);
-  const [labelsFilterOpen, setLabelsFilterOpen] = useState(false);
-
-  // Queries with optimized caching
-  const { data: projects = [], isLoading: isLoadingProjects } = useQuery<any[]>({
-    queryKey: ["/api/projects", selectedWorkspaceId],
-    queryFn: async () => {
-      const url = selectedWorkspaceId 
-        ? `/api/projects?workspaceId=${selectedWorkspaceId}` 
-        : "/api/projects";
-      const res = await apiRequest("GET", url);
-      return res.json();
-    },
-    staleTime: 1000 * 60 * 10, // 10 minutes - projects change rarely
-    gcTime: 1000 * 60 * 30, // Keep in cache for 30 minutes
-    placeholderData: [], // Use empty array while loading to prevent flicker
-  });
-
-  const { data: workspaces = [] } = useQuery<any[]>({
-    queryKey: ["/api/workspaces"],
-    staleTime: 1000 * 60 * 10,
-  });
-
-  const { data: availableLabels = [] } = useQuery<any[]>({
-    queryKey: ["/api/labels"],
-    staleTime: 1000 * 60 * 60, // 1 hour
-  });
-
-  const { data: availablePriorities = [] } = useQuery<any[]>({
-    queryKey: ["/api/priorities"],
-    staleTime: 1000 * 60 * 60, // 1 hour
-  });
-
-  const { data: availableTaskTypes = [] } = useQuery<any[]>({
-    queryKey: ["/api/task-types"],
-    staleTime: 1000 * 60 * 60, // 1 hour
-  });
-
-  const { data: users = [] } = useQuery<any[]>({
-    queryKey: ["/api/users"],
-    staleTime: 1000 * 60 * 5, // 5 minutes
-  });
-
-  // All tasks and columns for "All Tasks" view
-  const { data: allTasksData } = useQuery<any[]>({
-    queryKey: ["/api/tasks/all"],
-    staleTime: 1000 * 60 * 1, // 1 minute
-    enabled: showAllTasks,
-  });
-
-  // Handle both array response and object with tasks property
-  const allTasks = Array.isArray(allTasksData) ? allTasksData : (allTasksData?.tasks || []);
-
-  const { data: allColumns = [] } = useQuery<any[]>({
-    queryKey: ["/api/board-columns/all"],
-    staleTime: 1000 * 60 * 1, // 1 minute
-    enabled: showAllTasks,
-  });
-
-  // Filter projects based on debounced search query
-  const filteredProjects = useMemo(() => {
-    if (!debouncedProjectSearch.trim()) return projects;
-    const query = debouncedProjectSearch.toLowerCase();
-    return projects.filter(project => 
-      project.name?.toLowerCase().includes(query) ||
-      project.description?.toLowerCase().includes(query)
-    );
-  }, [projects, debouncedProjectSearch]);
-
-  const activeProject = useMemo(() => 
-    projects.find(p => p.id === activeProjectId) || projects[0],
-    [projects, activeProjectId]
-  );
-
-  const { data: boards = [], isLoading: isLoadingBoards } = useQuery<any[]>({
-    queryKey: ["/api/projects", activeProject?.id, "boards"],
-    enabled: !!activeProject?.id,
-    staleTime: 1000 * 60 * 10, // 10 minutes
-    gcTime: 1000 * 60 * 30,
-    placeholderData: [],
-  });
-
-  // Get all boards for project filtering
-  const { data: allBoards = [] } = useQuery<any[]>({
-    queryKey: ["/api/boards"],
-    staleTime: 1000 * 60 * 10, // 10 minutes
-  });
-
-  const activeBoard = useMemo(() => 
-    boards.find(b => b.id === activeBoardId) || boards[0],
-    [boards, activeBoardId]
-  );
-
-  // Auto-select first board when activeProject changes
-  useEffect(() => {
-    if (boards.length > 0 && !activeBoardId) {
-      setActiveBoardId(boards[0].id);
-    }
-  }, [boards, activeBoardId]);
-
-  // Mutations
-  const createProjectMutation = useMutation({
-    mutationFn: async (project: any) => {
-      const res = await apiRequest("POST", "/api/projects", project);
-      return res.json();
-    },
-    onMutate: async (newProjectData) => {
-      // Cancel outgoing refetches
-      await queryClient.cancelQueries({ queryKey: ["/api/projects"] });
-      await queryClient.cancelQueries({ queryKey: ["/api/projects", selectedWorkspaceId] });
-      
-      // Snapshot previous values
-      const previousProjects = queryClient.getQueryData(["/api/projects", selectedWorkspaceId]);
-      const previousProjectsAll = queryClient.getQueryData(["/api/projects"]);
-      
-      const tempProject = {
-        id: `temp-${Date.now()}`,
-        name: newProjectData.name,
-        color: newProjectData.color || "#3b82f6",
-        priority: newProjectData.priority?.toLowerCase() || "medium",
-        status: "active",
-        boardCount: 0,
-        taskCount: 0,
-        progress: 100,
-        createdAt: new Date().toISOString(),
-        ownerId: "current-user",
-        workspaceId: selectedWorkspaceId,
-      };
+};
       
       // Optimistically update both query keys
       queryClient.setQueryData(["/api/projects", selectedWorkspaceId], (old: any[] = []) => [...(old || []), tempProject]);
@@ -1180,6 +1001,19 @@ export default function Projects() {
   const [editingKanbanColumn, setEditingKanbanColumn] = useState<{ id: string; name: string; color?: string } | null>(null);
   const [editColumnName, setEditColumnName] = useState("");
   const [editColumnColor, setEditColumnColor] = useState("");
+  
+  // Column sorting state
+  const [columnSortBy, setColumnSortBy] = useState<Record<string, string>>({});
+
+  const handleColumnSortChange = (columnId: string, sortBy: string) => {
+    setColumnSortBy(prev => ({
+      ...prev,
+      [columnId]: sortBy
+    }));
+  };
+  
+  // Column sorting state
+  const [columnSortBy, setColumnSortBy] = = useState<Record<string, string>>(()};
 
   const { data: boardData, isLoading: isLoadingBoard } = useQuery<{ columns: any[], tasks: any[] }>({
     queryKey: ["/api/boards", activeBoard?.id, "full"],
@@ -2346,7 +2180,7 @@ export default function Projects() {
                       {columns.map((columnData: any, index: number) => {
                         const columnTasks = kanbanData[columnData.id] || [];
                         return (
-                          <KanbanColumn
+                        <KanbanColumn
                             key={columnData.id}
                             column={columnData.name}
                             columnId={columnData.id}
@@ -2362,6 +2196,8 @@ export default function Projects() {
                             availableLabels={availableLabels}
                             availablePriorities={availablePriorities}
                             availableTaskTypes={availableTaskTypes}
+                            sortBy={columnSortBy[columnData.id] || 'default'}
+                            onSortChange={handleColumnSortChange}
                           />
                         );
                       })}
