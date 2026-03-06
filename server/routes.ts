@@ -1022,30 +1022,41 @@ export async function registerRoutes(
       const task = await storage.updateTask(taskId, updateData);
       
       // Handle user time tracking when assignee or status changes
+      console.log("[TIME TRACKING] Checking task update:", { taskId, updateData, currentTask: currentTask ? { id: currentTask.id, assigneeId: currentTask.assigneeId, status: currentTask.status } : null });
       if (currentTask) {
         const oldAssigneeId = currentTask.assigneeId;
         const newAssigneeId = updateData.assigneeId;
         const oldStatus = currentTask.status;
         const newStatus = updateData.status;
         
+        console.log("[TIME TRACKING] Comparing:", { oldAssigneeId, newAssigneeId, oldStatus, newStatus });
+        
         // If assignee changed
         if (newAssigneeId !== undefined && newAssigneeId !== oldAssigneeId) {
+          console.log("[TIME TRACKING] Assignee changed, updating tracking");
           // Close tracking for old assignee
           if (oldAssigneeId) {
             await storage.closeUserTimeTracking(taskId, oldAssigneeId);
+            console.log("[TIME TRACKING] Closed tracking for old assignee:", oldAssigneeId);
           }
           // Start tracking for new assignee with current status
           if (newAssigneeId) {
             const statusToTrack = newStatus || currentTask.status;
             await storage.startUserTimeTracking(taskId, newAssigneeId, statusToTrack);
+            console.log("[TIME TRACKING] Started tracking for new assignee:", newAssigneeId, "status:", statusToTrack);
           }
         }
         // If only status changed (and there's an assignee)
         else if (newStatus && newStatus !== oldStatus && currentTask.assigneeId) {
+          console.log("[TIME TRACKING] Status changed, updating tracking");
           // Close current tracking
           await storage.closeUserTimeTracking(taskId, currentTask.assigneeId);
+          console.log("[TIME TRACKING] Closed tracking for current assignee:", currentTask.assigneeId);
           // Start new tracking with new status
           await storage.startUserTimeTracking(taskId, currentTask.assigneeId, newStatus);
+          console.log("[TIME TRACKING] Started tracking with new status:", newStatus);
+        } else {
+          console.log("[TIME TRACKING] No tracking changes needed");
         }
       }
       
@@ -1422,6 +1433,16 @@ export async function registerRoutes(
         console.log("[API] Started timer for status:", initialStatus);
       } catch (error) {
         console.error("Error starting task timer:", error);
+      }
+      
+      // Start user time tracking if assignee is set
+      if (task.assigneeId) {
+        try {
+          await storage.startUserTimeTracking(task.id, task.assigneeId, task.status || "В планах");
+          console.log("[API] Started user time tracking for assignee:", task.assigneeId);
+        } catch (error) {
+          console.error("Error starting user time tracking:", error);
+        }
       }
       
       // Record task creation in history

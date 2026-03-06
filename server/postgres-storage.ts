@@ -1663,6 +1663,7 @@ export class PostgresStorage {
   // Task User Time Tracking methods
   async startUserTimeTracking(taskId: string, userId: string, status: string): Promise<schema.TaskUserTimeTracking> {
     try {
+      console.log("[STORAGE] Starting time tracking:", { taskId, userId, status });
       // First, close any existing open tracking for this user and task
       await this.closeUserTimeTracking(taskId, userId);
       
@@ -1675,9 +1676,10 @@ export class PostgresStorage {
           startedAt: new Date(),
         })
         .returning();
+      console.log("[STORAGE] Time tracking started:", tracking);
       return tracking;
     } catch (error) {
-      console.error("Error starting user time tracking:", error);
+      console.error("[STORAGE] Error starting user time tracking:", error);
       throw error;
     }
   }
