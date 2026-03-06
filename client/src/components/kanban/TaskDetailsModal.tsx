@@ -45,6 +45,7 @@ import {
   Check,
   Eye,
   ChevronRight,
+  ChevronDown,
   Play,
   Bell,
   RefreshCw,
@@ -126,6 +127,8 @@ function TaskStatusTimer({ taskId }: { taskId: string | number | undefined }) {
     enabled: !!taskId,
     refetchInterval: 60000,
   });
+
+  console.log("[TaskStatusTimer] taskId:", taskId, "data:", userTimeSummary, "error:", error);
 
   const [expandedStatuses, setExpandedStatuses] = useState<Set<string>>(new Set());
 
