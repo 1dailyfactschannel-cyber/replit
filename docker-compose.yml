@@ -5,9 +5,9 @@ services:
     container_name: teamsync-db
     restart: unless-stopped
     environment:
-      POSTGRES_USER: ${DB_USER:-db_test}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-changeme}
-      POSTGRES_DB: ${DB_NAME:-db_test}
+      POSTGRES_USER: db_test
+      POSTGRES_PASSWORD: D2rGkB6CaIwpb
+      POSTGRES_DB: db_test
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
@@ -30,8 +30,8 @@ services:
     environment:
       NODE_ENV: production
       PORT: 3000
-      DATABASE_URL: postgresql://${DB_USER:-db_test}:${DB_PASSWORD:-changeme}@db:5432/${DB_NAME:-db_test}
-      SESSION_SECRET: ${SESSION_SECRET:-default-secret-key-change-in-production}
+      DATABASE_URL: postgresql://db_test:D2rGkB6CaIwpb@db:5432/db_test
+      SESSION_SECRET: teamsync_prod_secret_2026
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}
     ports:
       - "3000:3000"
