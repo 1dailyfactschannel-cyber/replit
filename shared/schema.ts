@@ -215,6 +215,21 @@ export const taskStatusHistory = pgTable("task_status_history", {
   statusIdx: index("task_status_history_status_idx").on(table.status),
 }));
 
+// Task user time tracking table for tracking time spent by each user in each status
+export const taskUserTimeTracking = pgTable("task_user_time_tracking", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  taskId: uuid("task_id").notNull().references(() => tasks.id, { onDelete: "cascade" }),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  status: text("status").notNull(), // status name (e.g., "В планах", "В работе")
+  startedAt: timestamp("started_at").notNull().defaultNow(),
+  endedAt: timestamp("ended_at"),
+  durationSeconds: integer("duration_seconds"), // Duration in seconds
+}, (table) => ({
+  taskIdIdx: index("task_user_time_task_id_idx").on(table.taskId),
+  userIdIdx: index("task_user_time_user_id_idx").on(table.userId),
+  statusIdx: index("task_user_time_status_idx").on(table.status),
+}));
+
 // Task history table for tracking all changes
 export const taskHistory = pgTable("task_history", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -283,6 +298,15 @@ export const insertTaskStatusHistorySchema = createInsertSchema(taskStatusHistor
   status: true,
   enteredAt: true,
   exitedAt: true,
+  durationSeconds: true,
+});
+
+export const insertTaskUserTimeTrackingSchema = createInsertSchema(taskUserTimeTracking).pick({
+  taskId: true,
+  userId: true,
+  status: true,
+  startedAt: true,
+  endedAt: true,
   durationSeconds: true,
 });
 
@@ -651,6 +675,9 @@ export type InsertSubtask = z.infer<typeof insertSubtaskSchema>;
 
 export type TaskStatusHistory = typeof taskStatusHistory.$inferSelect;
 export type InsertTaskStatusHistory = z.infer<typeof insertTaskStatusHistorySchema>;
+
+export type TaskUserTimeTracking = typeof taskUserTimeTracking.$inferSelect;
+export type InsertTaskUserTimeTracking = z.infer<typeof insertTaskUserTimeTrackingSchema>;
 
 export type TaskHistory = typeof taskHistory.$inferSelect;
 export type InsertTaskHistory = z.infer<typeof insertTaskHistorySchema>;

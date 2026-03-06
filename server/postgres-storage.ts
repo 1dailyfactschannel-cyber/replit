@@ -1660,6 +1660,115 @@ export class PostgresStorage {
     }
   }
 
+  // Task User Time Tracking methods
+  async startUserTimeTracking(taskId: string, userId: string, status: string): Promise<schema.TaskUserTimeTracking> {
+    try {
+      // First, close any existing open tracking for this user and task
+      await this.closeUserTimeTracking(taskId, userId);
+      
+      // Start new tracking
+      const [tracking] = await this.db.insert(schema.taskUserTimeTracking)
+        .values({
+          taskId,
+          userId,
+          status,
+          startedAt: new Date(),
+        })
+        .returning();
+      return tracking;
+    } catch (error) {
+      console.error("Error starting user time tracking:", error);
+      throw error;
+    }
+  }
+
+  async closeUserTimeTracking(taskId: string, userId: string): Promise<void> {
+    try {
+      const now = new Date();
+      const openTrackings = await this.db
+        .select()
+        .from(schema.taskUserTimeTracking)
+        .where(
+          and(
+            eq(schema.taskUserTimeTracking.taskId, taskId),
+            eq(schema.taskUserTimeTracking.userId, userId),
+            isNull(schema.taskUserTimeTracking.endedAt)
+          )
+        );
+      
+      for (const tracking of openTrackings) {
+        const duration = Math.floor((now.getTime() - new Date(tracking.startedAt).getTime()) / 1000);
+        await this.db
+          .update(schema.taskUserTimeTracking)
+          .set({
+            endedAt: now,
+            durationSeconds: duration,
+          })
+          .where(eq(schema.taskUserTimeTracking.id, tracking.id));
+      }
+    } catch (error) {
+      console.error("Error closing user time tracking:", error);
+      throw error;
+    }
+  }
+
+  async getTaskUserTimeSummary(taskId: string): Promise<{
+    status: string;
+    userId: string;
+    userName: string;
+    userAvatar: string | null;
+    totalSeconds: number;
+    count: number;
+  }[]> {
+    try {
+      const trackings = await this.db
+        .select({
+          tracking: schema.taskUserTimeTracking,
+          user: schema.users,
+        })
+        .from(schema.taskUserTimeTracking)
+        .leftJoin(schema.users, eq(schema.taskUserTimeTracking.userId, schema.users.id))
+        .where(eq(schema.taskUserTimeTracking.taskId, taskId));
+      
+      const now = new Date();
+      const summary = new Map<string, { userId: string; userName: string; userAvatar: string | null; totalSeconds: number; count: number }>();
+      
+      for (const { tracking, user } of trackings) {
+        let duration = tracking.durationSeconds || 0;
+        
+        // If still tracking (no endedAt), calculate current duration
+        if (!tracking.endedAt && tracking.startedAt) {
+          duration = Math.floor((now.getTime() - new Date(tracking.startedAt).getTime()) / 1000);
+        }
+        
+        const key = `${tracking.status}-${tracking.userId}`;
+        const existing = summary.get(key);
+        
+        if (existing) {
+          existing.totalSeconds += duration;
+          existing.count += 1;
+        } else {
+          summary.set(key, {
+            userId: tracking.userId,
+            userName: user ? `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.username : 'Unknown',
+            userAvatar: user?.avatar || null,
+            totalSeconds: duration,
+            count: 1,
+          });
+        }
+      }
+      
+      // Convert to array and add status
+      return Array.from(summary.entries()).map(([key, data]) => ({
+        status: key.split('-')[0],
+        ...data,
+      }));
+    } catch (error) {
+      console.error("Error getting task user time summary:", error);
+      return [];
+    }
+  }
+
   // Task History methods
   async addTaskHistory(entry: {
     taskId: string;

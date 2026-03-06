@@ -1016,7 +1016,38 @@ export async function registerRoutes(
         }
       }
 
+      // Get current task before update to check what changed
+      const currentTask = await storage.getTask(taskId);
+      
       const task = await storage.updateTask(taskId, updateData);
+      
+      // Handle user time tracking when assignee or status changes
+      if (currentTask) {
+        const oldAssigneeId = currentTask.assigneeId;
+        const newAssigneeId = updateData.assigneeId;
+        const oldStatus = currentTask.status;
+        const newStatus = updateData.status;
+        
+        // If assignee changed
+        if (newAssigneeId !== undefined && newAssigneeId !== oldAssigneeId) {
+          // Close tracking for old assignee
+          if (oldAssigneeId) {
+            await storage.closeUserTimeTracking(taskId, oldAssigneeId);
+          }
+          // Start tracking for new assignee with current status
+          if (newAssigneeId) {
+            const statusToTrack = newStatus || currentTask.status;
+            await storage.startUserTimeTracking(taskId, newAssigneeId, statusToTrack);
+          }
+        }
+        // If only status changed (and there's an assignee)
+        else if (newStatus && newStatus !== oldStatus && currentTask.assigneeId) {
+          // Close current tracking
+          await storage.closeUserTimeTracking(taskId, currentTask.assigneeId);
+          // Start new tracking with new status
+          await storage.startUserTimeTracking(taskId, currentTask.assigneeId, newStatus);
+        }
+      }
       
       // Get the current user for history
       const currentUser = req.user;
@@ -1232,6 +1263,16 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error getting task status summary:", error);
       res.status(500).json({ message: "Failed to get status summary" });
+    }
+  });
+
+  app.get("/api/tasks/:id/user-time-summary", async (req, res) => {
+    try {
+      const summary = await storage.getTaskUserTimeSummary(req.params.id);
+      res.json(summary);
+    } catch (error) {
+      console.error("Error getting task user time summary:", error);
+      res.status(500).json({ message: "Failed to get user time summary" });
     }
   });
 

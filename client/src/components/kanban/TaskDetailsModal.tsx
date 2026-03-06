@@ -112,17 +112,22 @@ function formatDuration(seconds: number): string {
   }
 }
 
-// Task Status Timer Component
+// Task Status Timer Component with user breakdown
 function TaskStatusTimer({ taskId }: { taskId: string | number | undefined }) {
-  const { data: statusSummary = [], isLoading, error } = useQuery<{
+  const { data: userTimeSummary = [], isLoading, error } = useQuery<{
     status: string;
+    userId: string;
+    userName: string;
+    userAvatar: string | null;
     totalSeconds: number;
     count: number;
   }[]>({
-    queryKey: ["/api/tasks", taskId, "status-summary"],
+    queryKey: ["/api/tasks", taskId, "user-time-summary"],
     enabled: !!taskId,
-    refetchInterval: 60000, // Refetch every minute instead of every second
+    refetchInterval: 60000,
   });
+
+  const [expandedStatuses, setExpandedStatuses] = useState<Set<string>>(new Set());
 
   if (isLoading) {
     return (
@@ -140,7 +145,7 @@ function TaskStatusTimer({ taskId }: { taskId: string | number | undefined }) {
     );
   }
 
-  if (!statusSummary || statusSummary.length === 0) {
+  if (!userTimeSummary || userTimeSummary.length === 0) {
     return (
       <div className="text-xs text-muted-foreground text-center py-8">
         Нет данных о времени в статусах
@@ -148,8 +153,31 @@ function TaskStatusTimer({ taskId }: { taskId: string | number | undefined }) {
     );
   }
 
+  // Group by status
+  const statusGroups = userTimeSummary.reduce((acc, item) => {
+    if (!acc[item.status]) {
+      acc[item.status] = {
+        users: [],
+        totalSeconds: 0,
+      };
+    }
+    acc[item.status].users.push(item);
+    acc[item.status].totalSeconds += item.totalSeconds;
+    return acc;
+  }, {} as Record<string, { users: typeof userTimeSummary; totalSeconds: number }>);
+
   // Calculate total time
-  const totalTime = statusSummary.reduce((sum, s) => sum + s.totalSeconds, 0);
+  const totalTime = Object.values(statusGroups).reduce((sum, group) => sum + group.totalSeconds, 0);
+
+  const toggleStatus = (status: string) => {
+    const newExpanded = new Set(expandedStatuses);
+    if (newExpanded.has(status)) {
+      newExpanded.delete(status);
+    } else {
+      newExpanded.add(status);
+    }
+    setExpandedStatuses(newExpanded);
+  };
 
   return (
     <div className="space-y-2">
@@ -159,19 +187,60 @@ function TaskStatusTimer({ taskId }: { taskId: string | number | undefined }) {
         <span className="text-sm font-bold text-foreground">{formatDuration(totalTime)}</span>
       </div>
       
-      {/* Status breakdown */}
+      {/* Status breakdown with expandable users */}
       <div className="space-y-1">
-        {statusSummary.map((item) => (
-          <div 
-            key={item.status}
-            className="flex items-center justify-between p-2 bg-secondary/30 rounded-lg"
-          >
-            <div className="flex items-center gap-2">
-              <div className={cn("w-2 h-2 rounded-full", statusColors[item.status] || "bg-gray-400")} />
-              <span className="text-xs font-medium text-foreground">{item.status}</span>
-              <span className="text-[10px] text-muted-foreground">({item.count})</span>
-            </div>
-            <span className="text-xs font-bold text-foreground">{formatDuration(item.totalSeconds)}</span>
+        {Object.entries(statusGroups).map(([status, group]) => (
+          <div key={status} className="bg-secondary/30 rounded-lg overflow-hidden">
+            {/* Status header - clickable to expand */}
+            <button
+              onClick={() => toggleStatus(status)}
+              className="w-full flex items-center justify-between p-2 hover:bg-secondary/50 transition-colors"
+            >
+              <div className="flex items-center gap-2">
+                <div className={cn(
+                  "w-2 h-2 rounded-full transition-transform",
+                  statusColors[status] || "bg-gray-400",
+                  expandedStatuses.has(status) && "scale-125"
+                )} />
+                <span className="text-xs font-medium text-foreground">{status}</span>
+                <span className="text-[10px] text-muted-foreground">({group.users.length})</span>
+                {expandedStatuses.has(status) ? (
+                  <ChevronDown className="w-3 h-3 text-muted-foreground" />
+                ) : (
+                  <ChevronRight className="w-3 h-3 text-muted-foreground" />
+                )}
+              </div>
+              <span className="text-xs font-bold text-foreground">{formatDuration(group.totalSeconds)}</span>
+            </button>
+            
+            {/* Expanded users list */}
+            {expandedStatuses.has(status) && (
+              <div className="border-t border-border/30">
+                {group.users.map((user) => (
+                  <div
+                    key={`${status}-${user.userId}`}
+                    className="flex items-center justify-between px-2 py-1.5 pl-6 hover:bg-secondary/40 transition-colors"
+                  >
+                    <div className="flex items-center gap-2">
+                      {user.userAvatar ? (
+                        <img
+                          src={user.userAvatar}
+                          alt={user.userName}
+                          className="w-5 h-5 rounded-full object-cover"
+                        />
+                      ) : (
+                        <div className="w-5 h-5 rounded-full bg-primary/10 flex items-center justify-center text-[10px] font-medium">
+                          {user.userName.charAt(0).toUpperCase()}
+                        </div>
+                      )}
+                      <span className="text-[11px] text-foreground">{user.userName}</span>
+                      <span className="text-[9px] text-muted-foreground">({user.count})</span>
+                    </div>
+                    <span className="text-[11px] font-medium text-foreground">{formatDuration(user.totalSeconds)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         ))}
       </div>
