@@ -721,6 +721,11 @@ export function TaskDetailsModal({
       if (task?.id) {
         queryClient.setQueryData(["/api/tasks", task.id], enrichedData);
       }
+      
+      // Invalidate timer data to refresh user time tracking
+      if (task?.id) {
+        queryClient.invalidateQueries({ queryKey: ["/api/tasks", task.id, "user-time-summary"] });
+      }
     },
     onError: (error) => {
       console.error("Update error:", error);
