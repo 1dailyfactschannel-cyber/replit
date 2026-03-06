@@ -1783,22 +1783,25 @@ export function TaskDetailsModal({
                                     {/* Content */}
                                     <p className="text-[13px] leading-relaxed">
                                       {(() => {
-                                        // Find all @mentions in the comment
-                                        const mentionPattern = /@([^\s@]+(?:\s+[^\s@]+)*)/g;
+                                        // Build regex from all user display names to match exact mentions
+                                        const userNames = users.map((user: any) => {
+                                          return user.firstName 
+                                            ? `${user.firstName} ${user.lastName || ''}`.trim() 
+                                            : user.username;
+                                        }).filter(Boolean);
+                                        
+                                        if (userNames.length === 0) {
+                                          return comment.content;
+                                        }
+                                        
+                                        // Escape special regex characters in names
+                                        const escapeRegex = (str: string) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                                        const namePattern = userNames.map(escapeRegex).join('|');
+                                        const mentionPattern = new RegExp(`@(${namePattern})(?=\\s|$)`, 'g');
+                                        
                                         const parts: React.ReactNode[] = [];
                                         let lastIndex = 0;
                                         let match;
-                                        
-                                        // Check if this mention matches any user
-                                        const isValidMention = (mentionText: string) => {
-                                          const name = mentionText.slice(1); // Remove @
-                                          return users.some((user: any) => {
-                                            const displayName = user.firstName 
-                                              ? `${user.firstName} ${user.lastName || ''}`.trim() 
-                                              : user.username;
-                                            return displayName === name;
-                                          });
-                                        };
                                         
                                         while ((match = mentionPattern.exec(comment.content || '')) !== null) {
                                           // Add text before mention
@@ -1806,23 +1809,17 @@ export function TaskDetailsModal({
                                             parts.push(comment.content?.slice(lastIndex, match.index));
                                           }
                                           
-                                          const mentionText = match[0];
-                                          const isValid = isValidMention(mentionText);
-                                          
-                                          if (isValid) {
-                                            parts.push(
-                                              <span key={match.index} className={cn(
-                                                "font-semibold px-1.5 py-0.5 rounded-md",
-                                                isOwn 
-                                                  ? "bg-primary-foreground/20 text-primary-foreground" 
-                                                  : "bg-primary/10 text-primary"
-                                              )}>
-                                                {mentionText}
-                                              </span>
-                                            );
-                                          } else {
-                                            parts.push(mentionText);
-                                          }
+                                          // Add highlighted mention
+                                          parts.push(
+                                            <span key={match.index} className={cn(
+                                              "font-semibold px-1.5 py-0.5 rounded-md",
+                                              isOwn 
+                                                ? "bg-primary-foreground/20 text-primary-foreground" 
+                                                : "bg-primary/10 text-primary"
+                                            )}>
+                                              {match[0]}
+                                            </span>
+                                          );
                                           
                                           lastIndex = mentionPattern.lastIndex;
                                         }
