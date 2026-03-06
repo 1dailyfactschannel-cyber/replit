@@ -23,6 +23,7 @@ const Team = lazy(() => import("@/pages/team"));
 const Shop = lazy(() => import("@/pages/shop"));
 const SettingsPage = lazy(() => import("@/pages/settings"));
 const ManagementPage = lazy(() => import("@/pages/management"));
+const ReportsPage = lazy(() => import("@/pages/reports"));
 
 // Preload function for route prefetching
 const preloadProjects = () => {
@@ -115,6 +116,7 @@ function Router() {
         <ProtectedRoute path="/shop" component={Shop} />
         <ProtectedRoute path="/settings" component={SettingsPage} />
         <ProtectedRoute path="/management" component={ManagementPage} />
+        <ProtectedRoute path="/reports" component={ReportsPage} />
         <ProtectedRoute path="/projects" component={Projects} />
         <ProtectedRoute path="/tasks" component={Tasks} />
         <ProtectedRoute path="/calendar" component={CalendarPage} />

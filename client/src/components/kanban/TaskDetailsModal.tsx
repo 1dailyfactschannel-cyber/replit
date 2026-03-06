@@ -60,11 +60,13 @@ import {
   Save,
   Archive,
   RotateCcw,
+  ListChecks,
 } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { ru } from "date-fns/locale";
 import { Calendar as CalendarComponent } from "@/components/ui/calendar";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { getDisplayNameByStatus } from "@shared/column-status-mapping";
 import { apiRequest } from "@/lib/queryClient";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -84,36 +86,13 @@ import {
 import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import { toast as sonnerToast } from "sonner";
 
-// Status display names in Russian
-const statusNames: Record<string, string> = {
-  todo: "К выполнению",
-  in_progress: "В работе",
-  review: "На проверке",
-  done: "Готово",
-  backlog: "Бэклог",
-  "К выполнению": "К выполнению",
-  "В работе": "В работе",
-  "На проверке": "На проверке",
-  "Готово": "Готово",
-  "Бэклог": "Бэклог",
-  "В планах": "В планах",
-  "Сделать": "Сделать",
-  "Выполняется": "Выполняется",
-};
-
 // Status colors
 const statusColors: Record<string, string> = {
-  todo: "bg-slate-500",
-  in_progress: "bg-blue-500",
-  review: "bg-amber-500",
-  done: "bg-emerald-500",
-  backlog: "bg-gray-400",
-  "К выполнению": "bg-slate-500",
+  "В планах": "bg-purple-500",
   "В работе": "bg-blue-500",
   "На проверке": "bg-amber-500",
   "Готово": "bg-emerald-500",
   "Бэклог": "bg-gray-400",
-  "В планах": "bg-purple-500",
   "Сделать": "bg-slate-500",
   "Выполняется": "bg-blue-500",
 };
@@ -189,7 +168,7 @@ function TaskStatusTimer({ taskId }: { taskId: string | number | undefined }) {
           >
             <div className="flex items-center gap-2">
               <div className={cn("w-2 h-2 rounded-full", statusColors[item.status] || "bg-gray-400")} />
-              <span className="text-xs font-medium text-foreground">{statusNames[item.status] || item.status}</span>
+              <span className="text-xs font-medium text-foreground">{item.status}</span>
               <span className="text-[10px] text-muted-foreground">({item.count})</span>
             </div>
             <span className="text-xs font-bold text-foreground">{formatDuration(item.totalSeconds)}</span>
@@ -391,27 +370,30 @@ export function TaskDetailsModal({
   // Get unique status options from board columns
   const statusOptions = boardData?.columns?.map((col: any) => col.name) || [];
 
+  const isTempTask = !!task?.id && typeof task.id === 'string' && task.id.startsWith('temp-');
+
   // Fetch observers for the task
   const { data: serverObservers = [] } = useQuery<any[]>({
     queryKey: [`/api/tasks/${task?.id}/observers`],
-    enabled: !!task?.id && open,
+    enabled: !!task?.id && !isTempTask && open,
   });
 
   // Fetch subtasks for the task
   const { data: serverSubtasks = [] } = useQuery<any[]>({
     queryKey: [`/api/tasks/${task?.id}/subtasks`],
-    enabled: !!task?.id && open,
+    enabled: !!task?.id && !isTempTask && open,
     staleTime: 30000, // Cache for 30 seconds
   });
   
+  // Use task.status directly instead of effectiveTask.status to get updated values
   // Fetch task details directly to ensure fresh data
   const { data: serverTask } = useQuery<Task>({
     queryKey: ["/api/tasks", task?.id],
-    enabled: !!task?.id && open,
+    enabled: !!task?.id && !isTempTask && open,
     staleTime: 30000, // Cache for 30 seconds instead of always fetching fresh
   });
 
-  const effectiveTask = serverTask || task;
+  const effectiveTask: any = serverTask || task;
 
   const [newTitle, setNewTitle] = useState(effectiveTask?.title || "");
   const [newDescription, setNewDescription] = useState(effectiveTask?.description || "");
@@ -499,6 +481,13 @@ export function TaskDetailsModal({
   // Local state for immediate UI updates
   const [localAssignee, setLocalAssignee] = useState<{ id?: string; name: string; avatar?: string } | null>(null);
   const [localDueDate, setLocalDueDate] = useState<string | null>(null);
+  // Initialize localStatus with task status from props (use column name directly)
+  const [localStatus, setLocalStatus] = useState<string>(() => {
+    return task?.status || "В планах";
+  });
+  
+  // Use localStatus directly for display
+  const currentStatus = localStatus || "В планах";
   
   // Sync local assignee with task data
   useEffect(() => {
@@ -517,6 +506,14 @@ export function TaskDetailsModal({
       setLocalDueDate(null);
     }
   }, [effectiveTask?.dueDate]);
+
+  // Sync local status with task data (use status directly from task)
+  useEffect(() => {
+    const rawStatus = task?.status || effectiveTask?.status;
+    if (rawStatus) {
+      setLocalStatus(rawStatus);
+    }
+  }, [task?.status, effectiveTask?.status]);
 
   // Sync local priority with task data
   // Removed localPriority state to rely on optimistic cache updates for single source of truth
@@ -559,6 +556,10 @@ export function TaskDetailsModal({
     queryKey: ["/api/priorities"],
   });
 
+  const { data: availableTaskTypes = [] } = useQuery<any[]>({
+    queryKey: ["/api/task-types"],
+  });
+
   // Sync server comments only when they actually change
   const prevCommentsRef = useRef<any[]>([]);
   useEffect(() => {
@@ -576,6 +577,9 @@ export function TaskDetailsModal({
   const [newComment, setNewComment] = useState("");
   const [commentAttachments, setCommentAttachments] = useState<{ name: string; url: string; size: string; type: string }[]>([]);
   const [isUploadingCommentFile, setIsUploadingCommentFile] = useState(false);
+  
+  // Image viewer state
+  const [selectedImage, setSelectedImage] = useState<{ url: string; name: string } | null>(null);
   
   // Mentions functionality
   const [showMentions, setShowMentions] = useState(false);
@@ -613,6 +617,8 @@ export function TaskDetailsModal({
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [showSubtasks, setShowSubtasks] = useState(false);
+  const [showAttachments, setShowAttachments] = useState(false);
 
   // Update mutation for database synchronization
   const updateTaskMutation = useMutation({
@@ -623,20 +629,26 @@ export function TaskDetailsModal({
       return res.json();
     },
     onSuccess: (data) => {
-      // Update local cache immediately to prevent UI flicker/reversion
-      if (onUpdate && data) {
-        onUpdate(data);
-      }
-
-      if (task?.boardId) {
-        queryClient.invalidateQueries({ queryKey: ["/api/boards", task.boardId, "full"] });
+      // Skip onUpdate call here - optimistic update already happened in handleUpdate
+      // Server data may have old values and would overwrite the optimistic update
+      
+      // Only update task cache with enriched data (for assignee)
+      const enrichedData: any = { ...data };
+      if (data.assigneeId && users) {
+        const user = users.find((u: any) => u.id === data.assigneeId);
+        if (user) {
+          enrichedData.assignee = {
+            id: user.id,
+            name: user.firstName ? `${user.firstName} ${user.lastName || ''}` : user.username,
+            avatar: user.avatar
+          };
+        }
       }
       
-      // Update specific task cache to avoid stale data flicker
+      // Only update specific task cache (not board cache, to avoid overwriting column changes)
       if (task?.id) {
-        queryClient.setQueryData(["/api/tasks", task.id], data);
+        queryClient.setQueryData(["/api/tasks", task.id], enrichedData);
       }
-      queryClient.invalidateQueries({ queryKey: ["/api/tasks", task?.id] });
     },
     onError: (error) => {
       console.error("Update error:", error);
@@ -665,13 +677,11 @@ export function TaskDetailsModal({
       return;
     }
 
-    if (updates.priority) {
-      console.log("[TaskDetails] Updating priority to:", updates.priority);
+    if (updates.priorityId) {
+      console.log("[TaskDetails] Updating priority to:", updates.priorityId);
     }
     
-    if (typeof task.id === 'string' && task.id.startsWith('temp-')) {
-      return;
-    }
+    const isTempTask = typeof task.id === 'string' && task.id.startsWith('temp-');
     
     // Optimistic local task update via Query Cache
     // Build the full assignee object for display
@@ -690,6 +700,16 @@ export function TaskDetailsModal({
       }
     }
 
+    // When status changes, also update columnId to match the new column
+    if (updates.status && boardData?.columns) {
+      const matchingColumn = boardData.columns.find((col: any) => col.name === updates.status);
+      if (matchingColumn) {
+        newDisplayData.columnId = matchingColumn.id;
+        // Optimistically update localStatus for immediate UI feedback
+        setLocalStatus(updates.status);
+      }
+    }
+
     // Update individual task query cache
     queryClient.setQueryData(["/api/tasks", task.id], (old: any) => {
       if (!old) return old;
@@ -701,47 +721,127 @@ export function TaskDetailsModal({
       queryClient.setQueryData(["/api/boards", task.boardId, "full"], (old: any) => {
         if (!old) return old;
         
+        // Update flat tasks array
+        let newTasks = old.tasks;
+        if (Array.isArray(newTasks)) {
+          newTasks = newTasks.map((t: any) => t.id === task.id ? { ...t, ...updates, ...newDisplayData } : t);
+        }
+        
         // Handle both array and object formats for columns
         let newColumns = old.columns;
+        const taskToMove = old.columns?.flatMap((c: any) => c.tasks || []).find((t: any) => t.id === task.id);
+        const enrichedTask = taskToMove ? { ...taskToMove, ...updates, ...newDisplayData } : { ...updates, ...newDisplayData };
+        
         if (Array.isArray(newColumns)) {
-          // Array format
-          newColumns = newColumns.map((column: any) => ({
-            ...column,
-            tasks: (column.tasks || []).map((t: any) => {
-              if (t.id === task.id) {
-                return { ...t, ...updates, ...newDisplayData };
+          // When status changes, move task between columns
+          if (newDisplayData.columnId && task.columnId !== newDisplayData.columnId) {
+            newColumns = newColumns.map((column: any) => {
+              const taskInColumn = (column.tasks || []).find((t: any) => t.id === task.id);
+              if (taskInColumn) {
+                // Task is in this column - remove it if it's moving to another column
+                if (column.id !== newDisplayData.columnId) {
+                  return { ...column, tasks: (column.tasks || []).filter((t: any) => t.id !== task.id) };
+                }
               }
-              return t;
-            })
-          }));
-        } else if (newColumns && typeof newColumns === 'object') {
-          // Object format (keyed by columnId)
-          newColumns = { ...newColumns };
-          for (const columnId in newColumns) {
-            const columnTasks = newColumns[columnId]?.tasks || [];
-            newColumns[columnId] = {
-              ...newColumns[columnId],
-              tasks: columnTasks.map((t: any) => {
+              // Add task to the target column
+              if (column.id === newDisplayData.columnId) {
+                const taskExists = (column.tasks || []).some((t: any) => t.id === task.id);
+                if (!taskExists) {
+                  return { ...column, tasks: [...(column.tasks || []), enrichedTask] };
+                } else {
+                  // Task already in column, just update it
+                  return { ...column, tasks: (column.tasks || []).map((t: any) => t.id === task.id ? enrichedTask : t) };
+                }
+              }
+              return column;
+            });
+          } else {
+            // No column change, just update in place
+            newColumns = newColumns.map((column: any) => ({
+              ...column,
+              tasks: (column.tasks || []).map((t: any) => {
                 if (t.id === task.id) {
                   return { ...t, ...updates, ...newDisplayData };
                 }
                 return t;
               })
-            };
+            }));
+          }
+        } else if (newColumns && typeof newColumns === 'object') {
+          // Object format (keyed by columnId)
+          newColumns = { ...newColumns };
+          const enrichedTask = { ...task, ...updates, ...newDisplayData };
+          
+          if (newDisplayData.columnId && task.columnId !== newDisplayData.columnId) {
+            // Moving task between columns
+            for (const columnId in newColumns) {
+              const column = newColumns[columnId];
+              const taskInColumn = (column.tasks || []).find((t: any) => t.id === task.id);
+              if (taskInColumn) {
+                if (columnId !== newDisplayData.columnId) {
+                  // Remove from old column
+                  newColumns[columnId] = {
+                    ...column,
+                    tasks: (column.tasks || []).filter((t: any) => t.id !== task.id)
+                  };
+                }
+              }
+            }
+            // Add to new column
+            if (newColumns[newDisplayData.columnId]) {
+              const targetColumn = newColumns[newDisplayData.columnId];
+              const taskExists = (targetColumn.tasks || []).some((t: any) => t.id === task.id);
+              if (!taskExists) {
+                newColumns[newDisplayData.columnId] = {
+                  ...targetColumn,
+                  tasks: [...(targetColumn.tasks || []), enrichedTask]
+                };
+              }
+            }
+          } else {
+            // No column change, just update in place
+            for (const columnId in newColumns) {
+              const column = newColumns[columnId];
+              newColumns[columnId] = {
+                ...column,
+                tasks: (column.tasks || []).map((t: any) => {
+                  if (t.id === task.id) {
+                    return { ...t, ...updates, ...newDisplayData };
+                  }
+                  return t;
+                })
+              };
+            }
           }
         }
         
-        return { ...old, columns: newColumns };
+        return { ...old, tasks: newTasks, columns: newColumns };
       });
     }
 
-    // Optimistic parent update
-    if (onUpdate && effectiveTask) {
-      console.log("[TaskDetails] Calling onUpdate with:", { ...effectiveTask, ...updates, ...newDisplayData });
-      onUpdate({ ...effectiveTask, ...updates, ...newDisplayData });
+    // Optimistic parent update - use task instead of effectiveTask to get latest values
+    if (onUpdate && task) {
+      console.log("[TaskDetails] Calling onUpdate with:", { ...task, ...updates, ...newDisplayData });
+      onUpdate({ ...task, ...updates, ...newDisplayData });
     }
     
-    updateTaskMutation.mutate(updates);
+    // Update local status for immediate UI feedback
+    if (updates.status) {
+      setLocalStatus(updates.status);
+    }
+    
+    // Skip API call for temp tasks (they'll be created on the server later)
+    if (isTempTask) {
+      return;
+    }
+    
+    // Include columnId in API call if status changed
+    const apiUpdates = { ...updates };
+    if (newDisplayData.columnId) {
+      apiUpdates.columnId = newDisplayData.columnId;
+    }
+    
+    updateTaskMutation.mutate(apiUpdates);
   };
 
   const handleTitleBlur = () => {
@@ -1219,7 +1319,7 @@ export function TaskDetailsModal({
   if (updateTaskMutation.isPending && !task) {
     return (
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="max-w-5xl p-0 overflow-hidden bg-background border-none shadow-2xl h-[90vh] flex items-center justify-center">
+        <DialogContent className="max-w-5xl p-0 overflow-hidden bg-background border-none shadow-2xl h-[95vh] flex items-center justify-center">
           <DialogHeader className="sr-only">
             <DialogTitle>Загрузка задачи</DialogTitle>
             <DialogDescription>Пожалуйста, подождите, пока загружаются детали задачи.</DialogDescription>
@@ -1230,49 +1330,15 @@ export function TaskDetailsModal({
               <Skeleton className="h-4 w-[250px]" />
               <Skeleton className="h-4 w-[200px]" />
             </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-    );
-  }
-
-  if (!task) {
-    return null;
-  }
-
-  const safeTask = {
-    ...effectiveTask,
-    creator: effectiveTask?.creator || { name: "Неизвестно", date: "", avatar: null },
-    history: effectiveTask?.history || [],
-    labels: effectiveTask?.labels || [],
-    subtasks: effectiveTask?.subtasks || [],
-    comments: effectiveTask?.comments || [],
-    attachments: effectiveTask?.attachments || [],
-    type: effectiveTask?.type || "Задача",
-    priorityId: effectiveTask?.priorityId || "",
-    status: effectiveTask?.status || "В планах",
-    dueDate: effectiveTask?.dueDate || "Не установлен",
-    project: effectiveTask?.project || "м4",
-    board: effectiveTask?.board || "доска"
-  };
-
-  const handleOpenChangeWrapper = (newOpen: boolean) => {
-    if (!newOpen) {
-      // Closing the modal - save unsaved changes
-      if (task) {
-        if (newTitle !== task.title) {
-          handleUpdate({ title: newTitle });
-        }
-        if (newDescription !== task.description) {
-          handleUpdate({ description: newDescription });
-        }
-      }
-    }
-    onOpenChange(newOpen);
-  };
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
 
   return (
-    <Dialog open={open} onOpenChange={handleOpenChangeWrapper}>
+    <>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent 
         className="fixed left-[50%] top-[50%] translate-x-[-50%] translate-y-[-50%] max-w-[1200px] w-[95vw] h-[90vh] max-h-[900px] flex flex-col p-0 gap-0 overflow-hidden bg-background border-none shadow-2xl font-sans"
         onDragOver={handleDragOver}
@@ -1280,9 +1346,9 @@ export function TaskDetailsModal({
         onDrop={handleDrop}
       >
         <DialogHeader className="sr-only">
-          <DialogTitle>{safeTask.title || "Детали задачи"}</DialogTitle>
+          <DialogTitle>{effectiveTask.title || "Детали задачи"}</DialogTitle>
           <DialogDescription>
-            Просмотр и редактирование деталей задачи {safeTask.title}.
+            Просмотр и редактирование деталей задачи {effectiveTask.title}.
           </DialogDescription>
         </DialogHeader>
         {/* Drag and Drop Overlay */}
@@ -1343,7 +1409,7 @@ export function TaskDetailsModal({
               )}
               onClick={() => {
                 const newArchived = !effectiveTask?.archived;
-                handleUpdate({ archived: newArchived });
+                handleUpdate({ archived: newArchived } as any);
                 sonnerToast.success(newArchived ? "Задача архивирована" : "Задача восстановлена");
               }}
               title={effectiveTask?.archived ? "Восстановить" : "В архив"}
@@ -1418,6 +1484,7 @@ export function TaskDetailsModal({
               </div>
 
               {/* Subtasks Section */}
+              {showSubtasks && (
               <div className="space-y-3">
                 <div className="flex items-center justify-between group">
                   <div className="flex items-center gap-2 text-muted-foreground/80">
@@ -1523,7 +1590,10 @@ export function TaskDetailsModal({
                 )}
               </div>
 
+              )}
+
               {/* Attachments Section */}
+              {showAttachments && (
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2 text-muted-foreground/80">
@@ -1602,6 +1672,7 @@ export function TaskDetailsModal({
                   ))}
                 </div>
               </div>
+              )}
 
               {/* Activity Section / Tabs */}
               <div className={cn("space-y-3", attachments.length > 0 ? "pt-3" : "pt-1")}>
@@ -1635,60 +1706,172 @@ export function TaskDetailsModal({
                     <span className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest pb-2">29.12.2025</span>
                   </div>
                   
-                  <TabsContent value="comments" className="pt-2 mt-0">
-                    <div className="space-y-1.5 mb-16 min-h-[80px]">
-                      {localComments.map((comment) => (
-                        <div 
-                          key={comment.id} 
-                          className={cn(
-                            "flex flex-col gap-0 max-w-[85%]",
-                            comment.authorId === (users.find(u => u.username === "admin")?.id || "") ? "ml-auto items-end" : "items-start"
-                          )}
-                        >
-                          <div 
-                            className={cn(
-                              "px-2.5 py-1 rounded-lg text-xs shadow-sm border",
-                              comment.authorId === (users.find(u => u.username === "admin")?.id || "") 
-                                ? "bg-primary text-foreground-foreground border-primary/20 rounded-tr-sm" 
-                                : "bg-card text-foreground border-border/50 rounded-tl-sm"
-                            )}
-                          >
-                             <div className="flex flex-col gap-0.5">
-                              <span className="text-[9px] opacity-60 font-medium">{comment.author?.name}</span>
-                              <span className="text-xs leading-relaxed">
-                                {comment.content?.split(/(@[^\s]+(?:\s[^\s]+)*)/).map((part: string, idx: number) => {
-                                  if (part.startsWith('@')) {
-                                    return (
-                                      <span key={idx} className="text-foreground font-semibold bg-primary/10 px-1 rounded">
-                                        {part}
-                                      </span>
-                                    );
-                                  }
-                                  return part;
-                                })}
-                              </span>
-                              {comment.attachments && comment.attachments.length > 0 && (
-                                <div className="mt-0.5 flex flex-wrap gap-0.5">
-                                  {comment.attachments.map((file: any, i: number) => (
-                                    <a 
-                                      key={i} 
-                                      href={file.url} 
-                                      download={file.name}
-                                      className="flex items-center gap-0.5 px-1 py-0.5 rounded bg-background/20 hover:bg-background/40 transition-colors text-[8px]"
-                                    >
-                                      <Paperclip className="w-2 h-2" />
-                                      {file.name}
-                                    </a>
-                                  ))}
+                  <TabsContent value="comments" className="pt-4 mt-0 flex flex-col h-full">
+                    {/* Modern Chat Messages Area */}
+                    <div className="flex-1 space-y-4 mb-20 px-2 overflow-y-auto">
+                      {localComments.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center h-full text-center py-12">
+                          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center mb-4">
+                            <MessageSquare className="w-7 h-7 text-primary/60" />
+                          </div>
+                          <p className="text-sm font-medium text-muted-foreground">Нет сообщений</p>
+                          <p className="text-xs text-muted-foreground/60 mt-1">Начните переписку прямо сейчас</p>
+                        </div>
+                      ) : (
+                        localComments.map((comment, index) => {
+                          const isOwn = comment.authorId === (users.find(u => u.username === "admin")?.id || "");
+                          const showDate = index === 0 || new Date(comment.createdAt).toDateString() !== new Date(localComments[index - 1]?.createdAt).toDateString();
+                          
+                          return (
+                            <div key={comment.id}>
+                              {/* Date separator */}
+                              {showDate && (
+                                <div className="flex items-center gap-3 my-6">
+                                  <div className="flex-1 h-px bg-gradient-to-r from-transparent via-border to-transparent" />
+                                  <span className="text-[10px] font-medium text-muted-foreground/50 uppercase tracking-wider">
+                                    {new Date(comment.createdAt).toLocaleDateString("ru-RU", { day: "numeric", month: "long" })}
+                                  </span>
+                                  <div className="flex-1 h-px bg-gradient-to-r from-transparent via-border to-transparent" />
                                 </div>
                               )}
+                              
+                              <div className={cn(
+                                "flex gap-3 max-w-[88%]",
+                                isOwn ? "ml-auto flex-row-reverse" : "flex-row"
+                              )}>
+                                {/* Avatar */}
+                                <div className={cn(
+                                  "flex-shrink-0 w-8 h-8 rounded-xl flex items-center justify-center text-xs font-semibold shadow-sm overflow-hidden",
+                                  !comment.author?.avatar && (isOwn 
+                                    ? "bg-gradient-to-br from-primary to-primary/80 text-primary-foreground" 
+                                    : "bg-gradient-to-br from-secondary to-muted text-foreground")
+                                )}>
+                                  {comment.author?.avatar ? (
+                                    <img 
+                                      src={comment.author.avatar} 
+                                      alt={comment.author?.name} 
+                                      className="w-full h-full object-cover"
+                                      onError={(e) => {
+                                        // Fallback to initials if image fails to load
+                                        (e.target as HTMLImageElement).style.display = 'none';
+                                      }}
+                                    />
+                                  ) : (
+                                    comment.author?.name?.charAt(0).toUpperCase() || "U"
+                                  )}
+                                </div>
+                                
+                                {/* Message bubble */}
+                                <div className={cn(
+                                  "flex flex-col gap-1",
+                                  isOwn ? "items-end" : "items-start"
+                                )}>
+                                  <div className={cn(
+                                    "relative px-4 py-2.5 rounded-2xl shadow-sm",
+                                    isOwn 
+                                      ? "bg-gradient-to-br from-primary to-primary/90 text-primary-foreground rounded-br-sm" 
+                                      : "bg-gradient-to-br from-card to-secondary/50 text-foreground border border-border/30 rounded-bl-sm"
+                                  )}>
+                                    {/* Author name */}
+                                    <div className={cn(
+                                      "text-[10px] font-semibold mb-1",
+                                      isOwn ? "text-primary-foreground/70" : "text-primary/70"
+                                    )}>
+                                      {comment.author?.name}
+                                    </div>
+                                    
+                                    {/* Content */}
+                                    <p className="text-[13px] leading-relaxed">
+                                      {comment.content?.split(/(@[^\s]+(?:\s[^\s]+)*)/).map((part: string, idx: number) => {
+                                        if (part.startsWith('@')) {
+                                          return (
+                                            <span key={idx} className={cn(
+                                              "font-semibold px-1.5 py-0.5 rounded-md",
+                                              isOwn 
+                                                ? "bg-primary-foreground/20 text-primary-foreground" 
+                                                : "bg-primary/10 text-primary"
+                                            )}>
+                                              {part}
+                                            </span>
+                                          );
+                                        }
+                                        return part;
+                                      })}
+                                    </p>
+                                    
+                                    {/* Attachments */}
+                                    {comment.attachments && comment.attachments.length > 0 && (
+                                      <div className="mt-2 space-y-1">
+                                        {comment.attachments.map((file: any, i: number) => {
+                                          // Check if file is an image
+                                          const isImage = file.type?.startsWith('image/') || 
+                                            /\.(jpg|jpeg|png|gif|webp|svg)$/i.test(file.name);
+                                          
+                                          if (isImage) {
+                                            return (
+                                              <div
+                                                key={i}
+                                                onClick={() => setSelectedImage({ url: file.url, name: file.name })}
+                                                className={cn(
+                                                  "relative cursor-pointer overflow-hidden rounded-xl transition-all hover:scale-[1.02] hover:shadow-lg group",
+                                                  isOwn 
+                                                    ? "bg-primary-foreground/10" 
+                                                    : "bg-background/50 border border-border/20"
+                                                )}
+                                              >
+                                                <img
+                                                  src={file.url}
+                                                  alt={file.name}
+                                                  className="w-full max-w-[200px] h-auto max-h-[150px] object-cover"
+                                                  onError={(e) => {
+                                                    // Fallback to file icon if image fails to load
+                                                    (e.target as HTMLImageElement).style.display = 'none';
+                                                  }}
+                                                />
+                                                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors flex items-center justify-center">
+                                                  <Eye className="w-6 h-6 text-white opacity-0 group-hover:opacity-100 transition-opacity drop-shadow-lg" />
+                                                </div>
+                                              </div>
+                                            );
+                                          }
+                                          
+                                          // Non-image files - show as before
+                                          return (
+                                            <a 
+                                              key={i} 
+                                              href={file.url} 
+                                              download={file.name}
+                                              className={cn(
+                                                "flex items-center gap-2 px-3 py-2 rounded-xl text-xs transition-all hover:scale-[1.02]",
+                                                isOwn 
+                                                  ? "bg-primary-foreground/15 hover:bg-primary-foreground/25" 
+                                                  : "bg-background/50 hover:bg-background/80 border border-border/20"
+                                              )}
+                                            >
+                                              <div className={cn(
+                                                "w-7 h-7 rounded-lg flex items-center justify-center",
+                                                isOwn ? "bg-primary-foreground/20" : "bg-primary/10"
+                                              )}>
+                                                <Paperclip className="w-3.5 h-3.5" />
+                                              </div>
+                                              <span className="truncate max-w-[120px] font-medium">{file.name}</span>
+                                            </a>
+                                          );
+                                        })}
+                                      </div>
+                                    )}
+                                  </div>
+                                  
+                                  {/* Timestamp */}
+                                  <span className="text-[10px] text-muted-foreground/40 font-medium px-1">
+                                    {new Date(comment.createdAt).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}
+                                  </span>
+                                </div>
+                              </div>
                             </div>
-                          </div>
-                          <span className="text-[8px] text-muted-foreground/40 uppercase px-1">
-                            {comment.createdAt ? new Date(comment.createdAt).toLocaleString() : ""}
-                          </span>
-                        </div>
-                      ))}
+                          );
+                        })
+                      )}
                     </div>
                   </TabsContent>
                   
@@ -1704,103 +1887,69 @@ export function TaskDetailsModal({
             </div>
           </ScrollArea>
 
-          {/* Comment Input Sticky Bottom Area */}
-          <div className="absolute bottom-0 left-0 w-[calc(100%-288px)] p-3 bg-gradient-to-t from-background via-background/95 to-transparent shrink-0 z-10">
-            <div className="max-w-4xl mx-auto space-y-1.5">
-              {/* Comment Attachments Preview */}
+          {/* Modern Comment Input Sticky Bottom Area */}
+          <div className="absolute bottom-0 left-0 w-[calc(100%-288px)] p-4 bg-gradient-to-t from-background via-background to-background/95 backdrop-blur-sm shrink-0 z-10 border-t border-border/30">
+            <div className="max-w-4xl mx-auto space-y-3">
+              {/* Modern Comment Attachments Preview */}
               {commentAttachments.length > 0 && (
-                <div className="flex flex-wrap gap-1.5 px-3 py-1.5 bg-secondary/30 rounded-lg border border-border/40">
-                  {commentAttachments.map((file, i) => (
-                    <div key={i} className="flex items-center gap-1 bg-background/50 px-1.5 py-0.5 rounded text-[9px] font-medium">
-                      <Paperclip className="w-2.5 h-2.5" />
-                      <span className="truncate max-w-[80px]">{file.name}</span>
-                      <button 
-                        onClick={() => setCommentAttachments(commentAttachments.filter((_, idx) => idx !== i))}
-                        className="text-destructive hover:text-destructive/80"
-                      >
-                        <Trash2 className="w-2.5 h-2.5" />
-                      </button>
-                    </div>
-                  ))}
+                <div className="flex flex-wrap gap-2 p-3 bg-secondary/20 rounded-2xl border border-border/30">
+                  {commentAttachments.map((file, i) => {
+                    // Check if file is an image
+                    const isImage = file.type?.startsWith('image/') || 
+                      /\.(jpg|jpeg|png|gif|webp|svg)$/i.test(file.name);
+                    
+                    if (isImage) {
+                      return (
+                        <div key={i} className="relative group">
+                          <div 
+                            className="w-20 h-20 rounded-xl overflow-hidden bg-background shadow-sm border border-border/20 cursor-pointer"
+                            onClick={() => setSelectedImage({ url: file.url, name: file.name })}
+                          >
+                            <img
+                              src={file.url}
+                              alt={file.name}
+                              className="w-full h-full object-cover"
+                            />
+                            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
+                              <Eye className="w-5 h-5 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+                            </div>
+                          </div>
+                          <button 
+                            onClick={() => setCommentAttachments(commentAttachments.filter((_, idx) => idx !== i))}
+                            className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center shadow-md hover:bg-destructive/90 transition-colors"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                      );
+                    }
+                    
+                    // Non-image files
+                    return (
+                      <div key={i} className="flex items-center gap-2 bg-background px-3 py-1.5 rounded-xl text-xs font-medium shadow-sm border border-border/20">
+                        <div className="w-6 h-6 rounded-lg bg-primary/10 flex items-center justify-center">
+                          <Paperclip className="w-3 h-3 text-primary" />
+                        </div>
+                        <span className="truncate max-w-[100px]">{file.name}</span>
+                        <button 
+                          onClick={() => setCommentAttachments(commentAttachments.filter((_, idx) => idx !== i))}
+                          className="w-5 h-5 rounded-full bg-secondary hover:bg-destructive/20 text-muted-foreground hover:text-destructive flex items-center justify-center transition-colors"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
 
-              <div className="relative group">
-                <Input
-                  ref={inputRef}
-                  placeholder="Напишите комментарий... Используйте @ для упоминания"
-                  className="h-10 pl-3 pr-20 bg-background border-border rounded-xl focus-visible:ring-primary/20 transition-all text-sm placeholder:text-muted-foreground shadow-inner text-foreground"
-                  value={newComment}
-                  onChange={(e) => {
-                    const value = e.target.value;
-                    setNewComment(value);
-                    
-                    // Check for mentions
-                    const lastAtIndex = value.lastIndexOf('@');
-                    if (lastAtIndex !== -1) {
-                      const afterAt = value.slice(lastAtIndex + 1);
-                      const spaceIndex = afterAt.indexOf(' ');
-                      const query = spaceIndex === -1 ? afterAt : afterAt.slice(0, spaceIndex);
-                      
-                      if (!afterAt.includes(' ') && value.length > lastAtIndex + 1) {
-                        setMentionQuery(query);
-                        setShowMentions(true);
-                        setMentionIndex(0);
-                      } else if (afterAt.includes(' ')) {
-                        setShowMentions(false);
-                      }
-                    } else {
-                      setShowMentions(false);
-                    }
-                  }}
-                  onKeyDown={(e) => {
-                    if (showMentions && filteredMentionUsers.length > 0) {
-                      if (e.key === 'ArrowDown') {
-                        e.preventDefault();
-                        setMentionIndex((prev) => (prev + 1) % filteredMentionUsers.length);
-                      } else if (e.key === 'ArrowUp') {
-                        e.preventDefault();
-                        setMentionIndex((prev) => (prev - 1 + filteredMentionUsers.length) % filteredMentionUsers.length);
-                      } else if (e.key === 'Enter') {
-                        e.preventDefault();
-                        handleMentionSelect(filteredMentionUsers[mentionIndex]);
-                      } else if (e.key === 'Escape') {
-                        setShowMentions(false);
-                      }
-                    } else if (e.key === "Enter") {
-                      handleAddComment();
-                    }
-                  }}
-                />
-                
-                {/* Mentions Dropdown */}
-                {showMentions && filteredMentionUsers.length > 0 && (
-                  <div className="absolute bottom-full left-0 mb-1 w-64 bg-popover border border-border rounded-lg shadow-lg z-50 max-h-48 overflow-auto">
-                    <div className="p-1">
-                      {filteredMentionUsers.map((user: any, idx: number) => {
-                        const displayName = user.firstName 
-                          ? `${user.firstName} ${user.lastName || ''}`.trim() 
-                          : user.username;
-                        return (
-                          <button
-                            key={user.id}
-                            onClick={() => handleMentionSelect(user)}
-                            className={cn(
-                              "w-full flex items-center gap-2 px-3 py-2 rounded-md text-left text-sm transition-colors",
-                              idx === mentionIndex ? "bg-primary/10 text-foreground" : "hover:bg-secondary"
-                            )}
-                          >
-                            <div className="w-6 h-6 rounded-full bg-primary/20 flex items-center justify-center text-xs font-medium">
-                              {displayName.charAt(0).toUpperCase()}
-                            </div>
-                            <span className="truncate">{displayName}</span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-                <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-0.5">
+              {/* Modern Input Container */}
+              <div className="relative">
+                <div className={cn(
+                  "flex items-end gap-2 bg-card/80 backdrop-blur-sm rounded-2xl border shadow-sm transition-all duration-200",
+                  "focus-within:border-primary/40 focus-within:shadow-md focus-within:shadow-primary/5"
+                )}>
+                  {/* Attachment Button */}
                   <input 
                     type="file" 
                     id="comment-file-upload" 
@@ -1812,24 +1961,126 @@ export function TaskDetailsModal({
                     variant="ghost" 
                     size="icon" 
                     className={cn(
-                      "h-7 w-7 text-muted-foreground/60 hover:text-foreground hover:bg-secondary/40 rounded-lg",
+                      "h-10 w-10 ml-2 my-1.5 flex-shrink-0 rounded-xl text-muted-foreground/70 hover:text-foreground hover:bg-secondary transition-all",
                       isUploadingCommentFile && "animate-pulse"
                     )}
                     asChild
                   >
                     <label htmlFor="comment-file-upload" className="cursor-pointer">
-                      <Paperclip className="w-3.5 h-3.5" />
+                      <Paperclip className="w-[18px] h-[18px]" />
                     </label>
                   </Button>
+                  
+                  {/* Modern Text Input */}
+                  <div className="flex-1 min-h-[52px] max-h-[200px] py-3 relative">
+                    <textarea
+                      ref={inputRef as any}
+                      placeholder="Напишите сообщение..."
+                      className="w-full h-full bg-transparent border-0 resize-none focus:ring-0 focus:outline-none text-[14px] leading-relaxed placeholder:text-muted-foreground/50 py-0.5"
+                      value={newComment}
+                      rows={1}
+                      onInput={(e: any) => {
+                        e.target.style.height = 'auto';
+                        e.target.style.height = Math.min(e.target.scrollHeight, 200) + 'px';
+                      }}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        setNewComment(value);
+                        
+                        // Check for mentions
+                        const lastAtIndex = value.lastIndexOf('@');
+                        if (lastAtIndex !== -1) {
+                          const afterAt = value.slice(lastAtIndex + 1);
+                          const spaceIndex = afterAt.indexOf(' ');
+                          const query = spaceIndex === -1 ? afterAt : afterAt.slice(0, spaceIndex);
+                          
+                          if (!afterAt.includes(' ') && value.length > lastAtIndex + 1) {
+                            setMentionQuery(query);
+                            setShowMentions(true);
+                            setMentionIndex(0);
+                          } else if (afterAt.includes(' ')) {
+                            setShowMentions(false);
+                          }
+                        } else {
+                          setShowMentions(false);
+                        }
+                      }}
+                      onKeyDown={(e) => {
+                        if (showMentions && filteredMentionUsers.length > 0) {
+                          if (e.key === 'ArrowDown') {
+                            e.preventDefault();
+                            setMentionIndex((prev) => (prev + 1) % filteredMentionUsers.length);
+                          } else if (e.key === 'ArrowUp') {
+                            e.preventDefault();
+                            setMentionIndex((prev) => (prev - 1 + filteredMentionUsers.length) % filteredMentionUsers.length);
+                          } else if (e.key === 'Enter' && !e.shiftKey) {
+                            e.preventDefault();
+                            handleMentionSelect(filteredMentionUsers[mentionIndex]);
+                          } else if (e.key === 'Escape') {
+                            setShowMentions(false);
+                          }
+                        } else if (e.key === "Enter" && !e.shiftKey) {
+                          e.preventDefault();
+                          handleAddComment();
+                        }
+                      }}
+                    />
+                  </div>
+                  
+                  {/* Modern Send Button */}
                   <Button 
                     size="icon" 
-                    className="h-7 w-7 bg-primary/90 hover:bg-primary shadow-md shadow-primary/20 rounded-lg"
+                    className={cn(
+                      "h-10 w-10 mr-2 my-1.5 flex-shrink-0 rounded-xl transition-all duration-200",
+                      (newComment.trim() || commentAttachments.length > 0)
+                        ? "bg-primary hover:bg-primary/90 shadow-md shadow-primary/25 text-primary-foreground scale-100"
+                        : "bg-secondary text-muted-foreground scale-95"
+                    )}
                     onClick={handleAddComment}
                     disabled={!newComment.trim() && commentAttachments.length === 0}
                   >
-                    <Send className="w-3.5 h-3.5 rotate-0" />
+                    <Send className={cn(
+                      "w-[18px] h-[18px] transition-transform",
+                      (newComment.trim() || commentAttachments.length > 0) && "rotate-0"
+                    )} />
                   </Button>
                 </div>
+                
+                {/* Modern Mentions Dropdown */}
+                {showMentions && filteredMentionUsers.length > 0 && (
+                  <div className="absolute bottom-full left-0 mb-2 w-72 bg-popover/95 backdrop-blur-sm border border-border/50 rounded-2xl shadow-xl z-50 max-h-60 overflow-auto">
+                    <div className="p-2">
+                      <div className="text-[10px] font-semibold text-muted-foreground/60 uppercase tracking-wider px-2 py-1.5">
+                        Упомянуть пользователя
+                      </div>
+                      {filteredMentionUsers.map((user: any, idx: number) => {
+                        const displayName = user.firstName 
+                          ? `${user.firstName} ${user.lastName || ''}`.trim() 
+                          : user.username;
+                        return (
+                          <button
+                            key={user.id}
+                            onClick={() => handleMentionSelect(user)}
+                            className={cn(
+                              "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left text-sm transition-all",
+                              idx === mentionIndex 
+                                ? "bg-primary/10 text-foreground shadow-sm" 
+                                : "hover:bg-secondary/60"
+                            )}
+                          >
+                            <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center text-sm font-semibold">
+                              {displayName.charAt(0).toUpperCase()}
+                            </div>
+                            <div className="flex flex-col">
+                              <span className="font-medium truncate">{displayName}</span>
+                              <span className="text-[10px] text-muted-foreground/60">@{user.username}</span>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -1840,26 +2091,29 @@ export function TaskDetailsModal({
               {/* Status Section */}
               <div className="flex items-center gap-2 mb-4">
                 <Select 
-                  value={safeTask.status || "В планах"} 
-                  onValueChange={(value) => handleUpdate({ status: value })}
+                  value={currentStatus} 
+                  onValueChange={(value) => {
+                    setLocalStatus(value);
+                    handleUpdate({ status: value });
+                  }}
                 >
-                  <SelectTrigger className="flex-1 h-9 bg-white border border-gray-300 rounded-lg shadow-sm font-bold text-gray-900 px-3 focus:ring-2 focus:ring-primary/20 text-xs">
+                  <SelectTrigger className="flex-1 h-9 bg-background border border-input rounded-lg shadow-sm font-bold text-foreground px-3 focus:ring-2 focus:ring-primary/20 text-xs">
                     <div className="flex items-center gap-2">
-                      <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: safeTask.status === 'Готово' ? '#10b981' : safeTask.status === 'В работе' ? '#3b82f6' : safeTask.status === 'На проверке' ? '#f59e0b' : '#64748b' }} />
-                      <SelectValue placeholder="Выберите статус" className="text-gray-900 font-medium" />
+                      <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: currentStatus === 'Готово' ? '#10b981' : currentStatus === 'В работе' ? '#3b82f6' : currentStatus === 'На проверке' ? '#f59e0b' : '#64748b' }} />
+                      <span className="text-foreground font-medium">{currentStatus}</span>
                     </div>
                   </SelectTrigger>
-                  <SelectContent className="rounded-xl bg-white" style={{ zIndex: 9999 }}>
+                  <SelectContent className="rounded-xl bg-background" style={{ zIndex: 9999 }}>
                     {statusOptions.length > 0 ? (
                       statusOptions.map((status: string) => (
-                        <SelectItem key={status} value={status} className="text-gray-900">{status}</SelectItem>
+                        <SelectItem key={status} value={status} className="text-foreground">{status}</SelectItem>
                       ))
                     ) : (
                       <>
-                        <SelectItem value="В планах" className="text-gray-900">В планах</SelectItem>
-                        <SelectItem value="В работе" className="text-gray-900">В работе</SelectItem>
-                        <SelectItem value="На проверке" className="text-gray-900">На проверке</SelectItem>
-                        <SelectItem value="Готово" className="text-gray-900">Готово</SelectItem>
+                        <SelectItem value="В планах" className="text-foreground">В планах</SelectItem>
+                        <SelectItem value="В работе" className="text-foreground">В работе</SelectItem>
+                        <SelectItem value="На проверке" className="text-foreground">На проверке</SelectItem>
+                        <SelectItem value="Готово" className="text-foreground">Готово</SelectItem>
                       </>
                     )}
                   </SelectContent>
@@ -1919,10 +2173,22 @@ export function TaskDetailsModal({
 
                 {[
                   { 
+                    icon: ListChecks, 
+                    label: "Подзадачи", 
+                    value: localSubtasks.length > 0 ? `${localSubtasks.filter(s => s.completed).length}/${localSubtasks.length}` : "0",
+                    isSubtasks: true 
+                  },
+                  { 
                     icon: Eye, 
                     label: "Наблюдатели", 
                     value: localObservers.length > 0 ? `${localObservers.length}` : "0",
                     isObservers: true 
+                  },
+                  { 
+                    icon: Paperclip, 
+                    label: "Вложения", 
+                    value: attachments.length > 0 ? `${attachments.length}` : "0",
+                    isAttachments: true 
                   },
                    {
                       icon: Calendar, 
@@ -1937,7 +2203,33 @@ export function TaskDetailsModal({
                     },
                 ].map((item, idx) => (
                   <div key={idx}>
-                    {(item as any).isObservers ? (
+                    {(item as any).isSubtasks ? (
+                      <button 
+                        type="button" 
+                        onClick={() => setShowSubtasks(!showSubtasks)}
+                        className={cn(
+                          "flex items-center gap-2.5 p-2 rounded-lg transition-colors w-full text-left",
+                          showSubtasks ? "bg-secondary/25" : "bg-secondary/15 hover:bg-secondary/25"
+                        )}
+                      >
+                        <item.icon className={cn("w-3.5 h-3.5 shrink-0", showSubtasks ? "text-primary" : "text-muted-foreground/60")} />
+                        <span className={cn("text-[12px] font-bold flex-1 truncate", showSubtasks ? "text-primary" : "text-foreground/70")}>{item.label}</span>
+                        <span className="text-[10px] font-bold text-muted-foreground/50 shrink-0">{item.value}</span>
+                      </button>
+                    ) : (item as any).isAttachments ? (
+                      <button 
+                        type="button" 
+                        onClick={() => setShowAttachments(!showAttachments)}
+                        className={cn(
+                          "flex items-center gap-2.5 p-2 rounded-lg transition-colors w-full text-left",
+                          showAttachments ? "bg-secondary/25" : "bg-secondary/15 hover:bg-secondary/25"
+                        )}
+                      >
+                        <item.icon className={cn("w-3.5 h-3.5 shrink-0", showAttachments ? "text-primary" : "text-muted-foreground/60")} />
+                        <span className={cn("text-[12px] font-bold flex-1 truncate", showAttachments ? "text-primary" : "text-foreground/70")}>{item.label}</span>
+                        <span className="text-[10px] font-bold text-muted-foreground/50 shrink-0">{item.value}</span>
+                      </button>
+                    ) : (item as any).isObservers ? (
                       <div className="flex flex-col gap-2">
                         <Popover>
                           <PopoverTrigger asChild>
@@ -1946,9 +2238,9 @@ export function TaskDetailsModal({
                               aria-label="Наблюдатели" 
                               className="flex items-center gap-2.5 p-2 rounded-lg bg-secondary/15 hover:bg-secondary/25 transition-colors group cursor-pointer border border-transparent hover:border-border/20 w-full text-left"
                             >
-                              <item.icon className="w-3.5 h-3.5 text-muted-foreground/60" />
-                              <span className="text-[12px] font-bold text-foreground/70 flex-1">{item.label}</span>
-                              <span className="text-[10px] font-bold text-muted-foreground/50">{localObservers.length}</span>
+                              <item.icon className="w-3.5 h-3.5 shrink-0 text-muted-foreground/60" />
+                              <span className="text-[12px] font-bold text-foreground/70 flex-1 truncate">{item.label}</span>
+                              <span className="text-[10px] font-bold text-muted-foreground/50 shrink-0">{localObservers.length}</span>
                             </button>
                           </PopoverTrigger>
                           <PopoverContent className="w-64 p-0 rounded-xl overflow-hidden" align="end" style={{ zIndex: 9999, pointerEvents: 'auto' }}>
@@ -2001,9 +2293,9 @@ export function TaskDetailsModal({
                             aria-label="Дата"
                             className="flex items-center gap-2.5 p-2 rounded-lg bg-secondary/15 hover:bg-secondary/25 transition-colors group cursor-pointer border border-transparent hover:border-border/20 w-full text-left"
                           >
-                            <item.icon className="w-3.5 h-3.5 text-muted-foreground/60" />
-                            <span className="text-[12px] font-bold text-foreground/70 flex-1">{item.label}</span>
-                            <span className="text-[10px] font-bold text-muted-foreground/50">{item.value}</span>
+                            <item.icon className="w-3.5 h-3.5 shrink-0 text-muted-foreground/60" />
+                            <span className="text-[12px] font-bold text-foreground/70 flex-1 truncate">{item.label}</span>
+                            <span className="text-[10px] font-bold text-muted-foreground/50 shrink-0">{item.value}</span>
                           </button>
                         </PopoverTrigger>
                         <PopoverContent className="w-auto p-3 rounded-xl" align="end" style={{ zIndex: 9999, pointerEvents: 'auto' }}>
@@ -2053,11 +2345,11 @@ export function TaskDetailsModal({
                       </Popover>
                     ) : (
                       <div 
-                        className="flex items-center gap-2.5 p-2 rounded-lg bg-secondary/15 hover:bg-secondary/25 transition-colors group cursor-pointer border border-transparent hover:border-border/20"
+                        className="flex items-center gap-2.5 p-2 rounded-lg bg-secondary/15 hover:bg-secondary/25 transition-colors group cursor-pointer border border-transparent hover:border-border/20 w-full text-left"
                       >
-                        <item.icon className="w-3.5 h-3.5 text-muted-foreground/60" />
-                        <span className="text-[12px] font-bold text-foreground/70 flex-1">{item.label}</span>
-                        <div className="flex items-center gap-1.5">
+                        <item.icon className="w-3.5 h-3.5 shrink-0 text-muted-foreground/60" />
+                        <span className="text-[12px] font-bold text-foreground/70 flex-1 truncate">{item.label}</span>
+                        <div className="flex items-center gap-1.5 shrink-0">
                           <span className="text-[10px] font-bold text-muted-foreground/50">{item.value}</span>
                         </div>
                       </div>
@@ -2070,17 +2362,18 @@ export function TaskDetailsModal({
 
               {/* Priority Section */}
               <div className="space-y-1.5">
-                <Select 
-                  value={safeTask.priorityId}
+                <label className="text-[10px] font-semibold text-muted-foreground/60 uppercase tracking-wider">Приоритет</label>
+                <Select
+                  value={effectiveTask.priorityId}
                   onValueChange={(value) => handleUpdate({ priorityId: value })}
                 >
                   <SelectTrigger className="w-full h-10 bg-secondary/15 border-none rounded-lg px-3 hover:bg-secondary/25 transition-all font-bold text-[13px]">
                     <div className="flex items-center gap-3">
-                      {availablePriorities.find(p => p.id === safeTask.priorityId) ? (
+                      {availablePriorities.find(p => p.id === effectiveTask.priorityId) ? (
                         <>
-                          <div className={cn("w-3 h-3 rounded-full", availablePriorities.find(p => p.id === safeTask.priorityId)?.color)} />
+                          <div className={cn("w-3 h-3 rounded-full", availablePriorities.find(p => p.id === effectiveTask.priorityId)?.color)} />
                           <span className="text-foreground font-medium">
-                            {availablePriorities.find(p => p.id === safeTask.priorityId)?.name}
+                            {availablePriorities.find(p => p.id === effectiveTask.priorityId)?.name}
                           </span>
                         </>
                       ) : (
@@ -2097,6 +2390,43 @@ export function TaskDetailsModal({
                         <div className="flex items-center gap-3">
                           <div className={cn("w-3 h-3 rounded-full", priority.color)} />
                           <span className="text-foreground font-medium">{priority.name}</span>
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Task Type Section */}
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-semibold text-muted-foreground/60 uppercase tracking-wider">Тип задачи</label>
+                <Select
+                  value={effectiveTask.taskTypeId || ""}
+                  onValueChange={(value) => handleUpdate({ taskTypeId: value || null } as any)}
+                >
+                  <SelectTrigger className="w-full h-10 bg-secondary/15 border-none rounded-lg px-3 hover:bg-secondary/25 transition-all font-bold text-[13px]">
+                    <div className="flex items-center gap-3">
+                      {availableTaskTypes.find(t => t.id === effectiveTask.taskTypeId) ? (
+                        <>
+                          <div className={cn("w-3 h-3 rounded-full", availableTaskTypes.find(t => t.id === effectiveTask.taskTypeId)?.color)} />
+                          <span className="text-foreground font-medium">
+                            {availableTaskTypes.find(t => t.id === effectiveTask.taskTypeId)?.name}
+                          </span>
+                        </>
+                      ) : (
+                        <>
+                          <span className="w-5 h-5" />
+                          <span className="text-foreground/70">Тип задачи</span>
+                        </>
+                      )}
+                    </div>
+                  </SelectTrigger>
+                  <SelectContent className="rounded-xl min-w-[220px]">
+                    {availableTaskTypes.map((taskType: any) => (
+                      <SelectItem key={taskType.id} value={taskType.id} className="text-[14px] py-3">
+                        <div className="flex items-center gap-3">
+                          <div className={cn("w-3 h-3 rounded-full", taskType.color)} />
+                          <span className="text-foreground font-medium">{taskType.name}</span>
                         </div>
                       </SelectItem>
                     ))}
@@ -2128,23 +2458,30 @@ export function TaskDetailsModal({
                             availableLabels.map((label: any) => {
                               const isSelected = localLabels.some(l => l.name === label.name);
                               if (isSelected) return null;
+                              const getColors = (color: string) => {
+                                if (color.includes('red') || color.includes('rose')) return { bg: '#fef2f2', text: '#dc2626' };
+                                if (color.includes('blue')) return { bg: '#dbeafe', text: '#2563eb' };
+                                if (color.includes('green') || color.includes('emerald')) return { bg: '#dcfce7', text: '#16a34a' };
+                                if (color.includes('yellow') || color.includes('amber')) return { bg: '#fef9c3', text: '#ca8a04' };
+                                if (color.includes('purple') || color.includes('indigo')) return { bg: '#f3e8ff', text: '#9333ea' };
+                                if (color.includes('pink')) return { bg: '#fce7f3', text: '#db2777' };
+                                if (color.includes('orange')) return { bg: '#ffedd5', text: '#ea580c' };
+                                if (color.includes('gray') || color.includes('slate')) return { bg: '#f1f5f9', text: '#475569' };
+                                return { bg: '#f1f5f9', text: '#475569' };
+                              };
+                              const colors = getColors(label.color || '');
                               return (
                                 <Badge 
-                                  key={label.id} 
-                                  variant="secondary" 
-                                  className={cn(
-                                    "px-2 py-0.5 text-[9px] font-bold border-none rounded-md cursor-pointer transition-all hover:opacity-80",
-                                    label.color ? label.color.replace('bg-', 'bg-').replace('500', '500/10') : "bg-primary/10",
-                                    label.color ? (label.color.includes('red') || label.color.includes('orange') || label.color.includes('rose') ? "text-white" : label.color.replace('bg-', 'text-').replace('500', '600')) : "text-foreground"
-                                  )}
+                                  key={label.id}
+                                  className="px-2 py-0.5 text-[10px] font-medium border-none rounded-sm cursor-pointer hover:opacity-80 transition-all"
+                                  style={{ backgroundColor: colors.bg, color: colors.text }}
                                   onClick={() => handleAddLabel(label.name)}
-                                  style={{ pointerEvents: 'auto', cursor: 'pointer' }}
                                 >
                                   {label.name}
                                 </Badge>
                               );
                             })
-                          ) : (
+                    ) : (
                             <span className="text-xs text-muted-foreground">Нет доступных меток</span>
                           )}
                         </div>
@@ -2155,19 +2492,28 @@ export function TaskDetailsModal({
                 <div className="flex flex-wrap gap-1">
                   {localLabels.map((label) => {
                     const labelInfo = availableLabels.find((l: any) => l.name === label.name);
+                    const getColors = (color: string) => {
+                      if (color.includes('red') || color.includes('rose')) return { bg: '#fef2f2', text: '#dc2626' };
+                      if (color.includes('blue')) return { bg: '#dbeafe', text: '#2563eb' };
+                      if (color.includes('green') || color.includes('emerald')) return { bg: '#dcfce7', text: '#16a34a' };
+                      if (color.includes('yellow') || color.includes('amber')) return { bg: '#fef9c3', text: '#ca8a04' };
+                      if (color.includes('purple') || color.includes('indigo')) return { bg: '#f3e8ff', text: '#9333ea' };
+                      if (color.includes('pink')) return { bg: '#fce7f3', text: '#db2777' };
+                      if (color.includes('orange')) return { bg: '#ffedd5', text: '#ea580c' };
+                      if (color.includes('gray') || color.includes('slate')) return { bg: '#f1f5f9', text: '#475569' };
+                      return { bg: '#f1f5f9', text: '#475569' };
+                    };
+                    const colors = getColors(labelInfo?.color || '');
                     return (
                       <Badge 
                         key={label.name} 
-                        variant="secondary" 
                         className={cn(
-                          "px-2 py-0 text-[9px] font-bold border-none rounded-md cursor-pointer hover:bg-destructive/20 hover:text-destructive transition-colors",
-                          label.pending && "opacity-50",
-                          labelInfo?.color ? labelInfo.color.replace('bg-', 'bg-').replace('500', '500/10') : "bg-primary/10",
-                          labelInfo?.color ? (labelInfo.color.includes('red') || labelInfo.color.includes('orange') || labelInfo.color.includes('rose') ? "text-white" : labelInfo.color.replace('bg-', 'text-').replace('500', '600')) : "text-foreground"
+                          "px-2 py-0 text-[10px] font-medium border-none rounded-sm cursor-pointer hover:opacity-80 transition-colors",
+                          label.pending && "opacity-50"
                         )}
+                        style={{ backgroundColor: colors.bg, color: colors.text }}
                         onClick={() => handleRemoveLabel(label.name)}
                         title="Кликните для удаления"
-                        style={{ pointerEvents: 'auto', cursor: 'pointer' }}
                       >
                         {label.name}
                       </Badge>
@@ -2178,16 +2524,16 @@ export function TaskDetailsModal({
 
               {/* Footer Metadata */}
               <div className="pt-6 space-y-1.5 px-1">
-                <div className="text-[9px] font-bold text-muted-foreground/40 uppercase tracking-widest">Создано {safeTask.creator.date}</div>
+                <div className="text-[9px] font-bold text-muted-foreground/40 uppercase tracking-widest">Создано {effectiveTask.creator.date}</div>
                 <div className="flex items-center gap-2">
                   <span className="text-[9px] font-bold text-muted-foreground/40 uppercase tracking-widest">Создатель</span>
                   <div className="flex items-center gap-1">
-                    <span className="text-[9px] font-bold text-foreground/70">{safeTask.creator.name}</span>
+                    <span className="text-[9px] font-bold text-foreground/70">{effectiveTask.creator.name}</span>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="text-[9px] font-bold text-muted-foreground/40 uppercase tracking-widest">Проект</span>
-                  <span className="text-[9px] font-bold text-foreground/70">{safeTask.project}</span>
+                  <span className="text-[9px] font-bold text-foreground/70">{effectiveTask.project}</span>
                 </div>
               </div>
             </div>
@@ -2195,5 +2541,50 @@ export function TaskDetailsModal({
         </div>
       </DialogContent>
     </Dialog>
+
+    {/* Image Lightbox Dialog */}
+    <Dialog open={!!selectedImage} onOpenChange={(open) => !open && setSelectedImage(null)}>
+      <DialogContent className="max-w-[90vw] max-h-[90vh] p-0 overflow-hidden bg-background/95 backdrop-blur-sm">
+        <div className="relative flex items-center justify-center min-h-[200px] max-h-[85vh]">
+          {selectedImage && (
+            <>
+              <img
+                src={selectedImage.url}
+                alt={selectedImage.name}
+                className="max-w-full max-h-[85vh] object-contain"
+                onClick={() => setSelectedImage(null)}
+              />
+              <div className="absolute top-4 right-4 flex gap-2">
+                <Button
+                  variant="secondary"
+                  size="icon"
+                  className="rounded-full bg-background/80 backdrop-blur-sm hover:bg-background shadow-lg"
+                  onClick={() => {
+                    const link = document.createElement('a');
+                    link.href = selectedImage.url;
+                    link.download = selectedImage.name;
+                    link.click();
+                  }}
+                >
+                  <Download className="w-4 h-4" />
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="icon"
+                  className="rounded-full bg-background/80 backdrop-blur-sm hover:bg-background shadow-lg"
+                  onClick={() => setSelectedImage(null)}
+                >
+                  <X className="w-4 h-4" />
+                </Button>
+              </div>
+              <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-background/80 backdrop-blur-sm px-4 py-2 rounded-full text-sm font-medium shadow-lg">
+                {selectedImage.name}
+              </div>
+            </>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+    </>
   );
 }

@@ -69,6 +69,8 @@ export default function Profile() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/user"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/boards"] });
       toast({
         title: "Профиль обновлен",
         description: "Ваши данные успешно сохранены в базе данных.",

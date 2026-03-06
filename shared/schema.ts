@@ -174,13 +174,16 @@ export const tasks = pgTable("tasks", {
   columnId: uuid("column_id").notNull().references(() => boardColumns.id),
   assigneeId: uuid("assignee_id").references(() => users.id),
   reporterId: uuid("reporter_id").notNull().references(() => users.id),
-  status: text("status").default("todo"), // todo, in_progress, review, done
+  status: text("status").default("В планах"), // todo, in_progress, review, done
   priorityId: uuid("priority_id").references(() => priorities.id), // New foreign key to priorities table
+  taskTypeId: uuid("task_type_id").references(() => taskTypes.id), // New foreign key to task_types table
   type: text("type").default("task"), // task, bug, feature, story
   storyPoints: integer("story_points"),
   startDate: timestamp("start_date"),
   dueDate: timestamp("due_date"),
+  acceptedAt: timestamp("accepted_at"), // When task was accepted by assignee
   completedAt: timestamp("completed_at"),
+  timeSpent: integer("time_spent").default(0), // Time spent in seconds
   order: integer("order").notNull().default(0),
   number: text("number"),
   parentId: uuid("parent_id").references((): any => tasks.id),
@@ -194,6 +197,7 @@ export const tasks = pgTable("tasks", {
   columnIdIdx: index("tasks_column_id_idx").on(table.columnId),
   assigneeIdIdx: index("tasks_assignee_id_idx").on(table.assigneeId),
   priorityIdIdx: index("tasks_priority_id_idx").on(table.priorityId),
+  taskTypeIdIdx: index("tasks_task_type_id_idx").on(table.taskTypeId),
   reporterIdIdx: index("tasks_reporter_id_idx").on(table.reporterId),
   boardColumnOrderIdx: index("tasks_board_column_order_idx").on(table.boardId, table.columnId, table.order),
 }));
@@ -374,6 +378,7 @@ export const insertTaskSchema = createInsertSchema(tasks).pick({
   reporterId: true,
   status: true,
   priorityId: true,
+  taskTypeId: true,
   type: true,
   storyPoints: true,
   startDate: true,
@@ -381,6 +386,7 @@ export const insertTaskSchema = createInsertSchema(tasks).pick({
   parentId: true,
   tags: true,
   attachments: true,
+  archived: true,
 });
 
 export const insertSiteSettingsSchema = createInsertSchema(siteSettings).pick({
@@ -421,6 +427,21 @@ export const insertPrioritySchema = createInsertSchema(priorities).pick({
 
 export type Priority = typeof priorities.$inferSelect;
 export type InsertPriority = z.infer<typeof insertPrioritySchema>;
+
+// Task types table
+export const taskTypes = pgTable("task_types", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  name: text("name").notNull().unique(),
+  color: text("color").default("bg-blue-500"),
+});
+
+export const insertTaskTypeSchema = createInsertSchema(taskTypes).pick({
+  name: true,
+  color: true,
+});
+
+export type TaskType = typeof taskTypes.$inferSelect;
+export type InsertTaskType = z.infer<typeof insertTaskTypeSchema>;
 
 // Chat folders table
 export const labels = pgTable("labels", {
@@ -477,12 +498,14 @@ export const chatParticipants = pgTable("chat_participants", {
 }));
 
 // Messages table
+// @ts-ignore - recursive type reference
 export const messages = pgTable("messages", {
   id: uuid("id").primaryKey().defaultRandom(),
   chatId: uuid("chat_id").notNull().references(() => chats.id, { onDelete: "cascade" }),
   senderId: uuid("sender_id").notNull().references(() => users.id),
   content: text("content").notNull(),
   attachments: jsonb("attachments").default(sql`'[]'::jsonb`),
+  // @ts-ignore - recursive reference
   replyToId: uuid("reply_to_id").references(() => messages.id, { onDelete: "set null" }),
   isRead: boolean("is_read").default(false),
   createdAt: timestamp("created_at").defaultNow(),

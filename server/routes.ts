@@ -1,8 +1,9 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
-import { getStorage } from "./postgres-storage";
-import { insertSiteSettingsSchema, insertUserSchema, insertNotificationSchema, insertLabelSchema, priorities } from "@shared/schema";
+import { getStorage, getReportOverview, getReportWorkspaces, getReportProjects, getReportBoards, getReportUsers } from "./postgres-storage";
+import { insertSiteSettingsSchema, insertUserSchema, insertNotificationSchema, insertLabelSchema, priorities, taskTypes } from "@shared/schema";
 import * as schema from "@shared/schema";
+import { getStatusByColumnName } from "../shared/column-status-mapping";
 import { setupWebSockets } from "./socket";
 import { Server as SocketIOServer } from "socket.io";
 import multer from "multer";
@@ -17,6 +18,44 @@ import bcrypt from "bcrypt";
 
 const storage = getStorage();
 let io: SocketIOServer;
+
+/**
+ * Обеспечивает соответствие статуса задачи названию колонки
+ * Если статус не соответствует - обновляет его и логирует изменение
+ */
+async function ensureTaskStatusMatchesColumn(task: any): Promise<any> {
+  if (!task.columnId || !task.status) return task;
+  
+  try {
+    const column = await storage.getColumn(task.columnId);
+    if (column && column.name) {
+      const expectedStatus = getStatusByColumnName(column.name);
+      if (task.status !== expectedStatus) {
+        console.warn(
+          `[STATUS FIX] Task ${task.id}: status "${task.status}" doesn't match column "${column.name}". Expected: "${expectedStatus}". Updating...`
+        );
+        // Обновляем статус задачи в базе данных
+        await storage.updateTask(task.id, { status: expectedStatus });
+        return { ...task, status: expectedStatus };
+      }
+    }
+  } catch (error) {
+    console.error('[STATUS FIX] Error checking task status:', error);
+  }
+  
+  return task;
+}
+
+/**
+ * Обеспечивает соответствие статусов для списка задач
+ */
+async function ensureAllTasksStatusMatch(tasks: any[]): Promise<any[]> {
+  const updatedTasks = await Promise.all(
+    tasks.map(task => ensureTaskStatusMatchesColumn(task))
+  );
+  return updatedTasks;
+}
+
 
 // Rate limiters
 const globalLimiter = rateLimit({
@@ -595,7 +634,13 @@ export async function registerRoutes(
         storage.getTasksByBoardWithUsers(boardId)
       ]);
       
-      const boardData = { columns, tasks };
+      // Convert "todo" status to "В планах" for backward compatibility
+      const enrichedTasks = tasks.map((task: any) => ({
+        ...task,
+        status: task.status === "todo" ? "В планах" : task.status
+      }));
+      
+      const boardData = { columns, tasks: enrichedTasks };
       
       // Сохраняем в кэш на 5 минут
       await setCache(cacheKey, boardData, 300);
@@ -758,19 +803,43 @@ export async function registerRoutes(
         users.forEach(user => usersMap.set(user.id, user));
       }
       
-      // Enrich tasks with board and project info
-      const enrichedTasks = tasks.map((t) => {
+      // Fetch all priorities and task types for mapping
+      const prioritiesList = await storage.db.select().from(schema.priorities);
+      const taskTypesList = await storage.db.select().from(schema.taskTypes);
+      
+      const prioritiesMap = new Map(prioritiesList.map((p: any) => [p.id, { name: p.name.toLowerCase(), color: p.color }]));
+      const taskTypesMap = new Map(taskTypesList.map((t: any) => [t.id, { name: t.name, color: t.color }]));
+      
+      // Enrich tasks with board, project, column, priority, and task type info
+      const enrichedTasks = await Promise.all(tasks.map(async (t) => {
         const assignee = t.task.assigneeId ? usersMap.get(t.task.assigneeId) : null;
         const reporter = t.task.reporterId ? usersMap.get(t.task.reporterId) : null;
+        
+        // Fetch column info
+        let column = null;
+        if (t.task.columnId) {
+          column = await storage.getColumn(t.task.columnId);
+        }
+        
+        // Get priority info from mapping
+        const priorityInfo = t.task.priorityId ? prioritiesMap.get(t.task.priorityId) : null;
+        
+        // Get task type info from mapping
+        const taskTypeInfo = t.task.taskTypeId ? taskTypesMap.get(t.task.taskTypeId) : null;
         
         return {
           ...t.task,
           board: t.board,
           project: t.project,
+          column: column,
+          priority: priorityInfo?.name || null,
+          priorityColor: priorityInfo?.color || null,
+          taskType: taskTypeInfo?.name || null,
+          taskTypeColor: taskTypeInfo?.color || null,
           assignee: formatUserBasic(assignee),
-          creator: reporter ? { ...formatUserBasic(reporter), date: t.task.createdAt } : null,
+          creator: reporter ? { ...formatUserBasic(reporter), date: t.task.createdAt } : null
         };
-      });
+      }));
       
       res.json(enrichedTasks);
     } catch (error) {
@@ -864,8 +933,8 @@ export async function registerRoutes(
       
       // Удаляем поля, которых нет в таблице tasks (обогащенные данные)
       const allowedFields = [
-        'title', 'description', 'status', 'priority', 'priorityId', 'type', 
-        'storyPoints', 'startDate', 'dueDate', 'completedAt', 
+        'title', 'description', 'status', 'priority', 'priorityId', 'taskTypeId', 'type', 
+        'storyPoints', 'startDate', 'dueDate', 'acceptedAt', 'completedAt', 'timeSpent',
         'order', 'columnId', 'boardId', 'assigneeId', 'reporterId',
         'parentId', 'tags', 'attachments', 'number', 'archived'
       ];
@@ -883,18 +952,45 @@ export async function registerRoutes(
       if (updateData.startDate && typeof updateData.startDate === 'string') {
         updateData.startDate = new Date(updateData.startDate);
       }
+      if (updateData.acceptedAt && typeof updateData.acceptedAt === 'string') {
+        updateData.acceptedAt = new Date(updateData.acceptedAt);
+      }
       if (updateData.completedAt && typeof updateData.completedAt === 'string') {
         updateData.completedAt = new Date(updateData.completedAt);
       }
       
-      // Если задача перемещается в колонку "Готово", обновляем её статус
+      // Если задача перемещается в колонку, обновляем её статус на название колонки
       if (updateData.columnId) {
         const column = await storage.getColumn(updateData.columnId);
-        if (column && column.name === "Готово") {
-          updateData.status = "done";
-        } else if (column) {
-          // Если перемещаем из "Готово" в другую колонку, меняем статус обратно
-          updateData.status = "todo";
+        if (column && column.name) {
+          updateData.status = column.name;
+          console.log('[PATCH] Column:', column.name, '-> status:', updateData.status);
+        }
+      }
+      
+      // Если обновляется статус (из модального окна), нужно также обновить columnId
+      if (updateData.status && !updateData.columnId) {
+        // Находим колонку с подходящим названием
+        const currentTask = await storage.getTask(taskId);
+        if (currentTask) {
+          const columns = await storage.getColumnsByBoard(currentTask.boardId);
+          // Сначала ищем точное совпадение
+          let matchingColumn = columns.find(col => col.name === updateData.status);
+          
+          // Если не нашли, ищем по маппингу (для обратной совместимости)
+          if (!matchingColumn) {
+            const normalizedStatus = getStatusByColumnName(updateData.status);
+            matchingColumn = columns.find(col => {
+              const columnStatus = getStatusByColumnName(col.name);
+              return columnStatus === normalizedStatus;
+            });
+          }
+          
+          if (matchingColumn) {
+            updateData.columnId = matchingColumn.id;
+            updateData.status = matchingColumn.name; // Используем точное название колонки
+            console.log('[PATCH] Found matching column:', matchingColumn.name, '-> columnId:', matchingColumn.id);
+          }
         }
       }
 
@@ -1046,6 +1142,7 @@ export async function registerRoutes(
 
       const enrichedTask = {
         ...task,
+        status: task.status === "todo" ? "В планах" : task.status,
         assignee: formatUserBasic(assignee),
         creator: { 
           name: reporter ? formatUserName(reporter) : "Система", 
@@ -1088,7 +1185,10 @@ export async function registerRoutes(
       res.json(enrichedTask);
     } catch (error) {
       console.error("Error updating task:", error);
-      res.status(500).json({ message: "Failed to update task" });
+      console.error("Error stack:", error instanceof Error ? error.stack : 'No stack trace');
+      console.error("Request body:", req.body);
+      console.error("Task ID:", req.params.id);
+      res.status(500).json({ message: "Failed to update task", error: error instanceof Error ? error.message : 'Unknown error' });
     }
   });
 
@@ -1224,7 +1324,7 @@ export async function registerRoutes(
       if (columns.length === 0) return res.status(400).json({ message: "Board has no columns" });
 
       // Whitelist allowed fields for security (including validated title)
-      const allowedFields = ['title', 'description', 'status', 'priorityId', 'type', 'storyPoints', 'startDate', 'dueDate', 'columnId', 'assigneeId', 'tags', 'parentId'];
+      const allowedFields = ['title', 'description', 'status', 'priorityId', 'taskTypeId', 'type', 'storyPoints', 'startDate', 'dueDate', 'columnId', 'assigneeId', 'tags', 'parentId'];
       const sanitizedBody: Record<string, any> = { title: req.body.title.trim() };
       
       for (const field of allowedFields.slice(1)) {
@@ -1233,12 +1333,19 @@ export async function registerRoutes(
         }
       }
 
+      // Determine status based on column
+      const targetColumnId = req.body.columnId || columns[0].id;
+      const targetColumn = await storage.getColumn(targetColumnId);
+      const determinedStatus = targetColumn && targetColumn.name 
+        ? getStatusByColumnName(targetColumn.name)
+        : 'todo';
+      
       const taskData = {
         ...sanitizedBody,
         boardId: req.params.boardId,
-        columnId: req.body.columnId || columns[0].id,
+        columnId: targetColumnId,
         reporterId: user.id,
-        status: req.body.status || "todo"
+        status: req.body.status || determinedStatus
       } as any;
       console.log("[API] Task data prepared:", taskData);
 
@@ -1247,7 +1354,7 @@ export async function registerRoutes(
       
       // Start timer for initial status
       try {
-        const initialStatus = task.status || "todo";
+        const initialStatus = task.status || "В планах";
         await storage.recordTaskStatusEntry(task.id, initialStatus);
         console.log("[API] Started timer for status:", initialStatus);
       } catch (error) {
@@ -1356,7 +1463,7 @@ export async function registerRoutes(
   app.post("/api/boards/:boardId/columns", async (req, res) => {
     if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
     try {
-      const { name } = req.body;
+      const { name, color } = req.body;
       const boardId = req.params.boardId;
       
       // Get current columns to determine order
@@ -1369,7 +1476,7 @@ export async function registerRoutes(
         boardId,
         name,
         order: maxOrder + 1,
-        color: null
+        color: color || null
       });
       
       // Invalidate board cache
@@ -1393,14 +1500,14 @@ export async function registerRoutes(
     }
     
     try {
-      const { name } = req.body;
-      console.log("[API] Attempting to update column with name:", name);
+      const { name, color } = req.body;
+      console.log("[API] Attempting to update column with name:", name, "color:", color);
       
       // Get board ID before updating
       const column = await storage.db.select().from(schema.boardColumns).where(eq(schema.boardColumns.id, req.params.columnId));
       const boardId = column[0]?.boardId;
       
-      const updated = await storage.updateBoardColumn(req.params.columnId, { name });
+      const updated = await storage.updateBoardColumn(req.params.columnId, { name, color });
       console.log("[API] Column updated successfully:", updated);
       
       // Invalidate board cache
@@ -1468,6 +1575,41 @@ export async function registerRoutes(
   app.delete("/api/priorities/:id", async (req, res) => {
     const { id } = req.params;
     await storage.db.delete(priorities).where(eq(priorities.id, id));
+    res.status(204).send();
+  });
+
+  // Task Types API
+  app.get("/api/task-types", async (req, res) => {
+    const taskTypesList = await storage.db.select().from(taskTypes);
+    res.json(taskTypesList);
+  });
+
+  app.post("/api/task-types", async (req, res) => {
+    const { name, color } = req.body;
+    try {
+      const newTaskType = await storage.db.insert(taskTypes).values({ name, color }).returning();
+      res.status(201).json(newTaskType[0]);
+    } catch (error: any) {
+      if (error.code === '23505' || error.constraint_name === 'task_types_name_unique') {
+        return res.status(409).json({ 
+          message: "Task type with this name already exists",
+          error: "DUPLICATE_TASK_TYPE_NAME"
+        });
+      }
+      res.status(500).json({ message: "Failed to create task type" });
+    }
+  });
+
+  app.put("/api/task-types/:id", async (req, res) => {
+    const { id } = req.params;
+    const { name, color } = req.body;
+    const updatedTaskType = await storage.db.update(taskTypes).set({ name, color }).where(eq(taskTypes.id, id)).returning();
+    res.json(updatedTaskType[0]);
+  });
+
+  app.delete("/api/task-types/:id", async (req, res) => {
+    const { id } = req.params;
+    await storage.db.delete(taskTypes).where(eq(taskTypes.id, id));
     res.status(204).send();
   });
 
@@ -2306,6 +2448,200 @@ export async function registerRoutes(
   });
 
   // Note: Label routes are already defined earlier in the file (around line 543)
+
+  // ==================== REPORT ROUTES ====================
+
+  app.get("/api/reports/overview", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+    try {
+      const { workspaceId, projectId, boardId, userId, dateFrom, dateTo } = req.query;
+      const data = await getReportOverview(
+        storage.db,
+        workspaceId as string,
+        projectId as string,
+        boardId as string,
+        userId as string,
+        dateFrom as string,
+        dateTo as string
+      );
+      res.json(data);
+    } catch (error) {
+      console.error("Error fetching overview report:", error);
+      res.status(500).json({ message: "Failed to fetch overview report" });
+    }
+  });
+
+  app.get("/api/reports/workspaces", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+    try {
+      const { workspaceId, projectId, boardId, userId, dateFrom, dateTo } = req.query;
+      const data = await getReportWorkspaces(
+        storage.db,
+        workspaceId as string,
+        projectId as string,
+        boardId as string,
+        userId as string,
+        dateFrom as string,
+        dateTo as string
+      );
+      res.json(data);
+    } catch (error) {
+      console.error("Error fetching workspaces report:", error);
+      res.status(500).json({ message: "Failed to fetch workspaces report" });
+    }
+  });
+
+  app.get("/api/reports/projects", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+    try {
+      const { workspaceId, projectId, boardId, userId, dateFrom, dateTo } = req.query;
+      const data = await getReportProjects(
+        storage.db,
+        workspaceId as string,
+        projectId as string,
+        boardId as string,
+        userId as string,
+        dateFrom as string,
+        dateTo as string
+      );
+      res.json(data);
+    } catch (error) {
+      console.error("Error fetching projects report:", error);
+      res.status(500).json({ message: "Failed to fetch projects report" });
+    }
+  });
+
+  app.get("/api/reports/boards", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+    try {
+      const { projectId, boardId, userId, dateFrom, dateTo } = req.query;
+      const data = await getReportBoards(
+        storage.db,
+        projectId as string,
+        boardId as string,
+        userId as string,
+        dateFrom as string,
+        dateTo as string
+      );
+      res.json(data);
+    } catch (error) {
+      console.error("Error fetching boards report:", error);
+      res.status(500).json({ message: "Failed to fetch boards report" });
+    }
+  });
+
+  app.get("/api/reports/users", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+    try {
+      const { workspaceId, projectId, boardId, userId, dateFrom, dateTo } = req.query;
+      const data = await getReportUsers(
+        storage.db,
+        workspaceId as string,
+        projectId as string,
+        boardId as string,
+        userId as string,
+        dateFrom as string,
+        dateTo as string
+      );
+      res.json(data);
+    } catch (error) {
+      console.error("Error fetching users report:", error);
+      res.status(500).json({ message: "Failed to fetch users report" });
+    }
+  });
+
+  app.get("/api/reports/tasks/time-tracking", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+    try {
+      const { workspaceId, projectId, boardId, userId, dateFrom, dateTo } = req.query;
+      
+      // Get all tasks from database
+      let tasks = await storage.db.select().from(schema.tasks);
+      
+      // Filter by board if specified
+      if (boardId) {
+        tasks = tasks.filter((t: any) => t.boardId === boardId);
+      }
+      
+      // Filter by user if specified
+      if (userId) {
+        tasks = tasks.filter((t: any) => t.assigneeId === userId);
+      }
+
+      const taskIds = tasks.map((t: any) => t.id);
+
+      // Get all status history and filter by task IDs in JS
+      let allHistory = await storage.db.select().from(schema.taskStatusHistory);
+      allHistory = allHistory.filter((h: any) => taskIds.includes(h.taskId));
+      
+      // Filter by date range if specified
+      const fromDate = dateFrom ? new Date(dateFrom as string) : null;
+      const toDate = dateTo ? new Date(dateTo as string) : new Date();
+      
+      if (fromDate && toDate) {
+        allHistory = allHistory.filter((h: any) => {
+          const enteredAt = new Date(h.enteredAt);
+          const exitedAt = h.exitedAt ? new Date(h.exitedAt) : null;
+          
+          // Entry overlaps with period if enteredAt <= toDate AND (exitedAt is null OR exitedAt >= fromDate)
+          if (enteredAt > toDate) return false;
+          if (exitedAt && exitedAt < fromDate) return false;
+          
+          return true;
+        });
+      }
+
+      // Aggregate by status
+      const statusStats = new Map<string, { taskIds: Set<string>, totalSeconds: number }>();
+      const defaultStatuses = ['В планах', 'В работе', 'На проверке', 'Готово'];
+      
+      for (const status of defaultStatuses) {
+        statusStats.set(status, { taskIds: new Set(), totalSeconds: 0 });
+      }
+
+      for (const entry of allHistory) {
+        let russianStatus = entry.status;
+        
+        // Convert English statuses to Russian
+        if (entry.status === 'todo') russianStatus = 'В планах';
+        else if (entry.status === 'in_progress') russianStatus = 'В работе';
+        else if (entry.status === 'done') russianStatus = 'Готово';
+        
+        if (!statusStats.has(russianStatus)) {
+          statusStats.set(russianStatus, { taskIds: new Set(), totalSeconds: 0 });
+        }
+        
+        const stats = statusStats.get(russianStatus)!;
+        stats.taskIds.add(entry.taskId);
+        
+        let duration = entry.durationSeconds || 0;
+        if (!entry.exitedAt && entry.enteredAt) {
+          duration = Math.floor((new Date().getTime() - new Date(entry.enteredAt).getTime()) / 1000);
+        }
+        stats.totalSeconds += duration;
+      }
+
+      const result = Array.from(statusStats.entries())
+        .map(([status, stats]) => ({
+          status,
+          taskCount: stats.taskIds.size,
+          totalSeconds: stats.totalSeconds
+        }))
+        .sort((a, b) => {
+          const order = ['В планах', 'В работе', 'На проверке', 'Готово'];
+          const aIndex = order.indexOf(a.status);
+          const bIndex = order.indexOf(b.status);
+          if (aIndex === -1) return 1;
+          if (bIndex === -1) return -1;
+          return aIndex - bIndex;
+        });
+
+      res.json({ statusReport: result });
+    } catch (error) {
+      console.error("Error fetching tasks time tracking:", error);
+      res.status(500).json({ message: "Failed to fetch tasks time tracking", error: String(error) });
+    }
+  });
 
   return httpServer;
 }

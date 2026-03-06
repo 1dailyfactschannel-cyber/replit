@@ -2,23 +2,48 @@ import { Layout } from "@/components/layout/Layout";
 import React, { useState, useMemo, useEffect, useCallback } from "react";
 import { cn } from "@/lib/utils";
 import { 
-  ChevronRight, 
+  Users, 
+  Shield, 
+  Puzzle, 
+  ChevronRight,
   ChevronDown,
-  MoreVertical,
-  Search,
-  Hash,
-  Filter,
-  Users,
-  Flag,
-  GripVertical,
-  Trash2,
-  Pencil,
-  Loader2,
-  Plus,
-  LayoutGrid,
   Columns,
+  Send,
+  Save,
+  Loader2,
+  Globe,
+  Lock,
+  Eye,
+  Settings as SettingsIcon,
+  Plus,
+  Pencil,
+  Trash2,
+  MessageSquare,
+  Search,
+  Filter,
+  MoreVertical,
+  Mail,
+  UserPlus,
+  Github,
+  Slack,
+  MessageCircle,
+  Hash,
+  Activity,
+  Zap,
+  ExternalLink,
+  Code,
+  LayoutGrid,
+  Flag,
+  Check,
+  ArrowUpDown,
+  X,
+  Palette,
+  Tags,
   Folder,
-  Check
+  Archive,
+  RotateCcw,
+  Layers,
+  Clock
 } from "lucide-react";
 import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd";
 import { Button } from "@/components/ui/button";
@@ -91,8 +116,31 @@ const ProjectListLoading = () => (
   </div>
 );
 
-// Function to determine column color based on column name
-const getColumnColor = (columnName: string): { bg: string; text: string; border: string; badge: string } => {
+// Function to determine column color based on column name or custom color
+const getColumnColor = (columnName: string, customColor?: string | null): { bg: string; text: string; border: string; badge: string } => {
+  // If custom color is provided from database, use it
+  if (customColor) {
+    // Map Tailwind color classes to corresponding styles
+    const colorMap: Record<string, { bg: string; text: string; border: string; badge: string }> = {
+      'bg-blue-500': { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-500', badge: 'bg-blue-100 text-blue-700' },
+      'bg-emerald-500': { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-500', badge: 'bg-emerald-100 text-emerald-700' },
+      'bg-amber-500': { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-500', badge: 'bg-amber-100 text-amber-700' },
+      'bg-rose-500': { bg: 'bg-rose-50', text: 'text-rose-700', border: 'border-rose-500', badge: 'bg-rose-100 text-rose-700' },
+      'bg-purple-500': { bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-500', badge: 'bg-purple-100 text-purple-700' },
+      'bg-indigo-500': { bg: 'bg-indigo-50', text: 'text-indigo-700', border: 'border-indigo-500', badge: 'bg-indigo-100 text-indigo-700' },
+      'bg-pink-500': { bg: 'bg-pink-50', text: 'text-pink-700', border: 'border-pink-500', badge: 'bg-pink-100 text-pink-700' },
+      'bg-slate-500': { bg: 'bg-slate-50', text: 'text-slate-700', border: 'border-slate-500', badge: 'bg-slate-100 text-slate-700' },
+    };
+    
+    return colorMap[customColor] || {
+      bg: 'bg-gray-50',
+      text: 'text-gray-700',
+      border: 'border-gray-500',
+      badge: 'bg-gray-100 text-gray-700'
+    };
+  }
+  
+  // Fallback to automatic color based on name
   const name = columnName.toLowerCase();
   
   if (name.includes('сделать') || name.includes('план') || name.includes('todo') || name.includes('to do') || name.includes('backlog')) {
@@ -135,12 +183,12 @@ const getColumnColor = (columnName: string): { bg: string; text: string; border:
 };
 
 // Memoized TaskCard with custom comparison for performance
-const TaskCard = React.memo(({ task, index, onClick, columnColor, availableLabels = [], availablePriorities = [] }: { task: any, index: number, onClick: (task: any) => void, columnColor: { bg: string; text: string; border: string; badge: string }, availableLabels?: any[], availablePriorities?: any[] }) => {
+const TaskCard = React.memo(({ task, index, onClick, columnColor, availableLabels = [], availablePriorities = [], availableTaskTypes = [] }: { task: any, index: number, onClick: (task: any) => void, columnColor: { bg: string; text: string; border: string; badge: string }, availableLabels?: any[], availablePriorities?: any[], availableTaskTypes?: any[] }) => {
   // Preload avatar image for better perceived performance
   // const avatarSrc = task.assignee?.avatar;
   
-  // Extract task number from ID (show last 4-6 chars) or use task.number if available
-  const taskNumber = task.number || (task.id ? `#${task.id.toString().slice(-4)}` : '#0000');
+  // Extract task number - always prefix with #
+  const taskNumber = task.number ? `#${task.number}` : (task.id ? `#${task.id.toString().slice(-4)}` : '#0000');
   
   // Get priority color from priorityId
   const priorityColor = React.useMemo(() => {
@@ -167,41 +215,67 @@ const TaskCard = React.memo(({ task, index, onClick, columnColor, availableLabel
           {...provided.dragHandleProps}
           onClick={() => onClick(task)}
           className={cn(
-            "bg-card border border-border/50 p-3 rounded-xl shadow-sm hover:shadow-md hover:border-primary/30 transition-[box-shadow,border-color,background-color] group/task relative overflow-hidden font-sans",
-            snapshot.isDragging ? "shadow-xl ring-2 ring-primary/20 rotate-1 z-50" : ""
+            "bg-card border border-border/60 p-2.5 rounded-lg shadow-sm hover:shadow-lg hover:border-primary/40 hover:-translate-y-0.5 transition-all duration-200 group/task relative overflow-hidden",
+            snapshot.isDragging ? "shadow-2xl ring-2 ring-primary/30 rotate-1 z-50 scale-105" : ""
           )}
         >
           {/* Bottom border indicator for priority */}
           <div className={cn(
-            "absolute inset-x-0 bottom-0 h-1.5 rounded-b-xl",
+            "absolute inset-x-0 bottom-0 h-1 rounded-b-lg",
             priorityColor
           )} />
           
-          {/* Header with Task Number and Creator Date */}
+          {/* Header with Task Number and Deadline */}
           <div className="flex items-center justify-between mb-1.5">
-            <div className="text-xs text-foreground font-mono">{taskNumber}</div>
-            {task.creator && (
-              <div className="text-[10px] text-foreground font-medium">
-                {task.creator.date.split(' ')[0]}
+            <div className="flex items-center gap-2">
+              <div className="text-xs text-muted-foreground font-mono tracking-wide">{taskNumber}</div>
+              {task.commentCount > 0 && (
+                <div className="text-[10px] font-medium flex items-center gap-1 text-muted-foreground/70">
+                  <MessageSquare className="w-3 h-3" />
+                  {task.commentCount}
+                </div>
+              )}
+            </div>
+            {task.dueDate && (
+              <div className={cn(
+                "text-[10px] font-medium flex items-center gap-1 px-1.5 py-0.5 rounded bg-muted/50",
+                new Date(task.dueDate) < new Date() ? "text-red-600 bg-red-50" : "text-muted-foreground"
+              )}>
+                <Clock className="w-3 h-3" />
+                {new Date(task.dueDate).toLocaleDateString('ru-RU', { 
+                  day: 'numeric', 
+                  month: 'short',
+                  hour: '2-digit',
+                  minute: '2-digit'
+                })}
               </div>
             )}
           </div>
 
-          <h4 className="text-sm font-normal mb-2 leading-snug text-foreground/90 line-clamp-2">{task.title}</h4>
+          <h4 className="text-sm font-medium mb-1.5 leading-relaxed text-foreground/95 line-clamp-2 tracking-tight">{task.title}</h4>
 
           {/* Labels */}
           {task.tags && task.tags.length > 0 && (
             <div className="flex flex-wrap gap-1 mb-2">
               {task.tags.map((tagName: string) => {
                 const labelInfo = availableLabels.find((l: any) => l.name === tagName);
+                const getColors = (color: string) => {
+                  if (color.includes('red') || color.includes('rose')) return { bg: '#fef2f2', text: '#dc2626' };
+                  if (color.includes('blue')) return { bg: '#dbeafe', text: '#2563eb' };
+                  if (color.includes('green') || color.includes('emerald')) return { bg: '#dcfce7', text: '#16a34a' };
+                  if (color.includes('yellow') || color.includes('amber')) return { bg: '#fef9c3', text: '#ca8a04' };
+                  if (color.includes('purple') || color.includes('indigo')) return { bg: '#f3e8ff', text: '#9333ea' };
+                  if (color.includes('pink')) return { bg: '#fce7f3', text: '#db2777' };
+                  if (color.includes('orange')) return { bg: '#ffedd5', text: '#ea580c' };
+                  if (color.includes('gray') || color.includes('slate')) return { bg: '#f1f5f9', text: '#475569' };
+                  return { bg: '#f1f5f9', text: '#475569' };
+                };
+                const colors = getColors(labelInfo?.color || '');
                 return (
                   <Badge
                     key={tagName}
-                    variant="secondary"
-                    className={cn(
-                      "px-1.5 py-0 text-[9px] font-bold border-none rounded-md pointer-events-none text-foreground",
-                      labelInfo?.color ? labelInfo.color.replace('bg-', 'bg-').replace('500', '500/10') : "bg-primary/10"
-                    )}
+                    style={{ backgroundColor: colors.bg, color: colors.text }}
+                    className="px-2 py-0.5 text-[10px] font-medium border-none rounded-sm pointer-events-none"
                   >
                     {tagName}
                   </Badge>
@@ -210,31 +284,63 @@ const TaskCard = React.memo(({ task, index, onClick, columnColor, availableLabel
             </div>
           )}
 
-          <div className="flex items-center">
+          <div className="flex items-center justify-between">
             {task.assignee ? (
-              <span className="text-xs font-medium text-foreground truncate max-w-[150px]">
-                {task.assignee.name}
-              </span>
+              <div className="flex items-center gap-2">
+                {task.assignee.avatar ? (
+                  <img 
+                    src={task.assignee.avatar} 
+                    alt="" 
+                    className="w-5 h-5 rounded-full object-cover ring-1 ring-border"
+                  />
+                ) : (
+                  <div className="w-5 h-5 rounded-full bg-primary/10 flex items-center justify-center ring-1 ring-border">
+                    <span className="text-[10px] font-medium text-primary">
+                      {task.assignee.name?.charAt(0).toUpperCase()}
+                    </span>
+                  </div>
+                )}
+                <span className="text-xs font-medium text-foreground/80 truncate max-w-[140px]">
+                  {task.assignee.name}
+                </span>
+              </div>
             ) : (
-              <span className="text-xs text-foreground">
+              <span className="text-xs text-muted-foreground/60 italic">
                 Не назначен
               </span>
             )}
+            
+            {/* Task Type - right side */}
+            {task.taskTypeId && availableTaskTypes.length > 0 && (() => {
+              const taskType = availableTaskTypes.find((t: any) => t.id === task.taskTypeId);
+              if (!taskType) return null;
+              const getTypeColors = (color: string) => {
+                if (color.includes('red') || color.includes('rose')) return { bg: '#fef2f2', text: '#dc2626' };
+                if (color.includes('purple') || color.includes('violet') || color.includes('indigo')) return { bg: '#f3e8ff', text: '#9333ea' };
+                if (color.includes('orange') || color.includes('amber')) return { bg: '#ffedd5', text: '#ea580c' };
+                if (color.includes('blue')) return { bg: '#dbeafe', text: '#2563eb' };
+                if (color.includes('green') || color.includes('emerald')) return { bg: '#dcfce7', text: '#16a34a' };
+                if (color.includes('slate') || color.includes('gray')) return { bg: '#f1f5f9', text: '#475569' };
+                return { bg: '#f1f5f9', text: '#475569' };
+              };
+              const typeColors = getTypeColors(taskType.color || '');
+              return (
+                <Badge
+                  style={{ backgroundColor: typeColors.bg, color: typeColors.text, borderColor: typeColors.text }}
+                  className="px-2 py-0.5 text-[10px] font-medium rounded-sm pointer-events-none border"
+                >
+                  {taskType.name}
+                </Badge>
+              );
+            })()}
           </div>
         </div>
       )}
     </Draggable>
   );
 }, (prevProps, nextProps) => {
-  // Simplified comparison - only check essential props
-  return (
-    prevProps.task.id === nextProps.task.id &&
-    prevProps.task.title === nextProps.task.title &&
-    prevProps.task.priority === nextProps.task.priority &&
-    prevProps.task.priorityId === nextProps.task.priorityId &&
-    prevProps.task.assignee?.id === nextProps.task.assignee?.id &&
-    prevProps.index === nextProps.index
-  );
+  // Always re-render to ensure updates show immediately
+  return false;
 });
 
 TaskCard.displayName = 'TaskCard';
@@ -245,16 +351,21 @@ interface KanbanColumnProps {
   columnId: string;
   columnIndex: number;
   tasks: any[];
-  allColumns: { id: string; name: string }[];
+  allColumns: { id: string; name: string; color?: string | null }[];
   onCreateTask: (column: string) => void;
   onTaskClick: (task: any) => void;
   onEditColumn: (columnId: string, newName: string) => void;
   onDeleteColumn: (columnId: string, targetColumnId: string) => void;
+  onOpenEditColumnDialog: (column: any) => void;
+  columnColor?: string | null;
   availableLabels?: any[];
   availablePriorities?: any[];
+  availableTaskTypes?: any[];
+  sortBy?: string;
+  onSortChange?: (columnId: string, sortBy: string) => void;
 }
 
-const KanbanColumn = React.memo(({ 
+const KanbanColumn = React.memo(({
   column, 
   columnId,
   columnIndex,
@@ -264,17 +375,55 @@ const KanbanColumn = React.memo(({
   onTaskClick, 
   onEditColumn,
   onDeleteColumn,
+  onOpenEditColumnDialog,
+  columnColor: customColumnColor,
   availableLabels = [], 
-  availablePriorities = [] 
+  availablePriorities = [],
+  availableTaskTypes = [],
+  sortBy,
+  onSortChange
 }: KanbanColumnProps) => {
-  const columnColor = getColumnColor(column);
+  const columnColor = getColumnColor(column, customColumnColor);
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState(column);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   
   // Get left column (previous column)
   const leftColumn = columnIndex > 0 ? allColumns[columnIndex - 1] : null;
-  
+
+  // Sort tasks based on sortBy option
+  const sortedTasks = React.useMemo(() => {
+    const sorted = [...tasks];
+
+    switch (sortBy) {
+      case 'title':
+        return sorted.sort((a, b) => (a.title || '').localeCompare(b.title || ''));
+      case 'priority':
+        const priorityOrder: Record<string, number> = { high: 0, medium: 1, low: 2 };
+        return sorted.sort((a, b) => {
+          const aPriority = a.priorityId ? priorityOrder[availablePriorities.find((p: any) => p.id === a.priorityId)?.name.toLowerCase()] ?? 3 : 3;
+          const bPriority = b.priorityId ? priorityOrder[availablePriorities.find((p: any) => p.id === b.priorityId)?.name.toLowerCase()] ?? 3 : 3;
+          return aPriority - bPriority;
+        });
+      case 'dueDate':
+        return sorted.sort((a, b) => {
+          if (!a.dueDate && !b.dueDate) return 0;
+          if (!a.dueDate) return 1;
+          if (!b.dueDate) return -1;
+          return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
+        });
+      case 'created':
+        return sorted.sort((a, b) => {
+          if (!a.createdAt && !b.createdAt) return 0;
+          if (!a.createdAt) return 1;
+          if (!b.createdAt) return -1;
+          return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+        });
+      default:
+        return sorted.sort((a, b) => (a.order || 0) - (b.order || 0));
+    }
+  }, [tasks, sortBy, availablePriorities]);
+
   const handleEditSubmit = () => {
     if (editName.trim() && editName !== column && columnId && onEditColumn) {
       onEditColumn(columnId, editName.trim());
@@ -331,6 +480,60 @@ const KanbanColumn = React.memo(({
               >
                 <Plus className="w-3.5 h-3.5" />
               </Button>
+
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    className={cn("w-6 h-6 text-muted-foreground/50 hover:text-primary hover:bg-primary/10 transition-colors", sortBy && sortBy !== 'default' && "text-primary")}
+                  >
+                    <ArrowUpDown className="w-3.5 h-3.5" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-48">
+                  <DropdownMenuItem onClick={() => onSortChange?.(columnId, 'default')}>
+                    <div className="flex items-center gap-2 w-full">
+                      <div className={cn("w-4 h-4 flex items-center justify-center rounded", sortBy === 'default' && "bg-primary/20")}>
+                        {sortBy === 'default' && <Check className="w-3 h-3 text-primary" />}
+                      </div>
+                      <span>По умолчанию</span>
+                    </div>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => onSortChange?.(columnId, 'title')}>
+                    <div className="flex items-center gap-2 w-full">
+                      <div className={cn("w-4 h-4 flex items-center justify-center rounded", sortBy === 'title' && "bg-primary/20")}>
+                        {sortBy === 'title' && <Check className="w-3 h-3 text-primary" />}
+                      </div>
+                      <span>По названию</span>
+                    </div>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => onSortChange?.(columnId, 'priority')}>
+                    <div className="flex items-center gap-2 w-full">
+                      <div className={cn("w-4 h-4 flex items-center justify-center rounded", sortBy === 'priority' && "bg-primary/20")}>
+                        {sortBy === 'priority' && <Check className="w-3 h-3 text-primary" />}
+                      </div>
+                      <span>По приоритету</span>
+                    </div>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => onSortChange?.(columnId, 'dueDate')}>
+                    <div className="flex items-center gap-2 w-full">
+                      <div className={cn("w-4 h-4 flex items-center justify-center rounded", sortBy === 'dueDate' && "bg-primary/20")}>
+                        {sortBy === 'dueDate' && <Check className="w-3 h-3 text-primary" />}
+                      </div>
+                      <span>По дате выполнения</span>
+                    </div>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => onSortChange?.(columnId, 'created')}>
+                    <div className="flex items-center gap-2 w-full">
+                      <div className={cn("w-4 h-4 flex items-center justify-center rounded", sortBy === 'created' && "bg-primary/20")}>
+                        {sortBy === 'created' && <Check className="w-3 h-3 text-primary" />}
+                      </div>
+                      <span>По дате создания</span>
+                    </div>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
               
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -343,7 +546,7 @@ const KanbanColumn = React.memo(({
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-40">
-                  <DropdownMenuItem onClick={() => setIsEditing(true)}>
+                  <DropdownMenuItem onClick={() => onOpenEditColumnDialog({ id: columnId, name: column, color: undefined })}>
                     <Pencil className="w-4 h-4 mr-2" />
                     Редактировать
                   </DropdownMenuItem>
@@ -408,7 +611,7 @@ const KanbanColumn = React.memo(({
               snapshot.isDraggingOver ? "bg-primary/5 ring-1 ring-primary/20" : ""
             )}
           >
-            {tasks.map((task: any, index: number) => (
+            {sortedTasks.map((task: any, index: number) => (
               <TaskCard 
                 key={task.id} 
                 task={task} 
@@ -417,6 +620,7 @@ const KanbanColumn = React.memo(({
                 columnColor={columnColor}
                 availableLabels={availableLabels}
                 availablePriorities={availablePriorities}
+                availableTaskTypes={availableTaskTypes}
               />
             ))}
             {taskProvided.placeholder}
@@ -426,10 +630,8 @@ const KanbanColumn = React.memo(({
     </div>
   );
 }, (prevProps, nextProps) => {
-  // Simplified comparison - basic props check only
-  if (prevProps.column !== nextProps.column) return false;
-  if (prevProps.tasks.length !== nextProps.tasks.length) return false;
-  return true;
+  // Always re-render when tasks change to ensure priority/number/dueDate updates show immediately
+  return false;
 });
 
 KanbanColumn.displayName = 'KanbanColumn';
@@ -486,53 +688,7 @@ const ProjectItem = React.memo(({
             )} />
             <span className="truncate text-left">{project.name}</span>
           </div>
-          
-          <div className="mt-1.5 ml-5.5 px-2">
-            <div className="flex items-center justify-between text-[10px] text-foreground mb-1">
-              <span>Прогресс</span>
-              <span>{project.progress || 0}%</span>
-            </div>
-            <div className="h-1 w-full bg-secondary rounded-full overflow-hidden">
-              <div 
-                className="h-full bg-primary transition-all duration-500" 
-                style={{ width: `${project.progress || 0}%` }}
-              />
-            </div>
-          </div>
         </div>
-        
-        {(onEdit || onDelete) && (
-          <div className="absolute right-2 top-1/2 -translate-y-1/2 opacity-0 group-hover/project:opacity-100 transition-opacity">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button 
-                  type="button"
-                  className="p-1 rounded hover:bg-secondary/70 transition-colors"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <MoreVertical className="w-4 h-4 text-muted-foreground" />
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-40">
-                {onEdit && (
-                  <DropdownMenuItem onClick={() => onEdit(project)}>
-                    <Pencil className="w-4 h-4 mr-2" />
-                    Редактировать
-                  </DropdownMenuItem>
-                )}
-                {onDelete && (
-                  <DropdownMenuItem 
-                    onClick={() => onDelete(project.id)}
-                    className="text-destructive focus:text-destructive"
-                  >
-                    <Trash2 className="w-4 h-4 mr-2" />
-                    Удалить
-                  </DropdownMenuItem>
-                )}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-        )}
       </div>
     </div>
   );
@@ -550,7 +706,7 @@ ProjectItem.displayName = 'ProjectItem';
 
 export default function Projects() {
   const { data: user } = useQuery<any>({ queryKey: ["/api/user"] });
-  const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
+  const [activeProjectId, setActiveProjectId] = useState<any>(null);
   const [activeBoardId, setActiveBoardId] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [isCreateProjectOpen, setIsCreateProjectOpen] = useState(false);
@@ -567,7 +723,11 @@ export default function Projects() {
   const [editingProject, setEditingProject] = useState<any>(null);
   const [isEditProjectOpen, setIsEditProjectOpen] = useState(false);
   const [deletingProjectId, setDeletingProjectId] = useState<string | null>(null);
-  
+  const [deletingBoardId, setDeletingBoardId] = useState<string | null>(null);
+
+  // Column sorting state
+  const [columnSortBy, setColumnSortBy] = useState<Record<string, string>>({});
+
   // Search with debounce for better performance
   const [projectSearchQuery, setProjectSearchQuery] = useState("");
   const debouncedProjectSearch = useDebounce(projectSearchQuery, 300);
@@ -623,17 +783,25 @@ export default function Projects() {
     staleTime: 1000 * 60 * 60, // 1 hour
   });
 
+  const { data: availableTaskTypes = [] } = useQuery<any[]>({
+    queryKey: ["/api/task-types"],
+    staleTime: 1000 * 60 * 60, // 1 hour
+  });
+
   const { data: users = [] } = useQuery<any[]>({
     queryKey: ["/api/users"],
     staleTime: 1000 * 60 * 5, // 5 minutes
   });
 
   // All tasks and columns for "All Tasks" view
-  const { data: allTasks = [] } = useQuery<any[]>({
+  const { data: allTasksData } = useQuery<any>({
     queryKey: ["/api/tasks/all"],
     staleTime: 1000 * 60 * 1, // 1 minute
     enabled: showAllTasks,
   });
+
+  // Handle both array response and object with tasks property
+  const allTasks = Array.isArray(allTasksData) ? allTasksData : (allTasksData?.tasks || []);
 
   const { data: allColumns = [] } = useQuery<any[]>({
     queryKey: ["/api/board-columns/all"],
@@ -662,6 +830,12 @@ export default function Projects() {
     staleTime: 1000 * 60 * 10, // 10 minutes
     gcTime: 1000 * 60 * 30,
     placeholderData: [],
+  });
+
+  // Get all boards for project filtering
+  const { data: allBoards = [] } = useQuery<any[]>({
+    queryKey: ["/api/boards"],
+    staleTime: 1000 * 60 * 10, // 10 minutes
   });
 
   const activeBoard = useMemo(() => 
@@ -897,16 +1071,16 @@ export default function Projects() {
 
   // Column mutations
   const updateColumnMutation = useMutation({
-    mutationFn: async ({ id, name }: { id: string; name: string }) => {
-      await apiRequest("PATCH", `/api/board-columns/${id}`, { name });
+    mutationFn: async ({ id, name, color }: { id: string; name: string; color?: string }) => {
+      await apiRequest("PATCH", `/api/board-columns/${id}`, { name, color });
     },
-    onSuccess: (_, { id, name }) => {
+    onSuccess: (_, { id, name, color }) => {
       queryClient.setQueryData(["/api/boards", activeBoard?.id, "full"], (oldData: any) => {
         if (!oldData) return oldData;
         return {
           ...oldData,
           columns: oldData.columns.map((col: any) => 
-            col.id === id ? { ...col, name } : col
+            col.id === id ? { ...col, name, color: color || col.color } : col
           )
         };
       });
@@ -935,8 +1109,25 @@ export default function Projects() {
     }
   });
 
-  const handleEditColumn = (columnId: string, newName: string) => {
-    updateColumnMutation.mutate({ id: columnId, name: newName });
+  const handleEditColumn = (columnId: string, newName: string, newColor?: string) => {
+    updateColumnMutation.mutate({ id: columnId, name: newName, color: newColor });
+  };
+
+  const handleOpenEditColumnDialog = (column: any) => {
+    setEditingKanbanColumn(column);
+    setEditColumnName(column.name);
+    setEditColumnColor(column.color || "");
+    setIsEditColumnOpen(true);
+  };
+
+  const handleSaveEditColumn = () => {
+    if (editingKanbanColumn && editColumnName.trim()) {
+      handleEditColumn(editingKanbanColumn.id, editColumnName.trim(), editColumnColor);
+      setIsEditColumnOpen(false);
+      setEditingKanbanColumn(null);
+      setEditColumnName("");
+      setEditColumnColor("");
+    }
   };
 
   const handleDeleteColumn = (columnId: string, targetColumnId: string) => {
@@ -1039,7 +1230,25 @@ export default function Projects() {
       toast.error("Нельзя удалить последнюю доску");
       return;
     }
-    deleteBoardMutation.mutate(id);
+    setDeletingBoardId(id);
+  };
+
+  const handleConfirmDeleteBoard = () => {
+    if (!deletingBoardId) return;
+    deleteBoardMutation.mutate(deletingBoardId);
+    setDeletingBoardId(null);
+  };
+
+  const handleArchiveBoardProjects = () => {
+    if (!deletingBoardId || !activeProject) return;
+    // Архивируем текущий проект
+    updateProjectMutation.mutate({
+      id: activeProject.id,
+      data: { archived: true }
+    });
+    // Удаляем доску
+    deleteBoardMutation.mutate(deletingBoardId);
+    setDeletingBoardId(null);
   };
 
   const handleCreateBoard = () => {
@@ -1060,6 +1269,12 @@ export default function Projects() {
   // Column creation state
   const [isCreateColumnOpen, setIsCreateColumnOpen] = useState(false);
   const [newColumnName, setNewColumnName] = useState("");
+  
+  // Column editing state
+  const [isEditColumnOpen, setIsEditColumnOpen] = useState(false);
+  const [editingKanbanColumn, setEditingKanbanColumn] = useState<{ id: string; name: string; color?: string } | null>(null);
+  const [editColumnName, setEditColumnName] = useState("");
+  const [editColumnColor, setEditColumnColor] = useState("");
 
   const { data: boardData, isLoading: isLoadingBoard } = useQuery<{ columns: any[], tasks: any[] }>({
     queryKey: ["/api/boards", activeBoard?.id, "full"],
@@ -1126,7 +1341,13 @@ export default function Projects() {
           ...newTaskData,
           id: `temp-${Date.now()}`, // Временный ID
           createdAt: new Date().toISOString(),
-          order: previousBoardData.tasks.filter(t => t.columnId === newTaskData.columnId).length
+          order: previousBoardData.tasks.filter(t => t.columnId === newTaskData.columnId).length,
+          // Добавляем полную информацию об исполнителе для немедленного отображения
+          assignee: newTaskData.assigneeId ? {
+            id: newTaskData.assigneeId,
+            name: user ? (user.firstName ? `${user.firstName} ${user.lastName || ''}` : user.username) : 'Пользователь',
+            avatar: user?.avatar
+          } : null
         };
 
         queryClient.setQueryData(["/api/boards", activeBoard?.id, "full"], {
@@ -1190,6 +1411,11 @@ export default function Projects() {
           // 3. Обновляем данные перемещаемой задачи (новая колонка и временный порядок)
           const updatedMovedTask = { ...movedTask, ...data };
           
+          // Also update selectedTask if this is the task being moved
+          if (selectedTask?.id === id) {
+            setSelectedTask((prev: any) => prev ? { ...prev, ...data } : prev);
+          }
+          
           // 4. Получаем задачи в целевой колонке
           const targetColTasks = otherTasks
             .filter((t: any) => t.columnId === (data.columnId || movedTask.columnId))
@@ -1239,7 +1465,7 @@ export default function Projects() {
   const filteredTasks = useMemo(() => {
     if (!tasks.length) return [];
     
-    return tasks.filter(task => {
+    return tasks.filter((task: any) => {
       // Search filter
       if (taskFilters.search) {
         const searchLower = taskFilters.search.toLowerCase();
@@ -1250,10 +1476,13 @@ export default function Projects() {
         if (!matchesSearch) return false;
       }
       
-      // Project filter
+      // Project filter - check boardId against selected projects' boards
       if (taskFilters.projects.length > 0) {
-        // Filter by projectId (tasks have projectId field)
-        if (!task.projectId || !taskFilters.projects.includes(task.projectId)) return false;
+        // Get boards for selected projects
+        const selectedProjectBoards = allBoards
+          .filter((b: any) => taskFilters.projects.includes(b.projectId))
+          .map((b: any) => b.id);
+        if (!task.boardId || !selectedProjectBoards.includes(task.boardId)) return false;
       }
       
       // Status filter
@@ -1296,7 +1525,7 @@ export default function Projects() {
       
       return true;
     });
-  }, [tasks, taskFilters]);
+  }, [tasks, taskFilters, allBoards]);
 
   // Create a map of column name to column ID for "All Tasks" view
   const columnNameToId = useMemo(() => {
@@ -1315,14 +1544,14 @@ export default function Projects() {
     columns.forEach(col => {
       if (showAllTasks) {
         // For "All Tasks" view, group by column name instead of columnId
-        const columnTasks = filteredTasks.filter(t => {
+        const columnTasks = filteredTasks.filter((t: any) => {
           const taskColumnName = allColumns.find((c: any) => c.id === t.columnId)?.name;
           return taskColumnName === col.name;
         });
-        data[col.id] = columnTasks.sort((a, b) => (a.order || 0) - (b.order || 0));
+        data[col.id] = columnTasks.sort((a: any, b: any) => (a.order || 0) - (b.order || 0));
       } else {
-        const columnTasks = filteredTasks.filter(t => t.columnId === col.id);
-        data[col.id] = columnTasks.sort((a, b) => (a.order || 0) - (b.order || 0));
+        const columnTasks = filteredTasks.filter((t: any) => t.columnId === col.id);
+        data[col.id] = columnTasks.sort((a: any, b: any) => (a.order || 0) - (b.order || 0));
       }
     });
     return data;
@@ -1387,10 +1616,23 @@ export default function Projects() {
     // Обновляем локальный кэш, чтобы UI сразу отобразил изменения.
     if (activeBoard?.id) {
       queryClient.setQueryData(["/api/boards", activeBoard.id, "full"], (old: any) => {
-        if (!old || !old.tasks) return old;
-        console.log("[Frontend] Updating board cache, old tasks count:", old.tasks.length);
-        const newTasks = old.tasks.map((t: any) => t.id === updatedTask.id ? { ...t, ...updatedTask } : t);
-        console.log("[Frontend] Updated tasks count:", newTasks.length);
+        if (!old) return old;
+        console.log("[Frontend] Updating board cache, old tasks count:", old.tasks?.length);
+        
+        // Update flat tasks array
+        let newTasks = old.tasks;
+        if (Array.isArray(newTasks)) {
+          newTasks = newTasks.map((t: any) => t.id === updatedTask.id ? { ...t, ...updatedTask } : t);
+        }
+        
+        // Check updated task in cache
+        const updatedInCache = newTasks.find((t: any) => t.id === updatedTask.id);
+        console.log("[Frontend] Updated task in cache:", updatedInCache);
+        
+        // Force change detection by creating new array reference
+        newTasks = [...newTasks];
+        
+        console.log("[Frontend] Updated tasks count:", newTasks?.length);
         return {
           ...old,
           tasks: newTasks
@@ -1435,13 +1677,20 @@ export default function Projects() {
       const targetColumn = columns.find(col => col.id === destination.droppableId);
       if (!targetColumn) return;
 
+      // Also find the source column to check if status changed
+      const sourceColumn = columns.find(col => col.id === source.droppableId);
+      
+      // Prepare update data - include status if column changed
+      const updateData: any = {
+        columnId: targetColumn.id,
+        order: destination.index
+      };
+      
+
       // Optimistically update the UI or just call the mutation
       updateTaskMutation.mutate({
         id: draggableId,
-        data: {
-          columnId: targetColumn.id,
-          order: destination.index
-        }
+        data: updateData
       });
     }
   };
@@ -1645,6 +1894,54 @@ export default function Projects() {
                           </div>
                         ))
                       )}
+
+                      {/* Dialog подтверждения удаления доски */}
+                      <Dialog open={!!deletingBoardId} onOpenChange={(open) => !open && setDeletingBoardId(null)}>
+                        <DialogContent>
+                          <DialogHeader>
+                            <DialogTitle>Удалить доску?</DialogTitle>
+                            <DialogDescription className="text-base break-words">
+                              При удалении доски <strong>"{boards.find(b => b.id === deletingBoardId)?.name}"</strong> будут удалены все связанные проекты.
+                            </DialogDescription>
+                          </DialogHeader>
+                          <div className="py-4 space-y-3">
+                            <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                              <p className="text-sm text-amber-800">
+                                <strong>Внимание:</strong> Все проекты на этой доске будут удалены безвозвратно.
+                              </p>
+                            </div>
+                            <p className="text-sm text-muted-foreground">
+                              Вместо удаления вы можете перенести текущий проект в архив.
+                            </p>
+                          </div>
+                          <DialogFooter className="flex flex-col gap-2">
+                            <Button 
+                              variant="outline" 
+                              className="w-full whitespace-normal h-auto py-2"
+                              onClick={handleConfirmDeleteBoard}
+                              disabled={deleteBoardMutation.isPending}
+                            >
+                              {deleteBoardMutation.isPending && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
+                              Удалить всё
+                            </Button>
+                            <Button 
+                              className="w-full bg-amber-600 hover:bg-amber-700 whitespace-normal h-auto py-2"
+                              onClick={handleArchiveBoardProjects}
+                              disabled={updateProjectMutation.isPending || deleteBoardMutation.isPending}
+                            >
+                              {(updateProjectMutation.isPending || deleteBoardMutation.isPending) && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
+                              Перенести проект в архив и удалить доску
+                            </Button>
+                            <Button 
+                              variant="ghost" 
+                              className="w-full"
+                              onClick={() => setDeletingBoardId(null)}
+                            >
+                              Отмена
+                            </Button>
+                          </DialogFooter>
+                        </DialogContent>
+                      </Dialog>
                       
                       <Dialog open={isCreateBoardOpen} onOpenChange={setIsCreateBoardOpen}>
                         <DialogTrigger asChild>
@@ -2150,13 +2447,18 @@ export default function Projects() {
                             columnId={columnData.id}
                             columnIndex={index}
                             tasks={columnTasks}
-                            allColumns={columns.map((c: any) => ({ id: c.id, name: c.name }))}
+                            allColumns={columns.map((c: any) => ({ id: c.id, name: c.name, color: c.color }))}
                             onCreateTask={handleCreateTask}
                             onTaskClick={handleTaskClick}
                             onEditColumn={handleEditColumn}
                             onDeleteColumn={handleDeleteColumn}
+                            onOpenEditColumnDialog={handleOpenEditColumnDialog}
+                            columnColor={columnData.color}
                             availableLabels={availableLabels}
                             availablePriorities={availablePriorities}
+                            availableTaskTypes={availableTaskTypes}
+                            sortBy={columnSortBy[columnData.id] || 'default'}
+                            onSortChange={(columnId, sortBy) => setColumnSortBy(prev => ({ ...prev, [columnId]: sortBy }))}
                           />
                         );
                       })}
@@ -2164,6 +2466,59 @@ export default function Projects() {
                       {/* Add Column Button */}
                       {!showAllTasks && (
                         <div className="w-80 shrink-0">
+                          {/* Edit Column Dialog */}
+                          <Dialog open={isEditColumnOpen} onOpenChange={setIsEditColumnOpen}>
+                            <DialogContent>
+                              <DialogHeader>
+                                <DialogTitle>Редактировать колонку</DialogTitle>
+                                <DialogDescription>Измените название и цвет колонки.</DialogDescription>
+                              </DialogHeader>
+                              <div className="space-y-4 py-4">
+                                <div className="space-y-2">
+                                  <Label htmlFor="edit-column-name">Название колонки</Label>
+                                  <Input
+                                    id="edit-column-name"
+                                    placeholder="Например: В тестировании"
+                                    value={editColumnName}
+                                    onChange={(e) => setEditColumnName(e.target.value)}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter' && editColumnName.trim()) {
+                                        handleSaveEditColumn();
+                                      }
+                                    }}
+                                  />
+                                </div>
+                                <div className="space-y-2">
+                                  <Label>Цвет колонки</Label>
+                                  <div className="flex flex-wrap gap-2">
+                                    {[
+                                      "bg-blue-500", "bg-emerald-500", "bg-amber-500", "bg-rose-500",
+                                      "bg-purple-500", "bg-indigo-500", "bg-pink-500", "bg-slate-500"
+                                    ].map((color) => (
+                                      <button
+                                        key={color}
+                                        onClick={() => setEditColumnColor(color)}
+                                        className={cn(
+                                          "w-6 h-6 rounded-full transition-all ring-offset-2 ring-offset-background relative",
+                                          color,
+                                          editColumnColor === color
+                                            ? "ring-2 ring-primary scale-110" 
+                                            : "hover:scale-110 opacity-70 hover:opacity-100"
+                                        )}
+                                      />
+                                    ))}
+                                  </div>
+                                </div>
+                              </div>
+                              <DialogFooter>
+                                <Button variant="outline" onClick={() => setIsEditColumnOpen(false)}>Отмена</Button>
+                                <Button onClick={handleSaveEditColumn} disabled={!editColumnName.trim()}>
+                                  Сохранить
+                                </Button>
+                              </DialogFooter>
+                            </DialogContent>
+                          </Dialog>
+                          
                           <Dialog open={isCreateColumnOpen} onOpenChange={setIsCreateColumnOpen}>
                             <DialogTrigger asChild>
                               <button className="w-full h-12 border-2 border-dashed border-border rounded-xl flex items-center justify-center gap-2 text-muted-foreground hover:text-foreground hover:border-primary/50 hover:bg-primary/5 transition-all group">

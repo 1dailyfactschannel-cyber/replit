@@ -352,7 +352,7 @@ export class PostgresStorage {
     }
   }
 
-  async createMessage(insertMessage: schema.InsertMessage) {
+  async createMessage(insertMessage: any) {
     try {
       const [message] = await this.db.insert(schema.messages).values(insertMessage).returning();
       
@@ -362,7 +362,7 @@ export class PostgresStorage {
         .where(eq(schema.chats.id, message.chatId));
 
       // Handle message attachments if they are in the JSONB field
-      const attachments = insertMessage.attachments as any[];
+      const attachments = (insertMessage as any).attachments;
       if (attachments && Array.isArray(attachments)) {
         for (const attachment of attachments) {
           await this.createMessageAttachment({
@@ -1153,7 +1153,7 @@ export class PostgresStorage {
       // Execute raw SQL for bulk update (most efficient)
       await this.db.execute(sql`
         UPDATE tasks 
-        SET order = CASE ${sql.raw(whenClauses)} END,
+        SET "order" = CASE ${sql.raw(whenClauses)} END,
             updated_at = NOW()
         WHERE id IN (${sql.join(taskIds.map(id => sql`${id}::uuid`), sql`, `)})
       `);
@@ -1219,6 +1219,26 @@ export class PostgresStorage {
         subtasksMap.set(subtask.taskId, existing);
       }
 
+      // Get comment counts for all tasks
+      let commentCounts: Record<string, number> = {};
+      if (taskIds.length > 0) {
+        const commentCountResults = await this.db
+          .select({
+            taskId: schema.comments.taskId,
+            count: sql<number>`count(*)::int`
+          })
+          .from(schema.comments)
+          .where(inArray(schema.comments.taskId, taskIds))
+          .groupBy(schema.comments.taskId);
+        
+        commentCounts = commentCountResults.reduce((acc, row) => {
+          if (row.taskId) {
+            acc[row.taskId] = row.count;
+          }
+          return acc;
+        }, {} as Record<string, number>);
+      }
+      
       const duration = Date.now() - startTime;
       console.log(`[DB] getTasksByBoardWithUsers: ${tasks.length} tasks, ${subtasks.length} subtasks in ${duration}ms`);
 
@@ -1234,6 +1254,7 @@ export class PostgresStorage {
 
         return {
           ...task,
+          commentCount: commentCounts[task.id] || 0,
           assignee: assignee ? { 
             name: formatName(assignee), 
             avatar: assignee.avatar 
@@ -1674,14 +1695,19 @@ export class PostgresStorage {
   }[]): Promise<void> {
     if (entries.length === 0) return;
     try {
-      const values = entries.map(entry => ({
-        taskId: entry.taskId,
-        userId: entry.userId || null,
-        action: entry.action,
-        fieldName: entry.fieldName || null,
-        oldValue: entry.oldValue || null,
-        newValue: entry.newValue || null,
-      }));
+      const values = entries
+        .filter(entry => entry.userId)
+        .map(entry => ({
+          taskId: entry.taskId,
+          userId: entry.userId!,
+          action: entry.action,
+          fieldName: entry.fieldName || null,
+          oldValue: entry.oldValue || null,
+          newValue: entry.newValue || null,
+        }));
+      
+      if (values.length === 0) return;
+      
       await this.db.insert(schema.taskHistory).values(values);
     } catch (error) {
       console.error("Error adding task history batch:", error);
@@ -1725,6 +1751,292 @@ export class PostgresStorage {
   async close(): Promise<void> {
     // Drizzle doesn't expose the underlying client directly
     // In production, you might want to manage the postgres client separately
+  }
+}
+
+// ==================== REPORT FUNCTIONS ====================
+
+export async function getReportOverview(
+  db: any,
+  workspaceId?: string,
+  projectId?: string,
+  boardId?: string,
+  userId?: string,
+  dateFrom?: string,
+  dateTo?: string
+) {
+  try {
+    let baseQuery = db.select({
+      task: schema.tasks,
+      board: schema.boards,
+      project: schema.projects
+    }).from(schema.tasks)
+      .leftJoin(schema.boards, eq(schema.tasks.boardId, schema.boards.id))
+      .leftJoin(schema.projects, eq(schema.boards.projectId, schema.projects.id));
+
+    const results = await baseQuery;
+    const tasks = results.map((r: any) => r.task);
+
+    const statusCounts = new Map<string, number>();
+    let completedTasks = 0;
+    let inProgressTasks = 0;
+    let overdueTasks = 0;
+    const now = new Date();
+
+    for (const task of tasks) {
+      const status = task.status || 'В планах';
+      statusCounts.set(status, (statusCounts.get(status) || 0) + 1);
+      
+      if (status === 'Готово' || status === 'done') completedTasks++;
+      else if (status === 'В работе' || status === 'in_progress') inProgressTasks++;
+      
+      if (task.dueDate && new Date(task.dueDate) < now && status !== 'Готово' && status !== 'done') {
+        overdueTasks++;
+      }
+    }
+
+    const tasksByStatus = Array.from(statusCounts.entries()).map(([status, count]) => ({
+      status,
+      count
+    }));
+
+    const tasksByDay = [];
+    for (let i = 29; i >= 0; i--) {
+      const date = new Date();
+      date.setDate(date.getDate() - i);
+      const dateStr = date.toISOString().split('T')[0];
+      
+      const count = tasks.filter((t: any) => {
+        const createdAt = t.createdAt ? new Date(t.createdAt).toISOString().split('T')[0] : '';
+        return createdAt === dateStr;
+      }).length;
+
+      tasksByDay.push({ date: dateStr, count });
+    }
+
+    return {
+      totalTasks: tasks.length,
+      completedTasks,
+      inProgressTasks,
+      overdueTasks,
+      tasksByStatus,
+      tasksByDay
+    };
+  } catch (error) {
+    console.error("Error getting report overview:", error);
+    throw error;
+  }
+}
+
+export async function getReportWorkspaces(
+  db: any,
+  workspaceId?: string,
+  projectId?: string,
+  boardId?: string,
+  userId?: string,
+  dateFrom?: string,
+  dateTo?: string
+) {
+  try {
+    const workspacesList = await db.select().from(schema.workspaces);
+    const result = [];
+
+    for (const ws of workspacesList) {
+      const projects = await db.select().from(schema.projects).where(eq(schema.projects.workspaceId, ws.id));
+      let totalTasks = 0;
+      let completedCount = 0;
+      let inProgressCount = 0;
+
+      for (const proj of projects) {
+        if (projectId && proj.id !== projectId) continue;
+        
+        const boards = await db.select().from(schema.boards).where(eq(schema.boards.projectId, proj.id));
+        
+        for (const board of boards) {
+          if (boardId && board.id !== boardId) continue;
+          
+          const tasks = await db.select().from(schema.tasks).where(eq(schema.tasks.boardId, board.id));
+          totalTasks += tasks.length;
+          
+          for (const task of tasks) {
+            const status = task.status || 'В планах';
+            if (status === 'Готово' || status === 'done') completedCount++;
+            else if (status === 'В работе' || status === 'in_progress') inProgressCount++;
+          }
+        }
+      }
+
+      result.push({
+        id: ws.id,
+        name: ws.name,
+        projectsCount: projects.length,
+        tasksCount: totalTasks,
+        completedCount,
+        inProgressCount,
+        totalTime: 0
+      });
+    }
+
+    return { workspaces: result };
+  } catch (error) {
+    console.error("Error getting workspaces report:", error);
+    throw error;
+  }
+}
+
+export async function getReportProjects(
+  db: any,
+  workspaceId?: string,
+  projectId?: string,
+  boardId?: string,
+  userId?: string,
+  dateFrom?: string,
+  dateTo?: string
+) {
+  try {
+    let projectsList = workspaceId 
+      ? await db.select().from(schema.projects).where(eq(schema.projects.workspaceId, workspaceId))
+      : await db.select().from(schema.projects);
+
+    const result = [];
+
+    for (const proj of projectsList) {
+      if (projectId && proj.id !== projectId) continue;
+      
+      const boards = await db.select().from(schema.boards).where(eq(schema.boards.projectId, proj.id));
+      let totalTasks = 0;
+      let completedCount = 0;
+      let inProgressCount = 0;
+
+      for (const board of boards) {
+        if (boardId && board.id !== boardId) continue;
+        
+        const tasks = await db.select().from(schema.tasks).where(eq(schema.tasks.boardId, board.id));
+        totalTasks += tasks.length;
+        
+        for (const task of tasks) {
+          const status = task.status || 'В планах';
+          if (status === 'Готово' || status === 'done') completedCount++;
+          else if (status === 'В работе' || status === 'in_progress') inProgressCount++;
+        }
+      }
+
+      const workspace = await db.select().from(schema.workspaces).where(eq(schema.workspaces.id, proj.workspaceId)).then((r: any) => r[0]);
+
+      result.push({
+        id: proj.id,
+        name: proj.name,
+        workspaceName: workspace?.name || '',
+        tasksCount: totalTasks,
+        completedCount,
+        inProgressCount,
+        totalTime: 0
+      });
+    }
+
+    return { projects: result };
+  } catch (error) {
+    console.error("Error getting projects report:", error);
+    throw error;
+  }
+}
+
+export async function getReportBoards(
+  db: any,
+  projectId?: string,
+  boardId?: string,
+  userId?: string,
+  dateFrom?: string,
+  dateTo?: string
+) {
+  try {
+    let boardsList = projectId
+      ? await db.select().from(schema.boards).where(eq(schema.boards.projectId, projectId))
+      : await db.select().from(schema.boards);
+
+    const result = [];
+
+    for (const board of boardsList) {
+      if (boardId && board.id !== boardId) continue;
+      
+      const tasks = await db.select().from(schema.tasks).where(eq(schema.tasks.boardId, board.id));
+      let completedCount = 0;
+
+      for (const task of tasks) {
+        const status = task.status || 'В планах';
+        if (status === 'Готово' || status === 'done') completedCount++;
+      }
+
+      const project = await db.select().from(schema.projects).where(eq(schema.projects.id, board.projectId)).then((r: any) => r[0]);
+
+      result.push({
+        id: board.id,
+        name: board.name,
+        projectName: project?.name || '',
+        tasksCount: tasks.length,
+        completedCount,
+        avgTime: 0
+      });
+    }
+
+    return { boards: result };
+  } catch (error) {
+    console.error("Error getting boards report:", error);
+    throw error;
+  }
+}
+
+export async function getReportUsers(
+  db: any,
+  workspaceId?: string,
+  projectId?: string,
+  boardId?: string,
+  userId?: string,
+  dateFrom?: string,
+  dateTo?: string
+) {
+  try {
+    const usersList = await db.select().from(schema.users);
+    const result = [];
+
+    for (const user of usersList) {
+      if (userId && user.id !== userId) continue;
+
+      const allTasks = await db.select().from(schema.tasks).where(eq(schema.tasks.assigneeId, user.id));
+      
+      let completedCount = 0;
+      let inProgressCount = 0;
+
+      for (const task of allTasks) {
+        if (projectId && task.boardId) {
+          const board = await db.select().from(schema.boards).where(eq(schema.boards.id, task.boardId)).then((r: any) => r[0]);
+          if (!board || board.projectId !== projectId) continue;
+        }
+        if (boardId && task.boardId !== boardId) continue;
+
+        const status = task.status || 'В планах';
+        if (status === 'Готово' || status === 'done') completedCount++;
+        else if (status === 'В работе' || status === 'in_progress') inProgressCount++;
+      }
+
+      const comments = await db.select().from(schema.comments).where(eq(schema.comments.authorId, user.id));
+
+      result.push({
+        id: user.id,
+        name: user.firstName ? `${user.firstName} ${user.lastName || ''}` : user.username,
+        avatar: user.avatar,
+        completedCount,
+        inProgressCount,
+        avgTime: 0,
+        totalTime: 0,
+        commentsCount: comments.length
+      });
+    }
+
+    return { users: result };
+  } catch (error) {
+    console.error("Error getting users report:", error);
+    throw error;
   }
 }
 
