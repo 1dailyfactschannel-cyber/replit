@@ -90,12 +90,6 @@ async function sendNotification(userId: string, senderId: string | null, type: s
   }
 }
 
-// Configure multer for file uploads
-const uploadDir = path.join(process.cwd(), "uploads");
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir, { recursive: true });
-}
-
 // Security: Allowed file types for upload
 const ALLOWED_MIME_TYPES = [
   'image/jpeg',
@@ -114,18 +108,8 @@ const ALLOWED_MIME_TYPES = [
 // Security: Allowed file extensions
 const ALLOWED_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.txt', '.csv'];
 
-const multerStorage = multer.diskStorage({
-  destination: (_req, _file, cb) => {
-    cb(null, uploadDir);
-  },
-  filename: (_req, file, cb) => {
-    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1E9);
-    // Get safe extension
-    const originalExt = path.extname(file.originalname).toLowerCase();
-    const safeExt = ALLOWED_EXTENSIONS.includes(originalExt) ? originalExt : '.bin';
-    cb(null, uniqueSuffix + safeExt);
-  },
-});
+// Configure multer for memory storage (files stored in database)
+const multerStorage = multer.memoryStorage();
 
 // Security: File filter to validate types
 const fileFilter = (_req: any, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
@@ -253,23 +237,61 @@ export async function registerRoutes(
   //   }
   // });
 
-  // File upload route
-  app.post("/api/upload", upload.single("file"), (req, res) => {
+  // File upload route (stores files in database)
+  app.post("/api/upload", upload.single("file"), async (req, res) => {
     try {
       if (!req.file) {
         return res.status(400).json({ message: "No file uploaded" });
       }
 
-      const fileUrl = `/uploads/${req.file.filename}`;
+      // Convert file buffer to base64
+      const base64Data = req.file.buffer.toString('base64');
+      
+      // Save file to database
+      const attachment = await storage.createFileAttachment({
+        filename: req.file.filename || `${Date.now()}-${Math.round(Math.random() * 1E9)}`,
+        originalName: req.file.originalname,
+        mimeType: req.file.mimetype,
+        size: req.file.size,
+        data: base64Data,
+        uploadedBy: req.user?.id || null,
+      });
+
+      const fileUrl = `/api/files/${attachment.id}`;
       res.json({
         url: fileUrl,
         name: req.file.originalname,
         type: req.file.mimetype,
-        size: req.file.size
+        size: req.file.size,
+        id: attachment.id
       });
     } catch (error) {
       console.error("Upload error:", error);
       res.status(500).json({ message: "Failed to upload file" });
+    }
+  });
+
+  // File retrieval route (serves files from database)
+  app.get("/api/files/:id", async (req, res) => {
+    try {
+      const attachment = await storage.getFileAttachment(req.params.id);
+      
+      if (!attachment) {
+        return res.status(404).json({ message: "File not found" });
+      }
+
+      // Convert base64 back to buffer
+      const fileBuffer = Buffer.from(attachment.data, 'base64');
+      
+      // Set appropriate headers
+      res.setHeader('Content-Type', attachment.mimeType);
+      res.setHeader('Content-Length', fileBuffer.length);
+      res.setHeader('Content-Disposition', `inline; filename="${attachment.originalName}"`);
+      
+      res.send(fileBuffer);
+    } catch (error) {
+      console.error("File retrieval error:", error);
+      res.status(500).json({ message: "Failed to retrieve file" });
     }
   });
 

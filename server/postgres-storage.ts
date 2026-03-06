@@ -12,7 +12,9 @@ import {
   type Notification,
   type InsertNotification,
   type CommentMention,
-  type InsertCommentMention
+  type InsertCommentMention,
+  type FileAttachment,
+  type InsertFileAttachment
 } from "@shared/schema";
 import { drizzle } from "drizzle-orm/postgres-js";
 import { eq, and, or, desc, ne, sql, inArray, isNull } from "drizzle-orm";
@@ -1751,6 +1753,36 @@ export class PostgresStorage {
   async close(): Promise<void> {
     // Drizzle doesn't expose the underlying client directly
     // In production, you might want to manage the postgres client separately
+  }
+
+  // File attachment methods
+  async createFileAttachment(insertAttachment: InsertFileAttachment): Promise<FileAttachment> {
+    try {
+      const [attachment] = await this.db.insert(schema.fileAttachments).values(insertAttachment).returning();
+      return attachment;
+    } catch (error) {
+      console.error("Error creating file attachment:", error);
+      throw error;
+    }
+  }
+
+  async getFileAttachment(id: string): Promise<FileAttachment | undefined> {
+    try {
+      const result = await this.db.select().from(schema.fileAttachments).where(eq(schema.fileAttachments.id, id)).limit(1);
+      return result[0];
+    } catch (error) {
+      console.error("Error getting file attachment:", error);
+      return undefined;
+    }
+  }
+
+  async deleteFileAttachment(id: string): Promise<void> {
+    try {
+      await this.db.delete(schema.fileAttachments).where(eq(schema.fileAttachments.id, id));
+    } catch (error) {
+      console.error("Error deleting file attachment:", error);
+      throw error;
+    }
   }
 }
 

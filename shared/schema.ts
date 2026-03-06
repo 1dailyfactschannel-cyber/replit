@@ -592,11 +592,34 @@ export const insertMessageAttachmentSchema = createInsertSchema(messageAttachmen
   size: true,
 });
 
-export type InsertChat = z.infer<typeof insertChatSchema>;
-export type InsertMessage = z.infer<typeof insertMessageSchema>;
-export type InsertChatFolder = z.infer<typeof insertChatFolderSchema>;
-export type InsertCall = z.infer<typeof insertCallSchema>;
 export type InsertMessageAttachment = z.infer<typeof insertMessageAttachmentSchema>;
+
+// File attachments table (for storing uploaded files in database)
+export const fileAttachments = pgTable("file_attachments", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  filename: text("filename").notNull(),
+  originalName: text("original_name").notNull(),
+  mimeType: text("mime_type").notNull(),
+  size: integer("size").notNull(),
+  data: text("data").notNull(), // base64 encoded file data
+  uploadedBy: uuid("uploaded_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  uploadedByIdx: index("file_attachments_uploaded_by_idx").on(table.uploadedBy),
+  createdAtIdx: index("file_attachments_created_at_idx").on(table.createdAt),
+}));
+
+export const insertFileAttachmentSchema = createInsertSchema(fileAttachments).pick({
+  filename: true,
+  originalName: true,
+  mimeType: true,
+  size: true,
+  data: true,
+  uploadedBy: true,
+});
+
+export type FileAttachment = typeof fileAttachments.$inferSelect;
+export type InsertFileAttachment = z.infer<typeof insertFileAttachmentSchema>;
 
 // Export core types
 export type User = typeof users.$inferSelect;
