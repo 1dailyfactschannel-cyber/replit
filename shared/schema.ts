@@ -738,3 +738,99 @@ export const insertNotificationSchema = createInsertSchema(notifications).pick({
 export type Notification = typeof notifications.$inferSelect;
 export type InsertNotification = z.infer<typeof insertNotificationSchema>;
 
+// Shop items table
+export const shopItems = pgTable("shop_items", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  name: text("name").notNull(),
+  description: text("description"),
+  cost: integer("cost").notNull(),
+  image: text("image"),
+  category: text("category"),
+  stock: integer("stock").default(0),
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertShopItemSchema = createInsertSchema(shopItems).pick({
+  name: true,
+  description: true,
+  cost: true,
+  image: true,
+  category: true,
+  stock: true,
+  isActive: true,
+});
+
+export type ShopItem = typeof shopItems.$inferSelect;
+export type InsertShopItem = z.infer<typeof insertShopItemSchema>;
+
+// Shop purchases table
+export const shopPurchases = pgTable("shop_purchases", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  itemId: uuid("item_id").notNull().references(() => shopItems.id),
+  quantity: integer("quantity").default(1),
+  totalCost: integer("total_cost").notNull(),
+  status: text("status").default("pending"),
+  purchasedAt: timestamp("purchased_at").defaultNow(),
+}, (table) => ({
+  userIdIdx: index("shop_purchases_user_id_idx").on(table.userId),
+}));
+
+export const insertShopPurchaseSchema = createInsertSchema(shopPurchases).pick({
+  userId: true,
+  itemId: true,
+  quantity: true,
+  totalCost: true,
+  status: true,
+});
+
+export type ShopPurchase = typeof shopPurchases.$inferSelect;
+export type InsertShopPurchase = z.infer<typeof insertShopPurchaseSchema>;
+
+// Points settings table
+export const pointsSettings = pgTable("points_settings", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  statusName: text("status_name").notNull().unique(),
+  pointsAmount: integer("points_amount").default(1),
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertPointsSettingSchema = createInsertSchema(pointsSettings).pick({
+  statusName: true,
+  pointsAmount: true,
+  isActive: true,
+});
+
+export type PointsSetting = typeof pointsSettings.$inferSelect;
+export type InsertPointsSetting = z.infer<typeof insertPointsSettingSchema>;
+
+// User points transactions table
+export const userPointsTransactions = pgTable("user_points_transactions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  taskId: uuid("task_id").references(() => tasks.id, { onDelete: "set null" }),
+  statusName: text("status_name"),
+  type: text("type").$type<"earned" | "spent" | "reverted">(),
+  amount: integer("amount").notNull(),
+  description: text("description"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  userIdIdx: index("transactions_user_id_idx").on(table.userId),
+  taskIdIdx: index("transactions_task_id_idx").on(table.taskId),
+  createdAtIdx: index("transactions_created_at_idx").on(table.createdAt),
+}));
+
+export const insertUserPointsTransactionSchema = createInsertSchema(userPointsTransactions).pick({
+  userId: true,
+  taskId: true,
+  statusName: true,
+  type: true,
+  amount: true,
+  description: true,
+});
+
+export type UserPointsTransaction = typeof userPointsTransactions.$inferSelect;
+export type InsertUserPointsTransaction = z.infer<typeof insertUserPointsTransactionSchema>;
+

@@ -1060,6 +1060,75 @@ export async function registerRoutes(
         }
       }
       
+      // Handle points awarding when status changes
+      if (currentTask && updateData.status && updateData.status !== currentTask.status) {
+        console.log("[POINTS] Status changed, checking for points award");
+        const assigneeId = currentTask.assigneeId;
+        
+        if (assigneeId) {
+          // Check if points were already awarded for this status in this task
+          const existingTransaction = await storage.getTransaction(taskId, updateData.status, 'earned');
+          
+          if (!existingTransaction) {
+            // Get points setting for the new status
+            const setting = await storage.getPointsSetting(updateData.status);
+            const points = setting?.pointsAmount || 1;
+            
+            // Create transaction
+            await storage.createTransaction({
+              userId: assigneeId,
+              taskId,
+              statusName: updateData.status,
+              type: 'earned',
+              amount: points,
+              description: `Начисление за переход в статус "${updateData.status}"`
+            });
+            
+            // Update user points
+            await storage.updateUserPoints(assigneeId, points);
+            
+            console.log("[POINTS] Awarded", points, "points to user", assigneeId, "for status", updateData.status);
+          } else {
+            console.log("[POINTS] Points already awarded for this status in this task");
+          }
+        }
+      }
+      
+      // Handle points revert when task is uncompleted (moved from "Готово" to another status)
+      if (currentTask && currentTask.status === 'Готово' && updateData.status && updateData.status !== 'Готово') {
+        console.log("[POINTS] Task uncompleted, checking for points revert");
+        const assigneeId = currentTask.assigneeId;
+        
+        if (assigneeId) {
+          // Find the earned transaction for "Готово" status
+          const earnedTransaction = await storage.getTransaction(taskId, 'Готово', 'earned');
+          
+          if (earnedTransaction) {
+            // Check user balance
+            const userPoints = await storage.getUserPoints(assigneeId);
+            
+            if (userPoints.balance >= earnedTransaction.amount) {
+              // Create revert transaction
+              await storage.createTransaction({
+                userId: assigneeId,
+                taskId,
+                statusName: 'Готово',
+                type: 'reverted',
+                amount: -earnedTransaction.amount,
+                description: `Возврат баллов при отмене завершения задачи`
+              });
+              
+              // Update user points
+              await storage.updateUserPoints(assigneeId, -earnedTransaction.amount);
+              
+              console.log("[POINTS] Reverted", earnedTransaction.amount, "points from user", assigneeId);
+            } else {
+              console.log("[POINTS] Cannot revert - insufficient balance");
+            }
+          }
+        }
+      }
+      
       // Get the current user for history
       const currentUser = req.user;
       const userId = currentUser?.id;
@@ -1495,6 +1564,37 @@ export async function registerRoutes(
           console.log("[API] Started user time tracking for assignee:", task.assigneeId);
         } catch (error) {
           console.error("Error starting user time tracking:", error);
+        }
+      }
+      
+      // Award points for initial status if assignee is set
+      if (task.assigneeId && task.status) {
+        try {
+          // Check if points were already awarded
+          const existingTransaction = await storage.getTransaction(task.id, task.status, 'earned');
+          
+          if (!existingTransaction) {
+            // Get points setting for the status
+            const setting = await storage.getPointsSetting(task.status);
+            const points = setting?.pointsAmount || 1;
+            
+            // Create transaction
+            await storage.createTransaction({
+              userId: task.assigneeId,
+              taskId: task.id,
+              statusName: task.status,
+              type: 'earned',
+              amount: points,
+              description: `Начисление за создание задачи в статусе "${task.status}"`
+            });
+            
+            // Update user points
+            await storage.updateUserPoints(task.assigneeId, points);
+            
+            console.log("[API] Awarded", points, "points to user", task.assigneeId, "for initial status", task.status);
+          }
+        } catch (error) {
+          console.error("Error awarding initial points:", error);
         }
       }
       
@@ -2777,6 +2877,171 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error fetching tasks time tracking:", error);
       res.status(500).json({ message: "Failed to fetch tasks time tracking", error: String(error) });
+    }
+  });
+
+  // ==================== POINTS SYSTEM ENDPOINTS ====================
+
+  // Points Settings
+  app.get("/api/points/settings", async (req, res) => {
+    try {
+      const settings = await storage.getPointsSettings();
+      res.json(settings);
+    } catch (error) {
+      console.error("Error getting points settings:", error);
+      res.status(500).json({ message: "Failed to get points settings" });
+    }
+  });
+
+  app.post("/api/points/settings", async (req, res) => {
+    try {
+      const { statusName, pointsAmount, isActive } = req.body;
+      
+      if (!statusName || pointsAmount === undefined) {
+        return res.status(400).json({ message: "statusName and pointsAmount are required" });
+      }
+
+      const setting = await storage.createPointsSetting({
+        statusName,
+        pointsAmount,
+        isActive: isActive !== false
+      });
+      
+      res.status(201).json(setting);
+    } catch (error) {
+      console.error("Error creating points setting:", error);
+      res.status(500).json({ message: "Failed to create points setting" });
+    }
+  });
+
+  app.put("/api/points/settings/:id", async (req, res) => {
+    try {
+      const { statusName, pointsAmount, isActive } = req.body;
+      const setting = await storage.updatePointsSetting(req.params.id, {
+        statusName,
+        pointsAmount,
+        isActive
+      });
+      res.json(setting);
+    } catch (error) {
+      console.error("Error updating points setting:", error);
+      res.status(500).json({ message: "Failed to update points setting" });
+    }
+  });
+
+  app.delete("/api/points/settings/:id", async (req, res) => {
+    try {
+      await storage.deletePointsSetting(req.params.id);
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting points setting:", error);
+      res.status(500).json({ message: "Failed to delete points setting" });
+    }
+  });
+
+  // User Points
+  app.get("/api/users/me/points", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+    
+    try {
+      const points = await storage.getUserPoints(req.user!.id);
+      res.json(points);
+    } catch (error) {
+      console.error("Error getting user points:", error);
+      res.status(500).json({ message: "Failed to get user points" });
+    }
+  });
+
+  app.get("/api/users/me/points-history", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+    
+    try {
+      const { type, limit, offset } = req.query;
+      const transactions = await storage.getUserTransactions(req.user!.id, {
+        type: type as string,
+        limit: limit ? parseInt(limit as string) : undefined,
+        offset: offset ? parseInt(offset as string) : undefined
+      });
+      res.json(transactions);
+    } catch (error) {
+      console.error("Error getting points history:", error);
+      res.status(500).json({ message: "Failed to get points history" });
+    }
+  });
+
+  // Shop
+  app.get("/api/shop/items", async (req, res) => {
+    try {
+      const items = await storage.getShopItems();
+      res.json(items);
+    } catch (error) {
+      console.error("Error getting shop items:", error);
+      res.status(500).json({ message: "Failed to get shop items" });
+    }
+  });
+
+  app.post("/api/shop/purchase", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+    
+    try {
+      const { itemId, quantity = 1 } = req.body;
+      
+      if (!itemId) {
+        return res.status(400).json({ message: "itemId is required" });
+      }
+
+      // Get user points
+      const userPoints = await storage.getUserPoints(req.user!.id);
+      
+      // Get item
+      const item = await storage.getShopItem(itemId);
+      if (!item) {
+        return res.status(404).json({ message: "Item not found" });
+      }
+
+      const totalCost = item.cost * quantity;
+
+      // Check balance
+      if (userPoints.balance < totalCost) {
+        return res.status(400).json({ message: "Insufficient points balance" });
+      }
+
+      // Create purchase
+      const purchase = await storage.createPurchase({
+        userId: req.user!.id,
+        itemId,
+        quantity,
+        totalCost,
+        status: "pending"
+      });
+
+      // Create transaction
+      await storage.createTransaction({
+        userId: req.user!.id,
+        type: "spent",
+        amount: -totalCost,
+        description: `Покупка "${item.name}"`
+      });
+
+      // Update user points
+      await storage.updateUserPoints(req.user!.id, -totalCost);
+
+      res.status(201).json(purchase);
+    } catch (error) {
+      console.error("Error creating purchase:", error);
+      res.status(500).json({ message: "Failed to create purchase" });
+    }
+  });
+
+  app.get("/api/shop/purchases", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+    
+    try {
+      const purchases = await storage.getUserPurchases(req.user!.id);
+      res.json(purchases);
+    } catch (error) {
+      console.error("Error getting purchases:", error);
+      res.status(500).json({ message: "Failed to get purchases" });
     }
   });
 
