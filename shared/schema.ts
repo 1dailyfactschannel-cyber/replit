@@ -26,6 +26,10 @@ export const users = pgTable("users", {
   telegramConnected: boolean("telegram_connected").default(false),
   telegramId: text("telegram_id"),
   notes: text("notes"),
+  pointsBalance: integer("points_balance").default(0),
+  totalPointsEarned: integer("total_points_earned").default(0),
+  totalPointsSpent: integer("total_points_spent").default(0),
+  level: integer("level").default(0),
 }, (table) => ({
   usernameIdx: index("users_username_idx").on(table.username),
   emailIdx: index("users_email_idx").on(table.email),
@@ -793,6 +797,7 @@ export const pointsSettings = pgTable("points_settings", {
   id: uuid("id").primaryKey().defaultRandom(),
   statusName: text("status_name").notNull().unique(),
   pointsAmount: integer("points_amount").default(1),
+  maxTimeInStatus: integer("max_time_in_status").default(0), // Maximum time in minutes to earn points (0 = unlimited)
   isActive: boolean("is_active").default(true),
   createdAt: timestamp("created_at").defaultNow(),
 });
@@ -800,6 +805,7 @@ export const pointsSettings = pgTable("points_settings", {
 export const insertPointsSettingSchema = createInsertSchema(pointsSettings).pick({
   statusName: true,
   pointsAmount: true,
+  maxTimeInStatus: true,
   isActive: true,
 });
 
@@ -833,4 +839,36 @@ export const insertUserPointsTransactionSchema = createInsertSchema(userPointsTr
 
 export type UserPointsTransaction = typeof userPointsTransactions.$inferSelect;
 export type InsertUserPointsTransaction = z.infer<typeof insertUserPointsTransactionSchema>;
+
+// Calendar events table
+export const calendarEvents = pgTable("calendar_events", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  title: text("title").notNull(),
+  description: text("description"),
+  date: timestamp("date").notNull(),
+  time: text("time").notNull(),
+  type: text("type").$type<"work" | "social" | "external" | "video" | "audio">().default("work"),
+  contact: text("contact"),
+  meetingUrl: text("meeting_url"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  userIdIdx: index("calendar_events_user_id_idx").on(table.userId),
+  dateIdx: index("calendar_events_date_idx").on(table.date),
+}));
+
+export const insertCalendarEventSchema = createInsertSchema(calendarEvents).pick({
+  userId: true,
+  title: true,
+  description: true,
+  date: true,
+  time: true,
+  type: true,
+  contact: true,
+  meetingUrl: true,
+});
+
+export type CalendarEvent = typeof calendarEvents.$inferSelect;
+export type InsertCalendarEvent = z.infer<typeof insertCalendarEventSchema>;
 

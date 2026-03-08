@@ -58,12 +58,14 @@ async function ensureAllTasksStatusMatch(tasks: any[]): Promise<any[]> {
 
 
 // Rate limiters
+const isDev = process.env.NODE_ENV === 'development';
 const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 100,
+  max: isDev ? 10000 : 2000,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { message: "Too many requests, please try again later" }
+  message: { message: "Слишком много запросов. Пожалуйста, попробуйте позже." },
+  skip: () => isDev // Skip rate limiting completely in development
 });
 
 const loginLimiter = rateLimit({
@@ -1073,21 +1075,40 @@ export async function registerRoutes(
             // Get points setting for the new status
             const setting = await storage.getPointsSetting(updateData.status);
             const points = setting?.pointsAmount || 1;
+            const maxTimeInStatus = setting?.maxTimeInStatus || 0;
             
-            // Create transaction
-            await storage.createTransaction({
-              userId: assigneeId,
-              taskId,
-              statusName: updateData.status,
-              type: 'earned',
-              amount: points,
-              description: `Начисление за переход в статус "${updateData.status}"`
-            });
+            // Check if maximum time limit is exceeded
+            let timeCheckPassed = true;
+            if (maxTimeInStatus > 0) {
+              // Get time spent in current status
+              const timeSummary = await storage.getTaskUserTimeSummary(taskId);
+              const currentStatusTime = timeSummary.find(t => t.status === currentTask.status && t.userId === assigneeId);
+              const timeSpentMinutes = currentStatusTime ? Math.floor(currentStatusTime.totalSeconds / 60) : 0;
+              
+              if (timeSpentMinutes > maxTimeInStatus) {
+                timeCheckPassed = false;
+                console.log(`[POINTS] Time limit exceeded. Spent: ${timeSpentMinutes}min, Maximum allowed: ${maxTimeInStatus}min`);
+              }
+            }
             
-            // Update user points
-            await storage.updateUserPoints(assigneeId, points);
-            
-            console.log("[POINTS] Awarded", points, "points to user", assigneeId, "for status", updateData.status);
+            if (timeCheckPassed) {
+              // Create transaction
+              await storage.createTransaction({
+                userId: assigneeId,
+                taskId,
+                statusName: updateData.status,
+                type: 'earned',
+                amount: points,
+                description: `Начисление за переход в статус "${updateData.status}"`
+              });
+              
+              // Update user points
+              await storage.updateUserPoints(assigneeId, points);
+              
+              console.log("[POINTS] Awarded", points, "points to user", assigneeId, "for status", updateData.status);
+            } else {
+              console.log("[POINTS] Points not awarded - minimum time requirement not met");
+            }
           } else {
             console.log("[POINTS] Points already awarded for this status in this task");
           }
@@ -2883,7 +2904,7 @@ export async function registerRoutes(
   // ==================== POINTS SYSTEM ENDPOINTS ====================
 
   // Points Settings
-  app.get("/api/points/settings", async (req, res) => {
+  app.get("/api/points-settings", async (req, res) => {
     try {
       const settings = await storage.getPointsSettings();
       res.json(settings);
@@ -2893,9 +2914,9 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/points/settings", async (req, res) => {
+  app.post("/api/points-settings", async (req, res) => {
     try {
-      const { statusName, pointsAmount, isActive } = req.body;
+      const { statusName, pointsAmount, maxTimeInStatus, isActive } = req.body;
       
       if (!statusName || pointsAmount === undefined) {
         return res.status(400).json({ message: "statusName and pointsAmount are required" });
@@ -2904,6 +2925,7 @@ export async function registerRoutes(
       const setting = await storage.createPointsSetting({
         statusName,
         pointsAmount,
+        maxTimeInStatus: maxTimeInStatus || 0,
         isActive: isActive !== false
       });
       
@@ -2914,12 +2936,13 @@ export async function registerRoutes(
     }
   });
 
-  app.put("/api/points/settings/:id", async (req, res) => {
+  app.patch("/api/points-settings/:id", async (req, res) => {
     try {
-      const { statusName, pointsAmount, isActive } = req.body;
+      const { statusName, pointsAmount, maxTimeInStatus, isActive } = req.body;
       const setting = await storage.updatePointsSetting(req.params.id, {
         statusName,
         pointsAmount,
+        maxTimeInStatus,
         isActive
       });
       res.json(setting);
@@ -2929,7 +2952,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/points/settings/:id", async (req, res) => {
+  app.delete("/api/points-settings/:id", async (req, res) => {
     try {
       await storage.deletePointsSetting(req.params.id);
       res.status(204).send();
@@ -3042,6 +3065,242 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error getting purchases:", error);
       res.status(500).json({ message: "Failed to get purchases" });
+    }
+  });
+
+  // ==================== DASHBOARD ENDPOINT ====================
+  app.get("/api/dashboard", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+    
+    try {
+      const userId = req.user!.id;
+      const now = new Date();
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const weekAgo = new Date(today);
+      weekAgo.setDate(weekAgo.getDate() - 7);
+      
+      // Get user's tasks with their boards and projects
+      const userTasks = await storage.db
+        .select({
+          task: schema.tasks,
+          board: schema.boards,
+          project: schema.projects
+        })
+        .from(schema.tasks)
+        .leftJoin(schema.boards, eq(schema.tasks.boardId, schema.boards.id))
+        .leftJoin(schema.projects, eq(schema.boards.projectId, schema.projects.id))
+        .where(eq(schema.tasks.assigneeId, userId));
+      
+      const tasks = userTasks.map(r => r.task);
+      
+      // Calculate statistics
+      const totalTasks = tasks.length;
+      const completedTasks = tasks.filter((t: any) => t.status === 'Готово' || t.status === 'done').length;
+      const inProgressTasks = tasks.filter((t: any) => t.status === 'В работе' || t.status === 'in_progress').length;
+      const plannedTasks = tasks.filter((t: any) => t.status === 'В планах' || t.status === 'backlog').length;
+      
+      // Calculate completion rate for velocity
+      const velocity = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+      
+      // Get today's tasks (due today or high priority)
+      const todayTasks = tasks
+        .filter((t: any) => {
+          const dueDate = t.dueDate ? new Date(t.dueDate) : null;
+          const isDueToday = dueDate && dueDate.toDateString() === today.toDateString();
+          const isHighPriority = t.priority === 'high' || t.priorityId === 'high';
+          const isInProgress = t.status === 'В работе' || t.status === 'in_progress';
+          return isDueToday || isHighPriority || isInProgress;
+        })
+        .slice(0, 5)
+        .map((t: any) => ({
+          id: t.id,
+          title: t.title,
+          status: t.status,
+          priority: t.priority,
+          dueDate: t.dueDate,
+          projectName: userTasks.find((ut: any) => ut.task.id === t.id)?.project?.name || 'Без проекта'
+        }));
+      
+      // Get weekly performance data
+      const performanceData = [];
+      const dayNames = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
+      for (let i = 6; i >= 0; i--) {
+        const date = new Date(today);
+        date.setDate(date.getDate() - i);
+        const dayName = dayNames[date.getDay()];
+        
+        const completedOnDay = tasks.filter((t: any) => {
+          if (t.status !== 'Готово' && t.status !== 'done') return false;
+          const updatedAt = t.updatedAt ? new Date(t.updatedAt) : null;
+          return updatedAt && updatedAt.toDateString() === date.toDateString();
+        }).length;
+        
+        performanceData.push({ name: dayName, tasks: completedOnDay });
+      }
+      
+      // Get team members and their workload
+      const teamMembers = await storage.db
+        .select({
+          id: schema.users.id,
+          firstName: schema.users.firstName,
+          lastName: schema.users.lastName,
+          avatar: schema.users.avatar,
+          position: schema.users.position
+        })
+        .from(schema.users)
+        .where(eq(schema.users.isActive, true))
+        .limit(5);
+      
+      const teamWorkload = await Promise.all(
+        teamMembers.map(async (member: any) => {
+          const memberTasks = await storage.db
+            .select()
+            .from(schema.tasks)
+            .where(eq(schema.tasks.assigneeId, member.id));
+          
+          const memberTotal = memberTasks.length;
+          const memberCompleted = memberTasks.filter((t: any) => t.status === 'Готово' || t.status === 'done').length;
+          const progress = memberTotal > 0 ? Math.round((memberCompleted / memberTotal) * 100) : 0;
+          
+          return {
+            id: member.id,
+            name: `${member.firstName || ''} ${member.lastName || ''}`.trim() || 'Без имени',
+            role: member.position || 'Сотрудник',
+            progress,
+            avatar: member.firstName?.[0] || '' + (member.lastName?.[0] || '')
+          };
+        })
+      );
+      
+      // Get recent projects
+      const recentProjects = await storage.db
+        .select({
+          id: schema.projects.id,
+          name: schema.projects.name,
+          description: schema.projects.description,
+          status: schema.projects.status,
+          createdAt: schema.projects.createdAt
+        })
+        .from(schema.projects)
+        .orderBy(desc(schema.projects.createdAt))
+        .limit(3);
+      
+      res.json({
+        stats: {
+          totalTasks,
+          completedTasks,
+          inProgressTasks,
+          plannedTasks,
+          velocity
+        },
+        todayTasks,
+        performanceData,
+        teamWorkload,
+        recentProjects
+      });
+    } catch (error) {
+      console.error("Error fetching dashboard data:", error);
+      res.status(500).json({ message: "Failed to fetch dashboard data" });
+    }
+  });
+
+  // ==================== CALENDAR EVENTS ENDPOINTS ====================
+  app.get("/api/calendar/events", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+    
+    try {
+      const userId = req.user!.id;
+      const { startDate, endDate } = req.query;
+      
+      const start = startDate ? new Date(startDate as string) : undefined;
+      const end = endDate ? new Date(endDate as string) : undefined;
+      
+      const events = await storage.getCalendarEvents(userId, start, end);
+      res.json(events);
+    } catch (error) {
+      console.error("Error fetching calendar events:", error);
+      res.status(500).json({ message: "Failed to fetch calendar events" });
+    }
+  });
+
+  app.post("/api/calendar/events", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+    
+    try {
+      const { title, description, date, time, type, contact, meetingUrl } = req.body;
+      
+      if (!title || !date || !time) {
+        return res.status(400).json({ message: "Title, date and time are required" });
+      }
+
+      const event = await storage.createCalendarEvent({
+        userId: req.user!.id,
+        title,
+        description,
+        date: new Date(date),
+        time,
+        type: type || "work",
+        contact,
+        meetingUrl
+      });
+      
+      res.status(201).json(event);
+    } catch (error) {
+      console.error("Error creating calendar event:", error);
+      res.status(500).json({ message: "Failed to create calendar event" });
+    }
+  });
+
+  app.patch("/api/calendar/events/:id", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+    
+    try {
+      const { title, description, date, time, type, contact, meetingUrl } = req.body;
+      
+      // Check if event belongs to current user
+      const existingEvent = await storage.getCalendarEvent(req.params.id);
+      if (!existingEvent) {
+        return res.status(404).json({ message: "Event not found" });
+      }
+      if (existingEvent.userId !== req.user!.id) {
+        return res.status(403).json({ message: "Forbidden" });
+      }
+
+      const updated = await storage.updateCalendarEvent(req.params.id, {
+        title,
+        description,
+        date: date ? new Date(date) : undefined,
+        time,
+        type,
+        contact,
+        meetingUrl
+      });
+      
+      res.json(updated);
+    } catch (error) {
+      console.error("Error updating calendar event:", error);
+      res.status(500).json({ message: "Failed to update calendar event" });
+    }
+  });
+
+  app.delete("/api/calendar/events/:id", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+    
+    try {
+      // Check if event belongs to current user
+      const existingEvent = await storage.getCalendarEvent(req.params.id);
+      if (!existingEvent) {
+        return res.status(404).json({ message: "Event not found" });
+      }
+      if (existingEvent.userId !== req.user!.id) {
+        return res.status(403).json({ message: "Forbidden" });
+      }
+
+      await storage.deleteCalendarEvent(req.params.id);
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting calendar event:", error);
+      res.status(500).json({ message: "Failed to delete calendar event" });
     }
   });
 

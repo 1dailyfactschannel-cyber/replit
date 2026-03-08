@@ -62,6 +62,7 @@ import {
   Archive,
   RotateCcw,
   ListChecks,
+  Coins,
 } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { ru } from "date-fns/locale";
@@ -515,6 +516,13 @@ export function TaskDetailsModal({
     queryKey: ["/api/tasks", task?.id],
     enabled: !!task?.id && !isTempTask && open,
     staleTime: 30000, // Cache for 30 seconds instead of always fetching fresh
+  });
+
+  // Fetch points settings for displaying rewards
+  const { data: pointsSettings = [] } = useQuery<any[]>({
+    queryKey: ["/api/points-settings"],
+    enabled: open,
+    staleTime: 60000,
   });
 
   const effectiveTask: any = serverTask || task;
@@ -2282,6 +2290,30 @@ export function TaskDetailsModal({
                   </SelectContent>
                 </Select>
               </div>
+
+              {/* Points Reward Badge */}
+              {(() => {
+                const setting = pointsSettings.find((s: any) => s.statusName === currentStatus && s.isActive);
+                if (setting) {
+                  return (
+                    <div className="flex flex-col gap-1 px-3 py-2 mb-4 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
+                      <div className="flex items-center gap-2">
+                        <Coins className="w-4 h-4 text-amber-500" />
+                        <span className="text-sm text-amber-700 dark:text-amber-300">
+                          +{setting.pointsAmount} баллов за этот статус
+                        </span>
+                      </div>
+                      {setting.maxTimeInStatus > 0 && (
+                        <div className="flex items-center gap-2 text-xs text-amber-600 dark:text-amber-400">
+                          <Clock className="w-3 h-3" />
+                          <span>Максимум {setting.maxTimeInStatus} минут в статусе</span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                }
+                return null;
+              })()}
 
               {/* Attributes Blocks */}
               <div className="space-y-1">

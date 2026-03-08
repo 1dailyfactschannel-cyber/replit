@@ -39,7 +39,8 @@ import {
   Folder,
   Archive,
   RotateCcw,
-  Layers
+  Layers,
+  Coins
 } from "lucide-react";
 import { RolesManagement } from "@/components/settings/RolesManagement";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -89,6 +90,7 @@ export default function ManagementPage() {
     { id: "security", label: "Безопасность", icon: Shield, description: "Настройки безопасности аккаунта" },
     { id: "roles", label: "Роли", icon: Shield, description: "Права доступа и разрешения" },
     { id: "integrations", label: "Интеграции", icon: Puzzle, description: "Внешние сервисы и API" },
+    { id: "balance", label: "Баланс", icon: Coins, description: "Настройка баллов за статусы задач" },
   ];
 
   return (
@@ -185,6 +187,8 @@ export default function ManagementPage() {
                 <TeamManagement />
               ) : activeSection === "projects" ? (
                 <ProjectsManagement />
+              ) : activeSection === "balance" ? (
+                <BalanceManagement />
               ) : (
                 <DefaultSection section={sections.find(s => s.id === activeSection)!} />
               )}
@@ -2148,6 +2152,275 @@ function TaskTypesManagement() {
   )
 }
 
+
+function BalanceManagement() {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [editingSetting, setEditingSetting] = useState<any>(null);
+  const [statusName, setStatusName] = useState("");
+  const [pointsAmount, setPointsAmount] = useState("1");
+  const [maxTimeInStatus, setMaxTimeInStatus] = useState("0");
+
+  const { data: settings, isLoading } = useQuery<any[]>({
+    queryKey: ["/api/points-settings"],
+  });
+
+  const createMutation = useMutation({
+    mutationFn: async (data: any) => {
+      const res = await apiRequest("POST", "/api/points-settings", data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/points-settings"] });
+      toast({ title: "Настройка добавлена", description: "Баллы за статус успешно настроены" });
+      setIsDialogOpen(false);
+      resetForm();
+    },
+    onError: (error: Error) => {
+      toast({ title: "Ошибка", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: any }) => {
+      const res = await apiRequest("PATCH", `/api/points-settings/${id}`, data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/points-settings"] });
+      toast({ title: "Настройка обновлена", description: "Изения сохранены" });
+      setIsDialogOpen(false);
+      resetForm();
+    },
+    onError: (error: Error) => {
+      toast({ title: "Ошибка", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      await apiRequest("DELETE", `/api/points-settings/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/points-settings"] });
+      toast({ title: "Настройка удалена", description: "Баллы за статус удалены" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Ошибка", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const resetForm = () => {
+    setStatusName("");
+    setPointsAmount("1");
+    setMaxTimeInStatus("0");
+    setEditingSetting(null);
+  };
+
+  const openDialog = (setting?: any) => {
+    if (setting) {
+      setEditingSetting(setting);
+      setStatusName(setting.statusName);
+      setPointsAmount(setting.pointsAmount.toString());
+      setMaxTimeInStatus((setting.maxTimeInStatus || 0).toString());
+    } else {
+      resetForm();
+    }
+    setIsDialogOpen(true);
+  };
+
+  const handleSave = () => {
+    const data = {
+      statusName,
+      pointsAmount: parseInt(pointsAmount) || 1,
+      maxTimeInStatus: parseInt(maxTimeInStatus) || 0,
+      isActive: true,
+    };
+
+    if (editingSetting) {
+      updateMutation.mutate({ id: editingSetting.id, data });
+    } else {
+      createMutation.mutate(data);
+    }
+  };
+
+  return (
+    <div className="animate-in fade-in slide-in-from-bottom-2 duration-300 space-y-6">
+      <Card className="border-border/50 shadow-sm">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Coins className="w-5 h-5 text-amber-500" />
+            Настройка баллов за статусы задач
+          </CardTitle>
+          <CardDescription>
+            Настройте количество баллов и максимальное время, которое задача может провести в статусе для получения баллов
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center justify-between mb-6">
+            <div className="text-sm text-muted-foreground">
+              <p>Баллы начисляются автоматически при смене статуса задачи.</p>
+              <p>1 балл = 1 рубль в магазине.</p>
+            </div>
+            <Button onClick={() => openDialog()} className="gap-2">
+              <Plus className="w-4 h-4" />
+              Добавить статус
+            </Button>
+          </div>
+
+          {isLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="w-6 h-6 animate-spin text-primary" />
+            </div>
+          ) : settings && settings.length > 0 ? (
+            <div className="space-y-3">
+              {settings.map((setting: any) => (
+                <div
+                  key={setting.id}
+                  className="flex items-center justify-between p-4 rounded-lg bg-secondary/30 hover:bg-secondary/50 transition-colors"
+                >
+                  <div className="flex items-center gap-4">
+                    <div className="w-10 h-10 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center">
+                      <Coins className="w-5 h-5 text-amber-600" />
+                    </div>
+                    <div>
+                      <p className="font-medium">{setting.statusName}</p>
+                      <p className="text-sm text-muted-foreground">
+                        {setting.isActive ? "Активно" : "Неактивно"}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-4">
+                    <div className="text-right">
+                      <p className="text-2xl font-bold text-amber-600">{setting.pointsAmount}</p>
+                      <p className="text-xs text-muted-foreground">баллов</p>
+                    </div>
+                    {setting.maxTimeInStatus > 0 && (
+                      <div className="text-right px-3 border-l border-border">
+                        <p className="text-sm font-medium text-rose-600">{setting.maxTimeInStatus} мин</p>
+                        <p className="text-xs text-muted-foreground">макс. время</p>
+                      </div>
+                    )}
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                        onClick={() => openDialog(setting)}
+                      >
+                        <Pencil className="w-4 h-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-destructive hover:text-destructive"
+                        onClick={() => deleteMutation.mutate(setting.id)}
+                        disabled={deleteMutation.isPending}
+                      >
+                        {deleteMutation.isPending ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <Trash2 className="w-4 h-4" />
+                        )}
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-8 text-muted-foreground">
+              <Coins className="w-12 h-12 mx-auto mb-3 opacity-30" />
+              <p>Настройки не найдены</p>
+              <p className="text-sm">Добавьте первый статус для начисления баллов</p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>
+              {editingSetting ? "Редактировать настройку" : "Добавить настройку"}
+            </DialogTitle>
+            <DialogDescription>
+              Настройте количество баллов за переход в указанный статус
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="statusName">Название статуса</Label>
+              <Input
+                id="statusName"
+                value={statusName}
+                onChange={(e) => setStatusName(e.target.value)}
+                placeholder="Например: В работе"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="pointsAmount">Количество баллов</Label>
+              <Input
+                id="pointsAmount"
+                type="number"
+                min="0"
+                value={pointsAmount}
+                onChange={(e) => setPointsAmount(e.target.value)}
+                placeholder="1"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="maxTimeInStatus">Максимальное время в статусе (минут)</Label>
+              <Input
+                id="maxTimeInStatus"
+                type="number"
+                min="0"
+                value={maxTimeInStatus}
+                onChange={(e) => setMaxTimeInStatus(e.target.value)}
+                placeholder="0"
+              />
+              <p className="text-xs text-muted-foreground">
+                Укажите максимальное время в минутах, которое задача может провести в этом статусе для получения баллов. Если время превышено, баллы не начислятся. 0 = без ограничений.
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            {editingSetting && (
+              <Button
+                type="button"
+                variant="destructive"
+                className="mr-auto"
+                onClick={() => {
+                  deleteMutation.mutate(editingSetting.id);
+                  setIsDialogOpen(false);
+                }}
+                disabled={deleteMutation.isPending}
+              >
+                {deleteMutation.isPending ? (
+                  <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                ) : null}
+                Удалить
+              </Button>
+            )}
+            <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
+              Отмена
+            </Button>
+            <Button
+              onClick={handleSave}
+              disabled={!statusName || createMutation.isPending || updateMutation.isPending}
+            >
+              {createMutation.isPending || updateMutation.isPending ? (
+                <Loader2 className="w-4 h-4 animate-spin mr-2" />
+              ) : null}
+              {editingSetting ? "Сохранить" : "Создать"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
 
 function DefaultSection({ section }: { section: { label: string, icon: any, description: string } }) {
   return (

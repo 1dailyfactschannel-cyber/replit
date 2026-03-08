@@ -25,7 +25,8 @@ import {
   ChevronDown,
   Pencil,
   Trash2,
-  BarChart2
+  BarChart2,
+  Coins
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -509,8 +510,18 @@ export function Layout({ children, className }: { children: React.ReactNode, cla
             </div>
           </div>
 
-          {/* Right side - Theme toggle and notifications */}
+          {/* Right side - Balance, Theme toggle and notifications */}
           <div className="flex items-center gap-3">
+            {user && (
+              <div 
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 font-medium text-sm cursor-pointer hover:bg-amber-200 dark:hover:bg-amber-900/50 transition-colors"
+                onClick={() => setLocation("/profile?tab=balance")}
+                title="Перейти к балансу"
+              >
+                <Coins className="w-4 h-4" />
+                <span>{user.pointsBalance || 0}</span>
+              </div>
+            )}
             <ThemeToggle />
             <NotificationAlertDialog />
           </div>

@@ -9,12 +9,16 @@ const __dirname = path.dirname(__filename);
 console.log('DATABASE_URL:', process.env.DATABASE_URL ? 'set' : 'NOT SET');
 
 // Security: Rate limiting configuration
+const isDev = process.env.NODE_ENV === 'development';
 const globalLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // Limit each IP to 100 requests per windowMs
+  windowMs: 15 * 60 * 1000, // 15 minutes window
+  max: isDev ? 10000 : 2000, // 10000 requests in dev (practically unlimited), 2000 in prod per 15 min
   standardHeaders: true,
   legacyHeaders: false,
-  message: { message: "Too many requests, please try again later" }
+  message: { message: "Слишком много запросов. Пожалуйста, попробуйте позже." },
+  skip: (req) => isDev, // Skip rate limiting completely in development
+  // Skip successful requests for static assets
+  skipSuccessfulRequests: false,
 });
 
 const loginLimiter = rateLimit({
