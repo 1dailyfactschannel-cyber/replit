@@ -37,6 +37,7 @@ import { apiRequest } from "@/lib/queryClient";
 import type { Chat, Message, User as DBUser } from "@shared/schema";
 import { io, Socket } from "socket.io-client";
 import { CallOverlay } from "@/components/call/CallOverlay";
+import { useDebounce } from "@/hooks/useDebounce";
 
 interface Contact extends Chat {
   lastMessage?: Message;
@@ -79,6 +80,16 @@ export default function ChatPage() {
 
   const { data: chats = [], isLoading: chatsLoading } = useQuery<Contact[]>({
     queryKey: ["/api/chats"],
+  });
+
+  // Search chats query
+  const { data: searchedChats = [], isLoading: searchLoading } = useQuery<Contact[]>({
+    queryKey: ["/api/chats/search", debouncedSearchQuery],
+    queryFn: async () => {
+      const res = await apiRequest("GET", `/api/chats/search?q=${encodeURIComponent(debouncedSearchQuery)}`);
+      return res.json();
+    },
+    enabled: debouncedSearchQuery.length > 0,
   });
 
   const { data: allUsers = [] } = useQuery<DBUser[]>({
@@ -437,6 +448,7 @@ export default function ChatPage() {
   const [outboundCall, setOutboundCall] = useState<any>(null);
   
   const [searchQuery, setSearchQuery] = useState("");
+  const debouncedSearchQuery = useDebounce(searchQuery, 300);
   const [messageSearchQuery, setMessageSearchQuery] = useState("");
   const [selectedImage, setSelectedImage] = useState<{ url: string; name: string; type: 'image' | 'video' } | null>(null);
   const [replyingTo, setReplyingTo] = useState<{ id: string; content: string; senderName: string } | null>(null);
@@ -628,11 +640,15 @@ export default function ChatPage() {
     }
   };
 
-  const filteredContacts = useMemo(() => chats.filter(chat => {
-    const name = getChatName(chat).toLowerCase();
-    const inActiveFolder = !activeFolderId || folders.find(f => f.id === activeFolderId)?.chatIds.includes(chat.id);
-    return name.includes(searchQuery.toLowerCase()) && inActiveFolder;
-  }), [chats, searchQuery, activeFolderId, folders, getChatName]);
+  const filteredContacts = useMemo(() => {
+    // Use server search results when searching
+    const sourceChats = debouncedSearchQuery.length > 0 ? searchedChats : chats;
+    
+    return sourceChats.filter(chat => {
+      const inActiveFolder = !activeFolderId || folders.find(f => f.id === activeFolderId)?.chatIds.includes(chat.id);
+      return inActiveFolder;
+    });
+  }, [chats, searchedChats, debouncedSearchQuery, activeFolderId, folders]);
 
   const filteredMessages = useMemo(() => messages.filter(msg => 
     msg.content.toLowerCase().includes(messageSearchQuery.toLowerCase())
@@ -918,10 +934,21 @@ export default function ChatPage() {
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                   <Input 
                     placeholder="Поиск чатов..." 
-                    className="pl-9 h-9 rounded-xl bg-secondary/30 border-none focus-visible:ring-1 focus-visible:ring-primary/20"
+                    className="pl-9 pr-9 h-9 rounded-xl bg-secondary/30 border-none focus-visible:ring-1 focus-visible:ring-primary/20"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                   />
+                  {searchLoading && (
+                    <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground animate-spin" />
+                  )}
+                  {searchQuery && !searchLoading && (
+                    <button
+                      onClick={() => setSearchQuery("")}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  )}
                 </div>
                 
                 {/* Folder Tabs */}
@@ -1038,9 +1065,11 @@ export default function ChatPage() {
                   </div>
                   );
                 })}
-                {!chatsLoading && filteredContacts.length === 0 && (
+                {!chatsLoading && !searchLoading && filteredContacts.length === 0 && (
                   <div className="p-8 text-center">
-                    <p className="text-xs text-muted-foreground italic">Пока нет чатов</p>
+                    <p className="text-xs text-muted-foreground italic">
+                      {debouncedSearchQuery ? "Ничего не найдено" : "Пока нет чатов"}
+                    </p>
                   </div>
                 )}
               </ScrollArea>

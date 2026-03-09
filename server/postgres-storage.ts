@@ -212,6 +212,79 @@ export class PostgresStorage {
     }
   }
 
+  async searchChats(userId: string, query: string) {
+    try {
+      const searchTerm = `%${query.toLowerCase()}%`;
+      
+      // Search in chat names and participant names
+      const userChats = await this.db
+        .select({
+          id: schema.chats.id,
+          name: schema.chats.name,
+          type: schema.chats.type,
+          avatar: schema.chats.avatar,
+          description: schema.chats.description,
+          ownerId: schema.chats.ownerId,
+          createdAt: schema.chats.createdAt,
+          updatedAt: schema.chats.updatedAt,
+        })
+        .from(schema.chats)
+        .innerJoin(
+          schema.chatParticipants,
+          eq(schema.chats.id, schema.chatParticipants.chatId)
+        )
+        .where(
+          and(
+            eq(schema.chatParticipants.userId, userId),
+            or(
+              sql`LOWER(${schema.chats.name}) LIKE ${searchTerm}`,
+              sql`LOWER(${schema.chats.description}) LIKE ${searchTerm}`
+            )
+          )
+        )
+        .orderBy(desc(schema.chats.updatedAt));
+
+      if (userChats.length === 0) return [];
+
+      const chatIds = userChats.map(c => c.id);
+
+      // Get participants
+      const allParticipants = await this.db
+        .select({
+          chatId: schema.chatParticipants.chatId,
+          id: schema.users.id,
+          username: schema.users.username,
+          avatar: schema.users.avatar,
+        })
+        .from(schema.users)
+        .innerJoin(
+          schema.chatParticipants,
+          eq(schema.users.id, schema.chatParticipants.userId)
+        )
+        .where(sql`${schema.chatParticipants.chatId} IN ${chatIds}`);
+
+      // Get last messages
+      const lastMessages = await this.db
+        .select()
+        .from(schema.messages)
+        .where(sql`${schema.messages.id} IN (
+          SELECT DISTINCT ON (chat_id) id 
+          FROM messages 
+          WHERE chat_id IN ${chatIds} 
+          ORDER BY chat_id, created_at DESC
+        )`);
+
+      return userChats.map(chat => ({
+        ...chat,
+        participants: allParticipants.filter(p => p.chatId === chat.id),
+        lastMessage: lastMessages.find(m => m.chatId === chat.id)
+      }));
+    } catch (error) {
+      console.error("Error searching chats:", error);
+      return [];
+    }
+  }
+
   async getChat(id: string) {
     try {
       const [chat] = await this.db.select().from(schema.chats).where(eq(schema.chats.id, id)).limit(1);

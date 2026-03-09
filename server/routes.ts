@@ -1943,6 +1943,22 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/chats/search", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
+    try {
+      const { q } = req.query;
+      if (!q || typeof q !== 'string') {
+        return res.status(400).json({ message: "Query parameter 'q' is required" });
+      }
+      
+      const chats = await storage.searchChats(req.user.id, q);
+      res.json(chats);
+    } catch (error) {
+      console.error("Error searching chats:", error);
+      res.status(500).json({ message: "Failed to search chats" });
+    }
+  });
+
   app.get("/api/chats/:chatId/messages", async (req, res) => {
     try {
       const chatId = req.params.chatId;

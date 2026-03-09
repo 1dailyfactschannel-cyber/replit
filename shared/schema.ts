@@ -571,6 +571,19 @@ export const calls = pgTable("calls", {
   receiverIdIdx: index("calls_receiver_id_idx").on(table.receiverId),
 }));
 
+// Message reactions table
+export const messageReactions = pgTable("message_reactions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  messageId: uuid("message_id").notNull().references(() => messages.id, { onDelete: "cascade" }),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  emoji: text("emoji").notNull(), // e.g., "👍", "❤️", "😂"
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  messageIdIdx: index("reactions_message_id_idx").on(table.messageId),
+  userIdIdx: index("reactions_user_id_idx").on(table.userId),
+  uniqueReaction: index("reactions_unique_idx").on(table.messageId, table.userId, table.emoji),
+}));
+
 // Export chat types
 export type Chat = typeof chats.$inferSelect;
 export type ChatParticipant = typeof chatParticipants.$inferSelect;
@@ -578,6 +591,9 @@ export type Message = typeof messages.$inferSelect;
 export type ChatFolder = typeof chatFolders.$inferSelect;
 export type MessageAttachment = typeof messageAttachments.$inferSelect;
 export type Call = typeof calls.$inferSelect;
+
+export type MessageReaction = typeof messageReactions.$inferSelect;
+export type InsertMessageReaction = z.infer<typeof insertMessageReactionSchema>;
 
 export const insertChatSchema = createInsertSchema(chats).pick({
   name: true,
@@ -610,6 +626,12 @@ export const insertCallSchema = createInsertSchema(calls).pick({
   duration: true,
   startedAt: true,
   endedAt: true,
+});
+
+export const insertMessageReactionSchema = createInsertSchema(messageReactions).pick({
+  messageId: true,
+  userId: true,
+  emoji: true,
 });
 
 export const insertMessageAttachmentSchema = createInsertSchema(messageAttachments).pick({
