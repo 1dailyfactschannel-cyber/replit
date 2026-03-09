@@ -62,6 +62,10 @@ export default function ChatPage() {
   const [contextMenuPos, setContextMenuPos] = useState<{x: number, y: number, msg: any} | null>(null);
   const [chatContextMenuPos, setChatContextMenuPos] = useState<{x: number, y: number, chat: any} | null>(null);
   
+  // Search state
+  const [searchQuery, setSearchQuery] = useState("");
+  const debouncedSearchQuery = useDebounce(searchQuery, 300);
+  
   // Close context menu on click outside
   useEffect(() => {
     const handleClick = () => {
@@ -446,9 +450,6 @@ export default function ChatPage() {
   
   const [activeCall, setActiveCall] = useState<any>(null);
   const [outboundCall, setOutboundCall] = useState<any>(null);
-  
-  const [searchQuery, setSearchQuery] = useState("");
-  const debouncedSearchQuery = useDebounce(searchQuery, 300);
   const [messageSearchQuery, setMessageSearchQuery] = useState("");
   const [selectedImage, setSelectedImage] = useState<{ url: string; name: string; type: 'image' | 'video' } | null>(null);
   const [replyingTo, setReplyingTo] = useState<{ id: string; content: string; senderName: string } | null>(null);
