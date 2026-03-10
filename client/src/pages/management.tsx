@@ -963,6 +963,8 @@ function ProjectsManagement() {
   const [deleteMasterPassword, setDeleteMasterPassword] = useState("");
   const [editingProject, setEditingProject] = useState<any>(null);
   const [isEditProjectOpen, setIsEditProjectOpen] = useState(false);
+  const [editingWorkspace, setEditingWorkspace] = useState<any>(null);
+  const [isEditWorkspaceOpen, setIsEditWorkspaceOpen] = useState(false);
 
   const priorityDisplayMap: Record<string, string> = {
     "low": "Низкий",
@@ -1132,6 +1134,49 @@ function ProjectsManagement() {
     }
   });
 
+  const updateWorkspaceMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: any }) => {
+      const res = await apiRequest("PATCH", `/api/workspaces/${id}`, data);
+      return res.json();
+    },
+    onMutate: async ({ id, data }) => {
+      await queryClient.cancelQueries({ queryKey: ["/api/workspaces"] });
+      
+      const previousWorkspaces = queryClient.getQueryData(["/api/workspaces"]);
+      
+      queryClient.setQueryData(["/api/workspaces"], (old: any[] = []) => {
+        return old.map((workspace) => 
+          workspace.id === id 
+            ? { ...workspace, ...data, updatedAt: new Date().toISOString() }
+            : workspace
+        );
+      });
+      
+      return { previousWorkspaces };
+    },
+    onError: (error: any, variables, context) => {
+      if (context?.previousWorkspaces) {
+        queryClient.setQueryData(["/api/workspaces"], context.previousWorkspaces);
+      }
+      toast({
+        title: "Ошибка",
+        description: error.message || "Не удалось обновить пространство.",
+        variant: "destructive",
+      });
+    },
+    onSuccess: () => {
+      setIsEditWorkspaceOpen(false);
+      setEditingWorkspace(null);
+      toast({
+        title: "Пространство обновлено",
+        description: "Изменения успешно сохранены.",
+      });
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/workspaces"] });
+    }
+  });
+
   const handleDeleteProject = () => {
     if (!projectToDelete) return;
     deleteProjectMutation.mutate({ 
@@ -1180,6 +1225,30 @@ function ProjectsManagement() {
       priority: priorityReverseMap[project.priority] || project.priority || "Средний"
     });
     setIsEditProjectOpen(true);
+  };
+
+  const handleUpdateWorkspace = () => {
+    if (!editingWorkspace || !editingWorkspace.name.trim()) {
+      toast({
+        title: "Ошибка",
+        description: "Название пространства не может быть пустым.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    updateWorkspaceMutation.mutate({
+      id: editingWorkspace.id,
+      data: {
+        name: editingWorkspace.name,
+        color: editingWorkspace.color
+      }
+    });
+  };
+
+  const openEditWorkspaceDialog = (workspace: any) => {
+    setEditingWorkspace({ ...workspace });
+    setIsEditWorkspaceOpen(true);
   };
 
   const handleCreateProject = () => {
@@ -1306,18 +1375,28 @@ function ProjectsManagement() {
                           </span>
                         </div>
                       </div>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="h-7 text-xs"
-                        onClick={() => {
-                          setSelectedWorkspaceId(workspace.id);
-                          setIsCreateProjectOpen(true);
-                        }}
-                      >
-                        <Plus className="w-3 h-3 mr-1" />
-                        Проект
-                      </Button>
+                      <div className="flex items-center gap-1">
+                        <Button 
+                          variant="ghost" 
+                          size="icon" 
+                          className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                          onClick={() => openEditWorkspaceDialog(workspace)}
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 text-xs"
+                          onClick={() => {
+                            setSelectedWorkspaceId(workspace.id);
+                            setIsCreateProjectOpen(true);
+                          }}
+                        >
+                          <Plus className="w-3 h-3 mr-1" />
+                          Проект
+                        </Button>
+                      </div>
                     </div>
                   );
                 })
@@ -1645,6 +1724,61 @@ function ProjectsManagement() {
                 disabled={updateProjectMutation.isPending || !editingProject?.name?.trim()}
               >
                 {updateProjectMutation.isPending && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
+                Сохранить изменения
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Edit Workspace Dialog */}
+        <Dialog open={isEditWorkspaceOpen} onOpenChange={setIsEditWorkspaceOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Pencil className="w-5 h-5" />
+                Редактирование пространства
+              </DialogTitle>
+              <DialogDescription>
+                Внесите изменения в пространство "{editingWorkspace?.name}".
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label htmlFor="edit-workspace-name">Название пространства</Label>
+                <Input 
+                  id="edit-workspace-name" 
+                  placeholder="Введите название пространства" 
+                  value={editingWorkspace?.name || ""}
+                  className="bg-background text-foreground"
+                  onChange={(e) => setEditingWorkspace({ ...editingWorkspace, name: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Цвет пространства</Label>
+                <div className="flex gap-2 flex-wrap">
+                  {['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#6366f1'].map((color) => (
+                    <button
+                      key={color}
+                      onClick={() => setEditingWorkspace({ ...editingWorkspace, color })}
+                      className={`w-8 h-8 rounded-full transition-all ${editingWorkspace?.color === color ? 'ring-2 ring-offset-2 ring-primary scale-110' : 'hover:scale-105'}`}
+                      style={{ backgroundColor: color }}
+                    />
+                  ))}
+                </div>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => {
+                setIsEditWorkspaceOpen(false);
+                setEditingWorkspace(null);
+              }}>
+                Отмена
+              </Button>
+              <Button 
+                onClick={handleUpdateWorkspace}
+                disabled={updateWorkspaceMutation.isPending || !editingWorkspace?.name?.trim()}
+              >
+                {updateWorkspaceMutation.isPending && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
                 Сохранить изменения
               </Button>
             </DialogFooter>
