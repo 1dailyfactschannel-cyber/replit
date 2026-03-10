@@ -87,12 +87,12 @@ if (process.env.NODE_ENV === 'production') {
           <!DOCTYPE html>
           <html>
           <head>
-            <title>TeamSync</title>
+            <title>m4portal</title>
             <meta charset="utf-8">
           </head>
           <body>
             <div style="font-family: Arial, sans-serif; text-align: center; margin-top: 50px;">
-              <h1>TeamSync</h1>
+              <h1>m4portal</h1>
               <p>Website is deployed successfully!</p>
               <p><a href="/api/health">Check API Health</a></p>
               <p>Build path: ${distPath}</p>
@@ -110,12 +110,12 @@ if (process.env.NODE_ENV === 'production') {
         <!DOCTYPE html>
         <html>
         <head>
-          <title>TeamSync - Deployed</title>
+          <title>m4portal - Deployed</title>
           <meta charset="utf-8">
         </head>
         <body>
           <div style="font-family: Arial, sans-serif; text-align: center; margin-top: 50px;">
-            <h1>TeamSync</h1>
+            <h1>m4portal</h1>
             <p>✅ Application deployed successfully to Vercel!</p>
             <p>🚀 Serverless function is working</p>
             <p>🔧 Static files path needs configuration</p>
@@ -135,12 +135,12 @@ if (process.env.NODE_ENV === 'production') {
       <!DOCTYPE html>
       <html>
       <head>
-        <title>TeamSync - Development</title>
+        <title>m4portal - Development</title>
         <meta charset="utf-8">
       </head>
       <body>
         <div style="font-family: Arial, sans-serif; text-align: center; margin-top: 50px;">
-          <h1>TeamSync</h1>
+          <h1>m4portal</h1>
           <p>Development mode - run 'npm run dev' locally</p>
           <p><a href="/api/health">Check API</a></p>
         </div>

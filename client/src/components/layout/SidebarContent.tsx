@@ -157,7 +157,7 @@ export const SidebarContentComponent = React.memo(({
             <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center text-primary-foreground font-bold text-xl shrink-0">
               T
             </div>
-            {!isCollapsed && <span className="font-sans font-bold text-lg animate-in fade-in duration-300">TeamSync</span>}
+            {!isCollapsed && <span className="font-sans font-bold text-lg animate-in fade-in duration-300">m4portal</span>}
           </div>
           {!isCollapsed && (
             <Button 

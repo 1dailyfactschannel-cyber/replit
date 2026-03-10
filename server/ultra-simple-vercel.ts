@@ -104,7 +104,7 @@ export default async function handler(req: any, res: any) {
       <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>TeamSync - Deployed Successfully</title>
+        <title>m4portal - Deployed Successfully</title>
         <style>
           body { 
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -156,7 +156,7 @@ export default async function handler(req: any, res: any) {
       </head>
       <body>
         <div class="container">
-          <h1>🚀 TeamSync</h1>
+          <h1>🚀 m4portal</h1>
           <div class="status">✅ Successfully Deployed to Vercel!</div>
           
           <p>Serverless function is working correctly</p>

@@ -62,7 +62,7 @@ export function PageLoadingAnimation() {
           transition={{ delay: 0.3, duration: 0.5 }}
           className="text-center space-y-2"
         >
-          <h2 className="text-xl font-semibold text-foreground">TeamSync</h2>
+          <h2 className="text-xl font-semibold text-foreground">m4portal</h2>
           <motion.p
             animate={{ opacity: [0.5, 1, 0.5] }}
             transition={{ duration: 2, repeat: Infinity }}

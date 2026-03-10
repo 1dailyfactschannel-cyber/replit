@@ -187,7 +187,7 @@ const SidebarContentComponent = React.memo(({
             <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center text-primary-foreground font-bold text-xl shrink-0">
               T
             </div>
-            {!isCollapsed && <span className="font-sans font-bold text-lg animate-in fade-in duration-300">TeamSync</span>}
+            {!isCollapsed && <span className="font-sans font-bold text-lg animate-in fade-in duration-300">m4portal</span>}
           </div>
           {!isCollapsed && (
             <Button 
@@ -270,7 +270,7 @@ const SidebarContentComponent = React.memo(({
         <div className="mt-8 space-y-1">
           {!isCollapsed && <p className="text-xs font-medium text-muted-foreground px-2 mb-2 uppercase tracking-wider animate-in fade-in duration-300">Проекты</p>}
           {[
-            { name: "TeamSync Web", priority: "Высокий" },
+            { name: "m4portal Web", priority: "Высокий" },
             { name: "Mobile App", priority: "Средний" },
             { name: "Internal API", priority: "Низкий" }
           ].map((project, i) => (

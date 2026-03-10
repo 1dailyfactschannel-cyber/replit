@@ -346,7 +346,7 @@ export function YandexCalendarSettings({ onBack }: { onBack: () => void }) {
           <div className="space-y-4">
             <h3 className="font-semibold">Описание</h3>
             <p className="text-sm text-muted-foreground">
-              Интеграция позволяет синхронизировать события из вашего Яндекс Календаря с календарем TeamSync. 
+              Интеграция позволяет синхронизировать события из вашего Яндекс Календаря с календарем m4portal. 
               После подключения все события будут автоматически отображаться в вашем календаре.
             </p>
             

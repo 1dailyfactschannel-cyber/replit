@@ -734,7 +734,7 @@ export default function ChatPage() {
                                         <span className="text-sm font-semibold text-foreground/90">
                                           {user.firstName && user.lastName ? `${user.firstName} ${user.lastName}` : user.username}
                                         </span>
-                                        <span className="text-[10px] text-muted-foreground">{user.email || 'Пользователь TeamSync'}</span>
+                                         <span className="text-[10px] text-muted-foreground">{user.email || 'Пользователь m4portal'}</span>
                                       </div>
                                     </div>
                                     <Button size="sm" variant="ghost" className="opacity-0 group-hover:opacity-100 transition-opacity rounded-full h-8 w-8 p-0">
