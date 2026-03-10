@@ -961,6 +961,8 @@ function ProjectsManagement() {
   const [newProject, setNewProject] = useState({ name: "", color: "bg-blue-500", priority: "Средний" });
   const [projectToDelete, setProjectToDelete] = useState<{ id: string; name: string } | null>(null);
   const [deleteMasterPassword, setDeleteMasterPassword] = useState("");
+  const [editingProject, setEditingProject] = useState<any>(null);
+  const [isEditProjectOpen, setIsEditProjectOpen] = useState(false);
 
   const priorityDisplayMap: Record<string, string> = {
     "low": "Низкий",
@@ -1073,12 +1075,77 @@ function ProjectsManagement() {
     }
   });
 
+  const updateProjectMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: any }) => {
+      const res = await apiRequest("PATCH", `/api/projects/${id}`, data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", selectedWorkspaceId] });
+      setIsEditProjectOpen(false);
+      setEditingProject(null);
+      toast({
+        title: "Проект обновлен",
+        description: "Изменения успешно сохранены.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Ошибка",
+        description: error.message || "Не удалось обновить проект.",
+        variant: "destructive",
+      });
+    }
+  });
+
   const handleDeleteProject = () => {
     if (!projectToDelete) return;
     deleteProjectMutation.mutate({ 
       id: projectToDelete.id, 
       masterPassword: deleteMasterPassword 
     });
+  };
+
+  const handleUpdateProject = () => {
+    if (!editingProject || !editingProject.name.trim()) {
+      toast({
+        title: "Ошибка",
+        description: "Название проекта не может быть пустым.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const priorityMap: Record<string, string> = {
+      "Низкий": "low",
+      "Средний": "medium",
+      "Высокий": "high",
+      "Критический": "critical"
+    };
+
+    updateProjectMutation.mutate({
+      id: editingProject.id,
+      data: {
+        name: editingProject.name,
+        priority: priorityMap[editingProject.priority] || editingProject.priority,
+        workspaceId: editingProject.workspaceId
+      }
+    });
+  };
+
+  const openEditDialog = (project: any) => {
+    const priorityReverseMap: Record<string, string> = {
+      "low": "Низкий",
+      "medium": "Средний",
+      "high": "Высокий",
+      "critical": "Критический"
+    };
+
+    setEditingProject({
+      ...project,
+      priority: priorityReverseMap[project.priority] || project.priority || "Средний"
+    });
+    setIsEditProjectOpen(true);
   };
 
   const handleCreateProject = () => {
@@ -1389,7 +1456,12 @@ function ProjectsManagement() {
                         {priorityDisplayMap[project.priority] || project.priority || "Средний"}
                       </Badge>
                         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all transform translate-x-2 group-hover:translate-x-0">
-                        <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-background border border-transparent hover:border-border/50">
+                        <Button 
+                          variant="ghost" 
+                          size="icon" 
+                          className="h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-background border border-transparent hover:border-border/50"
+                          onClick={() => openEditDialog(project)}
+                        >
                           <Pencil className="w-3.5 h-3.5" />
                         </Button>
                         <Button 
@@ -1459,6 +1531,87 @@ function ProjectsManagement() {
               >
                 {deleteProjectMutation.isPending && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
                 Удалить проект
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Edit Project Dialog */}
+        <Dialog open={isEditProjectOpen} onOpenChange={setIsEditProjectOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Pencil className="w-5 h-5" />
+                Редактирование проекта
+              </DialogTitle>
+              <DialogDescription>
+                Внесите изменения в проект "{editingProject?.name}".
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label htmlFor="edit-project-name">Название проекта</Label>
+                <Input 
+                  id="edit-project-name" 
+                  placeholder="Введите название проекта" 
+                  value={editingProject?.name || ""}
+                  className="bg-background text-foreground"
+                  onChange={(e) => setEditingProject({ ...editingProject, name: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Пространство</Label>
+                <Select 
+                  value={editingProject?.workspaceId || "none"} 
+                  onValueChange={(val) => setEditingProject({ ...editingProject, workspaceId: val === "none" ? null : val })}
+                >
+                  <SelectTrigger className="bg-background text-foreground">
+                    <SelectValue placeholder="Без пространства" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Без пространства</SelectItem>
+                    {workspaces.map((workspace: any) => (
+                      <SelectItem key={workspace.id} value={workspace.id}>
+                        <div className="flex items-center gap-2">
+                          <div className="w-2 h-2 rounded-full" style={{ backgroundColor: workspace.color || '#3b82f6' }} />
+                          {workspace.name}
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Приоритет проекта</Label>
+                <Select 
+                  value={editingProject?.priority || "Средний"} 
+                  onValueChange={(val) => setEditingProject({ ...editingProject, priority: val })}
+                >
+                  <SelectTrigger className="bg-background text-foreground">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Низкий">Низкий</SelectItem>
+                    <SelectItem value="Средний">Средний</SelectItem>
+                    <SelectItem value="Высокий">Высокий</SelectItem>
+                    <SelectItem value="Критический">Критический</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => {
+                setIsEditProjectOpen(false);
+                setEditingProject(null);
+              }}>
+                Отмена
+              </Button>
+              <Button 
+                onClick={handleUpdateProject}
+                disabled={updateProjectMutation.isPending || !editingProject?.name?.trim()}
+              >
+                {updateProjectMutation.isPending && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
+                Сохранить изменения
               </Button>
             </DialogFooter>
           </DialogContent>
