@@ -34,6 +34,7 @@ import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
+import { useYandexCalendar } from "@/hooks/use-yandex-calendar";
 import { format, startOfMonth, endOfMonth, startOfWeek, endOfWeek, eachDayOfInterval, isSameMonth, isSameDay, addMonths, subMonths } from "date-fns";
 import { ru } from "date-fns/locale";
 
@@ -233,6 +234,9 @@ function CurrentTimeIndicator() {
 
 export default function CalendarPage() {
   const queryClient = useQueryClient();
+  
+  // Initialize Yandex Calendar WebSocket listeners
+  useYandexCalendar();
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(new Date());
   const [viewDate, setViewDate] = useState<Date>(new Date());
   const [viewMode, setViewMode] = useState<ViewMode>('month');
@@ -266,6 +270,19 @@ export default function CalendarPage() {
         `/api/calendar/events?startDate=${dateRange.start.toISOString()}&endDate=${dateRange.end.toISOString()}`
       );
       return res.json();
+    },
+  });
+
+  // Fetch Yandex Calendar events
+  const { data: yandexEvents = [] } = useQuery<any[]>({
+    queryKey: ["/api/calendar/yandex-events", dateRange.start.toISOString(), dateRange.end.toISOString()],
+    queryFn: async () => {
+      const res = await apiRequest(
+        "GET",
+        `/api/calendar/yandex-events?from=${dateRange.start.toISOString()}&to=${dateRange.end.toISOString()}`
+      );
+      const data = await res.json();
+      return data.events || [];
     },
   });
 
@@ -370,10 +387,30 @@ export default function CalendarPage() {
   }, [viewDate]);
 
   const getEventsForDate = (checkDate: Date) => {
-    return events.filter((event) => {
+    const localEvents = events.filter((event) => {
       const eventDate = new Date(event.date);
       return isSameDay(eventDate, checkDate);
     });
+
+    const yandexEventsForDate = yandexEvents.filter((event) => {
+      const eventDate = new Date(event.startDate);
+      return isSameDay(eventDate, checkDate);
+    }).map((event) => ({
+      ...event,
+      id: event.id,
+      date: event.startDate,
+      time: format(new Date(event.startDate), 'HH:mm'),
+      type: 'work' as const,
+      title: event.title,
+      description: event.description,
+      meetingUrl: event.meetingUrl,
+      contact: event.attendees?.[0]?.name || event.organizerEmail,
+      source: 'yandex' as const,
+      color: event.color || '#FC3F1D',
+      isReadOnly: true
+    }));
+
+    return [...localEvents, ...yandexEventsForDate];
   };
 
   const navigateMonth = (direction: number) => {
@@ -418,55 +455,55 @@ export default function CalendarPage() {
               <p className="text-muted-foreground mt-1">Управляйте графиком и событиями команды.</p>
            </div>
            <div className="flex items-center gap-3 flex-wrap">
-             {/* View Mode Toggle */}
-             <div className="flex items-center bg-secondary/30 rounded-lg p-1 border border-border/50">
-               <Button 
-                 variant={viewMode === 'month' ? 'secondary' : 'ghost'} 
-                 size="sm" 
-                 onClick={() => setViewMode('month')}
-                 className="h-8 gap-2"
-               >
-                 <LayoutGrid className="w-4 h-4" />
-                 Месяц
-               </Button>
-               <Button 
-                 variant={viewMode === 'day' ? 'secondary' : 'ghost'} 
-                 size="sm" 
-                 onClick={() => setViewMode('day')}
-                 className="h-8 gap-2"
-               >
-                 <CalendarIcon className="w-4 h-4" />
-                 День
-               </Button>
-             </div>
+              {/* View Mode Toggle */}
+              <div className="flex items-center bg-muted rounded-lg p-1 border border-border">
+                <Button 
+                  variant={viewMode === 'month' ? 'secondary' : 'ghost'} 
+                  size="sm" 
+                  onClick={() => setViewMode('month')}
+                  className="h-8 gap-2 text-foreground hover:text-foreground"
+                >
+                  <LayoutGrid className="w-4 h-4" />
+                  Месяц
+                </Button>
+                <Button 
+                  variant={viewMode === 'day' ? 'secondary' : 'ghost'} 
+                  size="sm" 
+                  onClick={() => setViewMode('day')}
+                  className="h-8 gap-2 text-foreground hover:text-foreground"
+                >
+                  <CalendarIcon className="w-4 h-4" />
+                  День
+                </Button>
+              </div>
              
-             {/* Navigation */}
-             <div className="flex items-center bg-secondary/30 rounded-lg p-1 border border-border/50">
-               <Button 
-                 variant="ghost" 
-                 size="icon" 
-                 onClick={() => viewMode === 'month' ? navigateMonth(-1) : navigateDay(-1)} 
-                 className="h-8 w-8"
-               >
-                 <ChevronLeft className="w-4 h-4" />
-               </Button>
-               <Button 
-                 variant="ghost" 
-                 size="sm" 
-                 onClick={() => { setViewDate(new Date()); setSelectedDate(new Date()); }}
-                 className="px-3 h-8 text-xs font-semibold"
-               >
-                 Сегодня
-               </Button>
-               <Button 
-                 variant="ghost" 
-                 size="icon" 
-                 onClick={() => viewMode === 'month' ? navigateMonth(1) : navigateDay(1)} 
-                 className="h-8 w-8"
-               >
-                 <ChevronRight className="w-4 h-4" />
-               </Button>
-             </div>
+              {/* Navigation */}
+              <div className="flex items-center bg-muted rounded-lg p-1 border border-border">
+                <Button 
+                  variant="ghost" 
+                  size="icon" 
+                  onClick={() => viewMode === 'month' ? navigateMonth(-1) : navigateDay(-1)} 
+                  className="h-8 w-8 text-foreground hover:text-foreground"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </Button>
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  onClick={() => { setViewDate(new Date()); setSelectedDate(new Date()); }}
+                  className="px-3 h-8 text-xs font-semibold text-foreground hover:text-foreground"
+                >
+                  Сегодня
+                </Button>
+                <Button 
+                  variant="ghost" 
+                  size="icon" 
+                  onClick={() => viewMode === 'month' ? navigateMonth(1) : navigateDay(1)} 
+                  className="h-8 w-8 text-foreground hover:text-foreground"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </Button>
+              </div>
              
              <Button 
                onClick={() => {
@@ -537,7 +574,7 @@ export default function CalendarPage() {
                             )}
                           </div>
                           <div className="space-y-1">
-                            {dayEvents.slice(0, 3).map((event) => (
+                            {dayEvents.slice(0, 3).map((event: any) => (
                               <div 
                                 key={event.id}
                                 onClick={(e) => {
@@ -546,15 +583,27 @@ export default function CalendarPage() {
                                 }}
                                 className={cn(
                                   "text-[10px] p-1.5 rounded-md font-medium border-l-2 truncate transition-transform hover:scale-[1.02]",
+                                  event.source === 'yandex' ? "" :
                                   event.type === 'video' ? "bg-purple-500/10 text-purple-600 border-purple-500" :
                                   event.type === 'audio' ? "bg-blue-500/10 text-blue-600 border-blue-500" :
                                   event.type === 'social' ? "bg-emerald-500/10 text-emerald-600 border-emerald-500" :
                                   "bg-primary/10 text-primary border-primary"
                                 )}
+                                style={event.source === 'yandex' ? {
+                                  backgroundColor: `${event.color}15`,
+                                  borderLeftColor: event.color,
+                                  color: event.color
+                                } : undefined}
                               >
                                 <div className="flex items-center gap-1">
-                                  {event.type === 'video' && <Video className="w-2.5 h-2.5" />}
-                                  {event.type === 'audio' && <Mic className="w-2.5 h-2.5" />}
+                                  {event.source === 'yandex' ? (
+                                    <span className="text-[8px] font-bold opacity-70">Я</span>
+                                  ) : (
+                                    <>
+                                      {event.type === 'video' && <Video className="w-2.5 h-2.5" />}
+                                      {event.type === 'audio' && <Mic className="w-2.5 h-2.5" />}
+                                    </>
+                                  )}
                                   <span className="truncate">{event.title}</span>
                                 </div>
                               </div>

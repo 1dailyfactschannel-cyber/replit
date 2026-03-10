@@ -24,7 +24,14 @@ import {
   type UserPointsTransaction,
   type InsertUserPointsTransaction,
   type CalendarEvent,
-  type InsertCalendarEvent
+  type InsertCalendarEvent,
+  type YandexCalendarIntegration,
+  type InsertYandexCalendarIntegration,
+  type YandexCalendarEvent,
+  type InsertYandexCalendarEvent,
+  yandexCalendarIntegrations,
+  yandexCalendarEvents,
+  yandexCalendarNotifications
 } from "@shared/schema";
 import { drizzle } from "drizzle-orm/postgres-js";
 import { eq, and, or, desc, ne, sql, inArray, isNull } from "drizzle-orm";
@@ -2251,6 +2258,164 @@ export class PostgresStorage {
       throw error;
     }
   }
+
+  // ==========================================
+  // Yandex Calendar Methods
+  // ==========================================
+
+  async getYandexCalendarIntegration(id: string): Promise<any | null> {
+    try {
+      const result = await this.db.select().from(yandexCalendarIntegrations).where(eq(yandexCalendarIntegrations.id, id));
+      return result[0] || null;
+    } catch (error) {
+      console.error("Error getting Yandex calendar integration:", error);
+      return null;
+    }
+  }
+
+  async getYandexCalendarIntegrationByUser(userId: string): Promise<any | null> {
+    try {
+      const result = await this.db.select().from(yandexCalendarIntegrations).where(eq(yandexCalendarIntegrations.userId, userId));
+      return result[0] || null;
+    } catch (error) {
+      console.error("Error getting Yandex calendar integration by user:", error);
+      return null;
+    }
+  }
+
+  async createYandexCalendarIntegration(data: any): Promise<any> {
+    try {
+      const result = await this.db.insert(yandexCalendarIntegrations).values(data).returning();
+      return result[0];
+    } catch (error) {
+      console.error("Error creating Yandex calendar integration:", error);
+      throw error;
+    }
+  }
+
+  async updateYandexCalendarIntegration(id: string, data: any): Promise<any> {
+    try {
+      const result = await this.db.update(yandexCalendarIntegrations).set({ ...data, updatedAt: new Date() }).where(eq(yandexCalendarIntegrations.id, id)).returning();
+      return result[0];
+    } catch (error) {
+      console.error("Error updating Yandex calendar integration:", error);
+      throw error;
+    }
+  }
+
+  async deleteYandexCalendarIntegration(id: string): Promise<void> {
+    try {
+      await this.db.delete(yandexCalendarIntegrations).where(eq(yandexCalendarIntegrations.id, id));
+    } catch (error) {
+      console.error("Error deleting Yandex calendar integration:", error);
+      throw error;
+    }
+  }
+
+  async getActiveYandexIntegrations(): Promise<any[]> {
+    try {
+      return await this.db.select().from(yandexCalendarIntegrations).where(eq(yandexCalendarIntegrations.syncEnabled, true));
+    } catch (error) {
+      console.error("Error getting active Yandex integrations:", error);
+      return [];
+    }
+  }
+
+  async updateYandexCalendarLastSync(id: string): Promise<void> {
+    try {
+      await this.db.update(yandexCalendarIntegrations).set({ lastSyncAt: new Date() }).where(eq(yandexCalendarIntegrations.id, id));
+    } catch (error) {
+      console.error("Error updating Yandex calendar last sync:", error);
+    }
+  }
+
+  // Yandex Calendar Events
+  async getYandexEventByYandexId(yandexEventId: string): Promise<any | null> {
+    try {
+      const result = await this.db.select().from(yandexCalendarEvents).where(eq(yandexCalendarEvents.yandexEventId, yandexEventId));
+      return result[0] || null;
+    } catch (error) {
+      console.error("Error getting Yandex event by Yandex ID:", error);
+      return null;
+    }
+  }
+
+  async createYandexCalendarEvent(data: any): Promise<any> {
+    try {
+      const result = await this.db.insert(yandexCalendarEvents).values(data).returning();
+      return result[0];
+    } catch (error) {
+      console.error("Error creating Yandex calendar event:", error);
+      throw error;
+    }
+  }
+
+  async updateYandexCalendarEvent(id: string, data: any): Promise<any> {
+    try {
+      const result = await this.db.update(yandexCalendarEvents).set({ ...data, updatedAt: new Date() }).where(eq(yandexCalendarEvents.id, id)).returning();
+      return result[0];
+    } catch (error) {
+      console.error("Error updating Yandex calendar event:", error);
+      throw error;
+    }
+  }
+
+  async markYandexEventDeleted(id: string): Promise<void> {
+    try {
+      await this.db.update(yandexCalendarEvents).set({ deleted: true, updatedAt: new Date() }).where(eq(yandexCalendarEvents.id, id));
+    } catch (error) {
+      console.error("Error marking Yandex event as deleted:", error);
+    }
+  }
+
+  async getYandexEventsByDateRange(integrationId: string, from: Date, to: Date): Promise<any[]> {
+    try {
+      return await this.db
+        .select()
+        .from(yandexCalendarEvents)
+        .where(
+          and(
+            eq(yandexCalendarEvents.integrationId, integrationId),
+            eq(yandexCalendarEvents.deleted, false),
+            gte(yandexCalendarEvents.startDate, from),
+            lte(yandexCalendarEvents.startDate, to)
+          )
+        )
+        .orderBy(yandexCalendarEvents.startDate);
+    } catch (error) {
+      console.error("Error getting Yandex events by date range:", error);
+      return [];
+    }
+  }
+
+  // Yandex Calendar Notifications
+  async isNotificationSent(eventId: string, reminderMinutes?: number): Promise<boolean> {
+    try {
+      const conditions = [eq(yandexCalendarNotifications.eventId, eventId)];
+      if (reminderMinutes !== undefined) {
+        conditions.push(eq(yandexCalendarNotifications.reminderMinutes, reminderMinutes));
+      }
+      
+      const result = await this.db.select().from(yandexCalendarNotifications).where(and(...conditions));
+      return result.length > 0;
+    } catch (error) {
+      console.error("Error checking if notification sent:", error);
+      return false;
+    }
+  }
+
+  async markNotificationSent(eventId: string, userId: string, type: string, reminderMinutes?: number): Promise<void> {
+    try {
+      await this.db.insert(yandexCalendarNotifications).values({
+        eventId,
+        userId,
+        notificationType: type,
+        reminderMinutes,
+      });
+    } catch (error) {
+      console.error("Error marking notification as sent:", error);
+    }
+  }
 }
 
 // ==================== REPORT FUNCTIONS ====================
@@ -2383,162 +2548,7 @@ export async function getReportWorkspaces(
   }
 }
 
-export async function getReportProjects(
-  db: any,
-  workspaceId?: string,
-  projectId?: string,
-  boardId?: string,
-  userId?: string,
-  dateFrom?: string,
-  dateTo?: string
-) {
-  try {
-    let projectsList = workspaceId 
-      ? await db.select().from(schema.projects).where(eq(schema.projects.workspaceId, workspaceId))
-      : await db.select().from(schema.projects);
-
-    const result = [];
-
-    for (const proj of projectsList) {
-      if (projectId && proj.id !== projectId) continue;
-      
-      const boards = await db.select().from(schema.boards).where(eq(schema.boards.projectId, proj.id));
-      let totalTasks = 0;
-      let completedCount = 0;
-      let inProgressCount = 0;
-
-      for (const board of boards) {
-        if (boardId && board.id !== boardId) continue;
-        
-        const tasks = await db.select().from(schema.tasks).where(eq(schema.tasks.boardId, board.id));
-        totalTasks += tasks.length;
-        
-        for (const task of tasks) {
-          const status = task.status || 'В планах';
-          if (status === 'Готово' || status === 'done') completedCount++;
-          else if (status === 'В работе' || status === 'in_progress') inProgressCount++;
-        }
-      }
-
-      const workspace = await db.select().from(schema.workspaces).where(eq(schema.workspaces.id, proj.workspaceId)).then((r: any) => r[0]);
-
-      result.push({
-        id: proj.id,
-        name: proj.name,
-        workspaceName: workspace?.name || '',
-        tasksCount: totalTasks,
-        completedCount,
-        inProgressCount,
-        totalTime: 0
-      });
-    }
-
-    return { projects: result };
-  } catch (error) {
-    console.error("Error getting projects report:", error);
-    throw error;
-  }
-}
-
-export async function getReportBoards(
-  db: any,
-  projectId?: string,
-  boardId?: string,
-  userId?: string,
-  dateFrom?: string,
-  dateTo?: string
-) {
-  try {
-    let boardsList = projectId
-      ? await db.select().from(schema.boards).where(eq(schema.boards.projectId, projectId))
-      : await db.select().from(schema.boards);
-
-    const result = [];
-
-    for (const board of boardsList) {
-      if (boardId && board.id !== boardId) continue;
-      
-      const tasks = await db.select().from(schema.tasks).where(eq(schema.tasks.boardId, board.id));
-      let completedCount = 0;
-
-      for (const task of tasks) {
-        const status = task.status || 'В планах';
-        if (status === 'Готово' || status === 'done') completedCount++;
-      }
-
-      const project = await db.select().from(schema.projects).where(eq(schema.projects.id, board.projectId)).then((r: any) => r[0]);
-
-      result.push({
-        id: board.id,
-        name: board.name,
-        projectName: project?.name || '',
-        tasksCount: tasks.length,
-        completedCount,
-        avgTime: 0
-      });
-    }
-
-    return { boards: result };
-  } catch (error) {
-    console.error("Error getting boards report:", error);
-    throw error;
-  }
-}
-
-export async function getReportUsers(
-  db: any,
-  workspaceId?: string,
-  projectId?: string,
-  boardId?: string,
-  userId?: string,
-  dateFrom?: string,
-  dateTo?: string
-) {
-  try {
-    const usersList = await db.select().from(schema.users);
-    const result = [];
-
-    for (const user of usersList) {
-      if (userId && user.id !== userId) continue;
-
-      const allTasks = await db.select().from(schema.tasks).where(eq(schema.tasks.assigneeId, user.id));
-      
-      let completedCount = 0;
-      let inProgressCount = 0;
-
-      for (const task of allTasks) {
-        if (projectId && task.boardId) {
-          const board = await db.select().from(schema.boards).where(eq(schema.boards.id, task.boardId)).then((r: any) => r[0]);
-          if (!board || board.projectId !== projectId) continue;
-        }
-        if (boardId && task.boardId !== boardId) continue;
-
-        const status = task.status || 'В планах';
-        if (status === 'Готово' || status === 'done') completedCount++;
-        else if (status === 'В работе' || status === 'in_progress') inProgressCount++;
-      }
-
-      const comments = await db.select().from(schema.comments).where(eq(schema.comments.authorId, user.id));
-
-      result.push({
-        id: user.id,
-        name: user.firstName ? `${user.firstName} ${user.lastName || ''}` : user.username,
-        avatar: user.avatar,
-        completedCount,
-        inProgressCount,
-        avgTime: 0,
-        totalTime: 0,
-        commentsCount: comments.length
-      });
-    }
-
-    return { users: result };
-  } catch (error) {
-    console.error("Error getting users report:", error);
-    throw error;
-  }
-}
-
+  // ==========================================
 // Export singleton instance
 let storageInstance: PostgresStorage | null = null;
 

@@ -40,9 +40,11 @@ import {
   Archive,
   RotateCcw,
   Layers,
-  Coins
+  Coins,
+  Calendar
 } from "lucide-react";
 import { RolesManagement } from "@/components/settings/RolesManagement";
+import { YandexCalendarConnect, YandexCalendarSettings } from "@/components/integrations/YandexCalendarConnect";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { User } from "@shared/schema";
@@ -366,6 +368,7 @@ function SecurityManagement() {
 
 function IntegrationsManagement() {
   const [showTelegram, setShowTelegram] = useState(false);
+  const [showYandexCalendar, setShowYandexCalendar] = useState(false);
   const [activeTab, setActiveTab] = useState("all");
   
   const integrations = [
@@ -415,6 +418,15 @@ function IntegrationsManagement() {
       category: "management"
     },
     { 
+      id: "yandex-calendar", 
+      name: "Яндекс Календарь", 
+      desc: "Синхронизация событий и встреч", 
+      icon: Calendar, 
+      color: "bg-[#FC3F1D]", 
+      connected: false,
+      category: "calendar"
+    },
+    { 
       id: "zapier", 
       name: "Zapier", 
       desc: "Автоматизация рабочих процессов", 
@@ -430,6 +442,7 @@ function IntegrationsManagement() {
     { id: "messengers", label: "Мессенджеры" },
     { id: "dev", label: "Разработка" },
     { id: "management", label: "Управление" },
+    { id: "calendar", label: "Календари" },
     { id: "automation", label: "Автоматизация" },
   ];
 
@@ -446,6 +459,12 @@ function IntegrationsManagement() {
         </Button>
         <TelegramSettings />
       </div>
+    );
+  }
+
+  if (showYandexCalendar) {
+    return (
+      <YandexCalendarSettings onBack={() => setShowYandexCalendar(false)} />
     );
   }
 
@@ -470,6 +489,9 @@ function IntegrationsManagement() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {filteredIntegrations.map((item) => (
+          item.id === "yandex-calendar" ? (
+            <YandexCalendarConnect key={item.id} onShowDetails={() => setShowYandexCalendar(true)} />
+          ) : (
           <Card key={item.id} className="border-border/50 shadow-sm hover:shadow-md hover:border-primary/20 transition-all group relative overflow-hidden flex flex-col">
             <div className={cn("absolute top-0 left-0 w-1 h-full", item.connected ? "bg-emerald-500" : "bg-transparent")} />
             <CardContent className="p-6 flex-1">
@@ -520,6 +542,7 @@ function IntegrationsManagement() {
               </div>
             </CardFooter>
           </Card>
+          )
         ))}
       </div>
 

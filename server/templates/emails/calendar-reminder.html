@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Напоминание о встрече</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      line-height: 1.6;
+      color: #333;
+      margin: 0;
+      padding: 0;
+      background-color: #f5f5f5;
+    }
+    .container {
+      max-width: 600px;
+      margin: 0 auto;
+      background-color: #ffffff;
+    }
+    .header {
+      background: linear-gradient(135deg, #FC3F1D 0%, #FF6B4A 100%);
+      color: white;
+      padding: 40px 30px;
+      text-align: center;
+    }
+    .header h1 {
+      margin: 0;
+      font-size: 24px;
+      font-weight: 600;
+    }
+    .header p {
+      margin: 10px 0 0 0;
+      opacity: 0.9;
+      font-size: 14px;
+    }
+    .content {
+      padding: 40px 30px;
+    }
+    .event-card {
+      background: #f8f9fa;
+      border-radius: 12px;
+      padding: 30px;
+      margin: 20px 0;
+      border-left: 4px solid #FC3F1D;
+    }
+    .event-title {
+      font-size: 22px;
+      font-weight: 700;
+      color: #1a1a1a;
+      margin: 0 0 15px 0;
+    }
+    .event-details {
+      margin-top: 20px;
+    }
+    .detail-row {
+      display: flex;
+      align-items: center;
+      margin: 12px 0;
+      font-size: 15px;
+      color: #555;
+    }
+    .detail-icon {
+      width: 20px;
+      margin-right: 12px;
+      text-align: center;
+      font-size: 18px;
+    }
+    .detail-label {
+      font-weight: 600;
+      color: #333;
+      min-width: 100px;
+    }
+    .time-until {
+      background: #FC3F1D;
+      color: white;
+      padding: 8px 16px;
+      border-radius: 20px;
+      font-size: 14px;
+      font-weight: 600;
+      display: inline-block;
+      margin: 20px 0;
+    }
+    .button {
+      display: inline-block;
+      padding: 16px 32px;
+      background: #FC3F1D;
+      color: white;
+      text-decoration: none;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 16px;
+      margin: 20px 0;
+      box-shadow: 0 4px 12px rgba(252, 63, 29, 0.3);
+      transition: all 0.3s ease;
+    }
+    .button:hover {
+      background: #e63917;
+      box-shadow: 0 6px 16px rgba(252, 63, 29, 0.4);
+    }
+    .footer {
+      background: #f8f9fa;
+      padding: 30px;
+      text-align: center;
+      font-size: 13px;
+      color: #888;
+    }
+    .footer a {
+      color: #FC3F1D;
+      text-decoration: none;
+    }
+    @media (max-width: 600px) {
+      .content {
+        padding: 30px 20px;
+      }
+      .event-card {
+        padding: 20px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>⏰ Напоминание о встрече</h1>
+      <p>Событие из Яндекс Календаря</p>
+    </div>
+    
+    <div class="content">
+      <p style="font-size: 16px; color: #555;">
+        Здравствуйте{{#if userName}}, {{userName}}{{/if}}!
+      </p>
+      
+      <div class="time-until">
+        Через {{timeUntil}}
+      </div>
+      
+      <div class="event-card">
+        <h2 class="event-title">{{eventTitle}}</h2>
+        
+        <div class="event-details">
+          <div class="detail-row">
+            <span class="detail-icon">📅</span>
+            <span class="detail-label">Дата:</span>
+            <span>{{eventDate}}</span>
+          </div>
+          
+          <div class="detail-row">
+            <span class="detail-icon">🕐</span>
+            <span class="detail-label">Время:</span>
+            <span>{{eventTime}}</span>
+          </div>
+          
+          {{#if eventLocation}}
+          <div class="detail-row">
+            <span class="detail-icon">📍</span>
+            <span class="detail-label">Место:</span>
+            <span>{{eventLocation}}</span>
+          </div>
+          {{/if}}
+        </div>
+      </div>
+      
+      {{#if meetingUrl}}
+      <div style="text-align: center;">
+        <a href="{{meetingUrl}}" class="button">
+          🔗 Подключиться к встрече
+        </a>
+      </div>
+      {{/if}}
+      
+      <p style="font-size: 14px; color: #888; margin-top: 30px;">
+        Это напоминание отправлено автоматически из TeamSync. 
+        Вы можете изменить настройки уведомлений в своём Яндекс Календаре.
+      </p>
+    </div>
+    
+    <div class="footer">
+      <p>
+        <strong>TeamSync</strong> — управление проектами и командная работа<br>
+        <a href="{{appUrl}}">Открыть приложение</a>
+      </p>
+      <p style="margin-top: 15px; font-size: 12px; color: #aaa;">
+        Событие синхронизировано из Яндекс Календаря
+      </p>
+    </div>
+  </div>
+</body>
+</html>

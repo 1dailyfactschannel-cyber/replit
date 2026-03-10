@@ -15,6 +15,7 @@ import { format } from "date-fns";
 import { formatUserName, formatUserBasic } from "./utils";
 import rateLimit from "express-rate-limit";
 import bcrypt from "bcrypt";
+import yandexCalendarRoutes from "./routes/yandex-calendar";
 
 const storage = getStorage();
 let io: SocketIOServer;
@@ -3349,6 +3350,9 @@ export async function registerRoutes(
       res.status(500).json({ message: "Failed to delete calendar event" });
     }
   });
+
+  // Yandex Calendar routes
+  app.use("/api", yandexCalendarRoutes);
 
   return httpServer;
 }

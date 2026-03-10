@@ -894,3 +894,126 @@ export const insertCalendarEventSchema = createInsertSchema(calendarEvents).pick
 export type CalendarEvent = typeof calendarEvents.$inferSelect;
 export type InsertCalendarEvent = z.infer<typeof insertCalendarEventSchema>;
 
+// Yandex Calendar Integration - personal OAuth connection
+export const yandexCalendarIntegrations = pgTable("yandex_calendar_integrations", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  
+  // OAuth tokens
+  accessToken: text("access_token").notNull(),
+  refreshToken: text("refresh_token"),
+  tokenExpiresAt: timestamp("token_expires_at"),
+  
+  // Calendar info
+  calendarId: text("calendar_id").notNull(),
+  calendarName: text("calendar_name"),
+  syncEnabled: boolean("sync_enabled").default(true),
+  
+  // Sync tracking
+  lastSyncAt: timestamp("last_sync_at"),
+  lastSyncToken: text("last_sync_token"), // For incremental sync
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  userIdIdx: index("yandex_cal_user_id_idx").on(table.userId),
+}));
+
+export const insertYandexCalendarIntegrationSchema = createInsertSchema(yandexCalendarIntegrations).pick({
+  userId: true,
+  accessToken: true,
+  refreshToken: true,
+  tokenExpiresAt: true,
+  calendarId: true,
+  calendarName: true,
+  syncEnabled: true,
+});
+
+export type YandexCalendarIntegration = typeof yandexCalendarIntegrations.$inferSelect;
+export type InsertYandexCalendarIntegration = z.infer<typeof insertYandexCalendarIntegrationSchema>;
+
+// Yandex Calendar Events - synced from Yandex
+export const yandexCalendarEvents = pgTable("yandex_calendar_events", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  integrationId: uuid("integration_id").notNull().references(() => yandexCalendarIntegrations.id, { onDelete: "cascade" }),
+  
+  // Yandex event data
+  yandexEventId: text("yandex_event_id").notNull(),
+  yandexEtag: text("yandex_etag"),
+  
+  title: text("title").notNull(),
+  description: text("description"),
+  startDate: timestamp("start_date").notNull(),
+  endDate: timestamp("end_date").notNull(),
+  
+  // Recurring events
+  recurrenceRule: text("recurrence_rule"), // RRULE
+  recurrenceId: text("recurrence_id"),
+  isRecurring: boolean("is_recurring").default(false),
+  
+  // Attendees and organizer
+  attendees: jsonb("attendees").default(sql`'[]'::jsonb`), // [{email, name, status}]
+  organizerEmail: text("organizer_email"),
+  
+  // Visual settings
+  color: text("color"), // Color from Yandex
+  
+  // Reminders (from Yandex)
+  reminders: jsonb("reminders").default(sql`'[]'::jsonb`), // [{minutes, method}]
+  
+  // Metadata
+  location: text("location"),
+  meetingUrl: text("meeting_url"),
+  status: text("status").default("confirmed"), // confirmed, tentative, cancelled
+  
+  // Sync tracking
+  lastSyncedAt: timestamp("last_synced_at").defaultNow(),
+  deleted: boolean("deleted").default(false),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  yandexEventIdIdx: index("yandex_events_yandex_id_idx").on(table.yandexEventId),
+  startDateIdx: index("yandex_events_start_date_idx").on(table.startDate),
+  integrationIdx: index("yandex_events_integration_idx").on(table.integrationId),
+  attendeesIdx: index("yandex_events_attendees_idx").using("gin", table.attendees),
+}));
+
+export const insertYandexCalendarEventSchema = createInsertSchema(yandexCalendarEvents).pick({
+  integrationId: true,
+  yandexEventId: true,
+  yandexEtag: true,
+  title: true,
+  description: true,
+  startDate: true,
+  endDate: true,
+  recurrenceRule: true,
+  recurrenceId: true,
+  isRecurring: true,
+  attendees: true,
+  organizerEmail: true,
+  color: true,
+  reminders: true,
+  location: true,
+  meetingUrl: true,
+  status: true,
+});
+
+export type YandexCalendarEvent = typeof yandexCalendarEvents.$inferSelect;
+export type InsertYandexCalendarEvent = z.infer<typeof insertYandexCalendarEventSchema>;
+
+// Yandex Calendar Notifications tracking
+export const yandexCalendarNotifications = pgTable("yandex_calendar_notifications", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  eventId: uuid("event_id").notNull().references(() => yandexCalendarEvents.id, { onDelete: "cascade" }),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  notificationType: text("notification_type").notNull(), // 'event_changed', 'reminder', 'new_event'
+  reminderMinutes: integer("reminder_minutes"),
+  sentAt: timestamp("sent_at").defaultNow(),
+}, (table) => ({
+  eventIdIdx: index("yandex_notif_event_id_idx").on(table.eventId),
+  userIdIdx: index("yandex_notif_user_id_idx").on(table.userId),
+}));
+
+export type YandexCalendarNotification = typeof yandexCalendarNotifications.$inferSelect;
+

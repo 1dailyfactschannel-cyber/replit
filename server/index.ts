@@ -38,6 +38,9 @@ import { registerRoutes } from "./routes";
 import { setupAuth } from "./auth";
 import { serveStatic } from "./static";
 import { createServer } from "http";
+import { yandexCalendarService } from "./services/yandex-calendar";
+import { yandexNotificationService } from "./services/yandex-notifications";
+import { getStorage } from "./postgres-storage";
 
 const app = express();
 const httpServer = createServer(app);
@@ -160,6 +163,28 @@ app.use((req, res, next) => {
     },
     () => {
       log(`serving on port ${port}`);
+      
+      // Start Yandex Calendar sync cron job (every 10 minutes)
+      setInterval(async () => {
+        try {
+          const storage = getStorage();
+          const integrations = await storage.getActiveYandexIntegrations();
+          for (const integration of integrations) {
+            try {
+              await yandexCalendarService.syncUserCalendar(integration.id);
+            } catch (err) {
+              console.error(`Sync failed for ${integration.id}:`, err);
+            }
+          }
+        } catch (error) {
+          console.error("Error in Yandex calendar sync cron:", error);
+        }
+      }, 10 * 60 * 1000);
+      
+      // Start Yandex Calendar notification service
+      yandexNotificationService.startPeriodicTasks();
+      
+      log("Yandex Calendar services started");
     },
   );
 })();

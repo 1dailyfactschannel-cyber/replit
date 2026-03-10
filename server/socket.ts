@@ -2,6 +2,15 @@ import { Server as HttpServer } from "http";
 import { Server as SocketIOServer } from "socket.io";
 import { log } from "./index";
 
+let ioInstance: SocketIOServer | null = null;
+
+export function getIO(): SocketIOServer {
+  if (!ioInstance) {
+    throw new Error("Socket.io not initialized");
+  }
+  return ioInstance;
+}
+
 export function setupWebSockets(httpServer: HttpServer) {
   // Security: Restrict CORS to specific origins
   const allowedOrigins = process.env.ALLOWED_ORIGINS 
@@ -18,6 +27,7 @@ export function setupWebSockets(httpServer: HttpServer) {
     pingTimeout: 10000,
   });
 
+  ioInstance = io;
   log("WebSockets setup complete", "socket.io");
 
   io.on("connection", (socket) => {
