@@ -110,7 +110,7 @@ export function YandexCalendarConnect({ onShowDetails }: YandexCalendarConnectPr
       <CardContent className="p-6 flex-1">
         <div className="flex items-start gap-4">
           {/* Icon */}
-          <div className="p-3 rounded-2xl bg-[#FC3F1D] text-white shadow-lg shadow-[#FC3F1D]/20 transition-transform group-hover:scale-110 duration-300">
+          <div className="p-3 rounded-2xl bg-[#FC3F1D] text-white shadow-lg transition-transform group-hover:scale-110 duration-300">
             {isError ? <AlertCircle className="w-6 h-6" /> : <Calendar className="w-6 h-6" />}
           </div>
           
@@ -184,8 +184,9 @@ export function YandexCalendarConnect({ onShowDetails }: YandexCalendarConnectPr
                 <Info className="w-3.5 h-3.5" />
               </Button>
               <Button 
+                variant="default"
                 size="sm" 
-                className="h-8 text-xs font-bold px-4 bg-[#FC3F1D] hover:bg-[#FC3F1D]/90 shadow-lg shadow-[#FC3F1D]/20"
+                className="h-8 text-xs font-bold px-4 shadow-lg shadow-primary/20"
                 onClick={handleConnect}
                 disabled={isConnecting || connectMutation.isPending}
               >
@@ -347,7 +348,7 @@ export function YandexCalendarSettings({ onBack }: { onBack: () => void }) {
             </>
           ) : (
             <Button 
-              className="w-full bg-[#FC3F1D] hover:bg-[#FC3F1D]/90"
+              className="w-full"
               onClick={() => connectMutation.mutate()}
               disabled={connectMutation.isPending}
             >
