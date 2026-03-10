@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -25,6 +25,23 @@ interface YandexCalendarConnectProps {
 export function YandexCalendarConnect({ onShowDetails }: YandexCalendarConnectProps) {
   const queryClient = useQueryClient();
   const [isConnecting, setIsConnecting] = useState(false);
+  const [configError, setConfigError] = useState<string | null>(null);
+
+  // Проверяем статус конфигурации при загрузке
+  useEffect(() => {
+    const checkConfig = async () => {
+      try {
+        const res = await fetch("/api/integrations/yandex-calendar/config-status");
+        const data = await res.json();
+        if (!data.configured) {
+          setConfigError(data.message);
+        }
+      } catch (err) {
+        console.error("Failed to check config:", err);
+      }
+    };
+    checkConfig();
+  }, []);
 
   const { data: status, isLoading, error } = useQuery({
     queryKey: ["yandex-calendar-status"],
@@ -106,6 +123,10 @@ export function YandexCalendarConnect({ onShowDetails }: YandexCalendarConnectPr
   });
 
   const handleConnect = () => {
+    if (configError) {
+      alert(configError + "\n\nОбратитесь к администратору системы.");
+      return;
+    }
     if (onShowDetails) {
       onShowDetails();
     } else {
@@ -114,8 +135,8 @@ export function YandexCalendarConnect({ onShowDetails }: YandexCalendarConnectPr
   };
 
   const isConnected = status?.connected;
-  const isError = !!error;
-  const isNotConfigured = error?.message?.includes("не настроена администратором");
+  const isError = !!error || !!configError;
+  const isNotConfigured = !!configError || error?.message?.includes("не настроена администратором");
 
   return (
     <Card className="border-border/50 shadow-sm hover:shadow-md hover:border-primary/20 transition-all group relative overflow-hidden flex flex-col">

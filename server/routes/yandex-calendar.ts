@@ -6,6 +6,24 @@ import { getIO } from "../socket";
 const router = Router();
 
 /**
+ * Check if integration is configured
+ */
+router.get("/integrations/yandex-calendar/config-status", async (req, res) => {
+  try {
+    const isConfigured = yandexCalendarService.isConfigured();
+    res.json({ 
+      configured: isConfigured,
+      message: isConfigured 
+        ? "Интеграция настроена" 
+        : "Интеграция не настроена. Необходимо добавить YANDEX_CLIENT_ID и YANDEX_CLIENT_SECRET в файл .env"
+    });
+  } catch (error: any) {
+    console.error("Error checking config status:", error);
+    res.status(500).json({ message: "Failed to check configuration" });
+  }
+});
+
+/**
  * Get OAuth URL for Yandex Calendar
  */
 router.get("/integrations/yandex-calendar/auth", async (req, res) => {
