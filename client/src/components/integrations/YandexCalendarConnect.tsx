@@ -115,6 +115,7 @@ export function YandexCalendarConnect({ onShowDetails }: YandexCalendarConnectPr
 
   const isConnected = status?.connected;
   const isError = !!error;
+  const isNotConfigured = error?.message?.includes("не настроена администратором");
 
   return (
     <Card className="border-border/50 shadow-sm hover:shadow-md hover:border-primary/20 transition-all group relative overflow-hidden flex flex-col">
@@ -140,11 +141,18 @@ export function YandexCalendarConnect({ onShowDetails }: YandexCalendarConnectPr
                   Активно
                 </Badge>
               )}
+              {isNotConfigured && (
+                <Badge className="bg-amber-500/10 text-amber-600 border-none text-[9px] font-bold uppercase tracking-tighter h-4 px-1.5">
+                  Не настроено
+                </Badge>
+              )}
             </div>
             <p className="text-xs text-muted-foreground leading-relaxed">
               {isConnected 
                 ? (status.calendarName || "Синхронизация активна")
-                : "Синхронизация событий и встреч с Яндекс Календарем"
+                : isNotConfigured
+                  ? "Интеграция не настроена администратором системы"
+                  : "Синхронизация событий и встреч с Яндекс Календарем"
               }
             </p>
             {status?.lastSync && (
@@ -160,7 +168,7 @@ export function YandexCalendarConnect({ onShowDetails }: YandexCalendarConnectPr
         <div className="flex items-center gap-1.5">
           {!isConnected && !isLoading && (
             <span className="text-[10px] font-bold text-muted-foreground/50 uppercase tracking-widest">
-              {isError ? "Ошибка" : "Не подключено"}
+              {isNotConfigured ? "Не настроено" : isError ? "Ошибка" : "Не подключено"}
             </span>
           )}
           {isLoading && (
