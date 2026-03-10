@@ -1363,6 +1363,9 @@ export async function registerRoutes(
       await invalidatePattern(`board:full:${task.boardId}`);
       await delCache(`task:${taskId}`);
       
+      // Инвалидируем кэш "Мои задачи" для всех пользователей, так как задача могла быть переназначена
+      await invalidatePattern("my-tasks:*");
+      
       // Если передан новый порядок (order), нужно обновить порядок остальных задач в той же колонке
       if (updateData.order !== undefined) {
         const allTasks = await storage.getTasksByBoard(task.boardId);
@@ -2424,6 +2427,33 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error reordering tasks:", error);
       res.status(500).json({ message: "Failed to reorder tasks" });
+    }
+  });
+
+  // Reorder columns
+  app.post("/api/columns/reorder", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
+    try {
+      const { columns } = req.body;
+      if (!Array.isArray(columns)) {
+        return res.status(400).json({ message: "Columns must be an array" });
+      }
+      
+      // Update each column's order
+      for (const col of columns) {
+        if (col.id && typeof col.order === 'number') {
+          await storage.updateBoardColumn(col.id, { order: col.order });
+        }
+      }
+      
+      // Invalidate board cache
+      const { invalidatePattern } = await import("./redis");
+      await invalidatePattern("board:*");
+      
+      res.json({ message: "Columns reordered successfully" });
+    } catch (error) {
+      console.error("Error reordering columns:", error);
+      res.status(500).json({ message: "Failed to reorder columns" });
     }
   });
 

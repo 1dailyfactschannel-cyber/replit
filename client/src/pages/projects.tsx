@@ -43,7 +43,8 @@ import {
   Archive,
   RotateCcw,
   Layers,
-  Clock
+  Clock,
+  GripVertical
 } from "lucide-react";
 import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd";
 import { Button } from "@/components/ui/button";
@@ -363,6 +364,7 @@ interface KanbanColumnProps {
   availableTaskTypes?: any[];
   sortBy?: string;
   onSortChange?: (columnId: string, sortBy: string) => void;
+  dragHandleProps?: any;
 }
 
 const KanbanColumn = React.memo(({
@@ -377,6 +379,7 @@ const KanbanColumn = React.memo(({
   onDeleteColumn,
   onOpenEditColumnDialog,
   columnColor: customColumnColor,
+  dragHandleProps,
   availableLabels = [], 
   availablePriorities = [],
   availableTaskTypes = [],
@@ -480,6 +483,15 @@ const KanbanColumn = React.memo(({
               >
                 <Plus className="w-3.5 h-3.5" />
               </Button>
+
+              {/* Drag Handle for column reordering */}
+              <div 
+                {...dragHandleProps}
+                className="drag-handle cursor-grab active:cursor-grabbing p-1 rounded hover:bg-secondary/50 text-muted-foreground/50 hover:text-foreground transition-colors"
+                title="Перетащить для изменения порядка"
+              >
+                <GripVertical className="w-4 h-4" />
+              </div>
 
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -1301,10 +1313,17 @@ export default function Projects() {
     });
   }, [allColumns, showAllTasks]);
 
-  const columns = showAllTasks ? uniqueColumns : (boardData?.columns || []);
+  const [columns, setColumns] = useState(showAllTasks ? uniqueColumns : (boardData?.columns || []));
   const tasks = showAllTasks ? allTasks : (boardData?.tasks || []);
   const isLoadingColumns = showAllTasks ? false : isLoadingBoard;
   const isLoadingTasks = showAllTasks ? false : isLoadingBoard;
+
+  // Sync columns with boardData when it changes
+  useEffect(() => {
+    if (!showAllTasks && boardData?.columns) {
+      setColumns(boardData.columns);
+    }
+  }, [boardData?.columns, showAllTasks]);
 
   const createTaskMutation = useMutation({
     mutationFn: async (task: any) => {
@@ -1394,6 +1413,7 @@ export default function Projects() {
     },
     onMutate: async ({ id, data }) => {
       await queryClient.cancelQueries({ queryKey: ["/api/boards", activeBoard?.id, "full"] });
+      await queryClient.cancelQueries({ queryKey: ["/api/tasks/my-tasks"] });
       const previousData = queryClient.getQueryData<{ columns: any[], tasks: any[] }>(["/api/boards", activeBoard?.id, "full"]);
 
       if (previousData) {
@@ -1458,6 +1478,7 @@ export default function Projects() {
         refetchType: 'none' 
       });
       queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks/my-tasks"] });
     }
   });
 
@@ -1683,7 +1704,8 @@ export default function Projects() {
       // Prepare update data - include status if column changed
       const updateData: any = {
         columnId: targetColumn.id,
-        order: destination.index
+        order: destination.index,
+        status: targetColumn.name  // Обновляем статус на имя новой колонки
       };
       
 
@@ -1692,6 +1714,32 @@ export default function Projects() {
         id: draggableId,
         data: updateData
       });
+    } else if (type === "column") {
+      // Handle column reordering
+      const newColumns = Array.from(columns);
+      const [movedColumn] = newColumns.splice(source.index, 1);
+      newColumns.splice(destination.index, 0, movedColumn);
+      
+      // Update column order in state
+      setColumns(newColumns);
+      
+      // Update column orders on server
+      const updates = newColumns.map((col, idx) => ({
+        id: col.id,
+        order: idx
+      }));
+      
+      // Call API to update column orders
+      apiRequest("POST", "/api/columns/reorder", { columns: updates })
+        .then(() => {
+          // Invalidate cache to refresh data
+          queryClient.invalidateQueries({ queryKey: ["/api/boards", activeBoard?.id, "full"] });
+        })
+        .catch((error) => {
+          console.error("Error reordering columns:", error);
+          // Revert on error
+          queryClient.invalidateQueries({ queryKey: ["/api/boards", activeBoard?.id, "full"] });
+        });
     }
   };
 
@@ -2441,25 +2489,42 @@ export default function Projects() {
                       {columns.map((columnData: any, index: number) => {
                         const columnTasks = kanbanData[columnData.id] || [];
                         return (
-                          <KanbanColumn
-                            key={columnData.id}
-                            column={columnData.name}
-                            columnId={columnData.id}
-                            columnIndex={index}
-                            tasks={columnTasks}
-                            allColumns={columns.map((c: any) => ({ id: c.id, name: c.name, color: c.color }))}
-                            onCreateTask={handleCreateTask}
-                            onTaskClick={handleTaskClick}
-                            onEditColumn={handleEditColumn}
-                            onDeleteColumn={handleDeleteColumn}
-                            onOpenEditColumnDialog={handleOpenEditColumnDialog}
-                            columnColor={columnData.color}
-                            availableLabels={availableLabels}
-                            availablePriorities={availablePriorities}
-                            availableTaskTypes={availableTaskTypes}
-                            sortBy={columnSortBy[columnData.id] || 'default'}
-                            onSortChange={(columnId, sortBy) => setColumnSortBy(prev => ({ ...prev, [columnId]: sortBy }))}
-                          />
+                          <Draggable 
+                            key={columnData.id} 
+                            draggableId={columnData.id} 
+                            index={index}
+                          >
+                            {(dragProvided, dragSnapshot) => (
+                              <div
+                                ref={dragProvided.innerRef}
+                                {...dragProvided.draggableProps}
+                                className={cn(
+                                  "transition-transform",
+                                  dragSnapshot.isDragging && "opacity-90 rotate-2"
+                                )}
+                              >
+                                <KanbanColumn
+                                  column={columnData.name}
+                                  columnId={columnData.id}
+                                  columnIndex={index}
+                                  tasks={columnTasks}
+                                  allColumns={columns.map((c: any) => ({ id: c.id, name: c.name, color: c.color }))}
+                                  onCreateTask={handleCreateTask}
+                                  onTaskClick={handleTaskClick}
+                                  onEditColumn={handleEditColumn}
+                                  onDeleteColumn={handleDeleteColumn}
+                                  onOpenEditColumnDialog={handleOpenEditColumnDialog}
+                                  columnColor={columnData.color}
+                                  availableLabels={availableLabels}
+                                  availablePriorities={availablePriorities}
+                                  availableTaskTypes={availableTaskTypes}
+                                  sortBy={columnSortBy[columnData.id] || 'default'}
+                                  onSortChange={(columnId, sortBy) => setColumnSortBy(prev => ({ ...prev, [columnId]: sortBy }))}
+                                  dragHandleProps={dragProvided.dragHandleProps}
+                                />
+                              </div>
+                            )}
+                          </Draggable>
                         );
                       })}
                       

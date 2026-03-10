@@ -4,12 +4,12 @@ import { Express } from "express";
 import session from "express-session";
 import { storage } from "./postgres-storage";
 import { type User as SelectUser } from "@shared/schema";
-import connectPg from "connect-pg-simple";
+import createMemoryStore from "memorystore";
 import crypto from "crypto";
 import { promisify } from "util";
 import rateLimit from "express-rate-limit";
 
-const PostgresSessionStore = connectPg(session);
+const MemoryStore = createMemoryStore(session);
 const scrypt = promisify(crypto.scrypt);
 
 // Security: Login rate limiter
@@ -55,11 +55,8 @@ export function setupAuth(app: Express) {
     secret: process.env.SESSION_SECRET,
     resave: false,
     saveUninitialized: false,
-    store: new PostgresSessionStore({
-      conString: process.env.DATABASE_URL,
-      tableName: "sessions",
-      createTableIfMissing: true,
-      errorLog: console.error,
+    store: new MemoryStore({
+      checkPeriod: 86400000, // Clear expired sessions every 24h
     }),
     cookie: {
       maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days

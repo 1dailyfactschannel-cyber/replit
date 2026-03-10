@@ -889,29 +889,29 @@ export class PostgresStorage {
       let taskStats: Map<string, { taskCount: number; completedTaskCount: number }> = new Map();
       
       if (boardIds.length > 0) {
-        // Fetch boards and task stats in parallel for better performance
-        const [boardsForProjects, taskCounts] = await Promise.all([
-          this.db
-            .select({
-              projectId: schema.boards.projectId,
-              boardId: schema.boards.id,
-            })
-            .from(schema.boards)
-            .where(inArray(schema.boards.projectId, boardIds)),
-          this.db
+        // Fetch boards for these projects
+        const boardsForProjects = await this.db
+          .select({
+            projectId: schema.boards.projectId,
+            boardId: schema.boards.id,
+          })
+          .from(schema.boards)
+          .where(inArray(schema.boards.projectId, boardIds));
+
+        const allBoardIds = boardsForProjects.map(b => b.boardId);
+        
+        if (allBoardIds.length > 0) {
+          // Fetch task stats for these boards
+          const taskCounts = await this.db
             .select({
               boardId: schema.tasks.boardId,
               taskCount: sql<number>`count(*)`,
               completedCount: sql<number>`count(*) filter (where ${schema.tasks.status} in ('done', 'completed', 'Готово'))`,
             })
             .from(schema.tasks)
-            .where(inArray(schema.tasks.boardId, boardIds))
-            .groupBy(schema.tasks.boardId)
-        ]);
+            .where(inArray(schema.tasks.boardId, allBoardIds))
+            .groupBy(schema.tasks.boardId);
 
-        const allBoardIds = boardsForProjects.map(b => b.boardId);
-        
-        if (allBoardIds.length > 0) {
           // Aggregate stats by project
           const boardToProject = new Map(boardsForProjects.map(b => [b.boardId, b.projectId]));
           
@@ -956,6 +956,11 @@ export class PostgresStorage {
     try {
       const [project] = await this.db.update(schema.projects).set(update).where(eq(schema.projects.id, id)).returning();
       if (!project) throw new Error("Project not found");
+      
+      // Invalidate project stats cache
+      const { invalidatePattern } = await import("./redis");
+      await invalidatePattern("projects:stats:*");
+      
       return project;
     } catch (error) {
       console.error("Error updating project:", error);

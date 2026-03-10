@@ -343,7 +343,7 @@ export const siteSettings = pgTable("site_settings", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
-// Sessions table (for connect-pg-simple)
+// Sessions table (legacy - now using memorystore for sessions)
 export const sessions = pgTable("sessions", {
   sid: varchar("sid", { length: 128 }).primaryKey(),
   sess: jsonb("sess").notNull(),

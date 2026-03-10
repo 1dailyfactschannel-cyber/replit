@@ -965,6 +965,8 @@ function ProjectsManagement() {
   const [isEditProjectOpen, setIsEditProjectOpen] = useState(false);
   const [editingWorkspace, setEditingWorkspace] = useState<any>(null);
   const [isEditWorkspaceOpen, setIsEditWorkspaceOpen] = useState(false);
+  const [isCreateWorkspaceOpen, setIsCreateWorkspaceOpen] = useState(false);
+  const [newWorkspace, setNewWorkspace] = useState({ name: "", color: "#3b82f6" });
 
   const priorityDisplayMap: Record<string, string> = {
     "low": "Низкий",
@@ -1079,29 +1081,37 @@ function ProjectsManagement() {
 
   const updateProjectMutation = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: any }) => {
+      console.log("[DEBUG] Updating project:", id, data);
       const res = await apiRequest("PATCH", `/api/projects/${id}`, data);
-      return res.json();
+      const result = await res.json();
+      console.log("[DEBUG] Server response:", result);
+      return result;
     },
     onMutate: async ({ id, data }) => {
+      console.log("[DEBUG] onMutate called for project:", id);
       // Cancel any outgoing refetches
       await queryClient.cancelQueries({ queryKey: ["/api/projects", selectedWorkspaceId] });
       
       // Snapshot the previous value
       const previousProjects = queryClient.getQueryData(["/api/projects", selectedWorkspaceId]);
+      console.log("[DEBUG] Previous projects:", previousProjects);
       
       // Optimistically update to the new value
       queryClient.setQueryData(["/api/projects", selectedWorkspaceId], (old: any[] = []) => {
-        return old.map((project) => 
+        const updated = old.map((project) => 
           project.id === id 
             ? { ...project, ...data, updatedAt: new Date().toISOString() }
             : project
         );
+        console.log("[DEBUG] Optimistically updated projects:", updated);
+        return updated;
       });
       
       // Return a context object with the snapshotted value
       return { previousProjects };
     },
     onError: (error: any, variables, context) => {
+      console.error("[DEBUG] Error updating project:", error);
       // If the mutation fails, use the context returned from onMutate to roll back
       if (context?.previousProjects) {
         queryClient.setQueryData(["/api/projects", selectedWorkspaceId], context.previousProjects);
@@ -1113,13 +1123,16 @@ function ProjectsManagement() {
       });
     },
     onSuccess: (data, variables) => {
+      console.log("[DEBUG] onSuccess called with data:", data);
       // Update with the actual server data
       queryClient.setQueryData(["/api/projects", selectedWorkspaceId], (old: any[] = []) => {
-        return old.map((project) => 
+        const updated = old.map((project) => 
           project.id === variables.id 
             ? { ...project, ...data }
             : project
         );
+        console.log("[DEBUG] Updated projects after success:", updated);
+        return updated;
       });
       setIsEditProjectOpen(false);
       setEditingProject(null);
@@ -1129,6 +1142,7 @@ function ProjectsManagement() {
       });
     },
     onSettled: () => {
+      console.log("[DEBUG] onSettled called");
       // Always refetch after error or success to ensure cache is in sync with server
       queryClient.invalidateQueries({ queryKey: ["/api/projects", selectedWorkspaceId] });
     }
@@ -1177,6 +1191,29 @@ function ProjectsManagement() {
     }
   });
 
+  const createWorkspaceMutation = useMutation({
+    mutationFn: async (workspace: any) => {
+      const res = await apiRequest("POST", "/api/workspaces", workspace);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/workspaces"] });
+      setIsCreateWorkspaceOpen(false);
+      setNewWorkspace({ name: "", color: "#3b82f6" });
+      toast({
+        title: "Пространство создано",
+        description: "Новое пространство успешно добавлено.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Ошибка",
+        description: error.message || "Не удалось создать пространство.",
+        variant: "destructive",
+      });
+    }
+  });
+
   const handleDeleteProject = () => {
     if (!projectToDelete) return;
     deleteProjectMutation.mutate({ 
@@ -1186,6 +1223,7 @@ function ProjectsManagement() {
   };
 
   const handleUpdateProject = () => {
+    console.log("[DEBUG] handleUpdateProject called");
     if (!editingProject || !editingProject.name.trim()) {
       toast({
         title: "Ошибка",
@@ -1202,14 +1240,16 @@ function ProjectsManagement() {
       "Критический": "critical"
     };
 
-    updateProjectMutation.mutate({
+    const updateData = {
       id: editingProject.id,
       data: {
         name: editingProject.name,
         priority: priorityMap[editingProject.priority] || editingProject.priority,
         workspaceId: editingProject.workspaceId
       }
-    });
+    };
+    console.log("[DEBUG] Updating project with data:", updateData);
+    updateProjectMutation.mutate(updateData);
   };
 
   const openEditDialog = (project: any) => {
@@ -1244,6 +1284,19 @@ function ProjectsManagement() {
         color: editingWorkspace.color
       }
     });
+  };
+
+  const handleCreateWorkspace = () => {
+    if (!newWorkspace.name.trim()) {
+      toast({
+        title: "Ошибка",
+        description: "Название пространства не может быть пустым.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    createWorkspaceMutation.mutate(newWorkspace);
   };
 
   const openEditWorkspaceDialog = (workspace: any) => {
@@ -1346,6 +1399,14 @@ function ProjectsManagement() {
             </h4>
             <p className="text-[11px] text-muted-foreground">Создание проектов в пространствах</p>
           </div>
+          <Button 
+            size="sm" 
+            className="h-7 gap-1.5 text-[10px] font-bold"
+            onClick={() => setIsCreateWorkspaceOpen(true)}
+          >
+            <Plus className="w-3 h-3" />
+            Создать
+          </Button>
         </div>
         
         <Card className="border-border/50 shadow-sm overflow-hidden bg-card/50">
@@ -1353,7 +1414,7 @@ function ProjectsManagement() {
             <div className="space-y-3">
               {workspaces.length === 0 ? (
                 <div className="text-center py-6 text-sm text-muted-foreground">
-                  Пространств пока нет. Создайте пространство на странице проектов.
+                  Пространств пока нет. Нажмите "Создать" чтобы добавить первое пространство.
                 </div>
               ) : (
                 workspaces.map((workspace: any) => {
@@ -1780,6 +1841,61 @@ function ProjectsManagement() {
               >
                 {updateWorkspaceMutation.isPending && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
                 Сохранить изменения
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Create Workspace Dialog */}
+        <Dialog open={isCreateWorkspaceOpen} onOpenChange={setIsCreateWorkspaceOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Plus className="w-5 h-5" />
+                Создать пространство
+              </DialogTitle>
+              <DialogDescription>
+                Создайте новое пространство для организации проектов.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label htmlFor="new-workspace-name">Название пространства</Label>
+                <Input 
+                  id="new-workspace-name" 
+                  placeholder="Введите название пространства" 
+                  value={newWorkspace.name}
+                  className="bg-background text-foreground"
+                  onChange={(e) => setNewWorkspace({ ...newWorkspace, name: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Цвет пространства</Label>
+                <div className="flex gap-2 flex-wrap">
+                  {['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#6366f1'].map((color) => (
+                    <button
+                      key={color}
+                      onClick={() => setNewWorkspace({ ...newWorkspace, color })}
+                      className={`w-8 h-8 rounded-full transition-all ${newWorkspace.color === color ? 'ring-2 ring-offset-2 ring-primary scale-110' : 'hover:scale-105'}`}
+                      style={{ backgroundColor: color }}
+                    />
+                  ))}
+                </div>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => {
+                setIsCreateWorkspaceOpen(false);
+                setNewWorkspace({ name: "", color: "#3b82f6" });
+              }}>
+                Отмена
+              </Button>
+              <Button 
+                onClick={handleCreateWorkspace}
+                disabled={createWorkspaceMutation.isPending || !newWorkspace.name.trim()}
+              >
+                {createWorkspaceMutation.isPending && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
+                Создать пространство
               </Button>
             </DialogFooter>
           </DialogContent>
