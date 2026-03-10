@@ -30,6 +30,9 @@ export function YandexCalendarConnect({ onShowDetails }: YandexCalendarConnectPr
     queryKey: ["yandex-calendar-status"],
     queryFn: async () => {
       const res = await apiRequest("GET", "/api/integrations/yandex-calendar/status");
+      if (res.status === 401) {
+        throw new Error("Требуется авторизация. Пожалуйста, войдите в систему.");
+      }
       if (!res.ok) throw new Error("Failed to fetch");
       return res.json();
     },
@@ -40,7 +43,13 @@ export function YandexCalendarConnect({ onShowDetails }: YandexCalendarConnectPr
   const connectMutation = useMutation({
     mutationFn: async () => {
       const res = await apiRequest("GET", "/api/integrations/yandex-calendar/auth");
-      if (!res.ok) throw new Error("Failed");
+      if (res.status === 401) {
+        throw new Error("Требуется авторизация. Пожалуйста, войдите в систему.");
+      }
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({ message: "Unknown error" }));
+        throw new Error(errorData.message || "Failed to get auth URL");
+      }
       return (await res.json()).authUrl;
     },
     onSuccess: (authUrl) => {
@@ -66,6 +75,10 @@ export function YandexCalendarConnect({ onShowDetails }: YandexCalendarConnectPr
           queryClient.invalidateQueries({ queryKey: ["yandex-calendar-status"] });
         }
       }, 500);
+    },
+    onError: (error: any) => {
+      alert(error.message || "Ошибка подключения");
+      setIsConnecting(false);
     },
   });
 
