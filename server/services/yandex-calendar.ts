@@ -1,6 +1,7 @@
 import { storage } from "../postgres-storage";
 import { InsertYandexCalendarIntegration, InsertYandexCalendarEvent, YandexCalendarEvent } from "@shared/schema";
-import { rrulestr, RRule } from "rrule";
+import * as rrule from "rrule";
+const { rrulestr, RRule } = rrule;
 
 // Types for Yandex Calendar API responses
 interface YandexCalendar {

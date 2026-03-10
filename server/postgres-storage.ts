@@ -2548,7 +2548,162 @@ export async function getReportWorkspaces(
   }
 }
 
-  // ==========================================
+export async function getReportProjects(
+  db: any,
+  workspaceId?: string,
+  projectId?: string,
+  boardId?: string,
+  userId?: string,
+  dateFrom?: string,
+  dateTo?: string
+) {
+  try {
+    let projectsList = workspaceId 
+      ? await db.select().from(schema.projects).where(eq(schema.projects.workspaceId, workspaceId))
+      : await db.select().from(schema.projects);
+
+    const result = [];
+
+    for (const proj of projectsList) {
+      if (projectId && proj.id !== projectId) continue;
+      
+      const boards = await db.select().from(schema.boards).where(eq(schema.boards.projectId, proj.id));
+      let totalTasks = 0;
+      let completedCount = 0;
+      let inProgressCount = 0;
+
+      for (const board of boards) {
+        if (boardId && board.id !== boardId) continue;
+        
+        const tasks = await db.select().from(schema.tasks).where(eq(schema.tasks.boardId, board.id));
+        totalTasks += tasks.length;
+        
+        for (const task of tasks) {
+          const status = task.status || 'В планах';
+          if (status === 'Готово' || status === 'done') completedCount++;
+          else if (status === 'В работе' || status === 'in_progress') inProgressCount++;
+        }
+      }
+
+      const workspace = await db.select().from(schema.workspaces).where(eq(schema.workspaces.id, proj.workspaceId)).then((r: any) => r[0]);
+
+      result.push({
+        id: proj.id,
+        name: proj.name,
+        workspaceName: workspace?.name || '',
+        tasksCount: totalTasks,
+        completedCount,
+        inProgressCount,
+        totalTime: 0
+      });
+    }
+
+    return { projects: result };
+  } catch (error) {
+    console.error("Error getting projects report:", error);
+    throw error;
+  }
+}
+
+export async function getReportBoards(
+  db: any,
+  projectId?: string,
+  boardId?: string,
+  userId?: string,
+  dateFrom?: string,
+  dateTo?: string
+) {
+  try {
+    let boardsList = projectId
+      ? await db.select().from(schema.boards).where(eq(schema.boards.projectId, projectId))
+      : await db.select().from(schema.boards);
+
+    const result = [];
+
+    for (const board of boardsList) {
+      if (boardId && board.id !== boardId) continue;
+      
+      const tasks = await db.select().from(schema.tasks).where(eq(schema.tasks.boardId, board.id));
+      let completedCount = 0;
+
+      for (const task of tasks) {
+        const status = task.status || 'В планах';
+        if (status === 'Готово' || status === 'done') completedCount++;
+      }
+
+      const project = await db.select().from(schema.projects).where(eq(schema.projects.id, board.projectId)).then((r: any) => r[0]);
+
+      result.push({
+        id: board.id,
+        name: board.name,
+        projectName: project?.name || '',
+        tasksCount: tasks.length,
+        completedCount,
+        avgTime: 0
+      });
+    }
+
+    return { boards: result };
+  } catch (error) {
+    console.error("Error getting boards report:", error);
+    throw error;
+  }
+}
+
+export async function getReportUsers(
+  db: any,
+  workspaceId?: string,
+  projectId?: string,
+  boardId?: string,
+  userId?: string,
+  dateFrom?: string,
+  dateTo?: string
+) {
+  try {
+    const usersList = await db.select().from(schema.users);
+    const result = [];
+
+    for (const user of usersList) {
+      if (userId && user.id !== userId) continue;
+
+      const allTasks = await db.select().from(schema.tasks).where(eq(schema.tasks.assigneeId, user.id));
+      
+      let completedCount = 0;
+      let inProgressCount = 0;
+
+      for (const task of allTasks) {
+        if (projectId && task.boardId) {
+          const board = await db.select().from(schema.boards).where(eq(schema.boards.id, task.boardId)).then((r: any) => r[0]);
+          if (!board || board.projectId !== projectId) continue;
+        }
+        if (boardId && task.boardId !== boardId) continue;
+
+        const status = task.status || 'В планах';
+        if (status === 'Готово' || status === 'done') completedCount++;
+        else if (status === 'В работе' || status === 'in_progress') inProgressCount++;
+      }
+
+      const comments = await db.select().from(schema.comments).where(eq(schema.comments.authorId, user.id));
+
+      result.push({
+        id: user.id,
+        name: user.firstName ? `${user.firstName} ${user.lastName || ''}` : user.username,
+        avatar: user.avatar,
+        completedCount,
+        inProgressCount,
+        avgTime: 0,
+        totalTime: 0,
+        commentsCount: comments.length
+      });
+    }
+
+    return { users: result };
+  } catch (error) {
+    console.error("Error getting users report:", error);
+    throw error;
+  }
+}
+
 // Export singleton instance
 let storageInstance: PostgresStorage | null = null;
 
