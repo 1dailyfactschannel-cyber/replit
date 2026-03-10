@@ -44,8 +44,8 @@ export class YandexCalendarService {
     this.clientSecret = process.env.YANDEX_CLIENT_SECRET || "";
     this.redirectUri = `${process.env.APP_URL || "http://localhost:3000"}/api/integrations/yandex-calendar/callback`;
 
-    if (!this.clientId || !this.clientSecret) {
-      console.error("❌ YANDEX_CLIENT_ID или YANDEX_CLIENT_SECRET не установлены!");
+    if (!this.clientId || !this.clientSecret || this.clientId === 'your_yandex_client_id_here' || this.clientSecret === 'your_yandex_client_secret_here') {
+      console.error("❌ YANDEX_CLIENT_ID или YANDEX_CLIENT_SECRET не настроены!");
       console.error("❌ Для работы интеграции с Яндекс Календарем:");
       console.error("   1. Перейдите на https://oauth.yandex.ru/");
       console.error("   2. Создайте приложение типа 'Веб-сервисы'");
@@ -53,6 +53,12 @@ export class YandexCalendarService {
       console.error("   4. Скопируйте Client ID и Client Secret в файл .env");
       console.error("   5. Перезапустите сервер");
     }
+  }
+
+  isConfigured(): boolean {
+    return !!(this.clientId && this.clientSecret && 
+              this.clientId !== 'your_yandex_client_id_here' && 
+              this.clientSecret !== 'your_yandex_client_secret_here');
   }
 
   /**

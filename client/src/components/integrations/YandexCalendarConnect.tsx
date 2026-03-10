@@ -46,6 +46,10 @@ export function YandexCalendarConnect({ onShowDetails }: YandexCalendarConnectPr
       if (res.status === 401) {
         throw new Error("Требуется авторизация. Пожалуйста, войдите в систему.");
       }
+      if (res.status === 503) {
+        const errorData = await res.json().catch(() => ({ message: "Сервис временно недоступен" }));
+        throw new Error(errorData.message);
+      }
       if (!res.ok) {
         const errorData = await res.json().catch(() => ({ message: "Unknown error" }));
         throw new Error(errorData.message || "Failed to get auth URL");

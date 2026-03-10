@@ -11,6 +11,13 @@ const router = Router();
 router.get("/integrations/yandex-calendar/auth", async (req, res) => {
   try {
     if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
+    
+    if (!yandexCalendarService.isConfigured()) {
+      return res.status(503).json({ 
+        message: "Интеграция с Яндекс Календарем не настроена администратором. Обратитесь к администратору системы." 
+      });
+    }
+    
     const userId = req.user!.id;
     const authUrl = yandexCalendarService.getAuthUrl(userId);
     res.json({ authUrl });
