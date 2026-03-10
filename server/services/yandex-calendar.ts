@@ -1,3 +1,4 @@
+import "dotenv/config";
 import { storage } from "../postgres-storage";
 import { InsertYandexCalendarIntegration, InsertYandexCalendarEvent, YandexCalendarEvent } from "@shared/schema";
 import * as rrule from "rrule";
@@ -44,7 +45,13 @@ export class YandexCalendarService {
     this.redirectUri = `${process.env.APP_URL || "http://localhost:3000"}/api/integrations/yandex-calendar/callback`;
 
     if (!this.clientId || !this.clientSecret) {
-      console.warn("⚠️ YANDEX_CLIENT_ID or YANDEX_CLIENT_SECRET not set. Yandex Calendar integration will not work.");
+      console.error("❌ YANDEX_CLIENT_ID или YANDEX_CLIENT_SECRET не установлены!");
+      console.error("❌ Для работы интеграции с Яндекс Календарем:");
+      console.error("   1. Перейдите на https://oauth.yandex.ru/");
+      console.error("   2. Создайте приложение типа 'Веб-сервисы'");
+      console.error("   3. Укажите Callback URL: http://localhost:3000/api/integrations/yandex-calendar/callback");
+      console.error("   4. Скопируйте Client ID и Client Secret в файл .env");
+      console.error("   5. Перезапустите сервер");
     }
   }
 
