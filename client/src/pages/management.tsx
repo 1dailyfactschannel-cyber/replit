@@ -1080,8 +1080,45 @@ function ProjectsManagement() {
       const res = await apiRequest("PATCH", `/api/projects/${id}`, data);
       return res.json();
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/projects", selectedWorkspaceId] });
+    onMutate: async ({ id, data }) => {
+      // Cancel any outgoing refetches
+      await queryClient.cancelQueries({ queryKey: ["/api/projects", selectedWorkspaceId] });
+      
+      // Snapshot the previous value
+      const previousProjects = queryClient.getQueryData(["/api/projects", selectedWorkspaceId]);
+      
+      // Optimistically update to the new value
+      queryClient.setQueryData(["/api/projects", selectedWorkspaceId], (old: any[] = []) => {
+        return old.map((project) => 
+          project.id === id 
+            ? { ...project, ...data, updatedAt: new Date().toISOString() }
+            : project
+        );
+      });
+      
+      // Return a context object with the snapshotted value
+      return { previousProjects };
+    },
+    onError: (error: any, variables, context) => {
+      // If the mutation fails, use the context returned from onMutate to roll back
+      if (context?.previousProjects) {
+        queryClient.setQueryData(["/api/projects", selectedWorkspaceId], context.previousProjects);
+      }
+      toast({
+        title: "Ошибка",
+        description: error.message || "Не удалось обновить проект.",
+        variant: "destructive",
+      });
+    },
+    onSuccess: (data, variables) => {
+      // Update with the actual server data
+      queryClient.setQueryData(["/api/projects", selectedWorkspaceId], (old: any[] = []) => {
+        return old.map((project) => 
+          project.id === variables.id 
+            ? { ...project, ...data }
+            : project
+        );
+      });
       setIsEditProjectOpen(false);
       setEditingProject(null);
       toast({
@@ -1089,12 +1126,9 @@ function ProjectsManagement() {
         description: "Изменения успешно сохранены.",
       });
     },
-    onError: (error: any) => {
-      toast({
-        title: "Ошибка",
-        description: error.message || "Не удалось обновить проект.",
-        variant: "destructive",
-      });
+    onSettled: () => {
+      // Always refetch after error or success to ensure cache is in sync with server
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", selectedWorkspaceId] });
     }
   });
 
