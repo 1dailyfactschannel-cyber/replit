@@ -8,9 +8,51 @@ import createMemoryStore from "memorystore";
 import crypto from "crypto";
 import { promisify } from "util";
 import rateLimit from "express-rate-limit";
+import Redis from "ioredis";
+import { RedisStore } from "connect-redis";
 
 const MemoryStore = createMemoryStore(session);
 const scrypt = promisify(crypto.scrypt);
+
+// Session store configuration
+let sessionStore: session.Store;
+
+// Configure session store based on environment
+const isDev = process.env.NODE_ENV === 'development';
+
+if (process.env.REDIS_URL) {
+  // Production: Use Redis for session storage
+  console.log('🔐 Using Redis for session storage');
+  const redisClient = new Redis(process.env.REDIS_URL, {
+    maxRetriesPerRequest: 3,
+    lazyConnect: true,
+  });
+  
+  redisClient.on('error', (err: Error) => {
+    console.error('❌ Redis session store error:', err.message);
+  });
+  
+  redisClient.on('connect', () => {
+    console.log('✅ Redis session store connected');
+  });
+  
+  const redisStore = new RedisStore({
+    client: redisClient,
+    prefix: 'sess:',
+  });
+  
+  sessionStore = redisStore;
+} else {
+  // Development: Use MemoryStore
+  if (!isDev) {
+    console.warn('⚠️  WARNING: Using MemoryStore for sessions in production is not recommended!');
+    console.warn('⚠️  Please configure REDIS_URL for production environments.');
+  }
+  console.log('🔐 Using MemoryStore for session storage');
+  sessionStore = new MemoryStore({
+    checkPeriod: 86400000, // Clear expired sessions every 24h
+  });
+}
 
 // Security: Login rate limiter
 const loginLimiter = rateLimit({
@@ -55,9 +97,7 @@ export function setupAuth(app: Express) {
     secret: process.env.SESSION_SECRET,
     resave: false,
     saveUninitialized: false,
-    store: new MemoryStore({
-      checkPeriod: 86400000, // Clear expired sessions every 24h
-    }),
+    store: sessionStore,
     cookie: {
       maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
       secure: process.env.NODE_ENV === "production",

@@ -2,6 +2,8 @@ import "dotenv/config";
 import path from "path";
 import { fileURLToPath } from "url";
 import rateLimit from "express-rate-limit";
+import cors from "cors";
+import helmet from "helmet";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -17,7 +19,6 @@ const globalLimiter = rateLimit({
   legacyHeaders: false,
   message: { message: "Слишком много запросов. Пожалуйста, попробуйте позже." },
   skip: (req) => isDev, // Skip rate limiting completely in development
-  // Skip successful requests for static assets
   skipSuccessfulRequests: false,
 });
 
@@ -54,19 +55,47 @@ declare module "http" {
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: false, limit: '10mb' }));
 
+// Security: CORS configuration
+const corsOptions = {
+  origin: process.env.ALLOWED_ORIGINS 
+    ? process.env.ALLOWED_ORIGINS.split(',') 
+    : ['http://localhost:3005', 'http://localhost:3000', 'http://127.0.0.1:3005'],
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+};
+app.use(cors(corsOptions));
+
+// Security: Helmet for HTTP headers protection
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", "data:", "blob:"],
+      connectSrc: ["'self'", "ws:", "wss:"],
+    },
+  },
+  crossOriginEmbedderPolicy: false,
+}));
+
 // Enable compression for all responses
 import compression from 'compression';
 app.use(compression());
 
-// Cache storage (shared across all requests)
-const apiCache = new Map<string, { data: any; timestamp: number }>();
+// Cache storage (shared across all requests) - now with user isolation
+const apiCache = new Map<string, { data: any; timestamp: number; userId?: string }>();
 
-// Cache middleware for API responses
+// Cache middleware for API responses - user-aware caching
 const cacheMiddleware = (duration: number) => {
   return (req: Request, res: Response, next: NextFunction) => {
     if (req.method !== 'GET') return next();
-
-    const key = req.originalUrl;
+    
+    // Don't cache for unauthenticated requests or use user-specific cache
+    const userId = req.isAuthenticated() ? (req.user as any)?.id : 'anonymous';
+    const key = `${req.originalUrl}:${userId}`;
+    
     const cached = apiCache.get(key);
 
     if (cached && Date.now() - cached.timestamp < duration) {
@@ -76,7 +105,7 @@ const cacheMiddleware = (duration: number) => {
 
     const originalJson = res.json.bind(res);
     res.json = (data: any) => {
-      apiCache.set(key, { data, timestamp: Date.now() });
+      apiCache.set(key, { data, timestamp: Date.now(), userId });
       return originalJson(data);
     };
 
