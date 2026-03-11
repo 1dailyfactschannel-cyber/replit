@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { Layout } from "@/components/layout/Layout";
 import { cn } from "@/lib/utils";
 import { 
@@ -41,7 +41,13 @@ import {
   RotateCcw,
   Layers,
   Coins,
-  Calendar
+  Calendar,
+  Phone,
+  Video,
+  Copy,
+  RefreshCw,
+  Link,
+  UserX
 } from "lucide-react";
 import { RolesManagement } from "@/components/settings/RolesManagement";
 import { YandexCalendarConnect, YandexCalendarSettings } from "@/components/integrations/YandexCalendarConnect";
@@ -91,6 +97,7 @@ export default function ManagementPage() {
     { id: "archive", label: "Архив задач", icon: Archive, description: "Архивированные задачи" },
     { id: "security", label: "Безопасность", icon: Shield, description: "Настройки безопасности аккаунта" },
     { id: "roles", label: "Роли", icon: Shield, description: "Права доступа и разрешения" },
+    { id: "calls", label: "Звонки", icon: Phone, description: "Управление звонками и командными залами" },
     { id: "integrations", label: "Интеграции", icon: Puzzle, description: "Внешние сервисы и API" },
     { id: "balance", label: "Баланс", icon: Coins, description: "Настройка баллов за статусы задач" },
   ];
@@ -189,6 +196,8 @@ export default function ManagementPage() {
                 <TeamManagement />
               ) : activeSection === "projects" ? (
                 <ProjectsManagement />
+              ) : activeSection === "calls" ? (
+                <CallsManagement />
               ) : activeSection === "balance" ? (
                 <BalanceManagement />
               ) : (
@@ -492,7 +501,7 @@ function IntegrationsManagement() {
           item.id === "yandex-calendar" ? (
             <YandexCalendarConnect key={item.id} onShowDetails={() => setShowYandexCalendar(true)} />
           ) : (
-          <Card key={item.id} className="border-border/50 shadow-sm hover:shadow-md hover:border-primary/20 transition-all group relative overflow-hidden flex flex-col">
+          <Card key={item.id} hoverable className="border-border/50 shadow-sm group relative overflow-hidden flex flex-col">
             <div className={cn("absolute top-0 left-0 w-1 h-full", item.connected ? "bg-emerald-500" : "bg-transparent")} />
             <CardContent className="p-6 flex-1">
               <div className="flex items-start gap-4">
@@ -2874,6 +2883,623 @@ function BalanceManagement() {
                 <Loader2 className="w-4 h-4 animate-spin mr-2" />
               ) : null}
               {editingSetting ? "Сохранить" : "Создать"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+// Team Rooms Types
+interface TeamRoom {
+  id: string;
+  name: string;
+  description: string | null;
+  slug: string;
+  inviteCode: string;
+  accessType: "open" | "closed";
+  color: string;
+  createdBy: string;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+function CallsManagement() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [editingRoom, setEditingRoom] = useState<TeamRoom | null>(null);
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [slug, setSlug] = useState("");
+  const [accessType, setAccessType] = useState<"open" | "closed">("open");
+  const [color, setColor] = useState("#3b82f6");
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  const colors = [
+    { value: "#3b82f6", label: "Синий" },
+    { value: "#10b981", label: "Зеленый" },
+    { value: "#f59e0b", label: "Оранжевый" },
+    { value: "#ef4444", label: "Красный" },
+    { value: "#8b5cf6", label: "Фиолетовый" },
+    { value: "#ec4899", label: "Розовый" },
+    { value: "#06b6d4", label: "Бирюзовый" },
+    { value: "#6366f1", label: "Индиго" },
+  ];
+
+  // Admin management state
+  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<any[]>([]);
+
+  // Fetch current user
+  useEffect(() => {
+    const fetchUser = async () => {
+      try {
+        const res = await fetch("/api/user");
+        if (res.ok) {
+          const user = await res.json();
+          setCurrentUser(user);
+        }
+      } catch (error) {
+        console.error("Error fetching user:", error);
+      }
+    };
+    fetchUser();
+  }, []);
+
+  // Fetch admins when editing room
+  const { data: roomAdmins = [] } = useQuery<any[]>({
+    queryKey: ["/api/team-rooms", editingRoom?.id, "admins"],
+    enabled: !!editingRoom,
+  });
+
+  // Use roomAdmins directly instead of copying to state
+  const admins = roomAdmins;
+
+  const addAdminMutation = useMutation({
+    mutationFn: async ({ roomId, userId }: { roomId: string; userId: string }) => {
+      const res = await apiRequest("POST", `/api/team-rooms/${roomId}/admins`, { userId });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/team-rooms", editingRoom?.id, "admins"] });
+      toast({
+        title: "Успешно",
+        description: "Администратор добавлен",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Ошибка",
+        description: "Не удалось добавить администратора",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const removeAdminMutation = useMutation({
+    mutationFn: async ({ roomId, userId }: { roomId: string; userId: string }) => {
+      await apiRequest("DELETE", `/api/team-rooms/${roomId}/admins/${userId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/team-rooms", editingRoom?.id, "admins"] });
+      toast({
+        title: "Успешно",
+        description: "Администратор удален",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Ошибка",
+        description: "Не удалось удалить администратора",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Simple search without complex dependencies to prevent infinite loops
+  const handleSearchUsers = async (query: string) => {
+    if (query.length < 2) {
+      setSearchResults([]);
+      return;
+    }
+    
+    try {
+      const res = await fetch(`/api/users/search?q=${encodeURIComponent(query)}`);
+      if (res.ok) {
+        const users = await res.json();
+        setSearchResults(users);
+      }
+    } catch (error) {
+      console.error("Error searching users:", error);
+    }
+  };
+
+  const { data: rooms = [], isLoading, error: roomsError } = useQuery<TeamRoom[]>({
+    queryKey: ["/api/team-rooms"],
+  });
+
+  const createMutation = useMutation({
+    mutationFn: async (data: Partial<TeamRoom>) => {
+      const res = await apiRequest("POST", "/api/team-rooms", data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/team-rooms"] });
+      setIsDialogOpen(false);
+      resetForm();
+      toast({
+        title: "Успешно",
+        description: "Командный зал создан",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Ошибка",
+        description: error.message || "Не удалось создать зал",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: Partial<TeamRoom> }) => {
+      const res = await apiRequest("PATCH", `/api/team-rooms/${id}`, data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/team-rooms"] });
+      setIsDialogOpen(false);
+      setEditingRoom(null);
+      resetForm();
+      toast({
+        title: "Успешно",
+        description: "Командный зал обновлен",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Ошибка",
+        description: error.message || "Не удалось обновить зал",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      await apiRequest("DELETE", `/api/team-rooms/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/team-rooms"] });
+      toast({
+        title: "Успешно",
+        description: "Командный зал удален",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Ошибка",
+        description: "Не удалось удалить зал",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const regenerateCodeMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await apiRequest("POST", `/api/team-rooms/${id}/regenerate-code`);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/team-rooms"] });
+      toast({
+        title: "Успешно",
+        description: "Ссылка обновлена",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Ошибка",
+        description: "Не удалось обновить ссылку",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const resetForm = () => {
+    setName("");
+    setDescription("");
+    setSlug("");
+    setAccessType("open");
+    setColor("#3b82f6");
+    setEditingRoom(null);
+  };
+
+  const openDialog = (room?: TeamRoom) => {
+    if (room) {
+      setEditingRoom(room);
+      setName(room.name);
+      setDescription(room.description || "");
+      setSlug(room.slug);
+      setAccessType(room.accessType);
+      setColor(room.color);
+    } else {
+      resetForm();
+    }
+    setIsDialogOpen(true);
+  };
+
+  const handleSave = () => {
+    const data = {
+      name,
+      description: description || undefined,
+      slug: editingRoom ? undefined : slug,
+      accessType,
+      color,
+    };
+
+    if (editingRoom) {
+      updateMutation.mutate({ id: editingRoom.id, data });
+    } else {
+      createMutation.mutate(data);
+    }
+  };
+
+  const generateSlug = (name: string) => {
+    return name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "");
+  };
+
+  const handleNameChange = (value: string) => {
+    setName(value);
+    if (!editingRoom) {
+      setSlug(generateSlug(value));
+    }
+  };
+
+  const copyToClipboard = (room: TeamRoom) => {
+    const link = `https://m4portal.ru/room/${room.slug}-${room.inviteCode}`;
+    navigator.clipboard.writeText(link);
+    setCopiedId(room.id);
+    setTimeout(() => setCopiedId(null), 2000);
+    toast({
+      title: "Скопировано",
+      description: "Ссылка скопирована в буфер обмена",
+    });
+  };
+
+  return (
+    <div className="animate-in fade-in slide-in-from-bottom-2 duration-300 space-y-6">
+      <Card className="border-border/50 shadow-sm">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Video className="w-5 h-5 text-primary" />
+            Командные залы
+          </CardTitle>
+          <CardDescription>
+            Управление виртуальными комнатами для видеовстреч
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center justify-between mb-6">
+            <div className="text-sm text-muted-foreground">
+              <p>Создавайте постоянные комнаты для отделов и команд.</p>
+              <p>Каждый зал имеет уникальную ссылку для приглашения.</p>
+            </div>
+            <Button onClick={() => openDialog()} className="gap-2">
+              <Plus className="w-4 h-4" />
+              Создать зал
+            </Button>
+          </div>
+
+          {isLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="w-6 h-6 animate-spin text-primary" />
+            </div>
+          ) : roomsError ? (
+            <div className="text-center py-8 text-destructive">
+              <Video className="w-12 h-12 mx-auto mb-3 opacity-30" />
+              <p>Ошибка загрузки залов</p>
+              <p className="text-sm text-muted-foreground">Попробуйте обновить страницу</p>
+            </div>
+          ) : rooms && rooms.length > 0 ? (
+            <div className="space-y-3">
+              {rooms.map((room) => (
+                <div
+                  key={room.id}
+                  className="flex items-center justify-between p-4 rounded-lg bg-secondary/30 hover:bg-secondary/50 transition-colors"
+                >
+                  <div className="flex items-center gap-4">
+                    <div
+                      className="w-10 h-10 rounded-full flex items-center justify-center"
+                      style={{ backgroundColor: room.color }}
+                    >
+                      <Video className="w-5 h-5 text-white" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <p className="font-medium">{room.name}</p>
+                        <Badge variant={room.accessType === "open" ? "default" : "secondary"}>
+                          {room.accessType === "open" ? "Открытый" : "Закрытый"}
+                        </Badge>
+                      </div>
+                      <p className="text-sm text-muted-foreground">
+                        {room.description || "Нет описания"}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <Link className="w-4 h-4" />
+                      <span className="font-mono text-xs">
+                        {room.slug}-{room.inviteCode}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                        onClick={() => copyToClipboard(room)}
+                        title="Копировать ссылку"
+                      >
+                        {copiedId === room.id ? (
+                          <Check className="w-4 h-4 text-green-500" />
+                        ) : (
+                          <Copy className="w-4 h-4" />
+                        )}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                        onClick={() => regenerateCodeMutation.mutate(room.id)}
+                        disabled={regenerateCodeMutation.isPending}
+                        title="Обновить ссылку"
+                      >
+                        {regenerateCodeMutation.isPending ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <RefreshCw className="w-4 h-4" />
+                        )}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                        onClick={() => openDialog(room)}
+                        title="Редактировать"
+                      >
+                        <Pencil className="w-4 h-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-destructive hover:text-destructive"
+                        onClick={() => deleteMutation.mutate(room.id)}
+                        disabled={deleteMutation.isPending}
+                        title="Удалить"
+                      >
+                        {deleteMutation.isPending ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <Trash2 className="w-4 h-4" />
+                        )}
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-8 text-muted-foreground">
+              <Video className="w-12 h-12 mx-auto mb-3 opacity-30" />
+              <p>Залы не найдены</p>
+              <p className="text-sm">Создайте первый командный зал</p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle>
+              {editingRoom ? "Редактировать зал" : "Создать зал"}
+            </DialogTitle>
+            <DialogDescription>
+              {editingRoom
+                ? "Измените параметры командного зала"
+                : "Создайте новый виртуальный зал для встреч"}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="name">Название зала</Label>
+              <Input
+                id="name"
+                value={name}
+                onChange={(e) => handleNameChange(e.target.value)}
+                placeholder="Например: Маркетинг"
+              />
+            </div>
+            {!editingRoom && (
+              <div className="space-y-2">
+                <Label htmlFor="slug">Идентификатор (slug)</Label>
+                <Input
+                  id="slug"
+                  value={slug}
+                  onChange={(e) => setSlug(e.target.value)}
+                  placeholder="marketing-team"
+                  className="font-mono"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Используется в ссылке для приглашения. Только латинские буквы, цифры и дефисы.
+                </p>
+              </div>
+            )}
+            <div className="space-y-2">
+              <Label htmlFor="description">Описание</Label>
+              <Input
+                id="description"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="О чем будут встречи в этом зале?"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="accessType">Тип доступа</Label>
+              <Select value={accessType} onValueChange={(v: "open" | "closed") => setAccessType(v)}>
+                <SelectTrigger id="accessType">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="open">Открытый (любой может присоединиться)</SelectItem>
+                  <SelectItem value="closed">Закрытый (только по приглашению)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Цвет зала</Label>
+              <div className="flex flex-wrap gap-2">
+                {colors.map((c) => (
+                  <button
+                    key={c.value}
+                    type="button"
+                    onClick={() => setColor(c.value)}
+                    className={`w-8 h-8 rounded-full border-2 transition-all ${
+                      color === c.value ? "border-foreground scale-110" : "border-transparent"
+                    }`}
+                    style={{ backgroundColor: c.value }}
+                    title={c.label}
+                  />
+                ))}
+              </div>
+            </div>
+
+            {/* Admin Management - Only for creator */}
+            {editingRoom && currentUser?.id === editingRoom.createdBy && (
+              <div className="space-y-3 border-t pt-4 mt-4">
+                <Label className="text-base font-semibold">Администраторы</Label>
+                <p className="text-xs text-muted-foreground">
+                  Администраторы могут исключать участников из звонков
+                </p>
+                
+                {/* Current Admins */}
+                <div className="space-y-2">
+                  {admins.map((admin) => (
+                    <div key={admin.id} className="flex items-center justify-between p-2 bg-muted rounded-md">
+                      <div className="flex items-center gap-2">
+                        <Avatar className="h-8 w-8">
+                          <AvatarImage src={admin.user?.avatar || undefined} />
+                          <AvatarFallback>
+                            {admin.user?.firstName?.[0]}{admin.user?.lastName?.[0]}
+                          </AvatarFallback>
+                        </Avatar>
+                        <span className="text-sm">
+                          {admin.user?.firstName} {admin.user?.lastName}
+                        </span>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => removeAdminMutation.mutate({ 
+                          roomId: editingRoom.id, 
+                          userId: admin.userId 
+                        })}
+                        disabled={removeAdminMutation.isPending}
+                      >
+                        <UserX className="h-4 w-4 text-destructive" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Add Admin */}
+                <div className="space-y-2">
+                  <Label className="text-sm">Добавить администратора</Label>
+                  <div className="relative">
+                    <Input
+                      placeholder="Поиск пользователя..."
+                      value={searchQuery}
+                      onChange={(e) => {
+                        setSearchQuery(e.target.value);
+                        handleSearchUsers(e.target.value);
+                      }}
+                    />
+                    {searchResults.length > 0 && (
+                      <div className="absolute z-10 w-full mt-1 bg-background border rounded-md shadow-lg max-h-48 overflow-auto">
+                        {searchResults
+                          .filter((user: any) => 
+                            user.id !== currentUser?.id && 
+                            !admins.some((a: any) => a.userId === user.id)
+                          )
+                          .map((user) => (
+                            <button
+                              key={user.id}
+                              className="w-full flex items-center gap-2 p-2 hover:bg-muted text-left"
+                              onClick={() => {
+                                addAdminMutation.mutate({ 
+                                  roomId: editingRoom.id, 
+                                  userId: user.id 
+                                });
+                                setSearchQuery("");
+                                setSearchResults([]);
+                              }}
+                            >
+                              <Avatar className="h-8 w-8">
+                                <AvatarImage src={user.avatar || undefined} />
+                                <AvatarFallback>
+                                  {user.firstName?.[0]}{user.lastName?.[0]}
+                                </AvatarFallback>
+                              </Avatar>
+                              <span className="text-sm">
+                                {user.firstName} {user.lastName}
+                              </span>
+                            </button>
+                          ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            {editingRoom && (
+              <Button
+                type="button"
+                variant="destructive"
+                className="mr-auto"
+                onClick={() => {
+                  deleteMutation.mutate(editingRoom.id);
+                  setIsDialogOpen(false);
+                }}
+                disabled={deleteMutation.isPending}
+              >
+                {deleteMutation.isPending ? (
+                  <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                ) : null}
+                Удалить
+              </Button>
+            )}
+            <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
+              Отмена
+            </Button>
+            <Button
+              onClick={handleSave}
+              disabled={!name || (!editingRoom && !slug) || createMutation.isPending || updateMutation.isPending}
+            >
+              {createMutation.isPending || updateMutation.isPending ? (
+                <Loader2 className="w-4 h-4 animate-spin mr-2" />
+              ) : null}
+              {editingRoom ? "Сохранить" : "Создать"}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -29,12 +29,26 @@ import {
   type InsertYandexCalendarIntegration,
   type YandexCalendarEvent,
   type InsertYandexCalendarEvent,
+  type TeamRoom,
+  type InsertTeamRoom,
+  type UpdateTeamRoom,
+  type CallSettings,
+  type InsertCallSettings,
+  type CallParticipant,
+  type InsertCallParticipant,
+  type TeamRoomAdmin,
+  type InsertTeamRoomAdmin,
   yandexCalendarIntegrations,
   yandexCalendarEvents,
-  yandexCalendarNotifications
+  yandexCalendarNotifications,
+  teamRooms,
+  callSettings,
+  callParticipants,
+  teamRoomAdmins,
+  users
 } from "@shared/schema";
 import { drizzle } from "drizzle-orm/postgres-js";
-import { eq, and, or, desc, ne, sql, inArray, isNull } from "drizzle-orm";
+import { eq, and, or, desc, ne, sql, inArray, isNull, gte, lte } from "drizzle-orm";
 import postgres from "postgres";
 import * as schema from "@shared/schema";
 import dotenv from "dotenv";
@@ -181,6 +195,8 @@ export class PostgresStorage {
           chatId: schema.chatParticipants.chatId,
           id: schema.users.id,
           username: schema.users.username,
+          firstName: schema.users.firstName,
+          lastName: schema.users.lastName,
           avatar: schema.users.avatar,
         })
         .from(schema.users)
@@ -261,6 +277,8 @@ export class PostgresStorage {
           chatId: schema.chatParticipants.chatId,
           id: schema.users.id,
           username: schema.users.username,
+          firstName: schema.users.firstName,
+          lastName: schema.users.lastName,
           avatar: schema.users.avatar,
         })
         .from(schema.users)
@@ -350,6 +368,8 @@ export class PostgresStorage {
 
   async getMessages(chatId: string, limit: number = 100, offset: number = 0) {
     try {
+      console.log("getMessages called - chatId:", chatId, "limit:", limit, "offset:", offset);
+      
       // Order by descending to get newest first, then reverse for response
       const messagesData = await this.db
         .select()
@@ -358,6 +378,8 @@ export class PostgresStorage {
         .orderBy(desc(schema.messages.createdAt))
         .limit(limit)
         .offset(offset);
+      
+      console.log("getMessages - raw messagesData count:", messagesData.length);
       
       // Reverse to get oldest first in response (more natural for chat)
       const reversedMessages = [...messagesData].reverse();
@@ -404,11 +426,34 @@ export class PostgresStorage {
         });
       }
       
-      // Add repliedMessage to each message
-      return reversedMessages.map(msg => ({
+      // Get sender info for all messages
+      const allSenderIds = Array.from(new Set(reversedMessages.map(m => m.senderId)));
+      let allSenderMap: Record<string, any> = {};
+      if (allSenderIds.length > 0) {
+        const senders = await this.db
+          .select({
+            id: schema.users.id,
+            username: schema.users.username,
+            firstName: schema.users.firstName,
+            lastName: schema.users.lastName,
+            avatar: schema.users.avatar
+          })
+          .from(schema.users)
+          .where(inArray(schema.users.id, allSenderIds));
+        senders.forEach(s => {
+          allSenderMap[s.id] = s;
+        });
+      }
+      
+      // Add sender and repliedMessage to each message
+      const result = reversedMessages.map(msg => ({
         ...msg,
+        sender: allSenderMap[msg.senderId] || null,
         repliedMessage: msg.replyToId ? repliedMessages[msg.replyToId] : null
       }));
+      
+      console.log("getMessages - returning result count:", result.length);
+      return result;
     } catch (error) {
       console.error("Error getting messages:", error);
       return [];
@@ -466,8 +511,24 @@ export class PostgresStorage {
           });
         }
       }
+      
+      // Get sender info
+      const [sender] = await this.db
+        .select({
+          id: schema.users.id,
+          username: schema.users.username,
+          firstName: schema.users.firstName,
+          lastName: schema.users.lastName,
+          avatar: schema.users.avatar
+        })
+        .from(schema.users)
+        .where(eq(schema.users.id, message.senderId))
+        .limit(1);
         
-      return message;
+      return {
+        ...message,
+        sender: sender || null
+      };
     } catch (error) {
       console.error("Error creating message:", error);
       throw error;
@@ -2074,7 +2135,7 @@ export class PostgresStorage {
         .where(and(
           eq(schema.userPointsTransactions.taskId, taskId),
           eq(schema.userPointsTransactions.statusName, statusName),
-          eq(schema.userPointsTransactions.type, type)
+          sql`${schema.userPointsTransactions.type} = ${type}`
         ))
         .limit(1);
       return result[0];
@@ -2086,7 +2147,7 @@ export class PostgresStorage {
 
   async createTransaction(transaction: InsertUserPointsTransaction): Promise<UserPointsTransaction> {
     try {
-      const [created] = await this.db.insert(schema.userPointsTransactions).values(transaction).returning();
+      const [created] = await this.db.insert(schema.userPointsTransactions).values(transaction as any).returning();
       return created;
     } catch (error) {
       console.error("Error creating transaction:", error);
@@ -2096,23 +2157,22 @@ export class PostgresStorage {
 
   async getUserTransactions(userId: string, options?: { type?: string; limit?: number; offset?: number }): Promise<UserPointsTransaction[]> {
     try {
-      let query = this.db.select().from(schema.userPointsTransactions).where(eq(schema.userPointsTransactions.userId, userId));
+      // Build conditions array
+      const conditions: any[] = [eq(schema.userPointsTransactions.userId, userId)];
       
       if (options?.type) {
-        query = query.where(eq(schema.userPointsTransactions.type, options.type));
+        conditions.push(sql`${schema.userPointsTransactions.type} = ${options.type}`);
       }
       
-      query = query.orderBy(desc(schema.userPointsTransactions.createdAt));
+      const results = await this.db
+        .select()
+        .from(schema.userPointsTransactions)
+        .where(and(...conditions))
+        .orderBy(desc(schema.userPointsTransactions.createdAt))
+        .limit(options?.limit || 100)
+        .offset(options?.offset || 0);
       
-      if (options?.limit) {
-        query = query.limit(options.limit);
-      }
-      
-      if (options?.offset) {
-        query = query.offset(options.offset);
-      }
-      
-      return await query;
+      return results;
     } catch (error) {
       console.error("Error getting user transactions:", error);
       return [];
@@ -2198,19 +2258,14 @@ export class PostgresStorage {
   // Calendar Events Methods
   async getCalendarEvents(userId: string, startDate?: Date, endDate?: Date): Promise<CalendarEvent[]> {
     try {
-      let query = this.db.select().from(schema.calendarEvents).where(eq(schema.calendarEvents.userId, userId));
+      const conditions = [eq(schema.calendarEvents.userId, userId)];
       
       if (startDate && endDate) {
-        query = query.where(
-          and(
-            eq(schema.calendarEvents.userId, userId),
-            sql`${schema.calendarEvents.date} >= ${startDate.toISOString()}`,
-            sql`${schema.calendarEvents.date} <= ${endDate.toISOString()}`
-          )
-        );
+        conditions.push(sql`${schema.calendarEvents.date} >= ${startDate.toISOString()}`);
+        conditions.push(sql`${schema.calendarEvents.date} <= ${endDate.toISOString()}`);
       }
       
-      return await query.orderBy(schema.calendarEvents.date);
+      return await this.db.select().from(schema.calendarEvents).where(and(...conditions)).orderBy(schema.calendarEvents.date);
     } catch (error) {
       console.error("Error getting calendar events:", error);
       return [];
@@ -2229,7 +2284,7 @@ export class PostgresStorage {
 
   async createCalendarEvent(event: InsertCalendarEvent): Promise<CalendarEvent> {
     try {
-      const [created] = await this.db.insert(schema.calendarEvents).values(event).returning();
+      const [created] = await this.db.insert(schema.calendarEvents).values(event as any).returning();
       return created;
     } catch (error) {
       console.error("Error creating calendar event:", error);
@@ -2240,7 +2295,7 @@ export class PostgresStorage {
   async updateCalendarEvent(id: string, event: Partial<InsertCalendarEvent>): Promise<CalendarEvent> {
     try {
       const [updated] = await this.db.update(schema.calendarEvents)
-        .set({ ...event, updatedAt: new Date() })
+        .set({ ...event, updatedAt: new Date() } as any)
         .where(eq(schema.calendarEvents.id, id))
         .returning();
       return updated;
@@ -2414,6 +2469,302 @@ export class PostgresStorage {
       });
     } catch (error) {
       console.error("Error marking notification as sent:", error);
+    }
+  }
+
+  // Team Rooms Methods
+  async getTeamRooms(): Promise<TeamRoom[]> {
+    try {
+      const result = await this.db.select().from(teamRooms).where(eq(teamRooms.isActive, true)).orderBy(desc(teamRooms.createdAt));
+      return result;
+    } catch (error) {
+      console.error("Error getting team rooms:", error);
+      throw error;
+    }
+  }
+
+  async getTeamRoomById(id: string): Promise<TeamRoom | null> {
+    try {
+      const result = await this.db.select().from(teamRooms).where(eq(teamRooms.id, id)).limit(1);
+      return result[0] || null;
+    } catch (error) {
+      console.error("Error getting team room by id:", error);
+      throw error;
+    }
+  }
+
+  async getTeamRoomBySlug(slug: string): Promise<TeamRoom | null> {
+    try {
+      const result = await this.db.select().from(teamRooms).where(eq(teamRooms.slug, slug)).limit(1);
+      return result[0] || null;
+    } catch (error) {
+      console.error("Error getting team room by slug:", error);
+      throw error;
+    }
+  }
+
+  async getTeamRoomByInviteCode(inviteCode: string): Promise<TeamRoom | null> {
+    try {
+      const result = await this.db.select().from(teamRooms).where(eq(teamRooms.inviteCode, inviteCode)).limit(1);
+      return result[0] || null;
+    } catch (error) {
+      console.error("Error getting team room by invite code:", error);
+      throw error;
+    }
+  }
+
+  async createTeamRoom(data: InsertTeamRoom): Promise<TeamRoom> {
+    try {
+      const result = await this.db.insert(teamRooms).values(data).returning();
+      return result[0];
+    } catch (error) {
+      console.error("Error creating team room:", error);
+      throw error;
+    }
+  }
+
+  async updateTeamRoom(id: string, data: UpdateTeamRoom): Promise<TeamRoom | null> {
+    try {
+      const result = await this.db.update(teamRooms).set(data).where(eq(teamRooms.id, id)).returning();
+      return result[0] || null;
+    } catch (error) {
+      console.error("Error updating team room:", error);
+      throw error;
+    }
+  }
+
+  async deleteTeamRoom(id: string): Promise<boolean> {
+    try {
+      const result = await this.db.update(teamRooms).set({ isActive: false }).where(eq(teamRooms.id, id)).returning();
+      return result.length > 0;
+    } catch (error) {
+      console.error("Error deleting team room:", error);
+      throw error;
+    }
+  }
+
+  async regenerateTeamRoomInviteCode(id: string): Promise<TeamRoom | null> {
+    try {
+      const newCode = this.generateInviteCode();
+      const result = await this.db.update(teamRooms).set({ inviteCode: newCode }).where(eq(teamRooms.id, id)).returning();
+      return result[0] || null;
+    } catch (error) {
+      console.error("Error regenerating team room invite code:", error);
+      throw error;
+    }
+  }
+
+  generateInviteCode(): string {
+    const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+    let code = '';
+    for (let i = 0; i < 8; i++) {
+      code += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return code;
+  }
+
+  // Call Settings Methods
+  async getCallSettings(userId: string): Promise<CallSettings | null> {
+    try {
+      const result = await this.db.select().from(callSettings).where(eq(callSettings.userId, userId)).limit(1);
+      return result[0] || null;
+    } catch (error) {
+      console.error("Error getting call settings:", error);
+      throw error;
+    }
+  }
+
+  async upsertCallSettings(data: InsertCallSettings): Promise<CallSettings> {
+    try {
+      const existing = await this.getCallSettings(data.userId);
+      if (existing) {
+        const result = await this.db.update(callSettings).set(data).where(eq(callSettings.userId, data.userId)).returning();
+        return result[0];
+      } else {
+        const result = await this.db.insert(callSettings).values(data).returning();
+        return result[0];
+      }
+    } catch (error) {
+      console.error("Error upserting call settings:", error);
+      throw error;
+    }
+  }
+
+  // Call Participants Methods
+  async getCallParticipants(roomId: string): Promise<CallParticipant[]> {
+    try {
+      const result = await this.db
+        .select()
+        .from(callParticipants)
+        .where(and(eq(callParticipants.roomId, roomId), eq(callParticipants.isActive, true)))
+        .orderBy(desc(callParticipants.joinedAt));
+      return result;
+    } catch (error) {
+      console.error("Error getting call participants:", error);
+      throw error;
+    }
+  }
+
+  async getCallParticipantsWithUsers(roomId: string): Promise<any[]> {
+    try {
+      const result = await this.db
+        .select({
+          participant: callParticipants,
+          user: {
+            id: users.id,
+            username: users.username,
+            firstName: users.firstName,
+            lastName: users.lastName,
+            avatar: users.avatar,
+          }
+        })
+        .from(callParticipants)
+        .where(and(eq(callParticipants.roomId, roomId), eq(callParticipants.isActive, true)))
+        .leftJoin(users, eq(callParticipants.userId, users.id))
+        .orderBy(desc(callParticipants.joinedAt));
+      return result.map(r => ({ ...r.participant, user: r.user }));
+    } catch (error) {
+      console.error("Error getting call participants with users:", error);
+      throw error;
+    }
+  }
+
+  async joinCall(data: InsertCallParticipant): Promise<CallParticipant> {
+    try {
+      // Check if already in call
+      const existing = await this.db
+        .select()
+        .from(callParticipants)
+        .where(and(eq(callParticipants.roomId, data.roomId), eq(callParticipants.userId, data.userId)))
+        .limit(1);
+      
+      if (existing[0]) {
+        // Rejoin
+        const result = await this.db
+          .update(callParticipants)
+          .set({ isActive: true, leftAt: null, joinedAt: new Date() })
+          .where(eq(callParticipants.id, existing[0].id))
+          .returning();
+        return result[0];
+      }
+      
+      const result = await this.db.insert(callParticipants).values(data).returning();
+      return result[0];
+    } catch (error) {
+      console.error("Error joining call:", error);
+      throw error;
+    }
+  }
+
+  async leaveCall(roomId: string, userId: string): Promise<void> {
+    try {
+      await this.db
+        .update(callParticipants)
+        .set({ isActive: false, leftAt: new Date() })
+        .where(and(eq(callParticipants.roomId, roomId), eq(callParticipants.userId, userId)));
+    } catch (error) {
+      console.error("Error leaving call:", error);
+      throw error;
+    }
+  }
+
+  async updateCallParticipantStatus(
+    roomId: string, 
+    userId: string, 
+    updates: Partial<Pick<CallParticipant, 'isMicOn' | 'isVideoOn' | 'isSpeaking'>>
+  ): Promise<void> {
+    try {
+      await this.db
+        .update(callParticipants)
+        .set(updates)
+        .where(and(eq(callParticipants.roomId, roomId), eq(callParticipants.userId, userId)));
+    } catch (error) {
+      console.error("Error updating call participant status:", error);
+      throw error;
+    }
+  }
+
+  async kickCallParticipant(roomId: string, userId: string): Promise<void> {
+    try {
+      await this.db
+        .update(callParticipants)
+        .set({ isActive: false, leftAt: new Date() })
+        .where(and(eq(callParticipants.roomId, roomId), eq(callParticipants.userId, userId)));
+    } catch (error) {
+      console.error("Error kicking call participant:", error);
+      throw error;
+    }
+  }
+
+  // Team Room Admins Methods
+  async getTeamRoomAdmins(roomId: string): Promise<TeamRoomAdmin[]> {
+    try {
+      const result = await this.db
+        .select()
+        .from(teamRoomAdmins)
+        .where(eq(teamRoomAdmins.roomId, roomId));
+      return result;
+    } catch (error) {
+      console.error("Error getting team room admins:", error);
+      throw error;
+    }
+  }
+
+  async getTeamRoomAdminsWithUsers(roomId: string): Promise<any[]> {
+    try {
+      const result = await this.db
+        .select({
+          admin: teamRoomAdmins,
+          user: {
+            id: users.id,
+            username: users.username,
+            firstName: users.firstName,
+            lastName: users.lastName,
+            avatar: users.avatar,
+          }
+        })
+        .from(teamRoomAdmins)
+        .where(eq(teamRoomAdmins.roomId, roomId))
+        .leftJoin(users, eq(teamRoomAdmins.userId, users.id));
+      return result.map(r => ({ ...r.admin, user: r.user }));
+    } catch (error) {
+      console.error("Error getting team room admins with users:", error);
+      throw error;
+    }
+  }
+
+  async addTeamRoomAdmin(data: InsertTeamRoomAdmin): Promise<TeamRoomAdmin> {
+    try {
+      const result = await this.db.insert(teamRoomAdmins).values(data).returning();
+      return result[0];
+    } catch (error) {
+      console.error("Error adding team room admin:", error);
+      throw error;
+    }
+  }
+
+  async removeTeamRoomAdmin(roomId: string, userId: string): Promise<void> {
+    try {
+      await this.db
+        .delete(teamRoomAdmins)
+        .where(and(eq(teamRoomAdmins.roomId, roomId), eq(teamRoomAdmins.userId, userId)));
+    } catch (error) {
+      console.error("Error removing team room admin:", error);
+      throw error;
+    }
+  }
+
+  async isTeamRoomAdmin(roomId: string, userId: string): Promise<boolean> {
+    try {
+      const result = await this.db
+        .select()
+        .from(teamRoomAdmins)
+        .where(and(eq(teamRoomAdmins.roomId, roomId), eq(teamRoomAdmins.userId, userId)))
+        .limit(1);
+      return result.length > 0;
+    } catch (error) {
+      console.error("Error checking team room admin:", error);
+      throw error;
     }
   }
 }

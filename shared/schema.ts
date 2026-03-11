@@ -560,7 +560,7 @@ export const calls = pgTable("calls", {
   id: uuid("id").primaryKey().defaultRandom(),
   chatId: uuid("chat_id").notNull().references(() => chats.id, { onDelete: "cascade" }),
   callerId: uuid("caller_id").notNull().references(() => users.id),
-  receiverId: uuid("receiver_id").notNull().references(() => users.id),
+  receiverId: uuid("receiver_id").references(() => users.id), // nullable for group calls
   type: text("type").notNull().default("audio"), // audio, video
   status: text("status").notNull().default("missed"), // completed, missed, rejected, busy
   duration: integer("duration"), // in seconds
@@ -627,6 +627,11 @@ export const insertCallSchema = createInsertSchema(calls).pick({
   startedAt: true,
   endedAt: true,
 });
+
+export type InsertChat = z.infer<typeof insertChatSchema>;
+export type InsertMessage = z.infer<typeof insertMessageSchema>;
+export type InsertChatFolder = z.infer<typeof insertChatFolderSchema>;
+export type InsertCall = z.infer<typeof insertCallSchema>;
 
 export const insertMessageReactionSchema = createInsertSchema(messageReactions).pick({
   messageId: true,
@@ -1016,4 +1021,124 @@ export const yandexCalendarNotifications = pgTable("yandex_calendar_notification
 }));
 
 export type YandexCalendarNotification = typeof yandexCalendarNotifications.$inferSelect;
+
+// Team Rooms table for video conferencing rooms
+export const teamRooms = pgTable("team_rooms", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  name: text("name").notNull(),
+  description: text("description"),
+  slug: text("slug").notNull().unique(), // Human-readable part of URL
+  inviteCode: text("invite_code").notNull().unique(), // 8 char unique code
+  accessType: text("access_type").notNull().default("open"), // 'open' or 'closed'
+  color: text("color").default("#3b82f6"),
+  createdBy: uuid("created_by").notNull().references(() => users.id),
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  slugIdx: index("team_rooms_slug_idx").on(table.slug),
+  inviteCodeIdx: index("team_rooms_invite_code_idx").on(table.inviteCode),
+  createdByIdx: index("team_rooms_created_by_idx").on(table.createdBy),
+}));
+
+export const insertTeamRoomSchema = createInsertSchema(teamRooms).pick({
+  name: true,
+  description: true,
+  slug: true,
+  inviteCode: true,
+  accessType: true,
+  color: true,
+  createdBy: true,
+  isActive: true,
+});
+
+export const updateTeamRoomSchema = createInsertSchema(teamRooms).pick({
+  name: true,
+  description: true,
+  accessType: true,
+  color: true,
+  isActive: true,
+}).partial();
+
+export type TeamRoom = typeof teamRooms.$inferSelect;
+export type InsertTeamRoom = z.infer<typeof insertTeamRoomSchema>;
+export type UpdateTeamRoom = z.infer<typeof updateTeamRoomSchema>;
+
+// Call Settings table
+export const callSettings = pgTable("call_settings", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  preferredMic: text("preferred_mic"),
+  preferredCamera: text("preferred_camera"),
+  preferredSpeaker: text("preferred_speaker"),
+  micVolume: integer("mic_volume").default(100),
+  speakerVolume: integer("speaker_volume").default(100),
+  videoQuality: text("video_quality").default("medium"),
+  noiseSuppression: boolean("noise_suppression").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  userIdIdx: index("call_settings_user_id_idx").on(table.userId),
+}));
+
+// Call Participants table
+export const callParticipants = pgTable("call_participants", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  roomId: uuid("room_id").notNull().references(() => teamRooms.id, { onDelete: "cascade" }),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  isMicOn: boolean("is_mic_on").default(true),
+  isVideoOn: boolean("is_video_on").default(true),
+  isSpeaking: boolean("is_speaking").default(false),
+  joinedAt: timestamp("joined_at").defaultNow(),
+  leftAt: timestamp("left_at"),
+  isActive: boolean("is_active").default(true),
+}, (table) => ({
+  roomIdIdx: index("call_participants_room_id_idx").on(table.roomId),
+  userIdIdx: index("call_participants_user_id_idx").on(table.userId),
+  activeIdx: index("call_participants_active_idx").on(table.isActive),
+}));
+
+// Team Room Admins table
+export const teamRoomAdmins = pgTable("team_room_admins", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  roomId: uuid("room_id").notNull().references(() => teamRooms.id, { onDelete: "cascade" }),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  grantedBy: uuid("granted_by").notNull().references(() => users.id),
+  grantedAt: timestamp("granted_at").defaultNow(),
+}, (table) => ({
+  roomIdIdx: index("team_room_admins_room_id_idx").on(table.roomId),
+  userIdIdx: index("team_room_admins_user_id_idx").on(table.userId),
+}));
+
+export const insertCallSettingsSchema = createInsertSchema(callSettings).pick({
+  userId: true,
+  preferredMic: true,
+  preferredCamera: true,
+  preferredSpeaker: true,
+  micVolume: true,
+  speakerVolume: true,
+  videoQuality: true,
+  noiseSuppression: true,
+});
+
+export const insertCallParticipantSchema = createInsertSchema(callParticipants).pick({
+  roomId: true,
+  userId: true,
+  isMicOn: true,
+  isVideoOn: true,
+  isSpeaking: true,
+});
+
+export const insertTeamRoomAdminSchema = createInsertSchema(teamRoomAdmins).pick({
+  roomId: true,
+  userId: true,
+  grantedBy: true,
+});
+
+export type CallSettings = typeof callSettings.$inferSelect;
+export type InsertCallSettings = z.infer<typeof insertCallSettingsSchema>;
+export type CallParticipant = typeof callParticipants.$inferSelect;
+export type InsertCallParticipant = z.infer<typeof insertCallParticipantSchema>;
+export type TeamRoomAdmin = typeof teamRoomAdmins.$inferSelect;
+export type InsertTeamRoomAdmin = z.infer<typeof insertTeamRoomAdminSchema>;
 

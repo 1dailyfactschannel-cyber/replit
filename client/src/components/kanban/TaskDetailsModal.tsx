@@ -573,15 +573,11 @@ export function TaskDetailsModal({
   // Sync subtasks - при изменении serverSubtasks
   useEffect(() => {
     if (!open) return;
-    if (!serverSubtasks || serverSubtasks.length === 0) {
-      console.log("[Subtask] No serverSubtasks, skipping sync");
-      return;
-    }
     
-    console.log("[Subtask] Syncing subtasks, serverSubtasks:", serverSubtasks);
+    console.log("[Subtask] Checking serverSubtasks:", serverSubtasks);
     
     // Маппим isCompleted в completed для совместимости
-    const mappedSubtasks = serverSubtasks.map((s: any) => ({
+    const mappedSubtasks = (serverSubtasks || []).map((s: any) => ({
       ...s,
       completed: s.isCompleted || s.completed || false
     }));
@@ -751,6 +747,24 @@ export function TaskDetailsModal({
   const [uploadProgress, setUploadProgress] = useState(0);
   const [showSubtasks, setShowSubtasks] = useState(false);
   const [showAttachments, setShowAttachments] = useState(false);
+
+  // Auto-expand sections if task has subtasks or attachments
+  useEffect(() => {
+    if (effectiveTask) {
+      // Check all possible sources of subtasks
+      const hasSubtasks = (effectiveTask.subtasks && effectiveTask.subtasks.length > 0) ||
+                         (serverSubtasks && serverSubtasks.length > 0) ||
+                         (localSubtasks && localSubtasks.length > 0);
+      
+      if (hasSubtasks) {
+        setShowSubtasks(true);
+      }
+      
+      if (effectiveTask.attachments && effectiveTask.attachments.length > 0) {
+        setShowAttachments(true);
+      }
+    }
+  }, [effectiveTask?.id, serverSubtasks, localSubtasks]);
 
   // Update mutation for database synchronization
   const updateTaskMutation = useMutation({

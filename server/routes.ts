@@ -4,7 +4,7 @@ import { getStorage, getReportOverview, getReportWorkspaces, getReportProjects, 
 import { insertSiteSettingsSchema, insertUserSchema, insertNotificationSchema, insertLabelSchema, priorities, taskTypes } from "@shared/schema";
 import * as schema from "@shared/schema";
 import { getStatusByColumnName } from "../shared/column-status-mapping";
-import { setupWebSockets } from "./socket";
+import { setupWebSockets, getIO } from "./socket";
 import { Server as SocketIOServer } from "socket.io";
 import multer from "multer";
 import path from "path";
@@ -194,6 +194,32 @@ export async function registerRoutes(
       res.json(users);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch users" });
+    }
+  });
+
+  // Search users endpoint
+  app.get("/api/users/search", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+    
+    try {
+      const query = req.query.q as string;
+      if (!query || query.length < 2) {
+        return res.json([]);
+      }
+
+      const allUsers = await storage.getAllUsers();
+      const searchLower = query.toLowerCase();
+      
+      const filteredUsers = allUsers.filter(user => {
+        const fullName = `${user.firstName || ''} ${user.lastName || ''}`.toLowerCase();
+        const username = user.username?.toLowerCase() || '';
+        return fullName.includes(searchLower) || username.includes(searchLower);
+      }).slice(0, 10); // Limit to 10 results
+
+      res.json(filteredUsers);
+    } catch (error) {
+      console.error("Error searching users:", error);
+      res.status(500).json({ message: "Failed to search users" });
     }
   });
 
@@ -3348,6 +3374,314 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error deleting calendar event:", error);
       res.status(500).json({ message: "Failed to delete calendar event" });
+    }
+  });
+
+  // Team Rooms API
+  app.get("/api/team-rooms", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+    
+    try {
+      const rooms = await storage.getTeamRooms();
+      res.json(rooms);
+    } catch (error) {
+      console.error("Error fetching team rooms:", error);
+      res.status(500).json({ message: "Failed to fetch team rooms" });
+    }
+  });
+
+  app.get("/api/team-rooms/:id", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+    
+    try {
+      const room = await storage.getTeamRoomById(req.params.id);
+      if (!room) {
+        return res.status(404).json({ message: "Team room not found" });
+      }
+      res.json(room);
+    } catch (error) {
+      console.error("Error fetching team room:", error);
+      res.status(500).json({ message: "Failed to fetch team room" });
+    }
+  });
+
+  app.post("/api/team-rooms", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+    
+    try {
+      const { name, description, slug, accessType, color } = req.body;
+      
+      if (!name || !slug) {
+        return res.status(400).json({ message: "Name and slug are required" });
+      }
+
+      // Check if slug already exists
+      const existingRoom = await storage.getTeamRoomBySlug(slug);
+      if (existingRoom) {
+        return res.status(409).json({ message: "Team room with this slug already exists" });
+      }
+
+      // Generate invite code
+      const inviteCode = generateInviteCode();
+
+      const room = await storage.createTeamRoom({
+        name,
+        description,
+        slug,
+        inviteCode,
+        accessType: accessType || "open",
+        color: color || "#3b82f6",
+        createdBy: req.user!.id,
+        isActive: true
+      });
+
+      res.status(201).json(room);
+    } catch (error) {
+      console.error("Error creating team room:", error);
+      res.status(500).json({ message: "Failed to create team room" });
+    }
+  });
+
+  app.patch("/api/team-rooms/:id", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+    
+    try {
+      const { name, description, accessType, color } = req.body;
+      
+      const existingRoom = await storage.getTeamRoomById(req.params.id);
+      if (!existingRoom) {
+        return res.status(404).json({ message: "Team room not found" });
+      }
+
+      const updated = await storage.updateTeamRoom(req.params.id, {
+        name,
+        description,
+        accessType,
+        color
+      });
+
+      res.json(updated);
+    } catch (error) {
+      console.error("Error updating team room:", error);
+      res.status(500).json({ message: "Failed to update team room" });
+    }
+  });
+
+  app.delete("/api/team-rooms/:id", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+    
+    try {
+      const existingRoom = await storage.getTeamRoomById(req.params.id);
+      if (!existingRoom) {
+        return res.status(404).json({ message: "Team room not found" });
+      }
+
+      await storage.deleteTeamRoom(req.params.id);
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting team room:", error);
+      res.status(500).json({ message: "Failed to delete team room" });
+    }
+  });
+
+  app.post("/api/team-rooms/:id/regenerate-code", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+    
+    try {
+      const existingRoom = await storage.getTeamRoomById(req.params.id);
+      if (!existingRoom) {
+        return res.status(404).json({ message: "Team room not found" });
+      }
+
+      const updated = await storage.regenerateTeamRoomInviteCode(req.params.id);
+      res.json(updated);
+    } catch (error) {
+      console.error("Error regenerating invite code:", error);
+      res.status(500).json({ message: "Failed to regenerate invite code" });
+    }
+  });
+
+  // Helper function to generate invite code
+  function generateInviteCode(): string {
+    const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+    let code = '';
+    for (let i = 0; i < 8; i++) {
+      code += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return code;
+  }
+
+  // Call Settings API
+  app.get("/api/call-settings", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+    
+    try {
+      const settings = await storage.getCallSettings(req.user!.id);
+      res.json(settings || {
+        userId: req.user!.id,
+        micVolume: 100,
+        speakerVolume: 100,
+        videoQuality: 'medium',
+        noiseSuppression: true
+      });
+    } catch (error) {
+      console.error("Error fetching call settings:", error);
+      res.status(500).json({ message: "Failed to fetch call settings" });
+    }
+  });
+
+  app.post("/api/call-settings", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+    
+    try {
+      const { preferredMic, preferredCamera, preferredSpeaker, micVolume, speakerVolume, videoQuality, noiseSuppression } = req.body;
+      
+      const settings = await storage.upsertCallSettings({
+        userId: req.user!.id,
+        preferredMic,
+        preferredCamera,
+        preferredSpeaker,
+        micVolume,
+        speakerVolume,
+        videoQuality,
+        noiseSuppression
+      });
+
+      res.json(settings);
+    } catch (error) {
+      console.error("Error updating call settings:", error);
+      res.status(500).json({ message: "Failed to update call settings" });
+    }
+  });
+
+  // Call Participants API
+  app.get("/api/team-rooms/:id/participants", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+    
+    try {
+      const room = await storage.getTeamRoomById(req.params.id);
+      if (!room) {
+        return res.status(404).json({ message: "Team room not found" });
+      }
+
+      const participants = await storage.getCallParticipantsWithUsers(req.params.id);
+      res.json(participants);
+    } catch (error) {
+      console.error("Error fetching call participants:", error);
+      res.status(500).json({ message: "Failed to fetch participants" });
+    }
+  });
+
+  app.post("/api/calls/:roomId/kick", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+    
+    try {
+      const { userId } = req.body;
+      const room = await storage.getTeamRoomById(req.params.roomId);
+      
+      if (!room) {
+        return res.status(404).json({ message: "Team room not found" });
+      }
+
+      // Check if user is creator or admin
+      const isCreator = room.createdBy === req.user!.id;
+      const isAdmin = await storage.isTeamRoomAdmin(req.params.roomId, req.user!.id);
+      
+      if (!isCreator && !isAdmin) {
+        return res.status(403).json({ message: "Only room creator or admins can kick participants" });
+      }
+
+      // Cannot kick creator
+      if (userId === room.createdBy) {
+        return res.status(403).json({ message: "Cannot kick room creator" });
+      }
+
+      await storage.kickCallParticipant(req.params.roomId, userId);
+      
+      // Notify via socket
+      const io = getIO();
+      io.to(`call-${req.params.roomId}`).emit("call:participant-kicked", { userId, kickedBy: req.user!.id });
+      io.to(`user-${userId}`).emit("call:kicked", { roomId: req.params.roomId });
+
+      res.json({ message: "Participant kicked successfully" });
+    } catch (error) {
+      console.error("Error kicking participant:", error);
+      res.status(500).json({ message: "Failed to kick participant" });
+    }
+  });
+
+  // Team Room Admins API
+  app.get("/api/team-rooms/:id/admins", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+    
+    try {
+      const room = await storage.getTeamRoomById(req.params.id);
+      if (!room) {
+        return res.status(404).json({ message: "Team room not found" });
+      }
+
+      const admins = await storage.getTeamRoomAdminsWithUsers(req.params.id);
+      res.json(admins);
+    } catch (error) {
+      console.error("Error fetching team room admins:", error);
+      res.status(500).json({ message: "Failed to fetch admins" });
+    }
+  });
+
+  app.post("/api/team-rooms/:id/admins", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+    
+    try {
+      const { userId } = req.body;
+      const room = await storage.getTeamRoomById(req.params.id);
+      
+      if (!room) {
+        return res.status(404).json({ message: "Team room not found" });
+      }
+
+      // Only creator can add admins
+      if (room.createdBy !== req.user!.id) {
+        return res.status(403).json({ message: "Only room creator can add admins" });
+      }
+
+      // Cannot add creator as admin (already has all permissions)
+      if (userId === room.createdBy) {
+        return res.status(400).json({ message: "Room creator is already an admin" });
+      }
+
+      const admin = await storage.addTeamRoomAdmin({
+        roomId: req.params.id,
+        userId,
+        grantedBy: req.user!.id
+      });
+
+      res.status(201).json(admin);
+    } catch (error) {
+      console.error("Error adding team room admin:", error);
+      res.status(500).json({ message: "Failed to add admin" });
+    }
+  });
+
+  app.delete("/api/team-rooms/:id/admins/:userId", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+    
+    try {
+      const room = await storage.getTeamRoomById(req.params.id);
+      
+      if (!room) {
+        return res.status(404).json({ message: "Team room not found" });
+      }
+
+      // Only creator can remove admins
+      if (room.createdBy !== req.user!.id) {
+        return res.status(403).json({ message: "Only room creator can remove admins" });
+      }
+
+      await storage.removeTeamRoomAdmin(req.params.id, req.params.userId);
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error removing team room admin:", error);
+      res.status(500).json({ message: "Failed to remove admin" });
     }
   });
 
