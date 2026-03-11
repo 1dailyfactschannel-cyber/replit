@@ -267,41 +267,58 @@ export async function registerRoutes(
   // });
 
   // File upload route (stores files in database)
-  app.post("/api/upload", upload.single("file"), async (req, res) => {
-    try {
-      if (!req.file) {
-        return res.status(400).json({ message: "No file uploaded" });
-      }
-
-      // Convert file buffer to base64
-      const base64Data = req.file.buffer.toString('base64');
-      
-      // Save file to database
-      const attachment = await storage.createFileAttachment({
-        filename: req.file.filename || `${Date.now()}-${Math.round(Math.random() * 1E9)}`,
-        originalName: req.file.originalname,
-        mimeType: req.file.mimetype,
-        size: req.file.size,
-        data: base64Data,
-        uploadedBy: req.user?.id || null,
-      });
-
-      const fileUrl = `/api/files/${attachment.id}`;
-      res.json({
-        url: fileUrl,
-        name: req.file.originalname,
-        type: req.file.mimetype,
-        size: req.file.size,
-        id: attachment.id
-      });
-    } catch (error) {
-      console.error("Upload error:", error);
-      res.status(500).json({ message: "Failed to upload file" });
+  app.post("/api/upload", async (req, res) => {
+    // Security: Require authentication
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ message: "Не авторизован" });
     }
+    
+    // Use multer middleware manually
+    upload.single("file")(req, res, async (err: any) => {
+      try {
+        if (err) {
+          return res.status(400).json({ message: err.message || "Upload error" });
+        }
+        
+        if (!req.file) {
+          return res.status(400).json({ message: "No file uploaded" });
+        }
+
+        // Convert file buffer to base64
+        const base64Data = req.file.buffer.toString('base64');
+        
+        // Save file to database
+        const attachment = await storage.createFileAttachment({
+          filename: req.file.filename || `${Date.now()}-${Math.round(Math.random() * 1E9)}`,
+          originalName: req.file.originalname,
+          mimeType: req.file.mimetype,
+          size: req.file.size,
+          data: base64Data,
+          uploadedBy: req.user?.id || null,
+        });
+
+        const fileUrl = `/api/files/${attachment.id}`;
+        res.json({
+          url: fileUrl,
+          name: req.file.originalname,
+          type: req.file.mimetype,
+          size: req.file.size,
+          id: attachment.id
+        });
+      } catch (error) {
+        console.error("Upload error:", error);
+        res.status(500).json({ message: "Failed to upload file" });
+      }
+    });
   });
 
   // File retrieval route (serves files from database)
   app.get("/api/files/:id", async (req, res) => {
+    // Security: Require authentication
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ message: "Не авторизован" });
+    }
+    
     try {
       const attachment = await storage.getFileAttachment(req.params.id);
       
