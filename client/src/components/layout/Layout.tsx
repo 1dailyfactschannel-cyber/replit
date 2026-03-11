@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import type { User as UserType } from "@shared/schema";
 import {
   LayoutDashboard,
   Kanban,
@@ -11,7 +12,6 @@ import {
   Calendar,
   MessageSquare,
   Users,
-  User,
   Settings,
   LogOut,
   Menu,
@@ -26,7 +26,8 @@ import {
   Pencil,
   Trash2,
   BarChart2,
-  Coins
+  Coins,
+  User
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -367,7 +368,7 @@ const SidebarContentComponent = React.memo(({
 });
 
 export function Layout({ children, className }: { children: React.ReactNode, className?: string }) {
-  const { data: user, isLoading } = useQuery({
+  const { data: user, isLoading } = useQuery<UserType>({
     queryKey: ["/api/user"],
     retry: false,
   });

@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, integer, boolean, timestamp, uuid, jsonb, primaryKey, index } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, boolean, timestamp, uuid, jsonb, primaryKey, index, uniqueIndex } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -50,8 +50,31 @@ export const roles = pgTable("roles", {
 export const userRoles = pgTable("user_roles", {
   userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   roleId: uuid("role_id").notNull().references(() => roles.id, { onDelete: "cascade" }),
+  assignedAt: timestamp("assigned_at").defaultNow(),
+  assignedBy: uuid("assigned_by").references(() => users.id),
 }, (table) => ({
   pk: primaryKey({ columns: [table.userId, table.roleId] }),
+}));
+
+// Permissions table
+export const permissions = pgTable("permissions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  key: text("key").notNull().unique(),
+  name: text("name").notNull(),
+  description: text("description"),
+  category: text("category").notNull(), // 'pages' or 'management'
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// User hidden objects table (for object-level permissions)
+export const userHiddenObjects = pgTable("user_hidden_objects", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  objectType: text("object_type").notNull(), // 'workspace' or 'project'
+  objectId: uuid("object_id").notNull(),
+  hiddenAt: timestamp("hidden_at").defaultNow(),
+}, (table) => ({
+  uniqueUserObject: uniqueIndex("unique_user_object").on(table.userId, table.objectType, table.objectId),
 }));
 
 // Departments table
@@ -374,6 +397,19 @@ export const insertRoleSchema = createInsertSchema(roles).pick({
   permissions: true,
 });
 
+export const insertPermissionSchema = createInsertSchema(permissions).pick({
+  key: true,
+  name: true,
+  description: true,
+  category: true,
+});
+
+export const insertUserHiddenObjectSchema = createInsertSchema(userHiddenObjects).pick({
+  userId: true,
+  objectType: true,
+  objectId: true,
+});
+
 export const insertDepartmentSchema = createInsertSchema(departments).pick({
   name: true,
   description: true,
@@ -682,6 +718,12 @@ export type InsertUser = z.infer<typeof insertUserSchema>;
 
 export type Role = typeof roles.$inferSelect;
 export type InsertRole = z.infer<typeof insertRoleSchema>;
+
+export type Permission = typeof permissions.$inferSelect;
+export type InsertPermission = z.infer<typeof insertPermissionSchema>;
+
+export type UserHiddenObject = typeof userHiddenObjects.$inferSelect;
+export type InsertUserHiddenObject = z.infer<typeof insertUserHiddenObjectSchema>;
 
 export type Department = typeof departments.$inferSelect;
 export type InsertDepartment = z.infer<typeof insertDepartmentSchema>;

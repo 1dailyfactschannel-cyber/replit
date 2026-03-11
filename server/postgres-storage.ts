@@ -866,6 +866,158 @@ export class PostgresStorage {
     }
   }
 
+  async getAllRoles(): Promise<schema.Role[]> {
+    try {
+      return await this.db.select().from(schema.roles).orderBy(schema.roles.name);
+    } catch (error) {
+      console.error("Error getting all roles:", error);
+      return [];
+    }
+  }
+
+  async getRole(id: string): Promise<schema.Role | undefined> {
+    try {
+      const result = await this.db.select().from(schema.roles).where(eq(schema.roles.id, id)).limit(1);
+      return result[0];
+    } catch (error) {
+      console.error("Error getting role:", error);
+      return undefined;
+    }
+  }
+
+  async getRoleByName(name: string): Promise<schema.Role | undefined> {
+    try {
+      const result = await this.db.select().from(schema.roles).where(eq(schema.roles.name, name)).limit(1);
+      return result[0];
+    } catch (error) {
+      console.error("Error getting role by name:", error);
+      return undefined;
+    }
+  }
+
+  async createRole(data: schema.InsertRole): Promise<schema.Role> {
+    const result = await this.db.insert(schema.roles).values(data).returning();
+    return result[0];
+  }
+
+  async updateRole(id: string, data: Partial<schema.InsertRole>): Promise<schema.Role | undefined> {
+    const result = await this.db.update(schema.roles).set({ ...data, updatedAt: new Date() }).where(eq(schema.roles.id, id)).returning();
+    return result[0];
+  }
+
+  async deleteRole(id: string): Promise<void> {
+    await this.db.delete(schema.roles).where(eq(schema.roles.id, id));
+  }
+
+  async updateRolePermissions(id: string, permissions: string[]): Promise<schema.Role | undefined> {
+    const result = await this.db.update(schema.roles)
+      .set({ permissions, updatedAt: new Date() })
+      .where(eq(schema.roles.id, id))
+      .returning();
+    return result[0];
+  }
+
+  async setUserRoles(userId: string, roleIds: string[], assignedBy?: string): Promise<void> {
+    try {
+      await this.db.delete(schema.userRoles).where(eq(schema.userRoles.userId, userId));
+      if (roleIds.length > 0) {
+        const values = roleIds.map(roleId => ({
+          userId,
+          roleId,
+          assignedBy: assignedBy || null
+        }));
+        await this.db.insert(schema.userRoles).values(values);
+      }
+    } catch (error) {
+      console.error("Error setting user roles:", error);
+      throw error;
+    }
+  }
+
+  async getUserPermissions(userId: string): Promise<string[]> {
+    const userRoles = await this.getUserRoles(userId);
+    const permissions = new Set<string>();
+    for (const role of userRoles) {
+      const rolePerms = role.permissions as string[];
+      rolePerms.forEach(p => permissions.add(p));
+    }
+    return Array.from(permissions);
+  }
+
+  async hasPermission(userId: string, permission: string): Promise<boolean> {
+    const permissions = await this.getUserPermissions(userId);
+    return permissions.includes(permission);
+  }
+
+  // Permissions CRUD
+  async getAllPermissions(): Promise<schema.Permission[]> {
+    try {
+      return await this.db.select().from(schema.permissions).orderBy(schema.permissions.category, schema.permissions.name);
+    } catch (error) {
+      console.error("Error getting all permissions:", error);
+      return [];
+    }
+  }
+
+  async getPermission(key: string): Promise<schema.Permission | undefined> {
+    try {
+      const result = await this.db.select().from(schema.permissions).where(eq(schema.permissions.key, key)).limit(1);
+      return result[0];
+    } catch (error) {
+      console.error("Error getting permission:", error);
+      return undefined;
+    }
+  }
+
+  async createPermission(data: schema.InsertPermission): Promise<schema.Permission> {
+    const result = await this.db.insert(schema.permissions).values(data).returning();
+    return result[0];
+  }
+
+  async deletePermission(id: string): Promise<void> {
+    await this.db.delete(schema.permissions).where(eq(schema.permissions.id, id));
+  }
+
+  // Hidden objects
+  async getHiddenObjects(userId: string): Promise<schema.UserHiddenObject[]> {
+    try {
+      return await this.db.select().from(schema.userHiddenObjects).where(eq(schema.userHiddenObjects.userId, userId));
+    } catch (error) {
+      console.error("Error getting hidden objects:", error);
+      return [];
+    }
+  }
+
+  async hideObject(userId: string, objectType: string, objectId: string): Promise<schema.UserHiddenObject> {
+    const result = await this.db.insert(schema.userHiddenObjects).values({
+      userId,
+      objectType,
+      objectId
+    }).returning();
+    return result[0];
+  }
+
+  async unhideObject(userId: string, objectType: string, objectId: string): Promise<void> {
+    await this.db.delete(schema.userHiddenObjects).where(
+      and(
+        eq(schema.userHiddenObjects.userId, userId),
+        eq(schema.userHiddenObjects.objectType, objectType),
+        eq(schema.userHiddenObjects.objectId, objectId)
+      )
+    );
+  }
+
+  async isObjectHidden(userId: string, objectType: string, objectId: string): Promise<boolean> {
+    const result = await this.db.select().from(schema.userHiddenObjects).where(
+      and(
+        eq(schema.userHiddenObjects.userId, userId),
+        eq(schema.userHiddenObjects.objectType, objectType),
+        eq(schema.userHiddenObjects.objectId, objectId)
+      )
+    ).limit(1);
+    return result.length > 0;
+  }
+
   // Project methods
   async getProject(id: string): Promise<schema.Project | undefined> {
     try {
