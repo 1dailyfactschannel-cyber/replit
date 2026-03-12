@@ -1,12 +1,12 @@
 FROM node:20-alpine AS base
 
-# Dependencies stage
+# Установка зависимостей
 FROM base AS deps
 WORKDIR /app
 COPY package.json package-lock.json* ./
-RUN npm ci
+RUN npm ci --only=production
 
-# Build stage
+# Сборка проекта
 FROM base AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
@@ -18,17 +18,22 @@ FROM base AS runner
 WORKDIR /app
 
 ENV NODE_ENV=production
+ENV PORT=3000
 
-RUN addgroup --system --gid 1001 nodejs
-RUN adduser --system --uid 1001 nodejs
+# Создание непривилегированного пользователя
+RUN addgroup --system --gid 1001 nodejs && \
+    adduser --system --uid 1001 nodejs
 
+# Копирование собранного проекта
 COPY --from=builder --chown=nodejs:nodejs /app/dist ./dist
 COPY --from=builder --chown=nodejs:nodejs /app/package.json ./package.json
 COPY --from=builder --chown=nodejs:nodejs /app/node_modules ./node_modules
 
+# Загрузка конфигурации для production
+COPY --from=builder --chown=nodejs:nodejs /app/.env.production ./.env || true
+
 USER nodejs
 
 EXPOSE 3000
-ENV PORT=3000
 
-CMD ["node", "dist/index.js"]
+CMD ["node", "dist/index.mjs"]
