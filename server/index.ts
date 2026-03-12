@@ -4,6 +4,7 @@ import { fileURLToPath } from "url";
 import rateLimit from "express-rate-limit";
 import cors from "cors";
 import helmet from "helmet";
+import cookieParser from "cookie-parser";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -72,9 +73,11 @@ app.use(helmet({
     directives: {
       defaultSrc: ["'self'"],
       scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
-      styleSrc: ["'self'", "'unsafe-inline'"],
-      imgSrc: ["'self'", "data:", "blob:"],
+      styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+      styleSrcElem: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+      imgSrc: ["'self'", "data:", "blob:", "https:"],
       connectSrc: ["'self'", "ws:", "wss:"],
+      workerSrc: ["'self'", "blob:"],
     },
   },
   crossOriginEmbedderPolicy: false,
@@ -164,7 +167,15 @@ app.use((req, res, next) => {
 });
 
 (async () => {
+  app.use(cookieParser());
   setupAuth(app);
+  
+  // CSRF Protection - apply after auth setup
+  import("./middleware/csrf").then(({ csrfProtect, getCsrfToken }) => {
+    app.use(csrfProtect);
+    app.get("/api/csrf-token", getCsrfToken);
+  });
+  
   await registerRoutes(httpServer, app);
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {

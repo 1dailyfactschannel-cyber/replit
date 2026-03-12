@@ -2,663 +2,326 @@
 
 ## Содержание
 
-1. [Введение](#введение)
-2. [Текущая защита](#текущая-защита)
-3. [Выявленные угрозы](#выявленные-угрозы)
-4. [Рекомендации](#рекомендации)
-5. [Чеклист безопасности](#чеклист-безопасности)
+1. [Меры безопасности](#меры-безопасности)
+2. [CSRF защита](#csrf-защита)
+3. [IDOR защита](#idor-защита)
+4. [Валидация данных](#валидация-данных)
+5. [Санитизация](#санитизация)
+6. [Аутентификация](#аутентификация)
+7. [Чеклист](#чеклист)
 
 ---
 
-## Введение
+## Меры безопасности
 
-Документ описывает текущее состояние безопасности проекта m4portal, выявленные уязвимости и рекомендации по их устранению.
+### HTTPS (Production)
+- Использовать через Nginx или прокси
+- Настройка в `server/index.ts`:
+  ```typescript
+  secure: process.env.NODE_ENV === "production"
+  ```
 
-**Версия проекта:** 1.0  
-**Дата анализа:** 2026
-
----
-
-## Текущая защита
-
-### Аутентификация
-
-**Реализация:** Passport.js с локальной стратегией
-
-```typescript
-// server/auth.ts
-passport.use(new LocalStrategy(
-  { usernameField: "email", passwordField: "password" },
-  async (email, password, done) => {
-    const user = await storage.getUserByEmail(email);
-    const isPasswordMatch = await comparePasswords(password, user.password);
-    return done(null, user);
-  }
-));
-```
-
-**Защита:**
-- Хеширование паролей через scrypt (современный алгоритм)
-- Тайминг-безопасное сравнение хешей
-- Rate limiting на /api/login (5 попыток за 15 минут)
-
----
-
-### Управление сессиями
-
-**Реализация:** express-session
-
-```typescript
-// server/auth.ts
-const sessionSettings = {
-  secret: process.env.SESSION_SECRET,
-  resave: false,
-  saveUninitialized: false,
-  store: sessionStore, // Redis (production) / MemoryStore (development)
-  cookie: {
-    maxAge: 30 * 24 * 60 * 60 * 1000, // 30 дней
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-  },
-};
-```
-
-**Защита:**
-- HttpOnly cookies (недоступны через JavaScript)
-- Secure flag в production
-- SameSite атрибут
-- Хранилище сессий: Redis (production) / MemoryStore (development)
-
----
+### Secure Headers
+- Helmet.js с Content Security Policy
+- CORS с белым списком origins
+- SameSite cookies
 
 ### Rate Limiting
-
-**Глобальный лимит:**
-
-```typescript
-// server/index.ts
-const globalLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 минут
-  max: 2000, // production
-  message: { message: "Слишком много запросов" }
-});
-```
-
-**Лимит на вход:**
-
-```typescript
-// server/auth.ts
-const loginLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 5, // 5 попыток
-  message: { message: "Too many login attempts" }
-});
-```
-
-**Статистика:**
-- Global: 2000 запросов за 15 минут (production)
-- Login: 5 попыток за 15 минут
-- Development: без ограничений
+- Глобальный: 2000 запросов/15 минут (production)
+- Login: 5 попыток/15 минут
 
 ---
 
-### CORS (Cross-Origin Resource Sharing)
+## CSRF защита
+
+### Реализация
+
+Используется библиотека `csrf-csrf` с double-submit cookie pattern.
+
+**Файл:** `server/middleware/csrf.ts`
 
 ```typescript
-// server/index.ts
-const corsOptions = {
-  origin: process.env.ALLOWED_ORIGINS 
-    ? process.env.ALLOWED_ORIGINS.split(',') 
-    : ['http://localhost:3005', 'http://localhost:3000'],
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
-};
-app.use(cors(corsOptions));
-```
+import { doubleCsrf } from "csrf-csrf";
 
-**Настройка:**
-- Белый список origins через переменную ALLOWED_ORIGINS
-- Поддержка credentials
-- Ограниченный набор методов
-
----
-
-### Helmet (HTTP заголовки безопасности)
-
-```typescript
-// server/index.ts
-app.use(helmet({
-  contentSecurityPolicy: {
-    directives: {
-      defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
-      styleSrc: ["'self'", "'unsafe-inline'"],
-      imgSrc: ["'self'", "data:", "blob:"],
-      connectSrc: ["'self'", "ws:", "wss:"],
-    },
+const { doubleCsrfProtection, generateCsrfToken } = doubleCsrf({
+  getSecret: () => CSRF_SECRET,
+  getSessionIdentifier: (req) => req.sessionID || "anonymous",
+  cookieName: "x-csrf-token",
+  cookieOptions: {
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    httpOnly: false,
+    path: "/",
   },
-  crossOriginEmbedderPolicy: false,
-}));
+  ignoredMethods: ["GET", "HEAD", "OPTIONS"],
+});
 ```
 
-**Защита:**
-- Content Security Policy (CSP)
-- Защита от XSS и инъекций
-- WebSocket соединения разрешены
+### Защищенные endpoints
 
----
+CSRF применяется к следующим эндпоинтам:
 
-### Защита базы данных (SQL Injection)
+| Метод | Путь | Описание |
+|-------|------|----------|
+| POST | `/api/auth/login` | Вход |
+| POST | `/api/auth/register` | Регистрация |
+| POST | `/api/auth/logout` | Выход |
+| POST | `/api/roles` | Создание роли |
+| PUT | `/api/roles/:id` | Обновление роли |
+| DELETE | `/api/roles/:id` | Удаление роли |
+| POST | `/api/permissions` | Создание разрешения |
+| DELETE | `/api/permissions/:id` | Удаление разрешения |
 
-**Реализация:** Drizzle ORM
-
-```typescript
-// server/postgres-storage.ts
-async getUser(id: string): Promise<User | undefined> {
-  const result = await this.db
-    .select()
-    .from(schema.users)
-    .where(eq(schema.users.id, id)) // Параметризованный запрос
-    .limit(1);
-  return result[0];
-}
-```
-
-**Защита:**
-- Все запросы через Drizzle ORM
-- Параметризованные запросы
-- Типизированные схемы
-
-**Безопасные запросы:**
+### Использование на клиенте
 
 ```typescript
-// server/routes.ts
-// Вместо:
-const search = req.query.search;
-db.query(`SELECT * FROM tasks WHERE title LIKE '%${search}%'`);
+// Получение токена
+const response = await fetch('/api/csrf-token');
+const { csrfToken } = await response.json();
 
-// Используется:
-db.query().from(tasks).where(like(tasks.title, `%${search}%`));
+// Отправка запроса
+await fetch('/api/auth/login', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'X-CSRF-Token': csrfToken,
+  },
+  body: JSON.stringify(data),
+});
 ```
 
 ---
 
-### Загрузка файлов
+## IDOR защита
+
+### Middleware ownership
+
+**Файл:** `server/middleware/ownership.ts`
+
+Предоставляет middleware для проверки прав доступа:
+
+- `requireOwnership` - Базовая проверка доступа
+- `requireProjectOwnership` - Проверка владельца проекта
+- `requireTaskOwnership` - Проверка доступа к задаче
+- `requireWorkspaceOwnership` - Проверка владельца рабочего пространства
+- `requireBoardOwnership` - Проверка владельца доски
+
+### Использование
 
 ```typescript
-// server/routes.ts
-const ALLOWED_MIME_TYPES = [
-  'image/jpeg',
-  'image/png',
-  'image/gif',
-  'image/webp',
-  'application/pdf',
-  'text/plain',
-  // ...
-];
+import { requireProjectOwnership } from './middleware/ownership';
 
-const upload = multer({
-  storage: multerStorage,
-  limits: { fileSize: 50 * 1024 * 1024 }, // 50MB
-  fileFilter: (req, file, cb) => {
-    if (ALLOWED_MIME_TYPES.includes(file.mimetype)) {
-      cb(null, true);
-    } else {
-      cb(new Error('Invalid file type'));
-    }
+app.patch(
+  "/api/projects/:id",
+  requireProjectOwnership,
+  async (req, res) => {
+    // Только владелец может редактировать
+    const project = await storage.updateProject(req.params.id, req.body);
+    res.json(project);
   }
-});
+);
 ```
 
-**Защита:**
-- Whitelist MIME-типов
-- Ограничение размера (50MB)
-- Хранение в памяти (не на диске)
+### Защищенные сущности
+
+| Сущность | Middleware | Проверка |
+|----------|------------|----------|
+| Проекты | `requireProjectOwnership` | `ownerId` === `req.user.id` |
+| Задачи | `requireTaskOwnership` | Проверка доступа к проекту |
+| Доски | `requireBoardOwnership` | Проверка доступа к проекту |
+| Рабочие пространства | `requireWorkspaceOwnership` | Проверка владельца |
 
 ---
 
-### User-Aware кэширование
+## Валидация данных
+
+### Zod схемы
+
+**Файл:** `server/schemas/`
 
 ```typescript
-// server/index.ts
-const cacheMiddleware = (duration: number) => {
-  return (req: Request, res: Response, next: NextFunction) => {
-    const userId = req.isAuthenticated() ? req.user?.id : 'anonymous';
-    const key = `${req.originalUrl}:${userId}`;
-    // Кэш изолирован по пользователю
-  };
-};
-```
+// server/schemas/auth.schema.ts
+export const loginSchema = z.object({
+  email: z.string().email("Неверный email"),
+  password: z.string().min(8, "Минимум 8 символов"),
+});
 
-**Защита:**
-- Кэш персонифицирован по userId
-- Предотвращает утечку данных между пользователями
-
----
-
-### Master Password для критических операций
-
-```typescript
-// server/routes.ts
-app.delete("/api/projects/:id", async (req, res) => {
-  const masterPasswordHash = await storage.getSiteSetting("master_password_hash");
-  const isValid = await bcrypt.compare(masterPassword, masterPasswordHash.value);
-  // Проверка перед удалением
+// server/schemas/role.schema.ts
+export const createRoleSchema = z.object({
+  name: z.string().min(1).max(50),
+  permissions: z.array(z.string()),
 });
 ```
 
-**Защита:**
-- Дополнительный уровень защиты для удаления проектов
-
----
-
-## Выявленные угрозы
-
-### 1. IDOR (Insecure Direct Object Reference)
-
-**Описание:** Злоумышленник может получить доступ к чужим данным, изменив ID в URL.
-
-**Статус:** Частично защищено
-
-**Где реализовано:**
+### Использование
 
 ```typescript
-// server/routes.ts
-// Задачи - проверка ownership
-if (task.assigneeId && task.assigneeId !== req.user.id) {
-  // Создание истории только для своих задач
-}
+import { loginSchema } from './schemas/auth.schema';
 
-// События календаря
-if (existingEvent.userId !== req.user!.id) {
-  return res.status(403).json({ message: "Access denied" });
-}
-
-// Комнаты чата
-if (room.createdBy !== req.user!.id) {
-  return res.status(403).json({ message: "Only creator can..." });
-}
-```
-
-**Где НЕ реализовано:**
-
-| Endpoint | Проблема |
-|----------|-----------|
-| `GET /api/users/:id` | Можно получить любого пользователя |
-| `GET /api/projects/:id` | Нет проверки доступа |
-| `GET /api/boards/:id` | Нет проверки доступа |
-| `GET /api/tasks/:id` | Любой может получить любую задачу |
-| `PATCH /api/tasks/:id` | Можно изменить любую задачу |
-| `GET /api/chat/messages/:id` | Нет проверки участника чата |
-
-**Рекомендация:** Добавить middleware для проверки ownership на все endpoints с `:id`.
-
----
-
-### 2. CSRF (Cross-Site Request Forgery)
-
-**Описание:** Злоумышленник может выполнить действия от имени авторизованного пользователя.
-
-**Статус:** Зависимость добавлена, но НЕ активирована
-
-**В package.json:**
-
-```json
-{
-  "csurf": "^1.11.0"
-}
-```
-
-**Текущее состояние:** Не используется
-
-**Рекомендация:** Активировать csurf:
-
-```typescript
-// server/index.ts
-import csurf from 'csurf';
-
-// После сессий
-app.use(csurf());
-
-app.use((req, res, next) => {
-  res.cookie('XSRF-TOKEN', req.csrfToken());
-  next();
-});
-```
-
-**Примечание:** При использовании SameSite=strict cookies риск CSRF снижен, но не исключён полностью.
-
----
-
-### 3. Отсутствие RBAC (Role-Based Access Control)
-
-**Описание:** Нет проверки прав доступа на основе ролей.
-
-**Статус:** Схема существует, но не используется
-
-**Схема в БД:**
-
-```typescript
-// shared/schema.ts
-export const roles = pgTable("roles", {
-  id: uuid("id").primaryKey(),
-  name: text("name").notNull().unique(),
-  permissions: jsonb("permissions").notNull(),
-  isSystem: boolean("is_system").default(false),
-});
-
-export const userRoles = pgTable("user_roles", {
-  userId: uuid("user_id").references(() => users.id),
-  roleId: uuid("role_id").references(() => roles.id),
-});
-```
-
-**Проблемы:**
-
-- Все эндпоинты проверяют только `req.isAuthenticated()`
-- Нет проверки ролей (admin, manager, user)
-- Нет middleware для проверки прав
-
-**Пример проблемы:**
-
-```typescript
-// server/routes.ts
-// Любой авторизованный пользователь может:
-app.delete("/api/projects/:id", async (req, res) => {
-  // Нет проверки, что user - owner проекта
-  await storage.deleteProject(req.params.id);
-});
-```
-
-**Рекомендация:** Добавить middleware:
-
-```typescript
-// server/middleware/roles.ts
-function requireRole(...roles: string[]) {
-  return (req, res, next) => {
-    if (!req.user) return res.status(401).send();
-    const userRoles = getUserRoles(req.user.id);
-    if (!roles.some(r => userRoles.includes(r))) {
-      return res.status(403).send();
-    }
-    next();
-  };
-}
-
-// Использование
-app.delete("/api/projects/:id", requireRole('admin'), handler);
-```
-
----
-
-### 4. Валидация ввода
-
-**Описание:** Не все данные валидируются перед сохранением в БД.
-
-**Статус:** Частично реализовано
-
-**Где используется Zod:**
-
-```typescript
-// server/routes.ts
-const parsed = insertSiteSettingsSchema.safeParse(req.body);
-if (!parsed.success) {
-  return res.status(400).json(parsed.error);
-}
-
-const parsed = insertLabelSchema.safeParse(req.body);
-if (!parsed.success) return res.status(400).json(parsed.error);
-```
-
-**Где НЕ используется:**
-
-| Endpoint | Проблема |
-|----------|-----------|
-| POST /api/register | Не валидируется email |
-| POST /api/projects | Нет валидации полей |
-| POST /api/tasks | Частично (только title) |
-| PATCH /api/tasks/:id | Нет валидации полей |
-| POST /api/chat/messages | Не валидируется content |
-
-**Рекомендация:** Создать схемы Zod для всех эндпоинтов:
-
-```typescript
-// server/schemas/validations.ts
-const createProjectSchema = z.object({
-  name: z.string().min(1).max(100),
-  color: z.string().regex(/^#[0-9A-Fa-f]{6}$/),
-  priority: z.enum(['low', 'medium', 'high']).optional(),
-});
-
-app.post("/api/projects", async (req, res) => {
-  const parsed = createProjectSchema.safeParse(req.body);
-  if (!parsed.success) {
-    return res.status(400).json(parsed.error);
+app.post("/api/auth/login", async (req, res) => {
+  const result = loginSchema.safeParse(req.body);
+  
+  if (!result.success) {
+    return res.status(400).json({
+      error: result.error.issues[0].message
+    });
   }
+  
+  // result.data содержит валидированные данные
+  const { email, password } = result.data;
 });
 ```
 
 ---
 
-### 5. XSS (Cross-Site Scripting)
+## Санитизация (XSS)
 
-**Описание:** Внедрение вредоносного JavaScript кода.
+### Реализация
 
-**Статус:** React защищает, сервер - нет
+**Файл:** `server/utils/sanitization.ts`
 
-**Защита на стороне клиента:**
-
-- React автоматически экранирует вывод
-- Использование dangerouslySetInnerHTML требует явного указания
-
-**Риски на стороне сервера:**
-
-- Данные сохраняются без санитизации
-- При изменении frontend могут возникнуть проблемы
-
-**Рекомендация:** Добавить санитизацию:
+Используется библиотека `xss` для статической санитизации.
 
 ```typescript
-// server/utils/sanitize.ts
-import DOMPurify from 'isomorphic-dompurify';
+import { FilterXSS } from 'xss';
 
-function sanitizeInput(input: string): string {
-  return DOMPurify.sanitize(input, { ALLOWED_TAGS: [] });
+const xss = new FilterXSS({
+  whiteList: {
+    b: [],
+    i: [],
+    u: [],
+    br: [],
+    p: [],
+  },
+  stripIgnoreTag: true,
+  stripIgnoreTagBody: ['script'],
+});
+
+export function sanitizeInput(input: string): string {
+  return xss.process(input);
 }
 
-// Использование
-const cleanTitle = sanitizeInput(req.body.title);
+export function sanitizeTaskDescription(input: string): string {
+  return sanitizeInput(input);
+}
+```
+
+### Применение
+
+Санитизация применяется к:
+
+- `task.description` - Описания задач
+- `task.attachments` - Вложения (названия)
+- `message.content` - Сообщения чата
+
+```typescript
+const cleanDescription = sanitizeTaskDescription(req.body.description);
 ```
 
 ---
 
-### 6. Хранение OAuth токенов
+## Шифрование токенов
 
-**Описание:** Токены Яндекс Календаря хранятся в БД без шифрования.
+### Реализация
 
-**Статус:** Уязвимость
+**Файл:** `server/utils/tokenEncryption.ts`
 
-**Код:**
+OAuth токены хранятся с использованием bcryptjs:
 
 ```typescript
-// server/services/yandex-calendar.ts
-await storage.createYandexCalendarIntegration({
-  userId,
-  accessToken: tokens.access_token, // plain text!
-  refreshToken: tokens.refresh_token, // plain text!
-  expiresAt: new Date(),
-});
+import bcrypt from 'bcryptjs';
+
+export async function encryptToken(token: string): Promise<string> {
+  const salt = bcrypt.genSaltSync(10);
+  return bcrypt.hashSync(token, salt);
+}
+
+export async function compareToken(token: string, encrypted: string): Promise<boolean> {
+  return bcrypt.compareSync(token, encrypted);
+}
 ```
 
-**Проблемы:**
-- Токены доступны администраторам БД
-- При утечке БД - компрометация интеграций
-- Нет encryption at rest
+---
 
-**Рекомендация:** Шифровать токены:
+## Аутентификация
+
+### Scrypt хеширование паролей
+
+**Файл:** `server/auth.ts`
 
 ```typescript
-// server/utils/encryption.ts
 import crypto from 'crypto';
+import { promisify } from 'util';
 
-const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY!; // 32 bytes
-const IV_LENGTH = 16;
+const scrypt = promisify(crypto.scrypt);
 
-function encrypt(text: string): string {
-  const iv = crypto.randomBytes(IV_LENGTH);
-  const cipher = crypto.createCipheriv('aes-256-cbc', Buffer.from(ENCRYPTION_KEY), iv);
-  let encrypted = cipher.update(text, 'utf8', 'hex');
-  encrypted += cipher.final('hex');
-  return iv.toString('hex') + ':' + encrypted;
+async function hashPassword(password: string): Promise<string> {
+  const salt = crypto.randomBytes(16).toString("hex");
+  const derivedKey = (await scrypt(password, salt, 64)) as Buffer;
+  return `${derivedKey.toString("hex")}.${salt}`;
 }
 
-function decrypt(text: string): string {
-  const [iv, encrypted] = text.split(':');
-  const decipher = crypto.createDecipheriv(
-    'aes-256-cbc',
-    Buffer.from(ENCRYPTION_KEY),
-    Buffer.from(iv, 'hex')
-  );
-  let decrypted = decipher.update(encrypted, 'hex', 'utf8');
-  decrypted += decipher.final('utf8');
-  return decrypted;
+async function comparePasswords(supplied: string, stored: string): Promise<boolean> {
+  const [hashed, salt] = stored.split(".");
+  const hashedBuf = Buffer.from(hashed, "hex");
+  const suppliedBuf = (await scrypt(supplied, salt, 64)) as Buffer;
+  return crypto.timingSafeEqual(hashedBuf, suppliedBuf);
 }
 ```
 
----
+### Сессии
 
-### 7. Sensitive Data в логах
-
-**Описание:** Конфиденциальные данные могут попасть в логи.
-
-**Статус:** Частично исправлено
-
-**Было (удалено):**
-- console.log с email пользователей
-- console.log с данными запросов
-- console.log с ответами БД
-
-**Рекомендация:** Использовать структурированное логирование:
-
-```typescript
-// server/utils/logger.ts
-import pino from 'pino';
-
-const logger = pino({
-  level: process.env.LOG_LEVEL || 'info',
-  redact: {
-    paths: ['req.headers.authorization', 'req.body.password', '*.token'],
-  },
-});
-```
-
----
-
-### 8. Отсутствие HTTPS в development
-
-**Описание:** Development сервер работает без HTTPS.
-
-**Статус:** Ожидаемо для development
-
-**Рекомендация:**
-- Production всегда использовать HTTPS
-- Использовать proxy (nginx, cloudflare)
-
----
-
-## Рекомендации
-
-### Приоритет 1 (Критично)
-
-1. **Активировать CSRF защиту**
-   - Установить csurf middleware
-   - Добавить XSRF токен на клиент
-
-2. **Добавить проверки IDOR**
-   - Создать middleware для проверки ownership
-   - Применить ко всем /:id endpoints
-
-### Приоритет 2 (Высокий)
-
-3. **Внедрить RBAC**
-   - Создать middleware для проверки ролей
-   - Добавить проверки прав для критических операций
-
-4. **Шифровать OAuth токены**
-   - Использовать AES-256 для токенов
-   - Хранить ключ в переменных окружения
-
-### Приоритет 3 (Средний)
-
-5. **Унифицировать валидацию**
-   - Создать Zod схемы для всех эндпоинтов
-   - Добавить middleware для автоматической валидации
-
-6. **Улучшить логирование**
-   - Использовать структурированный логгер
-   - redact sensitive data
+- HttpOnly cookies
+- Secure flag в production
+- SameSite: lax
+- Redis хранилище (production) / MemoryStore (dev)
 
 ---
 
 ## Чеклист безопасности
 
 ### Аутентификация
-
-- [x] Хеширование паролей (scrypt/bcrypt)
+- [x] Scrypt хеширование паролей
 - [x] HttpOnly cookies
 - [x] Secure cookies в production
-- [ ] CSRF токены
+- [x] CSRF защита
 - [ ] 2FA/MFA
 
-### Сессии
-
-- [x] Redis хранилище (production)
-- [x] MemoryStore (development)
-- [x] Secure session config
-
-### Rate Limiting
-
-- [x] Global rate limiting
-- [x] Login rate limiting
-
 ### API
+- [x] CSRF защита (csrf-csrf)
+- [x] IDOR защита (ownership middleware)
+- [x] Валидация данных (Zod)
+- [x] Sanitization (XSS)
+- [x] Rate limiting
+- [x] CORS
 
-- [ ] IDOR защита
-- [x] SQL Injection защита (Drizzle)
-- [ ] Валидация всех входных данных
-- [ ] Ролевая проверка доступа
+### Безопасность заголовков
+- [x] Helmet.js
+- [x] CSP (Content Security Policy)
+- [x] worker-src для WebSocket
 
-### Файлы
-
-- [x] whitelist MIME-типов
-- [x] Ограничение размера
-
-### Headers
-
-- [x] Helmet
-- [x] CORS настройка
-
-### Мониторинг
-
-- [ ] Логирование аутентификации
-- [ ] Логирование ошибок
-- [ ] Алерты на подозрительную активность
+### База данных
+- [x] Параметризованные запросы (Drizzle)
+- [x] Шифрование OAuth токенов
+- [ ] Резервное копирование
 
 ---
 
-## Заключение
+## Дополнительные рекомендации
 
-Проект имеет базовый уровень безопасности:
-- ✅ Аутентификация и сессии
-- ✅ Защита от SQL Injection
-- ✅ Rate Limiting
-- ✅ Безопасные заголовки
-- ⚠️ Требуется: CSRF, IDOR, RBAC, валидация
+### Производство
+1. Всегда использовать HTTPS
+2. Настроить CSP через Nginx
+3. Внедрить логирование безопасности
+4. Регулярное обновление зависимостей
+5. Внедрить мониторинг
 
-Рекомендуется реализовать рекомендации в порядке приоритета для повышения уровня безопасности.
+### Разработка
+1. Не храните secrets в репозитории
+2. Используйте `.env` файлы
+3. Регулярно проверяйте зависимости на уязвимости
 
 ---
 
-**Дата создания:** 2026  
-**Версия:** 1.0
+**Версия документа:** 1.1
+**Последнее обновление:** 2026
