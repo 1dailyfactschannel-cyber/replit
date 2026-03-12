@@ -1,43 +1,4 @@
 services:
-  # PostgreSQL Database
-  db:
-    image: postgres:16-alpine
-    container_name: m4portal-db
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER:-m4portal_user}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_this_password}
-      POSTGRES_DB: ${POSTGRES_DB:-m4portal}
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
-    networks:
-      - m4portal-network
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-m4portal_user}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  # Redis Cache
-  redis:
-    image: redis:7-alpine
-    container_name: m4portal-redis
-    restart: unless-stopped
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis_data:/data
-    networks:
-      - m4portal-network
-    command: redis-server --appendonly yes
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
   # Backend API Server
   server:
     build:
@@ -48,22 +9,19 @@ services:
     environment:
       NODE_ENV: production
       PORT: 3000
-      DATABASE_URL: postgresql://${POSTGRES_USER:-m4portal_user}:${POSTGRES_PASSWORD:-change_this_password}@db:5432/${POSTGRES_DB:-m4portal}
+      DATABASE_URL: ${DATABASE_URL:-postgresql://user:password@host:port/database}
       SESSION_SECRET: ${SESSION_SECRET:-dev_secret_key_change_in_production}
-      REDIS_URL: redis://redis:6379
+      REDIS_URL: ${REDIS_URL:-}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:8090,http://localhost:3000}
       YANDEX_CLIENT_ID: ${YANDEX_CLIENT_ID:-}
       YANDEX_CLIENT_SECRET: ${YANDEX_CLIENT_SECRET:-}
       APP_URL: ${APP_URL:-http://localhost:8090}
     ports:
       - "3245:3000"
-    depends_on:
-      db:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
     networks:
       - m4portal-network
+    depends_on:
+      - client
 
   # Frontend Client with Nginx
   client:
@@ -74,14 +32,8 @@ services:
     restart: unless-stopped
     ports:
       - "8090:80"
-    depends_on:
-      - server
     networks:
       - m4portal-network
-
-volumes:
-  postgres_data:
-  redis_data:
 
 networks:
   m4portal-network:

@@ -7,10 +7,11 @@
 Создайте файл `.env` в корне проекта (если ещё не создан):
 
 ```bash
-# PostgreSQL
-POSTGRES_USER=m4portal_user
-POSTGRES_PASSWORD=your_secure_password_123
-POSTGRES_DB=m4portal
+# PostgreSQL (подключение к существующей базе)
+DATABASE_URL=postgresql://user:password@host:port/database
+
+# Пример:
+# DATABASE_URL=postgresql://m4portal_user:password@192.168.1.100:5432/m4portal
 
 # Session Secret (обязательно измените!)
 SESSION_SECRET=your_random_secret_key_here
@@ -21,15 +22,37 @@ ALLOWED_ORIGINS=http://localhost:8090,https://your-domain.com
 # Application URL
 APP_URL=https://your-domain.com
 
-# Redis (опционально)
-REDIS_URL=redis://redis:6379
+# Redis (опционально, если есть внешний Redis)
+REDIS_URL=redis://redis-host:6379
+# Или оставьте пустым для in-memory cache
 
 # Yandex Calendar (опционально)
 YANDEX_CLIENT_ID=
 YANDEX_CLIENT_SECRET=
 ```
 
-### 2. Создание стека в Portainer
+### 2. Настройка подключения к существующей базе данных
+
+Если база данных развернута в другом стеке Portainer:
+
+1. **Убедитесь, что база доступна из сети контейнеров**
+   - Оба контейнера должны быть в одной сети Docker
+   - Или используйте IP-адрес хоста (host.docker.internal)
+
+2. **Обновите переменную DATABASE_URL:**
+   - Формат: `postgresql://user:password@host:port/database`
+   - Пример: `postgresql://m4portal_user:pass@db-host:5432/m4portal`
+
+3. **Проверьте доступность базы:**
+   ```bash
+   # Из контейнера
+   docker exec m4portal-server curl -v telnet://db-host:5432
+   
+   # Или используйте psql
+   docker exec m4portal-server psql $DATABASE_URL -c "SELECT 1"
+   ```
+
+### 3. Создание стека в Portainer
 
 #### Метод 1: Через интерфейс Portainer
 
@@ -37,7 +60,11 @@ YANDEX_CLIENT_SECRET=
 2. Нажмите **Add stack**
 3. Введите имя стека: `m4portal`
 4. Вставьте содержимое файла `docker-compose.yml`
-5. В разделе **Environment variables** вставьте переменные из `.env` или загрузите файл
+5. В разделе **Environment variables** укажите:
+   - `DATABASE_URL` - подключение к существующей базе
+   - `SESSION_SECRET` - секретный ключ
+   - `ALLOWED_ORIGINS` - домены для CORS
+   - `APP_URL` - URL приложения
 6. Нажмите **Deploy the stack**
 
 #### Метод 2: Через командную строку
@@ -46,11 +73,39 @@ YANDEX_CLIENT_SECRET=
 # Перейдите в папку проекта
 cd /path/to/m4portal
 
-# Запустите стек
+# Создайте .env файл (см. выше)
+# Затем запустите стек
 docker compose up -d
 ```
 
-### 3. Проверка развертывания
+### 4. Настройка сети (если база в другом стеке)
+
+Если база данных находится в другом стеке Portainer, нужно создать общую сеть:
+
+**Вариант A: Общая сеть между стеками**
+```bash
+# Создать общую сеть
+docker network create shared-network
+
+# Подключить оба контейнера к сети
+# 1. Модифицировать docker-compose.yml:
+networks:
+  - shared-network
+
+# 2. Добавить сеть в настройках другого стека с базой
+```
+
+**Вариант B: Использование host.docker.internal (для Docker Desktop)**
+```env
+DATABASE_URL=postgresql://user:password@host.docker.internal:5432/database
+```
+
+**Вариант C: Использование IP-адреса хоста**
+```env
+DATABASE_URL=postgresql://user:password@192.168.1.100:5432/database
+```
+
+### 5. Проверка развертывания
 
 ```bash
 # Просмотр контейнеров
@@ -62,61 +117,31 @@ docker logs -f m4portal-server
 # Логи клиента
 docker logs -f m4portal-client
 
-# Логи базы данных
-docker logs -f m4portal-db
-```
-
-### 4. Настройка обратного прокси (опционально)
-
-Если используете Nginx как обратный прокси, добавьте конфигурацию:
-
-```nginx
-server {
-    listen 80;
-    server_name your-domain.com;
-
-    location / {
-        proxy_pass http://localhost:8090;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection 'upgrade';
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_cache_bypass $http_upgrade;
-    }
-}
+# Проверка подключения к БД
+docker exec m4portal-server node -e "console.log(process.env.DATABASE_URL)"
 ```
 
 ## Архитектура контейнеров
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    Portainer                                 │
+│                    Portainer (Stack 1)                       │
+│  ┌─────────────────────────────────────────────────────┐    │
+│  │              Существующая база данных               │    │
+│  │                  (PostgreSQL)                       │    │
+│  └─────────────────────────────────────────────────────┘    │
 └─────────────────────────────────────────────────────────────┘
                             │
 ┌─────────────────────────────────────────────────────────────┐
-│                    Docker Network: m4portal-network          │
-│                                                             │
-│  ┌─────────────────┐     ┌─────────────────┐               │
-│  │   PostgreSQL    │     │     Redis       │               │
-│  │   (Database)    │     │  (Caching)      │               │
-│  └─────────────────┘     └─────────────────┘               │
-│         │                       │                           │
-│         └──────────┬────────────┘                           │
-│                    ▼                                        │
-│            ┌───────────────┐                                │
-│            │  Node.js API  │                                │
-│            │    Server     │                                │
-│            │  (Port 3000)  │                                │
-│            └───────────────┘                                │
-│                    │                                        │
-│                    ▼                                        │
-│            ┌───────────────┐                                │
-│            │  Nginx Client │                                │
-│            │  (Port 80)    │                                │
-│            └───────────────┘                                │
+│                    Portainer (Stack 2)                       │
+│  ┌─────────────────────────────────────────────────────┐    │
+│  │              Сеть: shared-network или default       │    │
+│  │                                                     │    │
+│  │  ┌───────────────┐     ┌───────────────┐          │    │
+│  │  │  Node.js API  │     │  Nginx Client │          │    │
+│  │  │  (Port 3000)  │────▶│  (Port 80)    │          │    │
+│  │  └───────────────┘     └───────────────┘          │    │
+│  └─────────────────────────────────────────────────────┘    │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -124,10 +149,18 @@ server {
 
 | Контейнер | Порт | Описание |
 |-----------|------|----------|
-| PostgreSQL | 5432 | База данных (только для локального доступа) |
-| Redis | 6379 | Кэширование (только для локального доступа) |
 | Server | 3245:3000 | API сервер (доступен с хоста) |
 | Client | 8090:80 | Frontend приложение |
+
+## Переменные окружения
+
+| Переменная | Описание | Пример |
+|------------|----------|--------|
+| `DATABASE_URL` | Подключение к PostgreSQL | `postgresql://user:pass@host:5432/db` |
+| `SESSION_SECRET` | Секрет сессий (обязательно!) | `your-random-secret` |
+| `ALLOWED_ORIGINS` | CORS origins | `http://localhost:8090` |
+| `APP_URL` | URL приложения | `https://your-domain.com` |
+| `REDIS_URL` | Redis (опционально) | `redis://host:6379` |
 
 ## Обновление приложения
 
@@ -152,28 +185,6 @@ docker compose build --no-cache
 docker compose up -d
 ```
 
-## Резервное копирование
-
-### PostgreSQL
-
-```bash
-# Создание бэкапа
-docker exec m4portal-db pg_dump -U m4portal_user m4portal > backup.sql
-
-# Восстановление
-docker exec -i m4portal-db psql -U m4portal_user -d m4portal < backup.sql
-```
-
-### Redis
-
-```bash
-# Сохранение данных
-docker exec m4portal-redis redis-cli SAVE
-
-# Копирование дампа
-docker cp m4portal-redis:/data/dump.rdb ./redis_backup.rdb
-```
-
 ## Устранение проблем
 
 ### Контейнеры не запускаются
@@ -181,7 +192,7 @@ docker cp m4portal-redis:/data/dump.rdb ./redis_backup.rdb
 ```bash
 # Просмотр логов
 docker logs m4portal-server
-docker logs m4portal-db
+docker logs m4portal-client
 
 # Проверка сети
 docker network ls
@@ -190,16 +201,31 @@ docker network inspect m4portal-network
 
 ### Ошибки подключения к БД
 
-Убедитесь, что:
-- Переменные окружения корректны
-- Сеть `m4portal-network` создана
-- PostgreSQL успешно запущен
+1. **Проверьте DATABASE_URL:**
+   ```bash
+   docker exec m4portal-server node -e "console.log(process.env.DATABASE_URL)"
+   ```
+
+2. **Убедитесь, что хост доступен:**
+   ```bash
+   docker exec m4portal-server ping -c 1 db-host
+   ```
+
+3. **Проверьте порт:**
+   ```bash
+   docker exec m4portal-server nc -zv db-host 5432
+   ```
+
+4. **Проверьте права доступа:**
+   - Убедитесь, что пользователь БД существует
+   - Убедитесь, что пароль корректен
+   - Убедитесь, что база данных существует
 
 ### Проблемы с CORS
 
-Проверьте переменную `ALLOWED_ORIGINS` в `.env`:
+Проверьте переменную `ALLOWED_ORIGINS`:
 - Добавьте все домены, с которых будет доступ
-- Для тестирования: `http://localhost:8090,http://localhost:3000,http://127.0.0.1:8090`
+- Для тестирования: `http://localhost:8090,http://localhost:3000`
 - Для продакшена: `https://your-domain.com`
 
 ## Безопасность
@@ -207,43 +233,38 @@ docker network inspect m4portal-network
 ### Обязательные действия
 
 1. **Измените пароли по умолчанию:**
-   - `POSTGRES_PASSWORD` в `.env`
-   - `SESSION_SECRET` в `.env`
+   - `DATABASE_URL` - используйте сложный пароль
+   - `SESSION_SECRET` - сгенерируйте случайную строку
 
 2. **Используйте HTTPS:**
    - Настройте SSL сертификаты
-   - Включите `secure: true` для cookies
+   - Включите `secure: true` для cookies (в коде сервера)
 
 3. **Настройте брандмауэр:**
-   - Ограничьте доступ к портам 5432, 6379
+   - Ограничьте доступ к порту 5432 базы данных
    - Оставьте только необходимые порты (8090, 3245)
-
-### Управление секретами в Portainer
-
-В Portainer можно использовать Secret Management:
-1. Перейдите в **Secrets**
-2. Создайте секреты для чувствительных данных
-3. Используйте их в stack файле
 
 ## Мониторинг
 
-### Включение логирования
+### Просмотр логов
 
-В `docker-compose.yml` можно добавить:
-```yaml
-logging:
-  driver: "json-file"
-  options:
-    max-size: "10m"
-    max-file: "3"
+```bash
+# Логи сервера
+docker logs -f m4portal-server --tail 100
+
+# Логи клиента
+docker logs -f m4portal-client --tail 100
 ```
 
-### Метрики
+### Проверка health
 
-Для мониторинга можно использовать:
-- Portainer monitoring
-- Prometheus + Grafana
-- cAdvisor для метрик контейнеров
+```bash
+# Проверка API
+curl http://localhost:3245/api/user
+
+# Проверка frontend
+curl http://localhost:8090
+```
 
 ## Ресурсы
 
@@ -253,5 +274,5 @@ logging:
 
 ---
 
-**Версия документа:** 1.0
+**Версия документа:** 1.1
 **Последнее обновление:** 2026
