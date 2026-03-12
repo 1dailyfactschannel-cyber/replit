@@ -1,10 +1,10 @@
 FROM node:20-alpine AS base
 
-# Установка зависимостей
+# Установка зависимостей (включая devDependencies для сборки)
 FROM base AS deps
 WORKDIR /app
 COPY package.json package-lock.json* ./
-RUN npm ci --only=production
+RUN npm ci
 
 # Сборка проекта
 FROM base AS builder
@@ -28,9 +28,6 @@ RUN addgroup --system --gid 1001 nodejs && \
 COPY --from=builder --chown=nodejs:nodejs /app/dist ./dist
 COPY --from=builder --chown=nodejs:nodejs /app/package.json ./package.json
 COPY --from=builder --chown=nodejs:nodejs /app/node_modules ./node_modules
-
-# Загрузка конфигурации для production
-COPY --from=builder --chown=nodejs:nodejs /app/.env.production ./.env || true
 
 USER nodejs
 
