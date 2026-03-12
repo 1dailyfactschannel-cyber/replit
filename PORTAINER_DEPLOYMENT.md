@@ -1,278 +1,138 @@
-# Развертывание m4portal в Portainer
+# Развертывание в Portainer (Обновлено для teamsync-server)
 
-## Подготовка проекта
+## Важные изменения
 
-### 1. Настройка переменных окружения
+Контейнер называется **teamsync-server**.
+Сеть: **portal_teamsync-network** (используется в Portainer).
 
-Создайте файл `.env` в корне проекта (если ещё не создан):
+## Настройка в Portainer
 
-```bash
-# PostgreSQL (подключение к существующей базе)
-DATABASE_URL=postgresql://user:password@host:port/database
+### 1. Создайте файл .env
 
-# Пример:
-# DATABASE_URL=postgresql://m4portal_user:password@192.168.1.100:5432/m4portal
+Создайте файл `.env` с настройками:
 
-# Session Secret (обязательно измените!)
-SESSION_SECRET=your_random_secret_key_here
+```env
+# PostgreSQL (существующая база данных)
+DATABASE_URL=postgresql://db_test:D2rGkB6CaIwpb@10.30.0.136:5532/db_test
 
-# Allowed Origins (для CORS)
-ALLOWED_ORIGINS=http://localhost:8090,https://your-domain.com
+# Сессия (обязательно установите секретный ключ!)
+SESSION_SECRET=change_this_secret_key_to_random_string
 
-# Application URL
-APP_URL=https://your-domain.com
+# CORS (обязательно для работы фронтенда)
+# Используйте IP вашего сервера + порт фронтенда (8090)
+ALLOWED_ORIGINS=http://89.208.14.253:8090
 
-# Redis (опционально, если есть внешний Redis)
-REDIS_URL=redis://redis-host:6379
-# Или оставьте пустым для in-memory cache
+# URL приложения
+APP_URL=http://89.208.14.253:8090
 
-# Yandex Calendar (опционально)
+# Redis (если есть, иначе оставьте пустым)
+REDIS_URL=
+
+# Ключи Яндекс Календаря (если нужно)
 YANDEX_CLIENT_ID=
 YANDEX_CLIENT_SECRET=
 ```
 
-### 2. Настройка подключения к существующей базе данных
+### 2. Настройка Stack в Portainer
 
-Если база данных развернута в другом стеке Portainer:
-
-1. **Убедитесь, что база доступна из сети контейнеров**
-   - Оба контейнера должны быть в одной сети Docker
-   - Или используйте IP-адрес хоста (host.docker.internal)
-
-2. **Обновите переменную DATABASE_URL:**
-   - Формат: `postgresql://user:password@host:port/database`
-   - Пример: `postgresql://m4portal_user:pass@db-host:5432/m4portal`
-
-3. **Проверьте доступность базы:**
-   ```bash
-   # Из контейнера
-   docker exec m4portal-server curl -v telnet://db-host:5432
-   
-   # Или используйте psql
-   docker exec m4portal-server psql $DATABASE_URL -c "SELECT 1"
-   ```
-
-### 3. Создание стека в Portainer
-
-#### Метод 1: Через интерфейс Portainer
-
-1. Откройте Portainer и перейдите в раздел **Stacks**
-2. Нажмите **Add stack**
-3. Введите имя стека: `m4portal`
-4. Вставьте содержимое файла `docker-compose.yml`
-5. В разделе **Environment variables** укажите:
-   - `DATABASE_URL` - подключение к существующей базе
-   - `SESSION_SECRET` - секретный ключ
-   - `ALLOWED_ORIGINS` - домены для CORS
-   - `APP_URL` - URL приложения
+1. Перейдите в **Stacks** -> **Add stack**
+2. Название: `teamsync`
+3. Вставьте содержимое `docker-compose.yml` (обновленный)
+4. В разделе **Environment variables** загрузите `.env` файл или вставьте значения вручную
+5. Включите **Build** (так как используем Dockerfile из репозитория)
 6. Нажмите **Deploy the stack**
 
-#### Метод 2: Через командную строку
+### 3. Проверка сети
 
+После запуска стека проверьте сеть:
+1. Portainer -> Networks
+2. Найдите сеть `portal_teamsync-network`
+3. Убедитесь, что оба контейнера (`teamsync-server` и `teamsync-client`) подключены к этой сети
+
+### 4. Проверка бэкенда
+
+После запуска проверьте логи контейнера `teamsync-server`:
+1. Containers -> `teamsync-server` -> Logs
+2. Ищите ошибки (особенно связанные с базой данных или CORS)
+
+Если контейнер падает с ошибкой:
+- Проверьте `ALLOWED_ORIGINS` - он должен быть заполнен
+- Проверьте `DATABASE_URL` - база данных должна быть доступна из сети контейнера
+
+### 5. Проверка API
+
+Если сервер запустился, проверьте его работу:
 ```bash
-# Перейдите в папку проекта
-cd /path/to/m4portal
+curl -v http://89.208.14.253:3245/api/user
+```
+Должен вернуть 401 Unauthorized (если не авторизованы) или JSON с данными пользователя.
 
-# Создайте .env файл (см. выше)
-# Затем запустите стек
-docker compose up -d
+### 6. Проблема с регистрацией (502 Bad Gateway)
+
+Если при регистрации по адресу `http://89.208.14.253:8090/api/register` получаете 502:
+1. Проверьте, что фронтенд (порт 8090) запущен
+2. Проверьте, что бэкенд (порт 3245) доступен
+3. Проверьте, что фронтенд отправляет запрос на правильный адрес (порт 3245, а не 8090)
+
+**Важно:** Фронтенд должен обращаться к бэкенду через порт 3245 (маппинг порта 3000 контейнера), а не через 8090.
+
+## Дополнительные файлы
+
+### nginx.conf (если используете Nginx)
+Если вы используете Nginx, убедитесь, что он проксирует запросы на бэкенд:
+```nginx
+location /api/ {
+    proxy_pass http://teamsync-server:3000;
+    # ... остальные настройки
+}
 ```
 
-### 4. Настройка сети (если база в другом стеке)
-
-Если база данных находится в другом стеке Portainer, нужно создать общую сеть:
-
-**Вариант A: Общая сеть между стеками**
-```bash
-# Создать общую сеть
-docker network create shared-network
-
-# Подключить оба контейнера к сети
-# 1. Модифицировать docker-compose.yml:
-networks:
-  - shared-network
-
-# 2. Добавить сеть в настройках другого стека с базой
-```
-
-**Вариант B: Использование host.docker.internal (для Docker Desktop)**
-```env
-DATABASE_URL=postgresql://user:password@host.docker.internal:5432/database
-```
-
-**Вариант C: Использование IP-адреса хоста**
-```env
-DATABASE_URL=postgresql://user:password@192.168.1.100:5432/database
-```
-
-### 5. Проверка развертывания
-
-```bash
-# Просмотр контейнеров
-docker ps
-
-# Логи сервера
-docker logs -f m4portal-server
-
-# Логи клиента
-docker logs -f m4portal-client
-
-# Проверка подключения к БД
-docker exec m4portal-server node -e "console.log(process.env.DATABASE_URL)"
-```
-
-## Архитектура контейнеров
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    Portainer (Stack 1)                       │
-│  ┌─────────────────────────────────────────────────────┐    │
-│  │              Существующая база данных               │    │
-│  │                  (PostgreSQL)                       │    │
-│  └─────────────────────────────────────────────────────┘    │
-└─────────────────────────────────────────────────────────────┘
-                            │
-┌─────────────────────────────────────────────────────────────┐
-│                    Portainer (Stack 2)                       │
-│  ┌─────────────────────────────────────────────────────┐    │
-│  │              Сеть: shared-network или default       │    │
-│  │                                                     │    │
-│  │  ┌───────────────┐     ┌───────────────┐          │    │
-│  │  │  Node.js API  │     │  Nginx Client │          │    │
-│  │  │  (Port 3000)  │────▶│  (Port 80)    │          │    │
-│  │  └───────────────┘     └───────────────┘          │    │
-│  └─────────────────────────────────────────────────────┘    │
-└─────────────────────────────────────────────────────────────┘
-```
-
-## Маппинг портов
-
-| Контейнер | Порт | Описание |
-|-----------|------|----------|
-| Server | 3245:3000 | API сервер (доступен с хоста) |
-| Client | 8090:80 | Frontend приложение |
-
-## Переменные окружения
-
-| Переменная | Описание | Пример |
-|------------|----------|--------|
-| `DATABASE_URL` | Подключение к PostgreSQL | `postgresql://user:pass@host:5432/db` |
-| `SESSION_SECRET` | Секрет сессий (обязательно!) | `your-random-secret` |
-| `ALLOWED_ORIGINS` | CORS origins | `http://localhost:8090` |
-| `APP_URL` | URL приложения | `https://your-domain.com` |
-| `REDIS_URL` | Redis (опционально) | `redis://host:6379` |
-
-## Обновление приложения
-
-### Обновление через Portainer
-
-1. Перейдите в раздел **Stacks**
-2. Выберите ваш стек `m4portal`
-3. Нажмите **Update the stack**
-4. Вставьте обновлённый `docker-compose.yml`
-5. Нажмите **Update the stack**
-
-### Обновление через CLI
-
-```bash
-# Остановить контейнеры
-docker compose down
-
-# Пересобрать образы
-docker compose build --no-cache
-
-# Запустить
-docker compose up -d
-```
+### Dockerfile
+Обновлен для корректного запуска `dist/index.mjs`.
 
 ## Устранение проблем
 
-### Контейнеры не запускаются
+### Контейнер teamsync-server не запускается
+1. Проверьте логи в Portainer
+2. Убедитесь, что `ALLOWED_ORIGINS` заполнен (например, `http://89.208.14.253:8090`)
+3. Убедитесь, что `DATABASE_URL` корректный и база доступна
 
-```bash
-# Просмотр логов
-docker logs m4portal-server
-docker logs m4portal-client
+### Фронтенд не подключается к бэкенду
+1. Проверьте сеть `portal_teamsync-network`
+2. Убедитесь, что фронтенд обращается к `http://teamsync-server:3000` (внутри сети) или `http://89.208.14.253:3245` (снаружи)
 
-# Проверка сети
-docker network ls
-docker network inspect m4portal-network
-```
+## Команды для обновления
 
-### Ошибки подключения к БД
+Если нужно обновить стек:
+1. Portainer -> Stacks -> `teamsync` -> Update
+2. Вставьте обновленный `docker-compose.yml`
+3. Нажмите **Update the stack**
 
-1. **Проверьте DATABASE_URL:**
+## Проверка подключения к БД
+
+Чтобы убедиться, что база данных доступна из контейнера, проверьте настройки сети:
+- В Portainer убедитесь, что контейнер имеет доступ к IP `10.30.0.136`
+- Если база данных находится в другой сети Portainer, используйте общую сеть или IP хоста
+- Для проверки можно добавить в `.env`:
+  ```
+  DATABASE_URL=postgresql://db_test:D2rGkB6CaIwpb@host.docker.internal:5532/db_test
+  ```
+  (используется host.docker.internal для доступа к хосту из контейнера)
+
+## Пример успешного запуска
+
+1. **Создайте стек** в Portainer с именем `teamsync`
+2. **Добавьте переменные** из `.env`
+3. **Деплойте** стек
+4. **Проверьте логи** `teamsync-server` - должны отсутствовать ошибки
+5. **Проверьте API**:
    ```bash
-   docker exec m4portal-server node -e "console.log(process.env.DATABASE_URL)"
+   curl http://89.208.14.253:3245/api/user
+   ```
+6. **Проверьте фронтенд**:
+   ```bash
+   curl http://89.208.14.253:8090
    ```
 
-2. **Убедитесь, что хост доступен:**
-   ```bash
-   docker exec m4portal-server ping -c 1 db-host
-   ```
+Если всё работает, регистрация должна проходить без ошибок 502.
 
-3. **Проверьте порт:**
-   ```bash
-   docker exec m4portal-server nc -zv db-host 5432
-   ```
-
-4. **Проверьте права доступа:**
-   - Убедитесь, что пользователь БД существует
-   - Убедитесь, что пароль корректен
-   - Убедитесь, что база данных существует
-
-### Проблемы с CORS
-
-Проверьте переменную `ALLOWED_ORIGINS`:
-- Добавьте все домены, с которых будет доступ
-- Для тестирования: `http://localhost:8090,http://localhost:3000`
-- Для продакшена: `https://your-domain.com`
-
-## Безопасность
-
-### Обязательные действия
-
-1. **Измените пароли по умолчанию:**
-   - `DATABASE_URL` - используйте сложный пароль
-   - `SESSION_SECRET` - сгенерируйте случайную строку
-
-2. **Используйте HTTPS:**
-   - Настройте SSL сертификаты
-   - Включите `secure: true` для cookies (в коде сервера)
-
-3. **Настройте брандмауэр:**
-   - Ограничьте доступ к порту 5432 базы данных
-   - Оставьте только необходимые порты (8090, 3245)
-
-## Мониторинг
-
-### Просмотр логов
-
-```bash
-# Логи сервера
-docker logs -f m4portal-server --tail 100
-
-# Логи клиента
-docker logs -f m4portal-client --tail 100
-```
-
-### Проверка health
-
-```bash
-# Проверка API
-curl http://localhost:3245/api/user
-
-# Проверка frontend
-curl http://localhost:8090
-```
-
-## Ресурсы
-
-- Документация m4portal: `README.md`, `TECH_STACK.md`, `SECURITY.md`
-- Docker документация: https://docs.docker.com/
-- Portainer документация: https://docs.portainer.io/
-
----
-
-**Версия документа:** 1.1
-**Последнее обновление:** 2026

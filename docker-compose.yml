@@ -4,7 +4,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: m4portal-server
+    container_name: teamsync-server
     restart: unless-stopped
     environment:
       NODE_ENV: production
@@ -19,7 +19,7 @@ services:
     ports:
       - "3245:3000"
     networks:
-      - m4portal-network
+      - portal_teamsync-network
     depends_on:
       - client
 
@@ -28,13 +28,13 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.client
-    container_name: m4portal-client
+    container_name: teamsync-client
     restart: unless-stopped
     ports:
       - "8090:80"
     networks:
-      - m4portal-network
+      - portal_teamsync-network
 
 networks:
-  m4portal-network:
+  portal_teamsync-network:
     driver: bridge
