@@ -1,13 +1,14 @@
 import "dotenv/config";
 import path from "path";
-import { fileURLToPath } from "url";
+// import { fileURLToPath } from "url"; // Not needed in CommonJS
 import rateLimit from "express-rate-limit";
 import cors from "cors";
 import helmet from "helmet";
 import cookieParser from "cookie-parser";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+// const __filename = fileURLToPath(import.meta.url);
+// const __dirname = path.dirname(__filename);
+// В CommonJS __filename и __dirname доступны глобально
 
 console.log('DATABASE_URL:', process.env.DATABASE_URL ? 'set' : 'NOT SET');
 
