@@ -1,8 +1,59 @@
 import express from 'express';
 import type { Request, Response } from 'express';
+import helmet from 'helmet';
+import cors from 'cors';
 
 // Main Vercel adapter for full website deployment
 const app = express();
+
+// Security: CORS configuration
+const getAllowedOrigins = (): string[] => {
+  const origins = process.env.ALLOWED_ORIGINS 
+    ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim()).filter(Boolean)
+    : null;
+  
+  if (process.env.NODE_ENV === 'production' && !origins) {
+    console.warn('⚠️  WARNING: ALLOWED_ORIGINS not set in production');
+    return [];
+  }
+  
+  return origins || ['http://localhost:3005', 'http://localhost:3000'];
+};
+
+const corsOptions = {
+  origin: getAllowedOrigins(),
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+};
+app.use(cors(corsOptions));
+
+// Security: Helmet for HTTP headers protection including CSP
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
+      styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+      styleSrcElem: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+      imgSrc: ["'self'", "data:", "blob:", "https:"],
+      connectSrc: ["'self'", "ws:", "wss:"],
+      workerSrc: ["'self'", "blob:"],
+      fontSrc: ["'self'", "https://fonts.gstatic.com", "https://fonts.googleapis.com"],
+      objectSrc: ["'none'"],
+      frameSrc: ["'self'"],
+      formAction: ["'self'"],
+      baseUri: ["'self'"],
+    },
+  },
+  hsts: {
+    maxAge: 31536000,
+    includeSubDomains: true,
+    preload: true,
+  },
+  xContentTypeOptions: true,
+  crossOriginEmbedderPolicy: false,
+}));
 
 // Middleware
 app.use(express.json());

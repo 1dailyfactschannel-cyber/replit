@@ -1113,20 +1113,15 @@ function ProjectsManagement() {
 
   const updateProjectMutation = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: any }) => {
-      console.log("[DEBUG] Updating project:", id, data);
       const res = await apiRequest("PATCH", `/api/projects/${id}`, data);
-      const result = await res.json();
-      console.log("[DEBUG] Server response:", result);
-      return result;
+      return res.json();
     },
     onMutate: async ({ id, data }) => {
-      console.log("[DEBUG] onMutate called for project:", id);
       // Cancel any outgoing refetches
       await queryClient.cancelQueries({ queryKey: ["/api/projects", selectedWorkspaceId] });
       
       // Snapshot the previous value
       const previousProjects = queryClient.getQueryData(["/api/projects", selectedWorkspaceId]);
-      console.log("[DEBUG] Previous projects:", previousProjects);
       
       // Optimistically update to the new value
       queryClient.setQueryData(["/api/projects", selectedWorkspaceId], (old: any[] = []) => {
@@ -1135,7 +1130,6 @@ function ProjectsManagement() {
             ? { ...project, ...data, updatedAt: new Date().toISOString() }
             : project
         );
-        console.log("[DEBUG] Optimistically updated projects:", updated);
         return updated;
       });
       
@@ -1143,7 +1137,6 @@ function ProjectsManagement() {
       return { previousProjects };
     },
     onError: (error: any, variables, context) => {
-      console.error("[DEBUG] Error updating project:", error);
       // If the mutation fails, use the context returned from onMutate to roll back
       if (context?.previousProjects) {
         queryClient.setQueryData(["/api/projects", selectedWorkspaceId], context.previousProjects);
@@ -1155,7 +1148,6 @@ function ProjectsManagement() {
       });
     },
     onSuccess: (data, variables) => {
-      console.log("[DEBUG] onSuccess called with data:", data);
       // Update with the actual server data
       queryClient.setQueryData(["/api/projects", selectedWorkspaceId], (old: any[] = []) => {
         const updated = old.map((project) => 
@@ -1163,7 +1155,6 @@ function ProjectsManagement() {
             ? { ...project, ...data }
             : project
         );
-        console.log("[DEBUG] Updated projects after success:", updated);
         return updated;
       });
       setIsEditProjectOpen(false);
@@ -1174,7 +1165,6 @@ function ProjectsManagement() {
       });
     },
     onSettled: () => {
-      console.log("[DEBUG] onSettled called");
       // Always refetch after error or success to ensure cache is in sync with server
       queryClient.invalidateQueries({ queryKey: ["/api/projects", selectedWorkspaceId] });
     }
@@ -1255,7 +1245,6 @@ function ProjectsManagement() {
   };
 
   const handleUpdateProject = () => {
-    console.log("[DEBUG] handleUpdateProject called");
     if (!editingProject || !editingProject.name.trim()) {
       toast({
         title: "Ошибка",
@@ -1280,7 +1269,6 @@ function ProjectsManagement() {
         workspaceId: editingProject.workspaceId
       }
     };
-    console.log("[DEBUG] Updating project with data:", updateData);
     updateProjectMutation.mutate(updateData);
   };
 

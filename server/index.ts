@@ -1,14 +1,13 @@
 import "dotenv/config";
 import path from "path";
-// import { fileURLToPath } from "url"; // Not needed in CommonJS
+import { fileURLToPath } from "url";
 import rateLimit from "express-rate-limit";
 import cors from "cors";
 import helmet from "helmet";
 import cookieParser from "cookie-parser";
 
-// const __filename = fileURLToPath(import.meta.url);
-// const __dirname = path.dirname(__filename);
-// В CommonJS __filename и __dirname доступны глобально
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 console.log('DATABASE_URL:', process.env.DATABASE_URL ? 'set' : 'NOT SET');
 
@@ -58,10 +57,31 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: false, limit: '10mb' }));
 
 // Security: CORS configuration
+const getAllowedOrigins = (): string[] => {
+  const origins = process.env.ALLOWED_ORIGINS 
+    ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim()).filter(Boolean)
+    : null;
+  
+  // Production warning if ALLOWED_ORIGINS is not set
+  if (process.env.NODE_ENV === 'production' && !origins) {
+    console.warn('⚠️  WARNING: ALLOWED_ORIGINS environment variable is not set in production!');
+    console.warn('⚠️  CORS will reject all cross-origin requests.');
+    console.warn('⚠️  Set ALLOWED_ORIGINS to your domain(s), e.g.:');
+    console.warn('⚠️  ALLOWED_ORIGINS=https://yourdomain.com,https://www.yourdomain.com');
+    // In production without ALLOWED_ORIGINS, reject all cross-origin requests
+    return [];
+  }
+  
+  // Development default origins
+  if (!origins) {
+    return ['http://localhost:3005', 'http://localhost:3000', 'http://127.0.0.1:3005'];
+  }
+  
+  return origins;
+};
+
 const corsOptions = {
-  origin: process.env.ALLOWED_ORIGINS 
-    ? process.env.ALLOWED_ORIGINS.split(',') 
-    : ['http://localhost:3005', 'http://localhost:3000', 'http://127.0.0.1:3005'],
+  origin: getAllowedOrigins(),
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
@@ -81,6 +101,12 @@ app.use(helmet({
       workerSrc: ["'self'", "blob:"],
     },
   },
+  hsts: {
+    maxAge: 31536000, // 1 year in seconds
+    includeSubDomains: true,
+    preload: true,
+  },
+  xContentTypeOptions: true,
   crossOriginEmbedderPolicy: false,
 }));
 
@@ -127,6 +153,18 @@ if (process.env.NODE_ENV === "production") {
     immutable: true
   }));
 }
+
+// Security: Cache-Control for sensitive endpoints
+app.use('/api/auth', (_req, res, next) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+  res.setHeader('Pragma', 'no-cache');
+  next();
+});
+
+app.use('/api/user', (_req, res, next) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+  next();
+});
 
 export function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {
