@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { getStorage, getReportOverview, getReportWorkspaces, getReportProjects, getReportBoards, getReportUsers } from "./postgres-storage";
-import { insertSiteSettingsSchema, insertUserSchema, insertNotificationSchema, insertLabelSchema, insertCustomStatusSchema, priorities, taskTypes } from "@shared/schema";
+import { insertSiteSettingsSchema, insertUserSchema, insertNotificationSchema, insertLabelSchema, insertCustomStatusSchema, insertDepartmentSchema, priorities, taskTypes } from "@shared/schema";
 import * as schema from "@shared/schema";
 import { getStatusByColumnName } from "../shared/column-status-mapping";
 import { setupWebSockets, getIO } from "./socket";
@@ -485,6 +485,73 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error setting default custom status:", error);
       res.status(500).json({ message: "Failed to set default custom status" });
+    }
+  });
+
+  // Department Routes
+  app.get("/api/departments", async (_req, res) => {
+    try {
+      const departments = await storage.getAllDepartments();
+      res.json(departments);
+    } catch (error) {
+      console.error("Error fetching departments:", error);
+      res.status(500).json({ message: "Failed to fetch departments" });
+    }
+  });
+
+  app.get("/api/departments/:id", async (req, res) => {
+    try {
+      const department = await storage.getDepartment(req.params.id);
+      if (!department) {
+        return res.status(404).json({ message: "Department not found" });
+      }
+      res.json(department);
+    } catch (error) {
+      console.error("Error fetching department:", error);
+      res.status(500).json({ message: "Failed to fetch department" });
+    }
+  });
+
+  app.post("/api/departments", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+    try {
+      const parsed = insertDepartmentSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ message: "Invalid data", errors: parsed.error.errors });
+      }
+      const department = await storage.createDepartment(parsed.data);
+      res.json(department);
+    } catch (error) {
+      console.error("Error creating department:", error);
+      res.status(500).json({ message: "Failed to create department" });
+    }
+  });
+
+  app.put("/api/departments/:id", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+    try {
+      const department = await storage.updateDepartment(req.params.id, req.body);
+      if (!department) {
+        return res.status(404).json({ message: "Department not found" });
+      }
+      res.json(department);
+    } catch (error) {
+      console.error("Error updating department:", error);
+      res.status(500).json({ message: "Failed to update department" });
+    }
+  });
+
+  app.delete("/api/departments/:id", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+    try {
+      const deleted = await storage.deleteDepartment(req.params.id);
+      if (!deleted) {
+        return res.status(404).json({ message: "Department not found" });
+      }
+      res.json({ message: "Department deleted successfully" });
+    } catch (error) {
+      console.error("Error deleting department:", error);
+      res.status(500).json({ message: "Failed to delete department" });
     }
   });
 

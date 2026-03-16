@@ -112,6 +112,10 @@ export default function EmployeesPage() {
   const { data: customStatuses = [] } = useQuery<{id: string; name: string; color: string; isDefault: boolean}[]>({
     queryKey: ["/api/custom-statuses"],
   });
+
+  const { data: apiDepartments = [] } = useQuery<{id: string; name: string; description: string | null; color: string}[]>({
+    queryKey: ["/api/departments"],
+  });
   
   const [employees, setEmployees] = useState<Employee[]>(mockEmployees);
   const [departments, setDepartments] = useState<Department[]>(mockDepartments);
@@ -127,6 +131,17 @@ export default function EmployeesPage() {
       setEmployees(apiEmployees);
     }
   }, [apiEmployees]);
+
+  // Sync API departments when loaded
+  useEffect(() => {
+    if (apiDepartments.length > 0) {
+      setDepartments(apiDepartments.map(d => ({
+        id: d.id,
+        name: d.name,
+        color: d.color
+      })));
+    }
+  }, [apiDepartments]);
 
   // Filter and sort employees
   const processedEmployees = useMemo(() => {
@@ -241,9 +256,9 @@ export default function EmployeesPage() {
                 <TableHeader className="bg-secondary/20">
                   <TableRow>
                     <TableHead className="w-[300px]">Сотрудник</TableHead>
-                    <TableHead>Отдел</TableHead>
                     <TableHead>Должность</TableHead>
                     <TableHead>Статус</TableHead>
+                    <TableHead>Комментарий</TableHead>
                     <TableHead>Баллы</TableHead>
                     <TableHead className="text-right">Действия</TableHead>
                   </TableRow>
@@ -272,15 +287,6 @@ export default function EmployeesPage() {
                           </div>
                         </div>
                       </TableCell>
-                      <TableCell>
-                        {employee.department ? (
-                          <Badge variant="outline" className="text-[10px] font-bold">
-                            {employee.department}
-                          </Badge>
-                        ) : (
-                          <span className="text-xs text-muted-foreground">—</span>
-                        )}
-                      </TableCell>
                       <TableCell className="text-sm text-foreground">{employee.position}</TableCell>
                       <TableCell>
                         {customStatuses.length > 0 && employee.status && customStatuses.some(s => s.name === employee.status) ? (
@@ -288,6 +294,15 @@ export default function EmployeesPage() {
                         ) : customStatuses.length === 0 ? (
                           <span className="text-xs text-muted-foreground">—</span>
                         ) : null}
+                      </TableCell>
+                      <TableCell>
+                        {employee.statusComment ? (
+                          <span className="text-sm text-muted-foreground max-w-[150px] truncate block" title={employee.statusComment}>
+                            {employee.statusComment}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-1.5 font-medium text-foreground">

@@ -310,10 +310,18 @@ const SidebarContentComponent = React.memo(({
                 isCollapsed && "px-1 justify-center"
               )}
             >
-              <Avatar className="w-9 h-9 border border-border shrink-0">
-                <AvatarImage src={user?.avatar || ""} alt={displayName} />
-                <AvatarFallback>{initials}</AvatarFallback>
-              </Avatar>
+              <div 
+                className="w-9 h-9 rounded-full shrink-0"
+                style={{ 
+                  background: `linear-gradient(#000, #000) padding-box, linear-gradient(to bottom, ${statusColor || customStatuses.find((s: { name: string; color: string }) => s.name === status)?.color || '#6b7280'}, ${statusColor || customStatuses.find((s: { name: string; color: string }) => s.name === status)?.color || '#6b7280'}) border-box`,
+                  border: '2px solid transparent'
+                }}
+              >
+                <Avatar className="w-full h-full border-0">
+                  <AvatarImage src={user?.avatar || ""} alt={displayName} className="rounded-full" />
+                  <AvatarFallback className="text-xs">{initials}</AvatarFallback>
+                </Avatar>
+              </div>
               {!isCollapsed && (
                 <div className="flex-1 min-w-0 animate-in fade-in duration-300">
                   <p className="text-sm font-medium truncate">{displayName}</p>

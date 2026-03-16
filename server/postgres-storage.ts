@@ -5,6 +5,8 @@ import {
   type InsertSiteSettings,
   type CustomStatus,
   type InsertCustomStatus,
+  type Department,
+  type InsertDepartment,
   type ChatFolder,
   type InsertChatFolder,
   type Call,
@@ -220,6 +222,59 @@ export class PostgresStorage {
       return true;
     } catch (error) {
       console.error("Error setting default custom status:", error);
+      return false;
+    }
+  }
+
+  // Department methods
+  async getAllDepartments(): Promise<Department[]> {
+    try {
+      return await this.db.select().from(schema.departments).orderBy(schema.departments.name);
+    } catch (error) {
+      console.error("Error getting all departments:", error);
+      return [];
+    }
+  }
+
+  async getDepartment(id: string): Promise<Department | null> {
+    try {
+      const result = await this.db.select().from(schema.departments).where(eq(schema.departments.id, id));
+      return result[0] || null;
+    } catch (error) {
+      console.error("Error getting department:", error);
+      return null;
+    }
+  }
+
+  async createDepartment(data: InsertDepartment): Promise<Department | null> {
+    try {
+      const result = await this.db.insert(schema.departments).values(data).returning();
+      return result[0] || null;
+    } catch (error) {
+      console.error("Error creating department:", error);
+      return null;
+    }
+  }
+
+  async updateDepartment(id: string, data: Partial<InsertDepartment>): Promise<Department | null> {
+    try {
+      const result = await this.db.update(schema.departments)
+        .set({ ...data, updatedAt: new Date() })
+        .where(eq(schema.departments.id, id))
+        .returning();
+      return result[0] || null;
+    } catch (error) {
+      console.error("Error updating department:", error);
+      return null;
+    }
+  }
+
+  async deleteDepartment(id: string): Promise<boolean> {
+    try {
+      await this.db.delete(schema.departments).where(eq(schema.departments.id, id));
+      return true;
+    } catch (error) {
+      console.error("Error deleting department:", error);
       return false;
     }
   }

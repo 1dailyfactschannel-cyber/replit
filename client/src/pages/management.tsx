@@ -681,6 +681,100 @@ function TeamManagement() {
     queryKey: ["/api/users"],
   });
 
+  // Department state
+  const [departments, setDepartments] = useState<{id: string; name: string; description: string | null; color: string}[]>([]);
+  const [isDeptDialogOpen, setIsDeptDialogOpen] = useState(false);
+  const [editingDept, setEditingDept] = useState<{id: string; name: string; description: string | null; color: string} | null>(null);
+  const [deptName, setDeptName] = useState("");
+  const [deptDescription, setDeptDescription] = useState("");
+  const [deptColor, setDeptColor] = useState("#3b82f6");
+  
+  const deptColors = ["#3b82f6", "#22c55e", "#ef4444", "#f59e0b", "#8b5cf6", "#ec4899", "#06b6d4", "#84cc16", "#f97316", "#6366f1"];
+
+  const { data: fetchedDepartments, refetch: refetchDepartments } = useQuery<{id: string; name: string; description: string | null; color: string}[]>({
+    queryKey: ["/api/departments"],
+  });
+
+  useEffect(() => {
+    if (fetchedDepartments) {
+      setDepartments(fetchedDepartments);
+    }
+  }, [fetchedDepartments]);
+
+  const createDeptMutation = useMutation({
+    mutationFn: async (data: { name: string; description: string; color: string }) => {
+      const res = await apiRequest("POST", "/api/departments", data);
+      return res.json();
+    },
+    onSuccess: () => {
+      refetchDepartments();
+      toast({ title: "Отдел создан", description: "Отдел успешно создан" });
+      resetDeptForm();
+    },
+    onError: (error: any) => {
+      toast({ title: "Ошибка", description: error?.message || "Не удалось создать отдел", variant: "destructive" });
+    }
+  });
+
+  const updateDeptMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: { name: string; description: string; color: string } }) => {
+      const res = await apiRequest("PUT", `/api/departments/${id}`, data);
+      return res.json();
+    },
+    onSuccess: () => {
+      refetchDepartments();
+      toast({ title: "Отдел обновлён", description: "Отдел успешно обновлён" });
+      resetDeptForm();
+    },
+    onError: (error: any) => {
+      toast({ title: "Ошибка", description: error?.message || "Не удалось обновить отдел", variant: "destructive" });
+    }
+  });
+
+  const deleteDeptMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await apiRequest("DELETE", `/api/departments/${id}`, {});
+      return res.json();
+    },
+    onSuccess: () => {
+      refetchDepartments();
+      toast({ title: "Отдел удалён", description: "Отдел успешно удалён" });
+    },
+    onError: (error: any) => {
+      toast({ title: "Ошибка", description: error?.message || "Не удалось удалить отдел", variant: "destructive" });
+    }
+  });
+
+  const resetDeptForm = () => {
+    setDeptName("");
+    setDeptDescription("");
+    setDeptColor("#3b82f6");
+    setEditingDept(null);
+    setIsDeptDialogOpen(false);
+  };
+
+  const handleEditDepartment = (dept: { id: string; name: string; description: string | null; color: string }) => {
+    setEditingDept(dept);
+    setDeptName(dept.name);
+    setDeptDescription(dept.description || "");
+    setDeptColor(dept.color);
+    setIsDeptDialogOpen(true);
+  };
+
+  const handleDeleteDepartment = (id: string, name: string) => {
+    if (confirm(`Вы уверены, что хотите удалить отдел "${name}"?`)) {
+      deleteDeptMutation.mutate(id);
+    }
+  };
+
+  const handleSaveDepartment = () => {
+    if (editingDept) {
+      updateDeptMutation.mutate({ id: editingDept.id, data: { name: deptName, description: deptDescription, color: deptColor } });
+    } else {
+      createDeptMutation.mutate({ name: deptName, description: deptDescription, color: deptColor });
+    }
+  };
+
   const deleteUserMutation = useMutation({
     mutationFn: async (id: string) => {
       const res = await apiRequest("DELETE", `/api/users/${id}`);
@@ -874,8 +968,128 @@ function TeamManagement() {
               </Button>
             </CardContent>
           </Card>
+
+          {/* Departments Section */}
+          <div className="space-y-4">
+            <div className="flex items-center justify-between px-1">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+                <Users className="w-3.5 h-3.5" />
+                Отделы
+              </h4>
+              <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={() => setIsDeptDialogOpen(true)}>
+                <Plus className="w-3 h-3" />
+                Добавить
+              </Button>
+            </div>
+            
+            <Card className="border-border/50 shadow-sm overflow-hidden bg-card/50">
+              <CardContent className="p-0">
+                <div className="divide-y divide-border/50">
+                  {departments.length === 0 ? (
+                    <div className="p-8 text-center space-y-2">
+                      <Users className="w-8 h-8 text-muted-foreground opacity-20 mx-auto" />
+                      <p className="text-[11px] text-muted-foreground">Нет отделов. Создайте первый отдел.</p>
+                    </div>
+                  ) : (
+                    departments.map((dept) => (
+                      <div key={dept.id} className="p-4 flex items-center justify-between hover:bg-muted/30 transition-colors group">
+                        <div className="flex items-center gap-3">
+                          <div 
+                            className="w-3 h-3 rounded-full" 
+                            style={{ backgroundColor: dept.color }}
+                          />
+                          <div className="flex flex-col">
+                            <span className="text-sm font-medium">{dept.name}</span>
+                            {dept.description && (
+                              <span className="text-[11px] text-muted-foreground">{dept.description}</span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                          <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                            onClick={() => handleEditDepartment(dept)}
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                          </Button>
+                          <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            className="h-7 w-7 text-muted-foreground hover:text-rose-500"
+                            onClick={() => handleDeleteDepartment(dept.id, dept.name)}
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </Button>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
         </div>
       </div>
+
+      {/* Department Dialog */}
+      <Dialog open={isDeptDialogOpen} onOpenChange={setIsDeptDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{editingDept ? "Редактировать отдел" : "Новый отдел"}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>Название</Label>
+              <Input
+                value={deptName}
+                onChange={(e) => setDeptName(e.target.value)}
+                placeholder="Например: Разработка"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Описание</Label>
+              <Input
+                value={deptDescription}
+                onChange={(e) => setDeptDescription(e.target.value)}
+                placeholder="Краткое описание отдела"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Цвет</Label>
+              <div className="flex gap-2 flex-wrap">
+                {deptColors.map((c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    className={cn(
+                      "w-8 h-8 rounded-full transition-transform",
+                      deptColor === c && "ring-2 ring-offset-2 ring-primary scale-110"
+                    )}
+                    style={{ backgroundColor: c }}
+                    onClick={() => setDeptColor(c)}
+                  />
+                ))}
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setIsDeptDialogOpen(false); resetDeptForm(); }}>
+              Отмена
+            </Button>
+            <Button
+              onClick={handleSaveDepartment}
+              disabled={!deptName || createDeptMutation.isPending || updateDeptMutation.isPending}
+            >
+              {createDeptMutation.isPending || updateDeptMutation.isPending ? (
+                <Loader2 className="w-4 h-4 animate-spin mr-2" />
+              ) : null}
+              {editingDept ? "Сохранить" : "Создать"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

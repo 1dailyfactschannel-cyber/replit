@@ -54,10 +54,10 @@ export function StatusBadge({ status, color, className }: StatusBadgeProps) {
       className={cn(
         "inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border",
         config.bgColor,
-        config.textColor,
         config.borderColor,
         className
       )}
+      style={{ color: dotColor }}
     >
       <span className="w-1.5 h-1.5 rounded-full mr-1.5" style={{ backgroundColor: dotColor }} />
       {config.label}
