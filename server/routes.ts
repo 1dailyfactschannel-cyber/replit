@@ -77,13 +77,40 @@ const loginLimiter = rateLimit({
   message: { message: "Too many login attempts, please try again later" }
 });
 
+// Notification data interface
+interface NotificationData {
+  action: string;
+  fieldName?: string;
+  oldValue?: string;
+  newValue?: string;
+  taskTitle?: string;
+  boardName?: string;
+  chatName?: string;
+  eventName?: string;
+  commentPreview?: string;
+  userName: string;
+}
+
+// Helper function to format notification message
+function formatNotificationMessage(data: NotificationData): string {
+  return JSON.stringify(data);
+}
+
 // Helper function to send notification
-async function sendNotification(userId: string, senderId: string | null, type: string, title: string, message: string, link?: string) {
+async function sendNotification(
+  userId: string, 
+  senderId: string | null, 
+  type: string, 
+  title: string, 
+  data: NotificationData,
+  link?: string
+) {
   try {
+    const message = formatNotificationMessage(data);
     await storage.createNotification({
       userId,
       senderId,
-      type,
+      type: type as "chat" | "task" | "calendar" | "call" | "system",
       title,
       message,
       link: link || null,
@@ -613,7 +640,12 @@ export async function registerRoutes(
             user.id,
             'project_created',
             'Новый проект',
-            `${creatorName} создал новый проект "${project.name}"`,
+            {
+              action: 'created',
+              userName: creatorName,
+              fieldName: 'Проект',
+              newValue: project.name,
+            },
             `/projects/${project.id}`
           );
         }
@@ -1354,7 +1386,14 @@ export async function registerRoutes(
             userId!,
             'task_assigned',
             'Вам назначена задача',
-            `${formatUserName(currentUser!)} назначил(а) вам задачу "${task.title}"${board ? ` в доске "${board.name}"` : ''}`,
+            {
+              action: 'assigned',
+              userName: formatUserName(currentUser!),
+              fieldName: 'Исполнитель',
+              newValue: 'Вы',
+              taskTitle: task.title,
+              boardName: board?.name,
+            },
             `/boards/${task.boardId}`
           );
         }
@@ -1366,12 +1405,12 @@ export async function registerRoutes(
         if (changedFields.length > 0) {
           const board = await storage.getBoard(task.boardId);
           const fieldNames: Record<string, string> = {
-            'status': 'статус',
-            'priority': 'приоритет',
-            'title': 'название',
-            'description': 'описание',
-            'dueDate': 'срок',
-            'columnId': 'колонку'
+            'status': 'Статус',
+            'priority': 'Приоритет',
+            'title': 'Название',
+            'description': 'Описание',
+            'dueDate': 'Срок',
+            'columnId': 'Колонка'
           };
           const changedFieldNames = changedFields.map(f => fieldNames[f] || f).join(', ');
           await sendNotification(
@@ -1379,7 +1418,13 @@ export async function registerRoutes(
             userId!,
             'task_updated',
             'Задача обновлена',
-            `Задача "${task.title}" обновлена: ${changedFieldNames}`,
+            {
+              action: 'updated',
+              userName: formatUserName(currentUser!),
+              fieldName: changedFieldNames,
+              taskTitle: task.title,
+              boardName: board?.name,
+            },
             `/boards/${task.boardId}`
           );
         }
@@ -1690,7 +1735,14 @@ export async function registerRoutes(
           user.id,
           'task_assigned',
           'Новая задача',
-          `Вам назначена задача "${task.title}"${board ? ` в доске "${board.name}"` : ''}`,
+          {
+            action: 'assigned',
+            userName: formatUserName(user),
+            fieldName: 'Исполнитель',
+            newValue: 'Вы',
+            taskTitle: task.title,
+            boardName: board?.name,
+          },
           `/boards/${task.boardId}`
         ));
       }
@@ -1706,7 +1758,13 @@ export async function registerRoutes(
               user.id,
               'task_created',
               'Новая задача',
-              `Создана задача "${task.title}" в проекте "${project.name}"`,
+              {
+                action: 'created',
+                userName: formatUserName(user),
+                fieldName: 'Задача',
+                newValue: task.title,
+                boardName: board?.name,
+              },
               `/boards/${task.boardId}`
             ));
           }
@@ -2457,6 +2515,38 @@ export async function registerRoutes(
     }
   });
 
+  // Push subscription endpoints
+  app.post("/api/notifications/subscribe", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
+    try {
+      const { subscription } = req.body;
+      if (!subscription || !subscription.endpoint) {
+        return res.status(400).json({ message: "Invalid subscription" });
+      }
+
+      // Store subscription in database (we would need a push_subscriptions table)
+      // For now, we'll just return success
+      console.log("[Push] New subscription from user:", req.user!.id);
+      
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error subscribing to push:", error);
+      res.status(500).json({ message: "Failed to subscribe to push" });
+    }
+  });
+
+  app.delete("/api/notifications/unsubscribe", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
+    try {
+      const { endpoint } = req.body;
+      console.log("[Push] Unsubscribed:", req.user!.id);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error unsubscribing from push:", error);
+      res.status(500).json({ message: "Failed to unsubscribe from push" });
+    }
+  });
+
   // Reorder tasks
   app.post("/api/tasks/reorder", async (req, res) => {
     if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
@@ -2641,10 +2731,14 @@ export async function registerRoutes(
   app.get("/api/tasks/:taskId/comments", async (req, res) => {
     try {
       const cacheKey = `task:${req.params.taskId}:comments`;
+      console.log(`[Comments] Fetching comments for task ${req.params.taskId}`);
       const cached = await getCache(cacheKey);
       if (cached) {
+        const cachedArray = cached as any[];
+        console.log(`[Comments] Returning cached comments: ${cachedArray.length} items`);
         return res.json(cached);
       }
+      console.log(`[Comments] Cache miss, fetching from DB`);
 
       const rawComments = await storage.getCommentsByTask(req.params.taskId);
 
@@ -2664,7 +2758,9 @@ export async function registerRoutes(
         };
       });
 
+      console.log(`[Comments] Fetched ${comments.length} comments from DB`);
       await setCache(cacheKey, comments, 300); // Cache for 5 minutes
+      console.log(`[Comments] Cached comments for task ${req.params.taskId}`);
       res.json(comments);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch comments" });
@@ -2679,6 +2775,11 @@ export async function registerRoutes(
         taskId: req.params.taskId,
         authorId: req.user.id
       });
+
+      // Clear comments cache for this task
+      console.log(`[Comments] Clearing cache for task ${req.params.taskId}`);
+      await delCache(`task:${req.params.taskId}:comments`);
+      console.log(`[Comments] Cache cleared for task ${req.params.taskId}`);
       
       // Record comment in task history
       try {
@@ -2706,7 +2807,14 @@ export async function registerRoutes(
             req.user.id,
             'task_comment',
             'Новый комментарий',
-            `${authorName} прокомментировал задачу "${task.title}"`,
+            {
+              action: 'comment_added',
+              userName: authorName,
+              fieldName: 'Комментарий',
+              commentPreview: req.body.content?.substring(0, 50) || '',
+              taskTitle: task.title,
+              boardName: board?.name,
+            },
             `/boards/${task.boardId}`
           );
         }
@@ -2718,7 +2826,14 @@ export async function registerRoutes(
             req.user.id,
             'task_comment',
             'Новый комментарий',
-            `${authorName} прокомментировал задачу "${task.title}"`,
+            {
+              action: 'comment_added',
+              userName: authorName,
+              fieldName: 'Комментарий',
+              commentPreview: req.body.content?.substring(0, 50) || '',
+              taskTitle: task.title,
+              boardName: board?.name,
+            },
             `/boards/${task.boardId}`
           );
         }
@@ -2740,10 +2855,18 @@ export async function registerRoutes(
   });
 
   app.delete("/api/comments/:id", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
     try {
-      await storage.deleteComment(req.params.id);
+      // Get comment before deletion to clear cache
+      const comment = await storage.getComment(req.params.id);
+      if (comment) {
+        await storage.deleteComment(req.params.id);
+        // Clear comments cache for this task
+        await delCache(`task:${comment.taskId}:comments`);
+      }
       res.status(204).end();
     } catch (error) {
+      console.error("Error deleting comment:", error);
       res.status(500).json({ message: "Failed to delete comment" });
     }
   });
@@ -3317,7 +3440,9 @@ export async function registerRoutes(
     if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
     
     try {
-      const { title, description, date, time, type, contact, meetingUrl } = req.body;
+      const { title, description, date, time, type, contact, meetingUrl, roomId, reminder, reminderMinutes } = req.body;
+      
+      console.log("[Calendar Event] Request body:", req.body);
       
       if (!title || !date || !time) {
         return res.status(400).json({ message: "Title, date and time are required" });
@@ -3325,19 +3450,79 @@ export async function registerRoutes(
 
       const event = await storage.createCalendarEvent({
         userId: req.user!.id,
+        roomId: roomId || null,
         title,
         description,
         date: new Date(date),
         time,
         type: type || "work",
         contact,
-        meetingUrl
+        meetingUrl,
+        reminder: reminder || false,
+        reminderMinutes: reminderMinutes || null
       });
+
+      console.log("[Calendar Event] Created event:", event.id, "roomId:", event.roomId);
+
+      // If event is created in a chat room, send system message to the chat
+      if (roomId) {
+        console.log("[Calendar Event] Processing chat room:", roomId);
+        const io = getIO();
+        const eventDate = new Date(date);
+        const formattedDate = eventDate.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
+        
+        const systemMessage = {
+          id: crypto.randomUUID(),
+          chatId: roomId,
+          senderId: req.user!.id,
+          content: `📅 Создано событие: ${title}\n${formattedDate} в ${time}`,
+          type: 'system_event',
+          eventId: event.id,
+          createdAt: new Date().toISOString()
+        };
+        
+        console.log("[Calendar Event] Creating system message in chat:", roomId);
+        
+        // Save message to DB
+        try {
+          const savedMessage = await storage.createMessage({
+            chatId: roomId,
+            senderId: req.user!.id,
+            content: systemMessage.content,
+            attachments: JSON.stringify([]),
+            isRead: false,
+            type: 'system_event',
+            metadata: JSON.stringify({ eventId: event.id, eventTitle: title, eventTime: time, eventDate: formattedDate })
+          } as any);
+          console.log("[Calendar Event] Message saved to DB:", savedMessage.id);
+          
+          // Send to chat room
+          io.to(`chat:${roomId}`).emit("new-message", savedMessage);
+          io.to(`chat:${roomId}`).emit("calendar:event-created", { event, message: savedMessage });
+          console.log("[Calendar Event] Socket events emitted");
+        } catch (msgError) {
+          console.error("[Calendar Event] Error saving message:", msgError);
+        }
+      }
       
       res.status(201).json(event);
     } catch (error) {
       console.error("Error creating calendar event:", error);
       res.status(500).json({ message: "Failed to create calendar event" });
+    }
+  });
+
+  // Get calendar events by room (chat)
+  app.get("/api/rooms/:roomId/events", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+    
+    try {
+      const { roomId } = req.params;
+      const events = await storage.getCalendarEventsByRoom(roomId);
+      res.json(events);
+    } catch (error) {
+      console.error("Error fetching room calendar events:", error);
+      res.status(500).json({ message: "Failed to fetch calendar events" });
     }
   });
 
@@ -3403,6 +3588,33 @@ export async function registerRoutes(
       res.json(rooms);
     } catch (error) {
       console.error("Error fetching team rooms:", error);
+      res.status(500).json({ message: "Failed to fetch team rooms" });
+    }
+  });
+
+  // Get team rooms with admin status for current user
+  app.get("/api/team-rooms/with-admin-status", async (req, res) => {
+    console.log("[API] /api/team-rooms/with-admin-status called, user:", req.user?.id);
+    if (!req.isAuthenticated()) {
+      console.log("[API] Not authenticated");
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+    
+    try {
+      console.log("[API] Fetching rooms for user:", req.user!.id);
+      const rooms = await storage.getTeamRooms();
+      console.log("[API] Found rooms:", rooms.length);
+      
+      const roomsWithAdminStatus = await Promise.all(
+        rooms.map(async (room) => {
+          const isAdmin = await storage.isTeamRoomAdmin(room.id, req.user!.id);
+          return { ...room, isAdmin };
+        })
+      );
+      console.log("[API] Returning rooms with admin status:", roomsWithAdminStatus.length);
+      res.json(roomsWithAdminStatus);
+    } catch (error) {
+      console.error("[API] Error fetching team rooms with admin status:", error);
       res.status(500).json({ message: "Failed to fetch team rooms" });
     }
   });

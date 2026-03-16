@@ -1261,7 +1261,7 @@ export class PostgresStorage {
     }
   }
 
-  async createNotification(notification: InsertNotification): Promise<Notification> {
+  async createNotification(notification: any): Promise<Notification> {
     try {
       const [newNotification] = await this.db
         .insert(schema.notifications)
@@ -1652,6 +1652,18 @@ export class PostgresStorage {
   }
 
   // Comment methods
+  async getComment(id: string): Promise<schema.Comment | undefined> {
+    try {
+      const [comment] = await this.db.select()
+        .from(schema.comments)
+        .where(eq(schema.comments.id, id));
+      return comment;
+    } catch (error) {
+      console.error("Error getting comment:", error);
+      return undefined;
+    }
+  }
+
   async getCommentsByTask(taskId: string): Promise<schema.Comment[]> {
     try {
       return await this.db.select()
@@ -1666,7 +1678,9 @@ export class PostgresStorage {
 
   async createComment(comment: schema.InsertComment): Promise<schema.Comment> {
     try {
+      console.log(`[DB] Creating comment for task ${comment.taskId}:`, { authorId: comment.authorId, contentLength: comment.content?.length });
       const [newComment] = await this.db.insert(schema.comments).values(comment).returning();
+      console.log(`[DB] Comment created with ID: ${newComment.id}`);
       return newComment;
     } catch (error) {
       console.error("Error creating comment:", error);
@@ -2434,12 +2448,25 @@ export class PostgresStorage {
     }
   }
 
+  async getCalendarEventsByRoom(roomId: string): Promise<CalendarEvent[]> {
+    try {
+      return await this.db.select().from(schema.calendarEvents)
+        .where(eq(schema.calendarEvents.roomId, roomId))
+        .orderBy(schema.calendarEvents.date, schema.calendarEvents.time);
+    } catch (error) {
+      console.error("Error getting calendar events by room:", error);
+      return [];
+    }
+  }
+
   async createCalendarEvent(event: InsertCalendarEvent): Promise<CalendarEvent> {
     try {
+      console.log("[Storage] Creating calendar event with data:", event);
       const [created] = await this.db.insert(schema.calendarEvents).values(event as any).returning();
+      console.log("[Storage] Calendar event created successfully:", created.id);
       return created;
     } catch (error) {
-      console.error("Error creating calendar event:", error);
+      console.error("[Storage] Error creating calendar event:", error);
       throw error;
     }
   }
@@ -2592,6 +2619,26 @@ export class PostgresStorage {
     } catch (error) {
       console.error("Error getting Yandex events by date range:", error);
       return [];
+    }
+  }
+
+  // Internal Calendar Notifications
+  async isInternalNotificationSent(eventId: string, userId: string, type: string, reminderMinutes?: number): Promise<boolean> {
+    try {
+      // For internal events, we store notifications in a different table or use a different approach
+      // For now, we'll use a simple cache-based approach or a new table
+      // Check if we have a calendar event notifications table
+      const result = await this.db.select().from(yandexCalendarNotifications)
+        .where(and(
+          eq(yandexCalendarNotifications.eventId, eventId),
+          eq(yandexCalendarNotifications.userId, userId),
+          type ? eq(yandexCalendarNotifications.notificationType, type) : undefined,
+          reminderMinutes !== undefined ? eq(yandexCalendarNotifications.reminderMinutes, reminderMinutes) : undefined
+        ));
+      return result.length > 0;
+    } catch (error) {
+      console.error("Error checking if internal notification sent:", error);
+      return false;
     }
   }
 

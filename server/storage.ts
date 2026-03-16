@@ -27,6 +27,7 @@ export interface IStorage {
   deleteLabel(id: string): Promise<void>;
 
   // Comments
+  getComment(id: string): Promise<any | undefined>;
   getCommentsByTask(taskId: string): Promise<any[]>;
   createComment(comment: any): Promise<any>;
   deleteComment(id: string): Promise<void>;

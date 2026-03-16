@@ -572,6 +572,8 @@ export const messages = pgTable("messages", {
   // @ts-ignore - recursive reference
   replyToId: uuid("reply_to_id").references(() => messages.id, { onDelete: "set null" }),
   isRead: boolean("is_read").default(false),
+  type: text("type").$type<"message" | "system_event" | "system_reminder">().default("message"),
+  metadata: jsonb("metadata"),
   createdAt: timestamp("created_at").defaultNow(),
 }, (table) => ({
   chatIdIdx: index("messages_chat_id_idx").on(table.chatId),
@@ -787,7 +789,7 @@ export const notifications = pgTable("notifications", {
   id: uuid("id").primaryKey().defaultRandom(),
   userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   senderId: uuid("sender_id").references(() => users.id, { onDelete: "set null" }),
-  type: text("type").notNull(), // message, task_assigned, project_update, etc.
+  type: text("type").$type<"chat" | "task" | "calendar" | "call" | "system">().notNull(),
   title: text("title").notNull(),
   message: text("message").notNull(),
   link: text("link"), // Optional link to redirect
@@ -795,7 +797,7 @@ export const notifications = pgTable("notifications", {
   createdAt: timestamp("created_at").defaultNow(),
 }, (table) => ({
   userIdIdx: index("notifications_user_id_idx").on(table.userId),
-  userIdIsReadIdx: index("notifications_user_is_read_idx").on(table.userId, table.isRead),
+  userIdIsReadIdx: index("notifications_user_id_idx").on(table.userId, table.isRead),
 }));
 
 export const insertNotificationSchema = createInsertSchema(notifications).pick({
@@ -913,6 +915,7 @@ export type InsertUserPointsTransaction = z.infer<typeof insertUserPointsTransac
 export const calendarEvents = pgTable("calendar_events", {
   id: uuid("id").primaryKey().defaultRandom(),
   userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  roomId: uuid("room_id").references(() => chats.id, { onDelete: "cascade" }),
   title: text("title").notNull(),
   description: text("description"),
   date: timestamp("date").notNull(),
@@ -920,15 +923,19 @@ export const calendarEvents = pgTable("calendar_events", {
   type: text("type").$type<"work" | "social" | "external" | "video" | "audio">().default("work"),
   contact: text("contact"),
   meetingUrl: text("meeting_url"),
+  reminder: boolean("reminder").default(false),
+  reminderMinutes: integer("reminder_minutes"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => ({
   userIdIdx: index("calendar_events_user_id_idx").on(table.userId),
+  roomIdIdx: index("calendar_events_room_id_idx").on(table.roomId),
   dateIdx: index("calendar_events_date_idx").on(table.date),
 }));
 
 export const insertCalendarEventSchema = createInsertSchema(calendarEvents).pick({
   userId: true,
+  roomId: true,
   title: true,
   description: true,
   date: true,
@@ -936,6 +943,8 @@ export const insertCalendarEventSchema = createInsertSchema(calendarEvents).pick
   type: true,
   contact: true,
   meetingUrl: true,
+  reminder: true,
+  reminderMinutes: true,
 });
 
 export type CalendarEvent = typeof calendarEvents.$inferSelect;

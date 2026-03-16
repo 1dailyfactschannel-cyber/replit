@@ -674,6 +674,8 @@ export function TaskDetailsModal({
   const { data: serverComments = [] } = useQuery<any[]>({
     queryKey: [`/api/tasks/${task?.id}/comments`],
     enabled: !!task?.id,
+    staleTime: 0,
+    refetchOnMount: true,
   });
 
   const { data: availableLabels = [] } = useQuery<any[]>({
@@ -689,14 +691,12 @@ export function TaskDetailsModal({
   });
 
   // Sync server comments only when they actually change
-  const prevCommentsRef = useRef<any[]>([]);
+  const prevCommentsRef = useRef<string>("");
   useEffect(() => {
     if (open && serverComments) {
-      // Only update if comments actually changed
-      const prevIds = prevCommentsRef.current.map((c: any) => c.id).sort().join(',');
       const currentIds = serverComments.map((c: any) => c.id).sort().join(',');
-      if (prevIds !== currentIds) {
-        prevCommentsRef.current = serverComments;
+      if (prevCommentsRef.current !== currentIds) {
+        prevCommentsRef.current = currentIds;
         setLocalComments(serverComments);
       }
     }
@@ -1066,8 +1066,9 @@ export function TaskDetailsModal({
       setLocalComments(prev => [savedComment, ...prev]);
       setNewComment("");
       setCommentAttachments([]);
-      // Don't invalidate here - local state is already updated
-      // Query will refetch when modal is reopened
+      
+      // Invalidate comments query to ensure fresh data on next open
+      queryClient.invalidateQueries({ queryKey: [`/api/tasks/${task.id}/comments`] });
     } catch (error) {
       console.error("Error adding comment:", error);
       sonnerToast.error("Не удалось отправить комментарий");

@@ -91,7 +91,7 @@ interface MediaDevice {
   kind: 'audioinput' | 'audiooutput' | 'videoinput';
 }
 
-export function TeamRooms() {
+export function TeamRooms({ autoJoinRoomId }: { autoJoinRoomId?: string }) {
   const { notify } = useNotifications();
   const queryClient = useQueryClient();
   const socket = useSocket();
@@ -107,6 +107,7 @@ export function TeamRooms() {
   const [showSettingsDialog, setShowSettingsDialog] = useState(false);
   const [mediaDevices, setMediaDevices] = useState<MediaDevice[]>([]);
   const [currentUser, setCurrentUser] = useState<any>(null);
+
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const microphoneStreamRef = useRef<MediaStream | null>(null);
@@ -115,6 +116,18 @@ export function TeamRooms() {
   const { data: rooms = [], isLoading: roomsLoading } = useQuery<TeamRoom[]>({
     queryKey: ["/api/team-rooms"],
   });
+
+  // Auto-join room when autoJoinRoomId prop is provided
+  useEffect(() => {
+    if (!autoJoinRoomId || roomsLoading) return;
+    if (!rooms.length) return;
+    if (!socket || !currentUser || isJoined) return;
+    
+    const room = rooms.find(r => r.id === autoJoinRoomId);
+    if (room) {
+      handleJoin(room);
+    }
+  }, [autoJoinRoomId, rooms, roomsLoading, socket, currentUser, isJoined]);
 
   const { data: callSettings } = useQuery<CallSettings>({
     queryKey: ["/api/call-settings"],
