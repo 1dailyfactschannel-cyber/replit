@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { Layout } from "@/components/layout/Layout";
 import { cn } from "@/lib/utils";
 import { 
@@ -39,9 +39,18 @@ import {
   Folder,
   Archive,
   RotateCcw,
-  Layers
+  Layers,
+  Coins,
+  Calendar,
+  Phone,
+  Video,
+  Copy,
+  RefreshCw,
+  Link,
+  UserX
 } from "lucide-react";
 import { RolesManagement } from "@/components/settings/RolesManagement";
+import { YandexCalendarConnect, YandexCalendarSettings } from "@/components/integrations/YandexCalendarConnect";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { User } from "@shared/schema";
@@ -88,7 +97,9 @@ export default function ManagementPage() {
     { id: "archive", label: "Архив задач", icon: Archive, description: "Архивированные задачи" },
     { id: "security", label: "Безопасность", icon: Shield, description: "Настройки безопасности аккаунта" },
     { id: "roles", label: "Роли", icon: Shield, description: "Права доступа и разрешения" },
+    { id: "calls", label: "Звонки", icon: Phone, description: "Управление звонками и командными залами" },
     { id: "integrations", label: "Интеграции", icon: Puzzle, description: "Внешние сервисы и API" },
+    { id: "balance", label: "Баланс", icon: Coins, description: "Настройка баллов за статусы задач" },
   ];
 
   return (
@@ -185,6 +196,10 @@ export default function ManagementPage() {
                 <TeamManagement />
               ) : activeSection === "projects" ? (
                 <ProjectsManagement />
+              ) : activeSection === "calls" ? (
+                <CallsManagement />
+              ) : activeSection === "balance" ? (
+                <BalanceManagement />
               ) : (
                 <DefaultSection section={sections.find(s => s.id === activeSection)!} />
               )}
@@ -362,6 +377,7 @@ function SecurityManagement() {
 
 function IntegrationsManagement() {
   const [showTelegram, setShowTelegram] = useState(false);
+  const [showYandexCalendar, setShowYandexCalendar] = useState(false);
   const [activeTab, setActiveTab] = useState("all");
   
   const integrations = [
@@ -411,6 +427,15 @@ function IntegrationsManagement() {
       category: "management"
     },
     { 
+      id: "yandex-calendar", 
+      name: "Яндекс Календарь", 
+      desc: "Синхронизация событий и встреч", 
+      icon: Calendar, 
+      color: "bg-[#FC3F1D]", 
+      connected: false,
+      category: "calendar"
+    },
+    { 
       id: "zapier", 
       name: "Zapier", 
       desc: "Автоматизация рабочих процессов", 
@@ -426,6 +451,7 @@ function IntegrationsManagement() {
     { id: "messengers", label: "Мессенджеры" },
     { id: "dev", label: "Разработка" },
     { id: "management", label: "Управление" },
+    { id: "calendar", label: "Календари" },
     { id: "automation", label: "Автоматизация" },
   ];
 
@@ -442,6 +468,12 @@ function IntegrationsManagement() {
         </Button>
         <TelegramSettings />
       </div>
+    );
+  }
+
+  if (showYandexCalendar) {
+    return (
+      <YandexCalendarSettings onBack={() => setShowYandexCalendar(false)} />
     );
   }
 
@@ -466,7 +498,10 @@ function IntegrationsManagement() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {filteredIntegrations.map((item) => (
-          <Card key={item.id} className="border-border/50 shadow-sm hover:shadow-md hover:border-primary/20 transition-all group relative overflow-hidden flex flex-col">
+          item.id === "yandex-calendar" ? (
+            <YandexCalendarConnect key={item.id} onShowDetails={() => setShowYandexCalendar(true)} />
+          ) : (
+          <Card key={item.id} hoverable className="border-border/50 shadow-sm group relative overflow-hidden flex flex-col">
             <div className={cn("absolute top-0 left-0 w-1 h-full", item.connected ? "bg-emerald-500" : "bg-transparent")} />
             <CardContent className="p-6 flex-1">
               <div className="flex items-start gap-4">
@@ -516,6 +551,7 @@ function IntegrationsManagement() {
               </div>
             </CardFooter>
           </Card>
+          )
         ))}
       </div>
 
@@ -957,6 +993,12 @@ function ProjectsManagement() {
   const [newProject, setNewProject] = useState({ name: "", color: "bg-blue-500", priority: "Средний" });
   const [projectToDelete, setProjectToDelete] = useState<{ id: string; name: string } | null>(null);
   const [deleteMasterPassword, setDeleteMasterPassword] = useState("");
+  const [editingProject, setEditingProject] = useState<any>(null);
+  const [isEditProjectOpen, setIsEditProjectOpen] = useState(false);
+  const [editingWorkspace, setEditingWorkspace] = useState<any>(null);
+  const [isEditWorkspaceOpen, setIsEditWorkspaceOpen] = useState(false);
+  const [isCreateWorkspaceOpen, setIsCreateWorkspaceOpen] = useState(false);
+  const [newWorkspace, setNewWorkspace] = useState({ name: "", color: "#3b82f6" });
 
   const priorityDisplayMap: Record<string, string> = {
     "low": "Низкий",
@@ -1069,12 +1111,217 @@ function ProjectsManagement() {
     }
   });
 
+  const updateProjectMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: any }) => {
+      const res = await apiRequest("PATCH", `/api/projects/${id}`, data);
+      return res.json();
+    },
+    onMutate: async ({ id, data }) => {
+      // Cancel any outgoing refetches
+      await queryClient.cancelQueries({ queryKey: ["/api/projects", selectedWorkspaceId] });
+      
+      // Snapshot the previous value
+      const previousProjects = queryClient.getQueryData(["/api/projects", selectedWorkspaceId]);
+      
+      // Optimistically update to the new value
+      queryClient.setQueryData(["/api/projects", selectedWorkspaceId], (old: any[] = []) => {
+        const updated = old.map((project) => 
+          project.id === id 
+            ? { ...project, ...data, updatedAt: new Date().toISOString() }
+            : project
+        );
+        return updated;
+      });
+      
+      // Return a context object with the snapshotted value
+      return { previousProjects };
+    },
+    onError: (error: any, variables, context) => {
+      // If the mutation fails, use the context returned from onMutate to roll back
+      if (context?.previousProjects) {
+        queryClient.setQueryData(["/api/projects", selectedWorkspaceId], context.previousProjects);
+      }
+      toast({
+        title: "Ошибка",
+        description: error.message || "Не удалось обновить проект.",
+        variant: "destructive",
+      });
+    },
+    onSuccess: (data, variables) => {
+      // Update with the actual server data
+      queryClient.setQueryData(["/api/projects", selectedWorkspaceId], (old: any[] = []) => {
+        const updated = old.map((project) => 
+          project.id === variables.id 
+            ? { ...project, ...data }
+            : project
+        );
+        return updated;
+      });
+      setIsEditProjectOpen(false);
+      setEditingProject(null);
+      toast({
+        title: "Проект обновлен",
+        description: "Изменения успешно сохранены.",
+      });
+    },
+    onSettled: () => {
+      // Always refetch after error or success to ensure cache is in sync with server
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", selectedWorkspaceId] });
+    }
+  });
+
+  const updateWorkspaceMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: any }) => {
+      const res = await apiRequest("PATCH", `/api/workspaces/${id}`, data);
+      return res.json();
+    },
+    onMutate: async ({ id, data }) => {
+      await queryClient.cancelQueries({ queryKey: ["/api/workspaces"] });
+      
+      const previousWorkspaces = queryClient.getQueryData(["/api/workspaces"]);
+      
+      queryClient.setQueryData(["/api/workspaces"], (old: any[] = []) => {
+        return old.map((workspace) => 
+          workspace.id === id 
+            ? { ...workspace, ...data, updatedAt: new Date().toISOString() }
+            : workspace
+        );
+      });
+      
+      return { previousWorkspaces };
+    },
+    onError: (error: any, variables, context) => {
+      if (context?.previousWorkspaces) {
+        queryClient.setQueryData(["/api/workspaces"], context.previousWorkspaces);
+      }
+      toast({
+        title: "Ошибка",
+        description: error.message || "Не удалось обновить пространство.",
+        variant: "destructive",
+      });
+    },
+    onSuccess: () => {
+      setIsEditWorkspaceOpen(false);
+      setEditingWorkspace(null);
+      toast({
+        title: "Пространство обновлено",
+        description: "Изменения успешно сохранены.",
+      });
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/workspaces"] });
+    }
+  });
+
+  const createWorkspaceMutation = useMutation({
+    mutationFn: async (workspace: any) => {
+      const res = await apiRequest("POST", "/api/workspaces", workspace);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/workspaces"] });
+      setIsCreateWorkspaceOpen(false);
+      setNewWorkspace({ name: "", color: "#3b82f6" });
+      toast({
+        title: "Пространство создано",
+        description: "Новое пространство успешно добавлено.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Ошибка",
+        description: error.message || "Не удалось создать пространство.",
+        variant: "destructive",
+      });
+    }
+  });
+
   const handleDeleteProject = () => {
     if (!projectToDelete) return;
     deleteProjectMutation.mutate({ 
       id: projectToDelete.id, 
       masterPassword: deleteMasterPassword 
     });
+  };
+
+  const handleUpdateProject = () => {
+    if (!editingProject || !editingProject.name.trim()) {
+      toast({
+        title: "Ошибка",
+        description: "Название проекта не может быть пустым.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const priorityMap: Record<string, string> = {
+      "Низкий": "low",
+      "Средний": "medium",
+      "Высокий": "high",
+      "Критический": "critical"
+    };
+
+    const updateData = {
+      id: editingProject.id,
+      data: {
+        name: editingProject.name,
+        priority: priorityMap[editingProject.priority] || editingProject.priority,
+        workspaceId: editingProject.workspaceId
+      }
+    };
+    updateProjectMutation.mutate(updateData);
+  };
+
+  const openEditDialog = (project: any) => {
+    const priorityReverseMap: Record<string, string> = {
+      "low": "Низкий",
+      "medium": "Средний",
+      "high": "Высокий",
+      "critical": "Критический"
+    };
+
+    setEditingProject({
+      ...project,
+      priority: priorityReverseMap[project.priority] || project.priority || "Средний"
+    });
+    setIsEditProjectOpen(true);
+  };
+
+  const handleUpdateWorkspace = () => {
+    if (!editingWorkspace || !editingWorkspace.name.trim()) {
+      toast({
+        title: "Ошибка",
+        description: "Название пространства не может быть пустым.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    updateWorkspaceMutation.mutate({
+      id: editingWorkspace.id,
+      data: {
+        name: editingWorkspace.name,
+        color: editingWorkspace.color
+      }
+    });
+  };
+
+  const handleCreateWorkspace = () => {
+    if (!newWorkspace.name.trim()) {
+      toast({
+        title: "Ошибка",
+        description: "Название пространства не может быть пустым.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    createWorkspaceMutation.mutate(newWorkspace);
+  };
+
+  const openEditWorkspaceDialog = (workspace: any) => {
+    setEditingWorkspace({ ...workspace });
+    setIsEditWorkspaceOpen(true);
   };
 
   const handleCreateProject = () => {
@@ -1172,6 +1419,14 @@ function ProjectsManagement() {
             </h4>
             <p className="text-[11px] text-muted-foreground">Создание проектов в пространствах</p>
           </div>
+          <Button 
+            size="sm" 
+            className="h-7 gap-1.5 text-[10px] font-bold"
+            onClick={() => setIsCreateWorkspaceOpen(true)}
+          >
+            <Plus className="w-3 h-3" />
+            Создать
+          </Button>
         </div>
         
         <Card className="border-border/50 shadow-sm overflow-hidden bg-card/50">
@@ -1179,7 +1434,7 @@ function ProjectsManagement() {
             <div className="space-y-3">
               {workspaces.length === 0 ? (
                 <div className="text-center py-6 text-sm text-muted-foreground">
-                  Пространств пока нет. Создайте пространство на странице проектов.
+                  Пространств пока нет. Нажмите "Создать" чтобы добавить первое пространство.
                 </div>
               ) : (
                 workspaces.map((workspace: any) => {
@@ -1201,18 +1456,28 @@ function ProjectsManagement() {
                           </span>
                         </div>
                       </div>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="h-7 text-xs"
-                        onClick={() => {
-                          setSelectedWorkspaceId(workspace.id);
-                          setIsCreateProjectOpen(true);
-                        }}
-                      >
-                        <Plus className="w-3 h-3 mr-1" />
-                        Проект
-                      </Button>
+                      <div className="flex items-center gap-1">
+                        <Button 
+                          variant="ghost" 
+                          size="icon" 
+                          className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                          onClick={() => openEditWorkspaceDialog(workspace)}
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 text-xs"
+                          onClick={() => {
+                            setSelectedWorkspaceId(workspace.id);
+                            setIsCreateProjectOpen(true);
+                          }}
+                        >
+                          <Plus className="w-3 h-3 mr-1" />
+                          Проект
+                        </Button>
+                      </div>
                     </div>
                   );
                 })
@@ -1385,7 +1650,12 @@ function ProjectsManagement() {
                         {priorityDisplayMap[project.priority] || project.priority || "Средний"}
                       </Badge>
                         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all transform translate-x-2 group-hover:translate-x-0">
-                        <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-background border border-transparent hover:border-border/50">
+                        <Button 
+                          variant="ghost" 
+                          size="icon" 
+                          className="h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-background border border-transparent hover:border-border/50"
+                          onClick={() => openEditDialog(project)}
+                        >
                           <Pencil className="w-3.5 h-3.5" />
                         </Button>
                         <Button 
@@ -1455,6 +1725,197 @@ function ProjectsManagement() {
               >
                 {deleteProjectMutation.isPending && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
                 Удалить проект
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Edit Project Dialog */}
+        <Dialog open={isEditProjectOpen} onOpenChange={setIsEditProjectOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Pencil className="w-5 h-5" />
+                Редактирование проекта
+              </DialogTitle>
+              <DialogDescription>
+                Внесите изменения в проект "{editingProject?.name}".
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label htmlFor="edit-project-name">Название проекта</Label>
+                <Input 
+                  id="edit-project-name" 
+                  placeholder="Введите название проекта" 
+                  value={editingProject?.name || ""}
+                  className="bg-background text-foreground"
+                  onChange={(e) => setEditingProject({ ...editingProject, name: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Пространство</Label>
+                <Select 
+                  value={editingProject?.workspaceId || "none"} 
+                  onValueChange={(val) => setEditingProject({ ...editingProject, workspaceId: val === "none" ? null : val })}
+                >
+                  <SelectTrigger className="bg-background text-foreground">
+                    <SelectValue placeholder="Без пространства" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Без пространства</SelectItem>
+                    {workspaces.map((workspace: any) => (
+                      <SelectItem key={workspace.id} value={workspace.id}>
+                        <div className="flex items-center gap-2">
+                          <div className="w-2 h-2 rounded-full" style={{ backgroundColor: workspace.color || '#3b82f6' }} />
+                          {workspace.name}
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Приоритет проекта</Label>
+                <Select 
+                  value={editingProject?.priority || "Средний"} 
+                  onValueChange={(val) => setEditingProject({ ...editingProject, priority: val })}
+                >
+                  <SelectTrigger className="bg-background text-foreground">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Низкий">Низкий</SelectItem>
+                    <SelectItem value="Средний">Средний</SelectItem>
+                    <SelectItem value="Высокий">Высокий</SelectItem>
+                    <SelectItem value="Критический">Критический</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => {
+                setIsEditProjectOpen(false);
+                setEditingProject(null);
+              }}>
+                Отмена
+              </Button>
+              <Button 
+                onClick={handleUpdateProject}
+                disabled={updateProjectMutation.isPending || !editingProject?.name?.trim()}
+              >
+                {updateProjectMutation.isPending && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
+                Сохранить изменения
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Edit Workspace Dialog */}
+        <Dialog open={isEditWorkspaceOpen} onOpenChange={setIsEditWorkspaceOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Pencil className="w-5 h-5" />
+                Редактирование пространства
+              </DialogTitle>
+              <DialogDescription>
+                Внесите изменения в пространство "{editingWorkspace?.name}".
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label htmlFor="edit-workspace-name">Название пространства</Label>
+                <Input 
+                  id="edit-workspace-name" 
+                  placeholder="Введите название пространства" 
+                  value={editingWorkspace?.name || ""}
+                  className="bg-background text-foreground"
+                  onChange={(e) => setEditingWorkspace({ ...editingWorkspace, name: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Цвет пространства</Label>
+                <div className="flex gap-2 flex-wrap">
+                  {['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#6366f1'].map((color) => (
+                    <button
+                      key={color}
+                      onClick={() => setEditingWorkspace({ ...editingWorkspace, color })}
+                      className={`w-8 h-8 rounded-full transition-all ${editingWorkspace?.color === color ? 'ring-2 ring-offset-2 ring-primary scale-110' : 'hover:scale-105'}`}
+                      style={{ backgroundColor: color }}
+                    />
+                  ))}
+                </div>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => {
+                setIsEditWorkspaceOpen(false);
+                setEditingWorkspace(null);
+              }}>
+                Отмена
+              </Button>
+              <Button 
+                onClick={handleUpdateWorkspace}
+                disabled={updateWorkspaceMutation.isPending || !editingWorkspace?.name?.trim()}
+              >
+                {updateWorkspaceMutation.isPending && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
+                Сохранить изменения
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Create Workspace Dialog */}
+        <Dialog open={isCreateWorkspaceOpen} onOpenChange={setIsCreateWorkspaceOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Plus className="w-5 h-5" />
+                Создать пространство
+              </DialogTitle>
+              <DialogDescription>
+                Создайте новое пространство для организации проектов.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label htmlFor="new-workspace-name">Название пространства</Label>
+                <Input 
+                  id="new-workspace-name" 
+                  placeholder="Введите название пространства" 
+                  value={newWorkspace.name}
+                  className="bg-background text-foreground"
+                  onChange={(e) => setNewWorkspace({ ...newWorkspace, name: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Цвет пространства</Label>
+                <div className="flex gap-2 flex-wrap">
+                  {['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#6366f1'].map((color) => (
+                    <button
+                      key={color}
+                      onClick={() => setNewWorkspace({ ...newWorkspace, color })}
+                      className={`w-8 h-8 rounded-full transition-all ${newWorkspace.color === color ? 'ring-2 ring-offset-2 ring-primary scale-110' : 'hover:scale-105'}`}
+                      style={{ backgroundColor: color }}
+                    />
+                  ))}
+                </div>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => {
+                setIsCreateWorkspaceOpen(false);
+                setNewWorkspace({ name: "", color: "#3b82f6" });
+              }}>
+                Отмена
+              </Button>
+              <Button 
+                onClick={handleCreateWorkspace}
+                disabled={createWorkspaceMutation.isPending || !newWorkspace.name.trim()}
+              >
+                {createWorkspaceMutation.isPending && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
+                Создать пространство
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -2148,6 +2609,892 @@ function TaskTypesManagement() {
   )
 }
 
+
+function BalanceManagement() {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [editingSetting, setEditingSetting] = useState<any>(null);
+  const [statusName, setStatusName] = useState("");
+  const [pointsAmount, setPointsAmount] = useState("1");
+  const [maxTimeInStatus, setMaxTimeInStatus] = useState("0");
+
+  const { data: settings, isLoading } = useQuery<any[]>({
+    queryKey: ["/api/points-settings"],
+  });
+
+  const createMutation = useMutation({
+    mutationFn: async (data: any) => {
+      const res = await apiRequest("POST", "/api/points-settings", data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/points-settings"] });
+      toast({ title: "Настройка добавлена", description: "Баллы за статус успешно настроены" });
+      setIsDialogOpen(false);
+      resetForm();
+    },
+    onError: (error: Error) => {
+      toast({ title: "Ошибка", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: any }) => {
+      const res = await apiRequest("PATCH", `/api/points-settings/${id}`, data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/points-settings"] });
+      toast({ title: "Настройка обновлена", description: "Изения сохранены" });
+      setIsDialogOpen(false);
+      resetForm();
+    },
+    onError: (error: Error) => {
+      toast({ title: "Ошибка", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      await apiRequest("DELETE", `/api/points-settings/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/points-settings"] });
+      toast({ title: "Настройка удалена", description: "Баллы за статус удалены" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Ошибка", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const resetForm = () => {
+    setStatusName("");
+    setPointsAmount("1");
+    setMaxTimeInStatus("0");
+    setEditingSetting(null);
+  };
+
+  const openDialog = (setting?: any) => {
+    if (setting) {
+      setEditingSetting(setting);
+      setStatusName(setting.statusName);
+      setPointsAmount(setting.pointsAmount.toString());
+      setMaxTimeInStatus((setting.maxTimeInStatus || 0).toString());
+    } else {
+      resetForm();
+    }
+    setIsDialogOpen(true);
+  };
+
+  const handleSave = () => {
+    const data = {
+      statusName,
+      pointsAmount: parseInt(pointsAmount) || 1,
+      maxTimeInStatus: parseInt(maxTimeInStatus) || 0,
+      isActive: true,
+    };
+
+    if (editingSetting) {
+      updateMutation.mutate({ id: editingSetting.id, data });
+    } else {
+      createMutation.mutate(data);
+    }
+  };
+
+  return (
+    <div className="animate-in fade-in slide-in-from-bottom-2 duration-300 space-y-6">
+      <Card className="border-border/50 shadow-sm">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Coins className="w-5 h-5 text-amber-500" />
+            Настройка баллов за статусы задач
+          </CardTitle>
+          <CardDescription>
+            Настройте количество баллов и максимальное время, которое задача может провести в статусе для получения баллов
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center justify-between mb-6">
+            <div className="text-sm text-muted-foreground">
+              <p>Баллы начисляются автоматически при смене статуса задачи.</p>
+              <p>1 балл = 1 рубль в магазине.</p>
+            </div>
+            <Button onClick={() => openDialog()} className="gap-2">
+              <Plus className="w-4 h-4" />
+              Добавить статус
+            </Button>
+          </div>
+
+          {isLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="w-6 h-6 animate-spin text-primary" />
+            </div>
+          ) : settings && settings.length > 0 ? (
+            <div className="space-y-3">
+              {settings.map((setting: any) => (
+                <div
+                  key={setting.id}
+                  className="flex items-center justify-between p-4 rounded-lg bg-secondary/30 hover:bg-secondary/50 transition-colors"
+                >
+                  <div className="flex items-center gap-4">
+                    <div className="w-10 h-10 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center">
+                      <Coins className="w-5 h-5 text-amber-600" />
+                    </div>
+                    <div>
+                      <p className="font-medium">{setting.statusName}</p>
+                      <p className="text-sm text-muted-foreground">
+                        {setting.isActive ? "Активно" : "Неактивно"}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-4">
+                    <div className="text-right">
+                      <p className="text-2xl font-bold text-amber-600">{setting.pointsAmount}</p>
+                      <p className="text-xs text-muted-foreground">баллов</p>
+                    </div>
+                    {setting.maxTimeInStatus > 0 && (
+                      <div className="text-right px-3 border-l border-border">
+                        <p className="text-sm font-medium text-rose-600">{setting.maxTimeInStatus} мин</p>
+                        <p className="text-xs text-muted-foreground">макс. время</p>
+                      </div>
+                    )}
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                        onClick={() => openDialog(setting)}
+                      >
+                        <Pencil className="w-4 h-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-destructive hover:text-destructive"
+                        onClick={() => deleteMutation.mutate(setting.id)}
+                        disabled={deleteMutation.isPending}
+                      >
+                        {deleteMutation.isPending ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <Trash2 className="w-4 h-4" />
+                        )}
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-8 text-muted-foreground">
+              <Coins className="w-12 h-12 mx-auto mb-3 opacity-30" />
+              <p>Настройки не найдены</p>
+              <p className="text-sm">Добавьте первый статус для начисления баллов</p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>
+              {editingSetting ? "Редактировать настройку" : "Добавить настройку"}
+            </DialogTitle>
+            <DialogDescription>
+              Настройте количество баллов за переход в указанный статус
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="statusName">Название статуса</Label>
+              <Input
+                id="statusName"
+                value={statusName}
+                onChange={(e) => setStatusName(e.target.value)}
+                placeholder="Например: В работе"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="pointsAmount">Количество баллов</Label>
+              <Input
+                id="pointsAmount"
+                type="number"
+                min="0"
+                value={pointsAmount}
+                onChange={(e) => setPointsAmount(e.target.value)}
+                placeholder="1"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="maxTimeInStatus">Максимальное время в статусе (минут)</Label>
+              <Input
+                id="maxTimeInStatus"
+                type="number"
+                min="0"
+                value={maxTimeInStatus}
+                onChange={(e) => setMaxTimeInStatus(e.target.value)}
+                placeholder="0"
+              />
+              <p className="text-xs text-muted-foreground">
+                Укажите максимальное время в минутах, которое задача может провести в этом статусе для получения баллов. Если время превышено, баллы не начислятся. 0 = без ограничений.
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            {editingSetting && (
+              <Button
+                type="button"
+                variant="destructive"
+                className="mr-auto"
+                onClick={() => {
+                  deleteMutation.mutate(editingSetting.id);
+                  setIsDialogOpen(false);
+                }}
+                disabled={deleteMutation.isPending}
+              >
+                {deleteMutation.isPending ? (
+                  <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                ) : null}
+                Удалить
+              </Button>
+            )}
+            <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
+              Отмена
+            </Button>
+            <Button
+              onClick={handleSave}
+              disabled={!statusName || createMutation.isPending || updateMutation.isPending}
+            >
+              {createMutation.isPending || updateMutation.isPending ? (
+                <Loader2 className="w-4 h-4 animate-spin mr-2" />
+              ) : null}
+              {editingSetting ? "Сохранить" : "Создать"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+// Team Rooms Types
+interface TeamRoom {
+  id: string;
+  name: string;
+  description: string | null;
+  slug: string;
+  inviteCode: string;
+  accessType: "open" | "closed";
+  color: string;
+  createdBy: string;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+function CallsManagement() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [editingRoom, setEditingRoom] = useState<TeamRoom | null>(null);
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [slug, setSlug] = useState("");
+  const [accessType, setAccessType] = useState<"open" | "closed">("open");
+  const [color, setColor] = useState("#3b82f6");
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  const colors = [
+    { value: "#3b82f6", label: "Синий" },
+    { value: "#10b981", label: "Зеленый" },
+    { value: "#f59e0b", label: "Оранжевый" },
+    { value: "#ef4444", label: "Красный" },
+    { value: "#8b5cf6", label: "Фиолетовый" },
+    { value: "#ec4899", label: "Розовый" },
+    { value: "#06b6d4", label: "Бирюзовый" },
+    { value: "#6366f1", label: "Индиго" },
+  ];
+
+  // Admin management state
+  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<any[]>([]);
+
+  // Fetch current user
+  useEffect(() => {
+    const fetchUser = async () => {
+      try {
+        const res = await fetch("/api/user");
+        if (res.ok) {
+          const user = await res.json();
+          setCurrentUser(user);
+        }
+      } catch (error) {
+        console.error("Error fetching user:", error);
+      }
+    };
+    fetchUser();
+  }, []);
+
+  // Fetch admins when editing room
+  const { data: roomAdmins = [] } = useQuery<any[]>({
+    queryKey: ["/api/team-rooms", editingRoom?.id, "admins"],
+    enabled: !!editingRoom,
+  });
+
+  // Use roomAdmins directly instead of copying to state
+  const admins = roomAdmins;
+
+  const addAdminMutation = useMutation({
+    mutationFn: async ({ roomId, userId }: { roomId: string; userId: string }) => {
+      const res = await apiRequest("POST", `/api/team-rooms/${roomId}/admins`, { userId });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/team-rooms", editingRoom?.id, "admins"] });
+      toast({
+        title: "Успешно",
+        description: "Администратор добавлен",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Ошибка",
+        description: "Не удалось добавить администратора",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const removeAdminMutation = useMutation({
+    mutationFn: async ({ roomId, userId }: { roomId: string; userId: string }) => {
+      await apiRequest("DELETE", `/api/team-rooms/${roomId}/admins/${userId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/team-rooms", editingRoom?.id, "admins"] });
+      toast({
+        title: "Успешно",
+        description: "Администратор удален",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Ошибка",
+        description: "Не удалось удалить администратора",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Simple search without complex dependencies to prevent infinite loops
+  const handleSearchUsers = async (query: string) => {
+    if (query.length < 2) {
+      setSearchResults([]);
+      return;
+    }
+    
+    try {
+      const res = await fetch(`/api/users/search?q=${encodeURIComponent(query)}`);
+      if (res.ok) {
+        const users = await res.json();
+        setSearchResults(users);
+      }
+    } catch (error) {
+      console.error("Error searching users:", error);
+    }
+  };
+
+  const { data: rooms = [], isLoading, error: roomsError } = useQuery<TeamRoom[]>({
+    queryKey: ["/api/team-rooms"],
+  });
+
+  const createMutation = useMutation({
+    mutationFn: async (data: Partial<TeamRoom>) => {
+      const res = await apiRequest("POST", "/api/team-rooms", data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/team-rooms"] });
+      setIsDialogOpen(false);
+      resetForm();
+      toast({
+        title: "Успешно",
+        description: "Командный зал создан",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Ошибка",
+        description: error.message || "Не удалось создать зал",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: Partial<TeamRoom> }) => {
+      const res = await apiRequest("PATCH", `/api/team-rooms/${id}`, data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/team-rooms"] });
+      setIsDialogOpen(false);
+      setEditingRoom(null);
+      resetForm();
+      toast({
+        title: "Успешно",
+        description: "Командный зал обновлен",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Ошибка",
+        description: error.message || "Не удалось обновить зал",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      await apiRequest("DELETE", `/api/team-rooms/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/team-rooms"] });
+      toast({
+        title: "Успешно",
+        description: "Командный зал удален",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Ошибка",
+        description: "Не удалось удалить зал",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const regenerateCodeMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await apiRequest("POST", `/api/team-rooms/${id}/regenerate-code`);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/team-rooms"] });
+      toast({
+        title: "Успешно",
+        description: "Ссылка обновлена",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Ошибка",
+        description: "Не удалось обновить ссылку",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const resetForm = () => {
+    setName("");
+    setDescription("");
+    setSlug("");
+    setAccessType("open");
+    setColor("#3b82f6");
+    setEditingRoom(null);
+  };
+
+  const openDialog = (room?: TeamRoom) => {
+    if (room) {
+      setEditingRoom(room);
+      setName(room.name);
+      setDescription(room.description || "");
+      setSlug(room.slug);
+      setAccessType(room.accessType);
+      setColor(room.color);
+    } else {
+      resetForm();
+    }
+    setIsDialogOpen(true);
+  };
+
+  const handleSave = () => {
+    const data = {
+      name,
+      description: description || undefined,
+      slug: editingRoom ? undefined : slug,
+      accessType,
+      color,
+    };
+
+    if (editingRoom) {
+      updateMutation.mutate({ id: editingRoom.id, data });
+    } else {
+      createMutation.mutate(data);
+    }
+  };
+
+  const generateSlug = (name: string) => {
+    return name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "");
+  };
+
+  const handleNameChange = (value: string) => {
+    setName(value);
+    if (!editingRoom) {
+      setSlug(generateSlug(value));
+    }
+  };
+
+  const copyToClipboard = (room: TeamRoom) => {
+    const link = `https://m4portal.ru/room/${room.slug}-${room.inviteCode}`;
+    navigator.clipboard.writeText(link);
+    setCopiedId(room.id);
+    setTimeout(() => setCopiedId(null), 2000);
+    toast({
+      title: "Скопировано",
+      description: "Ссылка скопирована в буфер обмена",
+    });
+  };
+
+  return (
+    <div className="animate-in fade-in slide-in-from-bottom-2 duration-300 space-y-6">
+      <Card className="border-border/50 shadow-sm">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Video className="w-5 h-5 text-primary" />
+            Командные залы
+          </CardTitle>
+          <CardDescription>
+            Управление виртуальными комнатами для видеовстреч
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center justify-between mb-6">
+            <div className="text-sm text-muted-foreground">
+              <p>Создавайте постоянные комнаты для отделов и команд.</p>
+              <p>Каждый зал имеет уникальную ссылку для приглашения.</p>
+            </div>
+            <Button onClick={() => openDialog()} className="gap-2">
+              <Plus className="w-4 h-4" />
+              Создать зал
+            </Button>
+          </div>
+
+          {isLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="w-6 h-6 animate-spin text-primary" />
+            </div>
+          ) : roomsError ? (
+            <div className="text-center py-8 text-destructive">
+              <Video className="w-12 h-12 mx-auto mb-3 opacity-30" />
+              <p>Ошибка загрузки залов</p>
+              <p className="text-sm text-muted-foreground">Попробуйте обновить страницу</p>
+            </div>
+          ) : rooms && rooms.length > 0 ? (
+            <div className="space-y-3">
+              {rooms.map((room) => (
+                <div
+                  key={room.id}
+                  className="flex items-center justify-between p-4 rounded-lg bg-secondary/30 hover:bg-secondary/50 transition-colors"
+                >
+                  <div className="flex items-center gap-4">
+                    <div
+                      className="w-10 h-10 rounded-full flex items-center justify-center"
+                      style={{ backgroundColor: room.color }}
+                    >
+                      <Video className="w-5 h-5 text-white" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <p className="font-medium">{room.name}</p>
+                        <Badge variant={room.accessType === "open" ? "default" : "secondary"}>
+                          {room.accessType === "open" ? "Открытый" : "Закрытый"}
+                        </Badge>
+                      </div>
+                      <p className="text-sm text-muted-foreground">
+                        {room.description || "Нет описания"}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <Link className="w-4 h-4" />
+                      <span className="font-mono text-xs">
+                        {room.slug}-{room.inviteCode}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                        onClick={() => copyToClipboard(room)}
+                        title="Копировать ссылку"
+                      >
+                        {copiedId === room.id ? (
+                          <Check className="w-4 h-4 text-green-500" />
+                        ) : (
+                          <Copy className="w-4 h-4" />
+                        )}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                        onClick={() => regenerateCodeMutation.mutate(room.id)}
+                        disabled={regenerateCodeMutation.isPending}
+                        title="Обновить ссылку"
+                      >
+                        {regenerateCodeMutation.isPending ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <RefreshCw className="w-4 h-4" />
+                        )}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                        onClick={() => openDialog(room)}
+                        title="Редактировать"
+                      >
+                        <Pencil className="w-4 h-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-destructive hover:text-destructive"
+                        onClick={() => deleteMutation.mutate(room.id)}
+                        disabled={deleteMutation.isPending}
+                        title="Удалить"
+                      >
+                        {deleteMutation.isPending ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <Trash2 className="w-4 h-4" />
+                        )}
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-8 text-muted-foreground">
+              <Video className="w-12 h-12 mx-auto mb-3 opacity-30" />
+              <p>Залы не найдены</p>
+              <p className="text-sm">Создайте первый командный зал</p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle>
+              {editingRoom ? "Редактировать зал" : "Создать зал"}
+            </DialogTitle>
+            <DialogDescription>
+              {editingRoom
+                ? "Измените параметры командного зала"
+                : "Создайте новый виртуальный зал для встреч"}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="name">Название зала</Label>
+              <Input
+                id="name"
+                value={name}
+                onChange={(e) => handleNameChange(e.target.value)}
+                placeholder="Например: Маркетинг"
+              />
+            </div>
+            {!editingRoom && (
+              <div className="space-y-2">
+                <Label htmlFor="slug">Идентификатор (slug)</Label>
+                <Input
+                  id="slug"
+                  value={slug}
+                  onChange={(e) => setSlug(e.target.value)}
+                  placeholder="marketing-team"
+                  className="font-mono"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Используется в ссылке для приглашения. Только латинские буквы, цифры и дефисы.
+                </p>
+              </div>
+            )}
+            <div className="space-y-2">
+              <Label htmlFor="description">Описание</Label>
+              <Input
+                id="description"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="О чем будут встречи в этом зале?"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="accessType">Тип доступа</Label>
+              <Select value={accessType} onValueChange={(v: "open" | "closed") => setAccessType(v)}>
+                <SelectTrigger id="accessType">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="open">Открытый (любой может присоединиться)</SelectItem>
+                  <SelectItem value="closed">Закрытый (только по приглашению)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Цвет зала</Label>
+              <div className="flex flex-wrap gap-2">
+                {colors.map((c) => (
+                  <button
+                    key={c.value}
+                    type="button"
+                    onClick={() => setColor(c.value)}
+                    className={`w-8 h-8 rounded-full border-2 transition-all ${
+                      color === c.value ? "border-foreground scale-110" : "border-transparent"
+                    }`}
+                    style={{ backgroundColor: c.value }}
+                    title={c.label}
+                  />
+                ))}
+              </div>
+            </div>
+
+            {/* Admin Management - Only for creator */}
+            {editingRoom && currentUser?.id === editingRoom.createdBy && (
+              <div className="space-y-3 border-t pt-4 mt-4">
+                <Label className="text-base font-semibold">Администраторы</Label>
+                <p className="text-xs text-muted-foreground">
+                  Администраторы могут исключать участников из звонков
+                </p>
+                
+                {/* Current Admins */}
+                <div className="space-y-2">
+                  {admins.map((admin) => (
+                    <div key={admin.id} className="flex items-center justify-between p-2 bg-muted rounded-md">
+                      <div className="flex items-center gap-2">
+                        <Avatar className="h-8 w-8">
+                          <AvatarImage src={admin.user?.avatar || undefined} />
+                          <AvatarFallback>
+                            {admin.user?.firstName?.[0]}{admin.user?.lastName?.[0]}
+                          </AvatarFallback>
+                        </Avatar>
+                        <span className="text-sm">
+                          {admin.user?.firstName} {admin.user?.lastName}
+                        </span>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => removeAdminMutation.mutate({ 
+                          roomId: editingRoom.id, 
+                          userId: admin.userId 
+                        })}
+                        disabled={removeAdminMutation.isPending}
+                      >
+                        <UserX className="h-4 w-4 text-destructive" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Add Admin */}
+                <div className="space-y-2">
+                  <Label className="text-sm">Добавить администратора</Label>
+                  <div className="relative">
+                    <Input
+                      placeholder="Поиск пользователя..."
+                      value={searchQuery}
+                      onChange={(e) => {
+                        setSearchQuery(e.target.value);
+                        handleSearchUsers(e.target.value);
+                      }}
+                    />
+                    {searchResults.length > 0 && (
+                      <div className="absolute z-10 w-full mt-1 bg-background border rounded-md shadow-lg max-h-48 overflow-auto">
+                        {searchResults
+                          .filter((user: any) => 
+                            user.id !== currentUser?.id && 
+                            !admins.some((a: any) => a.userId === user.id)
+                          )
+                          .map((user) => (
+                            <button
+                              key={user.id}
+                              className="w-full flex items-center gap-2 p-2 hover:bg-muted text-left"
+                              onClick={() => {
+                                addAdminMutation.mutate({ 
+                                  roomId: editingRoom.id, 
+                                  userId: user.id 
+                                });
+                                setSearchQuery("");
+                                setSearchResults([]);
+                              }}
+                            >
+                              <Avatar className="h-8 w-8">
+                                <AvatarImage src={user.avatar || undefined} />
+                                <AvatarFallback>
+                                  {user.firstName?.[0]}{user.lastName?.[0]}
+                                </AvatarFallback>
+                              </Avatar>
+                              <span className="text-sm">
+                                {user.firstName} {user.lastName}
+                              </span>
+                            </button>
+                          ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            {editingRoom && (
+              <Button
+                type="button"
+                variant="destructive"
+                className="mr-auto"
+                onClick={() => {
+                  deleteMutation.mutate(editingRoom.id);
+                  setIsDialogOpen(false);
+                }}
+                disabled={deleteMutation.isPending}
+              >
+                {deleteMutation.isPending ? (
+                  <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                ) : null}
+                Удалить
+              </Button>
+            )}
+            <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
+              Отмена
+            </Button>
+            <Button
+              onClick={handleSave}
+              disabled={!name || (!editingRoom && !slug) || createMutation.isPending || updateMutation.isPending}
+            >
+              {createMutation.isPending || updateMutation.isPending ? (
+                <Loader2 className="w-4 h-4 animate-spin mr-2" />
+              ) : null}
+              {editingRoom ? "Сохранить" : "Создать"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
 
 function DefaultSection({ section }: { section: { label: string, icon: any, description: string } }) {
   return (

@@ -4,33 +4,8 @@ import { rm, readFile } from "fs/promises";
 
 // server deps to bundle to reduce openat(2) syscalls
 // which helps cold start times
-const allowlist = [
-  "@google/generative-ai",
-  "axios",
-  "connect-pg-simple",
-  "cors",
-  "date-fns",
-  "drizzle-orm",
-  "drizzle-zod",
-  "express",
-  "express-rate-limit",
-  "express-session",
-  "jsonwebtoken",
-  "memorystore",
-  "multer",
-  "nanoid",
-  "nodemailer",
-  "openai",
-  "passport",
-  "passport-local",
-  "pg",
-  "stripe",
-  "uuid",
-  "ws",
-  "xlsx",
-  "zod",
-  "zod-validation-error",
-];
+// Keep minimal - most deps should be external to avoid require issues
+const allowlist = [];
 
 async function buildAll() {
   await rm("dist", { recursive: true, force: true });
@@ -44,13 +19,13 @@ async function buildAll() {
     ...Object.keys(pkg.dependencies || {}),
     ...Object.keys(pkg.devDependencies || {}),
   ];
-  let externals = allDeps.filter((dep) => !allowlist.includes(dep));
+  let externals = allDeps;
 
   // Add Node.js built-ins to externals
   const nodeBuiltins = ['path', 'fs', 'os', 'url', 'crypto', 'stream', 'util', 'events', 'buffer', 'http', 'https', 'net', 'tls', 'zlib', 'querystring', 'string_decoder', 'assert', 'sys', 'punycode', 'module', 'child_process', 'cluster', 'dgram', 'dns', 'domain', 'readline', 'repl'];
   externals = [...externals, ...nodeBuiltins];
 
-  console.log('Externals:', externals.slice(0, 10), '...');
+  console.log('Externals count:', externals.length);
 
   await esbuild({
     entryPoints: ["server/index.ts"],

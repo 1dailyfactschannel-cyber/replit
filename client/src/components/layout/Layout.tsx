@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import type { User as UserType } from "@shared/schema";
 import {
   LayoutDashboard,
   Kanban,
@@ -11,7 +12,6 @@ import {
   Calendar,
   MessageSquare,
   Users,
-  User,
   Settings,
   LogOut,
   Menu,
@@ -25,7 +25,9 @@ import {
   ChevronDown,
   Pencil,
   Trash2,
-  BarChart2
+  BarChart2,
+  Coins,
+  User
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -66,6 +68,7 @@ const sidebarItems = [
   { icon: CheckSquare, label: "Мои задачи", href: "/tasks" },
   { icon: Calendar, label: "Календарь", href: "/calendar" },
   { icon: MessageSquare, label: "Общение", href: "/chat" },
+  { icon: Bell, label: "Уведомления", href: "/notifications" },
   { 
     icon: Users, 
     label: "Команда", 
@@ -186,7 +189,7 @@ const SidebarContentComponent = React.memo(({
             <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center text-primary-foreground font-bold text-xl shrink-0">
               T
             </div>
-            {!isCollapsed && <span className="font-sans font-bold text-lg animate-in fade-in duration-300">TeamSync</span>}
+            {!isCollapsed && <span className="font-sans font-bold text-lg animate-in fade-in duration-300">m4portal</span>}
           </div>
           {!isCollapsed && (
             <Button 
@@ -269,7 +272,7 @@ const SidebarContentComponent = React.memo(({
         <div className="mt-8 space-y-1">
           {!isCollapsed && <p className="text-xs font-medium text-muted-foreground px-2 mb-2 uppercase tracking-wider animate-in fade-in duration-300">Проекты</p>}
           {[
-            { name: "TeamSync Web", priority: "Высокий" },
+            { name: "m4portal Web", priority: "Высокий" },
             { name: "Mobile App", priority: "Средний" },
             { name: "Internal API", priority: "Низкий" }
           ].map((project, i) => (
@@ -366,7 +369,7 @@ const SidebarContentComponent = React.memo(({
 });
 
 export function Layout({ children, className }: { children: React.ReactNode, className?: string }) {
-  const { data: user, isLoading } = useQuery({
+  const { data: user, isLoading } = useQuery<UserType>({
     queryKey: ["/api/user"],
     retry: false,
   });
@@ -509,8 +512,18 @@ export function Layout({ children, className }: { children: React.ReactNode, cla
             </div>
           </div>
 
-          {/* Right side - Theme toggle and notifications */}
+          {/* Right side - Balance, Theme toggle and notifications */}
           <div className="flex items-center gap-3">
+            {user && (
+              <div 
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 font-medium text-sm cursor-pointer hover:bg-amber-200 dark:hover:bg-amber-900/50 transition-colors"
+                onClick={() => setLocation("/profile?tab=balance")}
+                title="Перейти к балансу"
+              >
+                <Coins className="w-4 h-4" />
+                <span>{user.pointsBalance || 0}</span>
+              </div>
+            )}
             <ThemeToggle />
             <NotificationAlertDialog />
           </div>

@@ -4,7 +4,7 @@ import { getStorage, getReportOverview, getReportWorkspaces, getReportProjects, 
 import { insertSiteSettingsSchema, insertUserSchema, insertNotificationSchema, insertLabelSchema, priorities, taskTypes } from "@shared/schema";
 import * as schema from "@shared/schema";
 import { getStatusByColumnName } from "../shared/column-status-mapping";
-import { setupWebSockets } from "./socket";
+import { setupWebSockets, getIO } from "./socket";
 import { Server as SocketIOServer } from "socket.io";
 import multer from "multer";
 import path from "path";
@@ -15,6 +15,7 @@ import { format } from "date-fns";
 import { formatUserName, formatUserBasic } from "./utils";
 import rateLimit from "express-rate-limit";
 import bcrypt from "bcrypt";
+import yandexCalendarRoutes from "./routes/yandex-calendar";
 
 const storage = getStorage();
 let io: SocketIOServer;
@@ -58,12 +59,14 @@ async function ensureAllTasksStatusMatch(tasks: any[]): Promise<any[]> {
 
 
 // Rate limiters
+const isDev = process.env.NODE_ENV === 'development';
 const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 100,
+  max: isDev ? 10000 : 2000,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { message: "Too many requests, please try again later" }
+  message: { message: "Слишком много запросов. Пожалуйста, попробуйте позже." },
+  skip: () => isDev // Skip rate limiting completely in development
 });
 
 const loginLimiter = rateLimit({
@@ -74,13 +77,40 @@ const loginLimiter = rateLimit({
   message: { message: "Too many login attempts, please try again later" }
 });
 
+// Notification data interface
+interface NotificationData {
+  action: string;
+  fieldName?: string;
+  oldValue?: string;
+  newValue?: string;
+  taskTitle?: string;
+  boardName?: string;
+  chatName?: string;
+  eventName?: string;
+  commentPreview?: string;
+  userName: string;
+}
+
+// Helper function to format notification message
+function formatNotificationMessage(data: NotificationData): string {
+  return JSON.stringify(data);
+}
+
 // Helper function to send notification
-async function sendNotification(userId: string, senderId: string | null, type: string, title: string, message: string, link?: string) {
+async function sendNotification(
+  userId: string, 
+  senderId: string | null, 
+  type: string, 
+  title: string, 
+  data: NotificationData,
+  link?: string
+) {
   try {
+    const message = formatNotificationMessage(data);
     await storage.createNotification({
       userId,
       senderId,
-      type,
+      type: type as "chat" | "task" | "calendar" | "call" | "system",
       title,
       message,
       link: link || null,
@@ -194,6 +224,32 @@ export async function registerRoutes(
     }
   });
 
+  // Search users endpoint
+  app.get("/api/users/search", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+    
+    try {
+      const query = req.query.q as string;
+      if (!query || query.length < 2) {
+        return res.json([]);
+      }
+
+      const allUsers = await storage.getAllUsers();
+      const searchLower = query.toLowerCase();
+      
+      const filteredUsers = allUsers.filter(user => {
+        const fullName = `${user.firstName || ''} ${user.lastName || ''}`.toLowerCase();
+        const username = user.username?.toLowerCase() || '';
+        return fullName.includes(searchLower) || username.includes(searchLower);
+      }).slice(0, 10); // Limit to 10 results
+
+      res.json(filteredUsers);
+    } catch (error) {
+      console.error("Error searching users:", error);
+      res.status(500).json({ message: "Failed to search users" });
+    }
+  });
+
   app.get("/api/users/:id", async (req, res) => {
     try {
       const userId = req.params.id;
@@ -238,41 +294,58 @@ export async function registerRoutes(
   // });
 
   // File upload route (stores files in database)
-  app.post("/api/upload", upload.single("file"), async (req, res) => {
-    try {
-      if (!req.file) {
-        return res.status(400).json({ message: "No file uploaded" });
-      }
-
-      // Convert file buffer to base64
-      const base64Data = req.file.buffer.toString('base64');
-      
-      // Save file to database
-      const attachment = await storage.createFileAttachment({
-        filename: req.file.filename || `${Date.now()}-${Math.round(Math.random() * 1E9)}`,
-        originalName: req.file.originalname,
-        mimeType: req.file.mimetype,
-        size: req.file.size,
-        data: base64Data,
-        uploadedBy: req.user?.id || null,
-      });
-
-      const fileUrl = `/api/files/${attachment.id}`;
-      res.json({
-        url: fileUrl,
-        name: req.file.originalname,
-        type: req.file.mimetype,
-        size: req.file.size,
-        id: attachment.id
-      });
-    } catch (error) {
-      console.error("Upload error:", error);
-      res.status(500).json({ message: "Failed to upload file" });
+  app.post("/api/upload", async (req, res) => {
+    // Security: Require authentication
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ message: "Не авторизован" });
     }
+    
+    // Use multer middleware manually
+    upload.single("file")(req, res, async (err: any) => {
+      try {
+        if (err) {
+          return res.status(400).json({ message: err.message || "Upload error" });
+        }
+        
+        if (!req.file) {
+          return res.status(400).json({ message: "No file uploaded" });
+        }
+
+        // Convert file buffer to base64
+        const base64Data = req.file.buffer.toString('base64');
+        
+        // Save file to database
+        const attachment = await storage.createFileAttachment({
+          filename: req.file.filename || `${Date.now()}-${Math.round(Math.random() * 1E9)}`,
+          originalName: req.file.originalname,
+          mimeType: req.file.mimetype,
+          size: req.file.size,
+          data: base64Data,
+          uploadedBy: req.user?.id || null,
+        });
+
+        const fileUrl = `/api/files/${attachment.id}`;
+        res.json({
+          url: fileUrl,
+          name: req.file.originalname,
+          type: req.file.mimetype,
+          size: req.file.size,
+          id: attachment.id
+        });
+      } catch (error) {
+        console.error("Upload error:", error);
+        res.status(500).json({ message: "Failed to upload file" });
+      }
+    });
   });
 
   // File retrieval route (serves files from database)
   app.get("/api/files/:id", async (req, res) => {
+    // Security: Require authentication
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ message: "Не авторизован" });
+    }
+    
     try {
       const attachment = await storage.getFileAttachment(req.params.id);
       
@@ -567,7 +640,12 @@ export async function registerRoutes(
             user.id,
             'project_created',
             'Новый проект',
-            `${creatorName} создал новый проект "${project.name}"`,
+            {
+              action: 'created',
+              userName: creatorName,
+              fieldName: 'Проект',
+              newValue: project.name,
+            },
             `/projects/${project.id}`
           );
         }
@@ -1016,7 +1094,137 @@ export async function registerRoutes(
         }
       }
 
+      // Get current task before update to check what changed
+      const currentTask = await storage.getTask(taskId);
+      
       const task = await storage.updateTask(taskId, updateData);
+      
+      // Handle user time tracking when assignee or status changes
+      console.log("[TIME TRACKING] Checking task update:", { taskId, updateData, currentTask: currentTask ? { id: currentTask.id, assigneeId: currentTask.assigneeId, status: currentTask.status } : null });
+      if (currentTask) {
+        const oldAssigneeId = currentTask.assigneeId;
+        const newAssigneeId = updateData.assigneeId;
+        const oldStatus = currentTask.status;
+        const newStatus = updateData.status;
+        
+        console.log("[TIME TRACKING] Comparing:", { oldAssigneeId, newAssigneeId, oldStatus, newStatus });
+        
+        // If assignee changed
+        if (newAssigneeId !== undefined && newAssigneeId !== oldAssigneeId) {
+          console.log("[TIME TRACKING] Assignee changed, updating tracking");
+          // Close tracking for old assignee
+          if (oldAssigneeId) {
+            await storage.closeUserTimeTracking(taskId, oldAssigneeId);
+            console.log("[TIME TRACKING] Closed tracking for old assignee:", oldAssigneeId);
+          }
+          // Start tracking for new assignee with current status
+          if (newAssigneeId) {
+            const statusToTrack = newStatus || currentTask.status;
+            await storage.startUserTimeTracking(taskId, newAssigneeId, statusToTrack);
+            console.log("[TIME TRACKING] Started tracking for new assignee:", newAssigneeId, "status:", statusToTrack);
+          }
+        }
+        // If only status changed (and there's an assignee)
+        else if (newStatus && newStatus !== oldStatus && currentTask.assigneeId) {
+          console.log("[TIME TRACKING] Status changed, updating tracking");
+          // Close current tracking
+          await storage.closeUserTimeTracking(taskId, currentTask.assigneeId);
+          console.log("[TIME TRACKING] Closed tracking for current assignee:", currentTask.assigneeId);
+          // Start new tracking with new status
+          await storage.startUserTimeTracking(taskId, currentTask.assigneeId, newStatus);
+          console.log("[TIME TRACKING] Started tracking with new status:", newStatus);
+        } else {
+          console.log("[TIME TRACKING] No tracking changes needed");
+        }
+      }
+      
+      // Handle points awarding when status changes
+      if (currentTask && updateData.status && updateData.status !== currentTask.status) {
+        console.log("[POINTS] Status changed, checking for points award");
+        const assigneeId = currentTask.assigneeId;
+        
+        if (assigneeId) {
+          // Check if points were already awarded for this status in this task
+          const existingTransaction = await storage.getTransaction(taskId, updateData.status, 'earned');
+          
+          if (!existingTransaction) {
+            // Get points setting for the new status
+            const setting = await storage.getPointsSetting(updateData.status);
+            const points = setting?.pointsAmount || 1;
+            const maxTimeInStatus = setting?.maxTimeInStatus || 0;
+            
+            // Check if maximum time limit is exceeded
+            let timeCheckPassed = true;
+            if (maxTimeInStatus > 0) {
+              // Get time spent in current status
+              const timeSummary = await storage.getTaskUserTimeSummary(taskId);
+              const currentStatusTime = timeSummary.find(t => t.status === currentTask.status && t.userId === assigneeId);
+              const timeSpentMinutes = currentStatusTime ? Math.floor(currentStatusTime.totalSeconds / 60) : 0;
+              
+              if (timeSpentMinutes > maxTimeInStatus) {
+                timeCheckPassed = false;
+                console.log(`[POINTS] Time limit exceeded. Spent: ${timeSpentMinutes}min, Maximum allowed: ${maxTimeInStatus}min`);
+              }
+            }
+            
+            if (timeCheckPassed) {
+              // Create transaction
+              await storage.createTransaction({
+                userId: assigneeId,
+                taskId,
+                statusName: updateData.status,
+                type: 'earned',
+                amount: points,
+                description: `Начисление за переход в статус "${updateData.status}"`
+              });
+              
+              // Update user points
+              await storage.updateUserPoints(assigneeId, points);
+              
+              console.log("[POINTS] Awarded", points, "points to user", assigneeId, "for status", updateData.status);
+            } else {
+              console.log("[POINTS] Points not awarded - minimum time requirement not met");
+            }
+          } else {
+            console.log("[POINTS] Points already awarded for this status in this task");
+          }
+        }
+      }
+      
+      // Handle points revert when task is uncompleted (moved from "Готово" to another status)
+      if (currentTask && currentTask.status === 'Готово' && updateData.status && updateData.status !== 'Готово') {
+        console.log("[POINTS] Task uncompleted, checking for points revert");
+        const assigneeId = currentTask.assigneeId;
+        
+        if (assigneeId) {
+          // Find the earned transaction for "Готово" status
+          const earnedTransaction = await storage.getTransaction(taskId, 'Готово', 'earned');
+          
+          if (earnedTransaction) {
+            // Check user balance
+            const userPoints = await storage.getUserPoints(assigneeId);
+            
+            if (userPoints.balance >= earnedTransaction.amount) {
+              // Create revert transaction
+              await storage.createTransaction({
+                userId: assigneeId,
+                taskId,
+                statusName: 'Готово',
+                type: 'reverted',
+                amount: -earnedTransaction.amount,
+                description: `Возврат баллов при отмене завершения задачи`
+              });
+              
+              // Update user points
+              await storage.updateUserPoints(assigneeId, -earnedTransaction.amount);
+              
+              console.log("[POINTS] Reverted", earnedTransaction.amount, "points from user", assigneeId);
+            } else {
+              console.log("[POINTS] Cannot revert - insufficient balance");
+            }
+          }
+        }
+      }
       
       // Get the current user for history
       const currentUser = req.user;
@@ -1037,6 +1245,9 @@ export async function registerRoutes(
       if (updateData.assigneeId) {
         userIdsToFetch.add(String(updateData.assigneeId));
       }
+      if (currentTask?.assigneeId) {
+        userIdsToFetch.add(String(currentTask.assigneeId));
+      }
       
       // Batch fetch all needed users
       const usersMap = new Map<string, any>();
@@ -1045,46 +1256,96 @@ export async function registerRoutes(
         users.forEach(u => usersMap.set(u.id, u));
       }
       
+      // Field name translations
+      const fieldTranslations: Record<string, string> = {
+        assigneeId: 'Исполнитель',
+        status: 'Статус',
+        priorityId: 'Приоритет',
+        title: 'Название',
+        description: 'Описание',
+        dueDate: 'Срок',
+        tags: 'Метки',
+        columnId: 'Колонка',
+        boardId: 'Доска',
+        type: 'Тип',
+        storyPoints: 'Story Points',
+        startDate: 'Дата начала',
+        completedAt: 'Дата завершения',
+        timeSpent: 'Затраченное время',
+        archived: 'Архив',
+      };
+      
       // Record history for each changed field
       for (const [key, newValue] of Object.entries(updateData)) {
+        // Skip internal fields
+        if (['id', 'createdAt', 'updatedAt', 'reporterId'].includes(key)) continue;
+        
         let action = 'updated';
-        let fieldName = key;
+        let fieldName = fieldTranslations[key] || key;
         let oldValueStr = '';
         let newValueStr = String(newValue || '');
+        
+        // Get old value from current task
+        const oldValue = currentTask?.[key as keyof typeof currentTask];
         
         // Special handling for different fields
         if (key === 'assigneeId') {
           action = 'assignee_changed';
-          fieldName = 'Исполнитель';
-          if (newValue) {
-            const user = usersMap.get(String(newValue));
-            newValueStr = user ? `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.username : String(newValue);
+          if (oldValue) {
+            const oldUser = usersMap.get(String(oldValue));
+            oldValueStr = oldUser ? `${oldUser.firstName || ''} ${oldUser.lastName || ''}`.trim() || oldUser.username : String(oldValue);
+          } else {
+            oldValueStr = 'не назначен';
           }
-          oldValueStr = '';
+          if (newValue) {
+            const newUser = usersMap.get(String(newValue));
+            newValueStr = newUser ? `${newUser.firstName || ''} ${newUser.lastName || ''}`.trim() || newUser.username : String(newValue);
+          } else {
+            newValueStr = 'не назначен';
+          }
         } else if (key === 'status') {
           action = 'status_changed';
-          fieldName = 'Статус';
-          oldValueStr = '';
+          oldValueStr = oldValue ? String(oldValue) : '';
         } else if (key === 'priorityId') {
           action = 'priority_changed';
-          fieldName = 'Приоритет';
-          oldValueStr = '';
+          oldValueStr = oldValue ? String(oldValue) : '';
         } else if (key === 'title') {
           action = 'title_changed';
-          fieldName = 'Название';
-          oldValueStr = '';
+          oldValueStr = oldValue ? String(oldValue) : '';
         } else if (key === 'description') {
           action = 'description_changed';
-          fieldName = 'Описание';
-          oldValueStr = '';
+          oldValueStr = oldValue ? String(oldValue) : '';
         } else if (key === 'dueDate') {
           action = 'due_date_changed';
-          fieldName = 'Срок';
-          oldValueStr = '';
+          oldValueStr = oldValue ? String(oldValue) : '';
+          newValueStr = newValue ? String(newValue) : '';
         } else if (key === 'tags') {
           action = 'labels_changed';
-          fieldName = 'Метки';
-          oldValueStr = '';
+          oldValueStr = oldValue ? String(oldValue) : '';
+          newValueStr = newValue ? String(newValue) : '';
+        } else if (key === 'columnId') {
+          action = 'column_changed';
+          // Get column names
+          if (oldValue) {
+            const oldColumn = await storage.getColumn(String(oldValue));
+            oldValueStr = oldColumn?.name || String(oldValue);
+          } else {
+            oldValueStr = '';
+          }
+          if (newValue) {
+            const newColumn = await storage.getColumn(String(newValue));
+            newValueStr = newColumn?.name || String(newValue);
+          } else {
+            newValueStr = '';
+          }
+        } else if (key === 'order') {
+          action = 'order_changed';
+          fieldName = 'Порядок';
+          oldValueStr = oldValue !== undefined ? String(oldValue) : '';
+          newValueStr = newValue !== undefined ? String(newValue) : '';
+        } else {
+          // Generic field update
+          oldValueStr = oldValue !== undefined && oldValue !== null ? String(oldValue) : '';
         }
         
         historyEntries.push({
@@ -1125,7 +1386,14 @@ export async function registerRoutes(
             userId!,
             'task_assigned',
             'Вам назначена задача',
-            `${formatUserName(currentUser!)} назначил(а) вам задачу "${task.title}"${board ? ` в доске "${board.name}"` : ''}`,
+            {
+              action: 'assigned',
+              userName: formatUserName(currentUser!),
+              fieldName: 'Исполнитель',
+              newValue: 'Вы',
+              taskTitle: task.title,
+              boardName: board?.name,
+            },
             `/boards/${task.boardId}`
           );
         }
@@ -1137,12 +1405,12 @@ export async function registerRoutes(
         if (changedFields.length > 0) {
           const board = await storage.getBoard(task.boardId);
           const fieldNames: Record<string, string> = {
-            'status': 'статус',
-            'priority': 'приоритет',
-            'title': 'название',
-            'description': 'описание',
-            'dueDate': 'срок',
-            'columnId': 'колонку'
+            'status': 'Статус',
+            'priority': 'Приоритет',
+            'title': 'Название',
+            'description': 'Описание',
+            'dueDate': 'Срок',
+            'columnId': 'Колонка'
           };
           const changedFieldNames = changedFields.map(f => fieldNames[f] || f).join(', ');
           await sendNotification(
@@ -1150,7 +1418,13 @@ export async function registerRoutes(
             userId!,
             'task_updated',
             'Задача обновлена',
-            `Задача "${task.title}" обновлена: ${changedFieldNames}`,
+            {
+              action: 'updated',
+              userName: formatUserName(currentUser!),
+              fieldName: changedFieldNames,
+              taskTitle: task.title,
+              boardName: board?.name,
+            },
             `/boards/${task.boardId}`
           );
         }
@@ -1177,6 +1451,9 @@ export async function registerRoutes(
       await invalidatePattern("projects:stats:*");
       await invalidatePattern(`board:full:${task.boardId}`);
       await delCache(`task:${taskId}`);
+      
+      // Инвалидируем кэш "Мои задачи" для всех пользователей, так как задача могла быть переназначена
+      await invalidatePattern("my-tasks:*");
       
       // Если передан новый порядок (order), нужно обновить порядок остальных задач в той же колонке
       if (updateData.order !== undefined) {
@@ -1232,6 +1509,16 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error getting task status summary:", error);
       res.status(500).json({ message: "Failed to get status summary" });
+    }
+  });
+
+  app.get("/api/tasks/:id/user-time-summary", async (req, res) => {
+    try {
+      const summary = await storage.getTaskUserTimeSummary(req.params.id);
+      res.json(summary);
+    } catch (error) {
+      console.error("Error getting task user time summary:", error);
+      res.status(500).json({ message: "Failed to get user time summary" });
     }
   });
 
@@ -1383,6 +1670,47 @@ export async function registerRoutes(
         console.error("Error starting task timer:", error);
       }
       
+      // Start user time tracking if assignee is set
+      if (task.assigneeId) {
+        try {
+          await storage.startUserTimeTracking(task.id, task.assigneeId, task.status || "В планах");
+          console.log("[API] Started user time tracking for assignee:", task.assigneeId);
+        } catch (error) {
+          console.error("Error starting user time tracking:", error);
+        }
+      }
+      
+      // Award points for initial status if assignee is set
+      if (task.assigneeId && task.status) {
+        try {
+          // Check if points were already awarded
+          const existingTransaction = await storage.getTransaction(task.id, task.status, 'earned');
+          
+          if (!existingTransaction) {
+            // Get points setting for the status
+            const setting = await storage.getPointsSetting(task.status);
+            const points = setting?.pointsAmount || 1;
+            
+            // Create transaction
+            await storage.createTransaction({
+              userId: task.assigneeId,
+              taskId: task.id,
+              statusName: task.status,
+              type: 'earned',
+              amount: points,
+              description: `Начисление за создание задачи в статусе "${task.status}"`
+            });
+            
+            // Update user points
+            await storage.updateUserPoints(task.assigneeId, points);
+            
+            console.log("[API] Awarded", points, "points to user", task.assigneeId, "for initial status", task.status);
+          }
+        } catch (error) {
+          console.error("Error awarding initial points:", error);
+        }
+      }
+      
       // Record task creation in history
       try {
         await storage.addTaskHistory({
@@ -1407,7 +1735,14 @@ export async function registerRoutes(
           user.id,
           'task_assigned',
           'Новая задача',
-          `Вам назначена задача "${task.title}"${board ? ` в доске "${board.name}"` : ''}`,
+          {
+            action: 'assigned',
+            userName: formatUserName(user),
+            fieldName: 'Исполнитель',
+            newValue: 'Вы',
+            taskTitle: task.title,
+            boardName: board?.name,
+          },
           `/boards/${task.boardId}`
         ));
       }
@@ -1423,7 +1758,13 @@ export async function registerRoutes(
               user.id,
               'task_created',
               'Новая задача',
-              `Создана задача "${task.title}" в проекте "${project.name}"`,
+              {
+                action: 'created',
+                userName: formatUserName(user),
+                fieldName: 'Задача',
+                newValue: task.title,
+                boardName: board?.name,
+              },
               `/boards/${task.boardId}`
             ));
           }
@@ -1704,6 +2045,22 @@ export async function registerRoutes(
       res.json(chats);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch chats" });
+    }
+  });
+
+  app.get("/api/chats/search", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
+    try {
+      const { q } = req.query;
+      if (!q || typeof q !== 'string') {
+        return res.status(400).json({ message: "Query parameter 'q' is required" });
+      }
+      
+      const chats = await storage.searchChats(req.user.id, q);
+      res.json(chats);
+    } catch (error) {
+      console.error("Error searching chats:", error);
+      res.status(500).json({ message: "Failed to search chats" });
     }
   });
 
@@ -2158,6 +2515,38 @@ export async function registerRoutes(
     }
   });
 
+  // Push subscription endpoints
+  app.post("/api/notifications/subscribe", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
+    try {
+      const { subscription } = req.body;
+      if (!subscription || !subscription.endpoint) {
+        return res.status(400).json({ message: "Invalid subscription" });
+      }
+
+      // Store subscription in database (we would need a push_subscriptions table)
+      // For now, we'll just return success
+      console.log("[Push] New subscription from user:", req.user!.id);
+      
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error subscribing to push:", error);
+      res.status(500).json({ message: "Failed to subscribe to push" });
+    }
+  });
+
+  app.delete("/api/notifications/unsubscribe", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
+    try {
+      const { endpoint } = req.body;
+      console.log("[Push] Unsubscribed:", req.user!.id);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error unsubscribing from push:", error);
+      res.status(500).json({ message: "Failed to unsubscribe from push" });
+    }
+  });
+
   // Reorder tasks
   app.post("/api/tasks/reorder", async (req, res) => {
     if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
@@ -2172,6 +2561,33 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error reordering tasks:", error);
       res.status(500).json({ message: "Failed to reorder tasks" });
+    }
+  });
+
+  // Reorder columns
+  app.post("/api/columns/reorder", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
+    try {
+      const { columns } = req.body;
+      if (!Array.isArray(columns)) {
+        return res.status(400).json({ message: "Columns must be an array" });
+      }
+      
+      // Update each column's order
+      for (const col of columns) {
+        if (col.id && typeof col.order === 'number') {
+          await storage.updateBoardColumn(col.id, { order: col.order });
+        }
+      }
+      
+      // Invalidate board cache
+      const { invalidatePattern } = await import("./redis");
+      await invalidatePattern("board:*");
+      
+      res.json({ message: "Columns reordered successfully" });
+    } catch (error) {
+      console.error("Error reordering columns:", error);
+      res.status(500).json({ message: "Failed to reorder columns" });
     }
   });
 
@@ -2315,10 +2731,14 @@ export async function registerRoutes(
   app.get("/api/tasks/:taskId/comments", async (req, res) => {
     try {
       const cacheKey = `task:${req.params.taskId}:comments`;
+      console.log(`[Comments] Fetching comments for task ${req.params.taskId}`);
       const cached = await getCache(cacheKey);
       if (cached) {
+        const cachedArray = cached as any[];
+        console.log(`[Comments] Returning cached comments: ${cachedArray.length} items`);
         return res.json(cached);
       }
+      console.log(`[Comments] Cache miss, fetching from DB`);
 
       const rawComments = await storage.getCommentsByTask(req.params.taskId);
 
@@ -2338,7 +2758,9 @@ export async function registerRoutes(
         };
       });
 
+      console.log(`[Comments] Fetched ${comments.length} comments from DB`);
       await setCache(cacheKey, comments, 300); // Cache for 5 minutes
+      console.log(`[Comments] Cached comments for task ${req.params.taskId}`);
       res.json(comments);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch comments" });
@@ -2353,6 +2775,11 @@ export async function registerRoutes(
         taskId: req.params.taskId,
         authorId: req.user.id
       });
+
+      // Clear comments cache for this task
+      console.log(`[Comments] Clearing cache for task ${req.params.taskId}`);
+      await delCache(`task:${req.params.taskId}:comments`);
+      console.log(`[Comments] Cache cleared for task ${req.params.taskId}`);
       
       // Record comment in task history
       try {
@@ -2380,7 +2807,14 @@ export async function registerRoutes(
             req.user.id,
             'task_comment',
             'Новый комментарий',
-            `${authorName} прокомментировал задачу "${task.title}"`,
+            {
+              action: 'comment_added',
+              userName: authorName,
+              fieldName: 'Комментарий',
+              commentPreview: req.body.content?.substring(0, 50) || '',
+              taskTitle: task.title,
+              boardName: board?.name,
+            },
             `/boards/${task.boardId}`
           );
         }
@@ -2392,7 +2826,14 @@ export async function registerRoutes(
             req.user.id,
             'task_comment',
             'Новый комментарий',
-            `${authorName} прокомментировал задачу "${task.title}"`,
+            {
+              action: 'comment_added',
+              userName: authorName,
+              fieldName: 'Комментарий',
+              commentPreview: req.body.content?.substring(0, 50) || '',
+              taskTitle: task.title,
+              boardName: board?.name,
+            },
             `/boards/${task.boardId}`
           );
         }
@@ -2414,10 +2855,18 @@ export async function registerRoutes(
   });
 
   app.delete("/api/comments/:id", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
     try {
-      await storage.deleteComment(req.params.id);
+      // Get comment before deletion to clear cache
+      const comment = await storage.getComment(req.params.id);
+      if (comment) {
+        await storage.deleteComment(req.params.id);
+        // Clear comments cache for this task
+        await delCache(`task:${comment.taskId}:comments`);
+      }
       res.status(204).end();
     } catch (error) {
+      console.error("Error deleting comment:", error);
       res.status(500).json({ message: "Failed to delete comment" });
     }
   });
@@ -2664,6 +3113,809 @@ export async function registerRoutes(
       res.status(500).json({ message: "Failed to fetch tasks time tracking", error: String(error) });
     }
   });
+
+  // ==================== POINTS SYSTEM ENDPOINTS ====================
+
+  // Points Settings
+  app.get("/api/points-settings", async (req, res) => {
+    try {
+      const settings = await storage.getPointsSettings();
+      res.json(settings);
+    } catch (error) {
+      console.error("Error getting points settings:", error);
+      res.status(500).json({ message: "Failed to get points settings" });
+    }
+  });
+
+  app.post("/api/points-settings", async (req, res) => {
+    try {
+      const { statusName, pointsAmount, maxTimeInStatus, isActive } = req.body;
+      
+      if (!statusName || pointsAmount === undefined) {
+        return res.status(400).json({ message: "statusName and pointsAmount are required" });
+      }
+
+      const setting = await storage.createPointsSetting({
+        statusName,
+        pointsAmount,
+        maxTimeInStatus: maxTimeInStatus || 0,
+        isActive: isActive !== false
+      });
+      
+      res.status(201).json(setting);
+    } catch (error) {
+      console.error("Error creating points setting:", error);
+      res.status(500).json({ message: "Failed to create points setting" });
+    }
+  });
+
+  app.patch("/api/points-settings/:id", async (req, res) => {
+    try {
+      const { statusName, pointsAmount, maxTimeInStatus, isActive } = req.body;
+      const setting = await storage.updatePointsSetting(req.params.id, {
+        statusName,
+        pointsAmount,
+        maxTimeInStatus,
+        isActive
+      });
+      res.json(setting);
+    } catch (error) {
+      console.error("Error updating points setting:", error);
+      res.status(500).json({ message: "Failed to update points setting" });
+    }
+  });
+
+  app.delete("/api/points-settings/:id", async (req, res) => {
+    try {
+      await storage.deletePointsSetting(req.params.id);
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting points setting:", error);
+      res.status(500).json({ message: "Failed to delete points setting" });
+    }
+  });
+
+  // User Points
+  app.get("/api/users/me/points", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+    
+    try {
+      const points = await storage.getUserPoints(req.user!.id);
+      res.json(points);
+    } catch (error) {
+      console.error("Error getting user points:", error);
+      res.status(500).json({ message: "Failed to get user points" });
+    }
+  });
+
+  app.get("/api/users/me/points-history", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+    
+    try {
+      const { type, limit, offset } = req.query;
+      const transactions = await storage.getUserTransactions(req.user!.id, {
+        type: type as string,
+        limit: limit ? parseInt(limit as string) : undefined,
+        offset: offset ? parseInt(offset as string) : undefined
+      });
+      res.json(transactions);
+    } catch (error) {
+      console.error("Error getting points history:", error);
+      res.status(500).json({ message: "Failed to get points history" });
+    }
+  });
+
+  // Shop
+  app.get("/api/shop/items", async (req, res) => {
+    try {
+      const items = await storage.getShopItems();
+      res.json(items);
+    } catch (error) {
+      console.error("Error getting shop items:", error);
+      res.status(500).json({ message: "Failed to get shop items" });
+    }
+  });
+
+  app.post("/api/shop/purchase", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+    
+    try {
+      const { itemId, quantity = 1 } = req.body;
+      
+      if (!itemId) {
+        return res.status(400).json({ message: "itemId is required" });
+      }
+
+      // Get user points
+      const userPoints = await storage.getUserPoints(req.user!.id);
+      
+      // Get item
+      const item = await storage.getShopItem(itemId);
+      if (!item) {
+        return res.status(404).json({ message: "Item not found" });
+      }
+
+      const totalCost = item.cost * quantity;
+
+      // Check balance
+      if (userPoints.balance < totalCost) {
+        return res.status(400).json({ message: "Insufficient points balance" });
+      }
+
+      // Create purchase
+      const purchase = await storage.createPurchase({
+        userId: req.user!.id,
+        itemId,
+        quantity,
+        totalCost,
+        status: "pending"
+      });
+
+      // Create transaction
+      await storage.createTransaction({
+        userId: req.user!.id,
+        type: "spent",
+        amount: -totalCost,
+        description: `Покупка "${item.name}"`
+      });
+
+      // Update user points
+      await storage.updateUserPoints(req.user!.id, -totalCost);
+
+      res.status(201).json(purchase);
+    } catch (error) {
+      console.error("Error creating purchase:", error);
+      res.status(500).json({ message: "Failed to create purchase" });
+    }
+  });
+
+  app.get("/api/shop/purchases", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+    
+    try {
+      const purchases = await storage.getUserPurchases(req.user!.id);
+      res.json(purchases);
+    } catch (error) {
+      console.error("Error getting purchases:", error);
+      res.status(500).json({ message: "Failed to get purchases" });
+    }
+  });
+
+  // ==================== DASHBOARD ENDPOINT ====================
+  app.get("/api/dashboard", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+    
+    try {
+      const userId = req.user!.id;
+      const now = new Date();
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const weekAgo = new Date(today);
+      weekAgo.setDate(weekAgo.getDate() - 7);
+      
+      // Get user's tasks with their boards and projects
+      const userTasks = await storage.db
+        .select({
+          task: schema.tasks,
+          board: schema.boards,
+          project: schema.projects
+        })
+        .from(schema.tasks)
+        .leftJoin(schema.boards, eq(schema.tasks.boardId, schema.boards.id))
+        .leftJoin(schema.projects, eq(schema.boards.projectId, schema.projects.id))
+        .where(eq(schema.tasks.assigneeId, userId));
+      
+      const tasks = userTasks.map(r => r.task);
+      
+      // Calculate statistics
+      const totalTasks = tasks.length;
+      const completedTasks = tasks.filter((t: any) => t.status === 'Готово' || t.status === 'done').length;
+      const inProgressTasks = tasks.filter((t: any) => t.status === 'В работе' || t.status === 'in_progress').length;
+      const plannedTasks = tasks.filter((t: any) => t.status === 'В планах' || t.status === 'backlog').length;
+      
+      // Calculate completion rate for velocity
+      const velocity = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+      
+      // Get today's tasks (due today or high priority)
+      const todayTasks = tasks
+        .filter((t: any) => {
+          const dueDate = t.dueDate ? new Date(t.dueDate) : null;
+          const isDueToday = dueDate && dueDate.toDateString() === today.toDateString();
+          const isHighPriority = t.priority === 'high' || t.priorityId === 'high';
+          const isInProgress = t.status === 'В работе' || t.status === 'in_progress';
+          return isDueToday || isHighPriority || isInProgress;
+        })
+        .slice(0, 5)
+        .map((t: any) => ({
+          id: t.id,
+          title: t.title,
+          status: t.status,
+          priority: t.priority,
+          dueDate: t.dueDate,
+          projectName: userTasks.find((ut: any) => ut.task.id === t.id)?.project?.name || 'Без проекта'
+        }));
+      
+      // Get weekly performance data
+      const performanceData = [];
+      const dayNames = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
+      for (let i = 6; i >= 0; i--) {
+        const date = new Date(today);
+        date.setDate(date.getDate() - i);
+        const dayName = dayNames[date.getDay()];
+        
+        const completedOnDay = tasks.filter((t: any) => {
+          if (t.status !== 'Готово' && t.status !== 'done') return false;
+          const updatedAt = t.updatedAt ? new Date(t.updatedAt) : null;
+          return updatedAt && updatedAt.toDateString() === date.toDateString();
+        }).length;
+        
+        performanceData.push({ name: dayName, tasks: completedOnDay });
+      }
+      
+      // Get team members and their workload
+      const teamMembers = await storage.db
+        .select({
+          id: schema.users.id,
+          firstName: schema.users.firstName,
+          lastName: schema.users.lastName,
+          avatar: schema.users.avatar,
+          position: schema.users.position
+        })
+        .from(schema.users)
+        .where(eq(schema.users.isActive, true))
+        .limit(5);
+      
+      const teamWorkload = await Promise.all(
+        teamMembers.map(async (member: any) => {
+          const memberTasks = await storage.db
+            .select()
+            .from(schema.tasks)
+            .where(eq(schema.tasks.assigneeId, member.id));
+          
+          const memberTotal = memberTasks.length;
+          const memberCompleted = memberTasks.filter((t: any) => t.status === 'Готово' || t.status === 'done').length;
+          const progress = memberTotal > 0 ? Math.round((memberCompleted / memberTotal) * 100) : 0;
+          
+          return {
+            id: member.id,
+            name: `${member.firstName || ''} ${member.lastName || ''}`.trim() || 'Без имени',
+            role: member.position || 'Сотрудник',
+            progress,
+            avatar: member.firstName?.[0] || '' + (member.lastName?.[0] || '')
+          };
+        })
+      );
+      
+      // Get recent projects
+      const recentProjects = await storage.db
+        .select({
+          id: schema.projects.id,
+          name: schema.projects.name,
+          description: schema.projects.description,
+          status: schema.projects.status,
+          createdAt: schema.projects.createdAt
+        })
+        .from(schema.projects)
+        .orderBy(desc(schema.projects.createdAt))
+        .limit(3);
+      
+      res.json({
+        stats: {
+          totalTasks,
+          completedTasks,
+          inProgressTasks,
+          plannedTasks,
+          velocity
+        },
+        todayTasks,
+        performanceData,
+        teamWorkload,
+        recentProjects
+      });
+    } catch (error) {
+      console.error("Error fetching dashboard data:", error);
+      res.status(500).json({ message: "Failed to fetch dashboard data" });
+    }
+  });
+
+  // ==================== CALENDAR EVENTS ENDPOINTS ====================
+  app.get("/api/calendar/events", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+    
+    try {
+      const userId = req.user!.id;
+      const { startDate, endDate } = req.query;
+      
+      const start = startDate ? new Date(startDate as string) : undefined;
+      const end = endDate ? new Date(endDate as string) : undefined;
+      
+      const events = await storage.getCalendarEvents(userId, start, end);
+      res.json(events);
+    } catch (error) {
+      console.error("Error fetching calendar events:", error);
+      res.status(500).json({ message: "Failed to fetch calendar events" });
+    }
+  });
+
+  app.post("/api/calendar/events", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+    
+    try {
+      const { title, description, date, time, type, contact, meetingUrl, roomId, reminder, reminderMinutes } = req.body;
+      
+      console.log("[Calendar Event] Request body:", req.body);
+      
+      if (!title || !date || !time) {
+        return res.status(400).json({ message: "Title, date and time are required" });
+      }
+
+      const event = await storage.createCalendarEvent({
+        userId: req.user!.id,
+        roomId: roomId || null,
+        title,
+        description,
+        date: new Date(date),
+        time,
+        type: type || "work",
+        contact,
+        meetingUrl,
+        reminder: reminder || false,
+        reminderMinutes: reminderMinutes || null
+      });
+
+      console.log("[Calendar Event] Created event:", event.id, "roomId:", event.roomId);
+
+      // If event is created in a chat room, send system message to the chat
+      if (roomId) {
+        console.log("[Calendar Event] Processing chat room:", roomId);
+        const io = getIO();
+        const eventDate = new Date(date);
+        const formattedDate = eventDate.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
+        
+        const systemMessage = {
+          id: crypto.randomUUID(),
+          chatId: roomId,
+          senderId: req.user!.id,
+          content: `📅 Создано событие: ${title}\n${formattedDate} в ${time}`,
+          type: 'system_event',
+          eventId: event.id,
+          createdAt: new Date().toISOString()
+        };
+        
+        console.log("[Calendar Event] Creating system message in chat:", roomId);
+        
+        // Save message to DB
+        try {
+          const savedMessage = await storage.createMessage({
+            chatId: roomId,
+            senderId: req.user!.id,
+            content: systemMessage.content,
+            attachments: JSON.stringify([]),
+            isRead: false,
+            type: 'system_event',
+            metadata: JSON.stringify({ eventId: event.id, eventTitle: title, eventTime: time, eventDate: formattedDate })
+          } as any);
+          console.log("[Calendar Event] Message saved to DB:", savedMessage.id);
+          
+          // Send to chat room
+          io.to(`chat:${roomId}`).emit("new-message", savedMessage);
+          io.to(`chat:${roomId}`).emit("calendar:event-created", { event, message: savedMessage });
+          console.log("[Calendar Event] Socket events emitted");
+        } catch (msgError) {
+          console.error("[Calendar Event] Error saving message:", msgError);
+        }
+      }
+      
+      res.status(201).json(event);
+    } catch (error) {
+      console.error("Error creating calendar event:", error);
+      res.status(500).json({ message: "Failed to create calendar event" });
+    }
+  });
+
+  // Get calendar events by room (chat)
+  app.get("/api/rooms/:roomId/events", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+    
+    try {
+      const { roomId } = req.params;
+      const events = await storage.getCalendarEventsByRoom(roomId);
+      res.json(events);
+    } catch (error) {
+      console.error("Error fetching room calendar events:", error);
+      res.status(500).json({ message: "Failed to fetch calendar events" });
+    }
+  });
+
+  app.patch("/api/calendar/events/:id", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+    
+    try {
+      const { title, description, date, time, type, contact, meetingUrl } = req.body;
+      
+      // Check if event belongs to current user
+      const existingEvent = await storage.getCalendarEvent(req.params.id);
+      if (!existingEvent) {
+        return res.status(404).json({ message: "Event not found" });
+      }
+      if (existingEvent.userId !== req.user!.id) {
+        return res.status(403).json({ message: "Forbidden" });
+      }
+
+      const updated = await storage.updateCalendarEvent(req.params.id, {
+        title,
+        description,
+        date: date ? new Date(date) : undefined,
+        time,
+        type,
+        contact,
+        meetingUrl
+      });
+      
+      res.json(updated);
+    } catch (error) {
+      console.error("Error updating calendar event:", error);
+      res.status(500).json({ message: "Failed to update calendar event" });
+    }
+  });
+
+  app.delete("/api/calendar/events/:id", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+    
+    try {
+      // Check if event belongs to current user
+      const existingEvent = await storage.getCalendarEvent(req.params.id);
+      if (!existingEvent) {
+        return res.status(404).json({ message: "Event not found" });
+      }
+      if (existingEvent.userId !== req.user!.id) {
+        return res.status(403).json({ message: "Forbidden" });
+      }
+
+      await storage.deleteCalendarEvent(req.params.id);
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting calendar event:", error);
+      res.status(500).json({ message: "Failed to delete calendar event" });
+    }
+  });
+
+  // Team Rooms API
+  app.get("/api/team-rooms", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+    
+    try {
+      const rooms = await storage.getTeamRooms();
+      res.json(rooms);
+    } catch (error) {
+      console.error("Error fetching team rooms:", error);
+      res.status(500).json({ message: "Failed to fetch team rooms" });
+    }
+  });
+
+  // Get team rooms with admin status for current user
+  app.get("/api/team-rooms/with-admin-status", async (req, res) => {
+    console.log("[API] /api/team-rooms/with-admin-status called, user:", req.user?.id);
+    if (!req.isAuthenticated()) {
+      console.log("[API] Not authenticated");
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+    
+    try {
+      console.log("[API] Fetching rooms for user:", req.user!.id);
+      const rooms = await storage.getTeamRooms();
+      console.log("[API] Found rooms:", rooms.length);
+      
+      const roomsWithAdminStatus = await Promise.all(
+        rooms.map(async (room) => {
+          const isAdmin = await storage.isTeamRoomAdmin(room.id, req.user!.id);
+          return { ...room, isAdmin };
+        })
+      );
+      console.log("[API] Returning rooms with admin status:", roomsWithAdminStatus.length);
+      res.json(roomsWithAdminStatus);
+    } catch (error) {
+      console.error("[API] Error fetching team rooms with admin status:", error);
+      res.status(500).json({ message: "Failed to fetch team rooms" });
+    }
+  });
+
+  app.get("/api/team-rooms/:id", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+    
+    try {
+      const room = await storage.getTeamRoomById(req.params.id);
+      if (!room) {
+        return res.status(404).json({ message: "Team room not found" });
+      }
+      res.json(room);
+    } catch (error) {
+      console.error("Error fetching team room:", error);
+      res.status(500).json({ message: "Failed to fetch team room" });
+    }
+  });
+
+  app.post("/api/team-rooms", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+    
+    try {
+      const { name, description, slug, accessType, color } = req.body;
+      
+      if (!name || !slug) {
+        return res.status(400).json({ message: "Name and slug are required" });
+      }
+
+      // Check if slug already exists
+      const existingRoom = await storage.getTeamRoomBySlug(slug);
+      if (existingRoom) {
+        return res.status(409).json({ message: "Team room with this slug already exists" });
+      }
+
+      // Generate invite code
+      const inviteCode = generateInviteCode();
+
+      const room = await storage.createTeamRoom({
+        name,
+        description,
+        slug,
+        inviteCode,
+        accessType: accessType || "open",
+        color: color || "#3b82f6",
+        createdBy: req.user!.id,
+        isActive: true
+      });
+
+      res.status(201).json(room);
+    } catch (error) {
+      console.error("Error creating team room:", error);
+      res.status(500).json({ message: "Failed to create team room" });
+    }
+  });
+
+  app.patch("/api/team-rooms/:id", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+    
+    try {
+      const { name, description, accessType, color } = req.body;
+      
+      const existingRoom = await storage.getTeamRoomById(req.params.id);
+      if (!existingRoom) {
+        return res.status(404).json({ message: "Team room not found" });
+      }
+
+      const updated = await storage.updateTeamRoom(req.params.id, {
+        name,
+        description,
+        accessType,
+        color
+      });
+
+      res.json(updated);
+    } catch (error) {
+      console.error("Error updating team room:", error);
+      res.status(500).json({ message: "Failed to update team room" });
+    }
+  });
+
+  app.delete("/api/team-rooms/:id", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+    
+    try {
+      const existingRoom = await storage.getTeamRoomById(req.params.id);
+      if (!existingRoom) {
+        return res.status(404).json({ message: "Team room not found" });
+      }
+
+      await storage.deleteTeamRoom(req.params.id);
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting team room:", error);
+      res.status(500).json({ message: "Failed to delete team room" });
+    }
+  });
+
+  app.post("/api/team-rooms/:id/regenerate-code", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+    
+    try {
+      const existingRoom = await storage.getTeamRoomById(req.params.id);
+      if (!existingRoom) {
+        return res.status(404).json({ message: "Team room not found" });
+      }
+
+      const updated = await storage.regenerateTeamRoomInviteCode(req.params.id);
+      res.json(updated);
+    } catch (error) {
+      console.error("Error regenerating invite code:", error);
+      res.status(500).json({ message: "Failed to regenerate invite code" });
+    }
+  });
+
+  // Helper function to generate invite code
+  function generateInviteCode(): string {
+    const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+    let code = '';
+    for (let i = 0; i < 8; i++) {
+      code += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return code;
+  }
+
+  // Call Settings API
+  app.get("/api/call-settings", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+    
+    try {
+      const settings = await storage.getCallSettings(req.user!.id);
+      res.json(settings || {
+        userId: req.user!.id,
+        micVolume: 100,
+        speakerVolume: 100,
+        videoQuality: 'medium',
+        noiseSuppression: true
+      });
+    } catch (error) {
+      console.error("Error fetching call settings:", error);
+      res.status(500).json({ message: "Failed to fetch call settings" });
+    }
+  });
+
+  app.post("/api/call-settings", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+    
+    try {
+      const { preferredMic, preferredCamera, preferredSpeaker, micVolume, speakerVolume, videoQuality, noiseSuppression } = req.body;
+      
+      const settings = await storage.upsertCallSettings({
+        userId: req.user!.id,
+        preferredMic,
+        preferredCamera,
+        preferredSpeaker,
+        micVolume,
+        speakerVolume,
+        videoQuality,
+        noiseSuppression
+      });
+
+      res.json(settings);
+    } catch (error) {
+      console.error("Error updating call settings:", error);
+      res.status(500).json({ message: "Failed to update call settings" });
+    }
+  });
+
+  // Call Participants API
+  app.get("/api/team-rooms/:id/participants", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+    
+    try {
+      const room = await storage.getTeamRoomById(req.params.id);
+      if (!room) {
+        return res.status(404).json({ message: "Team room not found" });
+      }
+
+      const participants = await storage.getCallParticipantsWithUsers(req.params.id);
+      res.json(participants);
+    } catch (error) {
+      console.error("Error fetching call participants:", error);
+      res.status(500).json({ message: "Failed to fetch participants" });
+    }
+  });
+
+  app.post("/api/calls/:roomId/kick", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+    
+    try {
+      const { userId } = req.body;
+      const room = await storage.getTeamRoomById(req.params.roomId);
+      
+      if (!room) {
+        return res.status(404).json({ message: "Team room not found" });
+      }
+
+      // Check if user is creator or admin
+      const isCreator = room.createdBy === req.user!.id;
+      const isAdmin = await storage.isTeamRoomAdmin(req.params.roomId, req.user!.id);
+      
+      if (!isCreator && !isAdmin) {
+        return res.status(403).json({ message: "Only room creator or admins can kick participants" });
+      }
+
+      // Cannot kick creator
+      if (userId === room.createdBy) {
+        return res.status(403).json({ message: "Cannot kick room creator" });
+      }
+
+      await storage.kickCallParticipant(req.params.roomId, userId);
+      
+      // Notify via socket
+      const io = getIO();
+      io.to(`call-${req.params.roomId}`).emit("call:participant-kicked", { userId, kickedBy: req.user!.id });
+      io.to(`user-${userId}`).emit("call:kicked", { roomId: req.params.roomId });
+
+      res.json({ message: "Participant kicked successfully" });
+    } catch (error) {
+      console.error("Error kicking participant:", error);
+      res.status(500).json({ message: "Failed to kick participant" });
+    }
+  });
+
+  // Team Room Admins API
+  app.get("/api/team-rooms/:id/admins", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+    
+    try {
+      const room = await storage.getTeamRoomById(req.params.id);
+      if (!room) {
+        return res.status(404).json({ message: "Team room not found" });
+      }
+
+      const admins = await storage.getTeamRoomAdminsWithUsers(req.params.id);
+      res.json(admins);
+    } catch (error) {
+      console.error("Error fetching team room admins:", error);
+      res.status(500).json({ message: "Failed to fetch admins" });
+    }
+  });
+
+  app.post("/api/team-rooms/:id/admins", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+    
+    try {
+      const { userId } = req.body;
+      const room = await storage.getTeamRoomById(req.params.id);
+      
+      if (!room) {
+        return res.status(404).json({ message: "Team room not found" });
+      }
+
+      // Only creator can add admins
+      if (room.createdBy !== req.user!.id) {
+        return res.status(403).json({ message: "Only room creator can add admins" });
+      }
+
+      // Cannot add creator as admin (already has all permissions)
+      if (userId === room.createdBy) {
+        return res.status(400).json({ message: "Room creator is already an admin" });
+      }
+
+      const admin = await storage.addTeamRoomAdmin({
+        roomId: req.params.id,
+        userId,
+        grantedBy: req.user!.id
+      });
+
+      res.status(201).json(admin);
+    } catch (error) {
+      console.error("Error adding team room admin:", error);
+      res.status(500).json({ message: "Failed to add admin" });
+    }
+  });
+
+  app.delete("/api/team-rooms/:id/admins/:userId", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+    
+    try {
+      const room = await storage.getTeamRoomById(req.params.id);
+      
+      if (!room) {
+        return res.status(404).json({ message: "Team room not found" });
+      }
+
+      // Only creator can remove admins
+      if (room.createdBy !== req.user!.id) {
+        return res.status(403).json({ message: "Only room creator can remove admins" });
+      }
+
+      await storage.removeTeamRoomAdmin(req.params.id, req.params.userId);
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error removing team room admin:", error);
+      res.status(500).json({ message: "Failed to remove admin" });
+    }
+  });
+
+  // Yandex Calendar routes
+  app.use("/api", yandexCalendarRoutes);
 
   return httpServer;
 }

@@ -45,6 +45,7 @@ import {
   Check,
   Eye,
   ChevronRight,
+  ChevronDown,
   Play,
   Bell,
   RefreshCw,
@@ -61,6 +62,7 @@ import {
   Archive,
   RotateCcw,
   ListChecks,
+  Coins,
 } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { ru } from "date-fns/locale";
@@ -112,17 +114,24 @@ function formatDuration(seconds: number): string {
   }
 }
 
-// Task Status Timer Component
+// Task Status Timer Component with user breakdown
 function TaskStatusTimer({ taskId }: { taskId: string | number | undefined }) {
-  const { data: statusSummary = [], isLoading, error } = useQuery<{
+  const { data: userTimeSummary = [], isLoading, error } = useQuery<{
     status: string;
+    userId: string;
+    userName: string;
+    userAvatar: string | null;
     totalSeconds: number;
     count: number;
   }[]>({
-    queryKey: ["/api/tasks", taskId, "status-summary"],
+    queryKey: ["/api/tasks", taskId, "user-time-summary"],
     enabled: !!taskId,
-    refetchInterval: 60000, // Refetch every minute instead of every second
+    refetchInterval: 60000,
   });
+
+  console.log("[TaskStatusTimer] taskId:", taskId, "data:", userTimeSummary, "error:", error);
+
+  const [expandedStatuses, setExpandedStatuses] = useState<Set<string>>(new Set());
 
   if (isLoading) {
     return (
@@ -140,7 +149,7 @@ function TaskStatusTimer({ taskId }: { taskId: string | number | undefined }) {
     );
   }
 
-  if (!statusSummary || statusSummary.length === 0) {
+  if (!userTimeSummary || userTimeSummary.length === 0) {
     return (
       <div className="text-xs text-muted-foreground text-center py-8">
         Нет данных о времени в статусах
@@ -148,8 +157,31 @@ function TaskStatusTimer({ taskId }: { taskId: string | number | undefined }) {
     );
   }
 
+  // Group by status
+  const statusGroups = userTimeSummary.reduce((acc, item) => {
+    if (!acc[item.status]) {
+      acc[item.status] = {
+        users: [],
+        totalSeconds: 0,
+      };
+    }
+    acc[item.status].users.push(item);
+    acc[item.status].totalSeconds += item.totalSeconds;
+    return acc;
+  }, {} as Record<string, { users: typeof userTimeSummary; totalSeconds: number }>);
+
   // Calculate total time
-  const totalTime = statusSummary.reduce((sum, s) => sum + s.totalSeconds, 0);
+  const totalTime = Object.values(statusGroups).reduce((sum, group) => sum + group.totalSeconds, 0);
+
+  const toggleStatus = (status: string) => {
+    const newExpanded = new Set(expandedStatuses);
+    if (newExpanded.has(status)) {
+      newExpanded.delete(status);
+    } else {
+      newExpanded.add(status);
+    }
+    setExpandedStatuses(newExpanded);
+  };
 
   return (
     <div className="space-y-2">
@@ -159,19 +191,60 @@ function TaskStatusTimer({ taskId }: { taskId: string | number | undefined }) {
         <span className="text-sm font-bold text-foreground">{formatDuration(totalTime)}</span>
       </div>
       
-      {/* Status breakdown */}
+      {/* Status breakdown with expandable users */}
       <div className="space-y-1">
-        {statusSummary.map((item) => (
-          <div 
-            key={item.status}
-            className="flex items-center justify-between p-2 bg-secondary/30 rounded-lg"
-          >
-            <div className="flex items-center gap-2">
-              <div className={cn("w-2 h-2 rounded-full", statusColors[item.status] || "bg-gray-400")} />
-              <span className="text-xs font-medium text-foreground">{item.status}</span>
-              <span className="text-[10px] text-muted-foreground">({item.count})</span>
-            </div>
-            <span className="text-xs font-bold text-foreground">{formatDuration(item.totalSeconds)}</span>
+        {Object.entries(statusGroups).map(([status, group]) => (
+          <div key={status} className="bg-secondary/30 rounded-lg overflow-hidden">
+            {/* Status header - clickable to expand */}
+            <button
+              onClick={() => toggleStatus(status)}
+              className="w-full flex items-center justify-between p-2 hover:bg-secondary/50 transition-colors"
+            >
+              <div className="flex items-center gap-2">
+                <div className={cn(
+                  "w-2 h-2 rounded-full transition-transform",
+                  statusColors[status] || "bg-gray-400",
+                  expandedStatuses.has(status) && "scale-125"
+                )} />
+                <span className="text-xs font-medium text-foreground">{status}</span>
+                <span className="text-[10px] text-muted-foreground">({group.users.length})</span>
+                {expandedStatuses.has(status) ? (
+                  <ChevronDown className="w-3 h-3 text-muted-foreground" />
+                ) : (
+                  <ChevronRight className="w-3 h-3 text-muted-foreground" />
+                )}
+              </div>
+              <span className="text-xs font-bold text-foreground">{formatDuration(group.totalSeconds)}</span>
+            </button>
+            
+            {/* Expanded users list */}
+            {expandedStatuses.has(status) && (
+              <div className="border-t border-border/30">
+                {group.users.map((user) => (
+                  <div
+                    key={`${status}-${user.userId}`}
+                    className="flex items-center justify-between px-2 py-1.5 pl-6 hover:bg-secondary/40 transition-colors"
+                  >
+                    <div className="flex items-center gap-2">
+                      {user.userAvatar ? (
+                        <img
+                          src={user.userAvatar}
+                          alt={user.userName}
+                          className="w-5 h-5 rounded-full object-cover"
+                        />
+                      ) : (
+                        <div className="w-5 h-5 rounded-full bg-primary/10 flex items-center justify-center text-[10px] font-medium">
+                          {user.userName.charAt(0).toUpperCase()}
+                        </div>
+                      )}
+                      <span className="text-[11px] text-foreground">{user.userName}</span>
+                      <span className="text-[9px] text-muted-foreground">({user.count})</span>
+                    </div>
+                    <span className="text-[11px] font-medium text-foreground">{formatDuration(user.totalSeconds)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         ))}
       </div>
@@ -179,20 +252,22 @@ function TaskStatusTimer({ taskId }: { taskId: string | number | undefined }) {
   );
 }
 
-// Action names in Russian
+// Action names in Russian - simplified to just show the action type
 const actionNames: Record<string, string> = {
   created: "создал(-а) задачу",
-  updated: "обновил(-а)",
-  status_changed: "изменил(-а) статус",
-  assignee_changed: "добавил(-а) исполнителя",
-  priority_changed: "изменил(-а) приоритет",
-  title_changed: "изменил(-а) название",
-  description_changed: "изменил(-а) описание",
-  due_date_changed: "изменил(-а) срок",
-  labels_changed: "изменил(-а) метки",
+  updated: "изменил(-а)",
+  status_changed: "изменил(-а)",
+  assignee_changed: "изменил(-а)",
+  priority_changed: "изменил(-а)",
+  title_changed: "изменил(-а)",
+  description_changed: "изменил(-а)",
+  due_date_changed: "изменил(-а)",
+  labels_changed: "изменил(-а)",
   comment_added: "добавил(-а) комментарий",
   subtask_created: "добавил(-а) подзадачу",
   subtask_completed: "завершил(-а) подзадачу",
+  column_changed: "изменил(-а)",
+  order_changed: "изменил(-а)",
 };
 
 // Format date for activity
@@ -280,6 +355,39 @@ function TaskActivityHistory({ taskId }: { taskId: string | number | undefined }
                 : 'Система';
               const actionText = actionNames[item.action] || item.action;
               
+              // Field translations for old records
+              const fieldTranslations: Record<string, string> = {
+                columnId: 'Колонка',
+                order: 'Порядок',
+                assigneeId: 'Исполнитель',
+                status: 'Статус',
+                priorityId: 'Приоритет',
+                title: 'Название',
+                description: 'Описание',
+                dueDate: 'Срок',
+                tags: 'Метки',
+                boardId: 'Доска',
+                type: 'Тип',
+                storyPoints: 'Story Points',
+                startDate: 'Дата начала',
+                completedAt: 'Дата завершения',
+                timeSpent: 'Затраченное время',
+                archived: 'Архив',
+              };
+              
+              // Translate field name if needed
+              const displayFieldName = fieldTranslations[item.fieldName || ''] || item.fieldName;
+              
+              // Format values (remove quotes if they look like UUIDs)
+              const formatValue = (val: string | null) => {
+                if (!val) return '';
+                // If it looks like a UUID, show it shortened
+                if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val)) {
+                  return `ID:${val.substring(0, 8)}...`;
+                }
+                return val;
+              };
+              
               return (
                 <div key={item.id} className="flex gap-2 text-xs">
                   <div className="w-1.5 h-1.5 rounded-full bg-primary/40 mt-1.5 shrink-0" />
@@ -288,13 +396,30 @@ function TaskActivityHistory({ taskId }: { taskId: string | number | undefined }
                       <span className="text-[10px] text-muted-foreground font-medium shrink-0">{time}</span>
                       <span className="font-medium text-foreground">{userName}</span>
                       <span className="text-muted-foreground">{actionText}</span>
-                      {item.fieldName && item.action !== 'created' && item.action !== 'comment_added' && (
+                      
+                      {/* For created action */}
+                      {item.action === 'created' && (
+                        <span className="text-muted-foreground">задачу</span>
+                      )}
+                      
+                      {/* For field changes with old and new values */}
+                      {displayFieldName && item.action !== 'created' && item.action !== 'comment_added' && (
                         <>
-                          <span className="text-muted-foreground">поле</span>
-                          <span className="font-medium text-foreground">"{item.fieldName}"</span>
+                          <span className="font-medium text-foreground">{displayFieldName}</span>
+                          {item.oldValue && item.newValue ? (
+                            <span className="text-muted-foreground">
+                              с <span className="line-through text-muted-foreground/60">"{formatValue(item.oldValue)}"</span> на <span className="font-medium text-primary">"{formatValue(item.newValue)}"</span>
+                            </span>
+                          ) : item.newValue ? (
+                            <span className="text-muted-foreground">
+                              на <span className="font-medium text-primary">"{formatValue(item.newValue)}"</span>
+                            </span>
+                          ) : null}
                         </>
                       )}
-                      {item.newValue && item.action === 'comment_added' && (
+                      
+                      {/* For comments */}
+                      {item.action === 'comment_added' && item.newValue && (
                         <span className="text-muted-foreground truncate max-w-[150px]">"{item.newValue}"</span>
                       )}
                     </div>
@@ -393,6 +518,13 @@ export function TaskDetailsModal({
     staleTime: 30000, // Cache for 30 seconds instead of always fetching fresh
   });
 
+  // Fetch points settings for displaying rewards
+  const { data: pointsSettings = [] } = useQuery<any[]>({
+    queryKey: ["/api/points-settings"],
+    enabled: open,
+    staleTime: 60000,
+  });
+
   const effectiveTask: any = serverTask || task;
 
   const [newTitle, setNewTitle] = useState(effectiveTask?.title || "");
@@ -441,15 +573,11 @@ export function TaskDetailsModal({
   // Sync subtasks - при изменении serverSubtasks
   useEffect(() => {
     if (!open) return;
-    if (!serverSubtasks || serverSubtasks.length === 0) {
-      console.log("[Subtask] No serverSubtasks, skipping sync");
-      return;
-    }
     
-    console.log("[Subtask] Syncing subtasks, serverSubtasks:", serverSubtasks);
+    console.log("[Subtask] Checking serverSubtasks:", serverSubtasks);
     
     // Маппим isCompleted в completed для совместимости
-    const mappedSubtasks = serverSubtasks.map((s: any) => ({
+    const mappedSubtasks = (serverSubtasks || []).map((s: any) => ({
       ...s,
       completed: s.isCompleted || s.completed || false
     }));
@@ -546,6 +674,8 @@ export function TaskDetailsModal({
   const { data: serverComments = [] } = useQuery<any[]>({
     queryKey: [`/api/tasks/${task?.id}/comments`],
     enabled: !!task?.id,
+    staleTime: 0,
+    refetchOnMount: true,
   });
 
   const { data: availableLabels = [] } = useQuery<any[]>({
@@ -561,14 +691,12 @@ export function TaskDetailsModal({
   });
 
   // Sync server comments only when they actually change
-  const prevCommentsRef = useRef<any[]>([]);
+  const prevCommentsRef = useRef<string>("");
   useEffect(() => {
     if (open && serverComments) {
-      // Only update if comments actually changed
-      const prevIds = prevCommentsRef.current.map((c: any) => c.id).sort().join(',');
       const currentIds = serverComments.map((c: any) => c.id).sort().join(',');
-      if (prevIds !== currentIds) {
-        prevCommentsRef.current = serverComments;
+      if (prevCommentsRef.current !== currentIds) {
+        prevCommentsRef.current = currentIds;
         setLocalComments(serverComments);
       }
     }
@@ -620,6 +748,24 @@ export function TaskDetailsModal({
   const [showSubtasks, setShowSubtasks] = useState(false);
   const [showAttachments, setShowAttachments] = useState(false);
 
+  // Auto-expand sections if task has subtasks or attachments
+  useEffect(() => {
+    if (effectiveTask) {
+      // Check all possible sources of subtasks
+      const hasSubtasks = (effectiveTask.subtasks && effectiveTask.subtasks.length > 0) ||
+                         (serverSubtasks && serverSubtasks.length > 0) ||
+                         (localSubtasks && localSubtasks.length > 0);
+      
+      if (hasSubtasks) {
+        setShowSubtasks(true);
+      }
+      
+      if (effectiveTask.attachments && effectiveTask.attachments.length > 0) {
+        setShowAttachments(true);
+      }
+    }
+  }, [effectiveTask?.id, serverSubtasks, localSubtasks]);
+
   // Update mutation for database synchronization
   const updateTaskMutation = useMutation({
     mutationFn: async (updates: Partial<Task>) => {
@@ -648,6 +794,11 @@ export function TaskDetailsModal({
       // Only update specific task cache (not board cache, to avoid overwriting column changes)
       if (task?.id) {
         queryClient.setQueryData(["/api/tasks", task.id], enrichedData);
+      }
+      
+      // Invalidate timer data to refresh user time tracking
+      if (task?.id) {
+        queryClient.invalidateQueries({ queryKey: ["/api/tasks", task.id, "user-time-summary"] });
       }
     },
     onError: (error) => {
@@ -915,8 +1066,9 @@ export function TaskDetailsModal({
       setLocalComments(prev => [savedComment, ...prev]);
       setNewComment("");
       setCommentAttachments([]);
-      // Don't invalidate here - local state is already updated
-      // Query will refetch when modal is reopened
+      
+      // Invalidate comments query to ensure fresh data on next open
+      queryClient.invalidateQueries({ queryKey: [`/api/tasks/${task.id}/comments`] });
     } catch (error) {
       console.error("Error adding comment:", error);
       sonnerToast.error("Не удалось отправить комментарий");
@@ -1782,21 +1934,55 @@ export function TaskDetailsModal({
                                     
                                     {/* Content */}
                                     <p className="text-[13px] leading-relaxed">
-                                      {comment.content?.split(/(@[^\s]+(?:\s[^\s]+)*)/).map((part: string, idx: number) => {
-                                        if (part.startsWith('@')) {
-                                          return (
-                                            <span key={idx} className={cn(
+                                      {(() => {
+                                        // Build regex from all user display names to match exact mentions
+                                        const userNames = users.map((user: any) => {
+                                          return user.firstName 
+                                            ? `${user.firstName} ${user.lastName || ''}`.trim() 
+                                            : user.username;
+                                        }).filter(Boolean);
+                                        
+                                        if (userNames.length === 0) {
+                                          return comment.content;
+                                        }
+                                        
+                                        // Escape special regex characters in names
+                                        const escapeRegex = (str: string) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                                        const namePattern = userNames.map(escapeRegex).join('|');
+                                        const mentionPattern = new RegExp(`@(${namePattern})(?=\\s|$)`, 'g');
+                                        
+                                        const parts: React.ReactNode[] = [];
+                                        let lastIndex = 0;
+                                        let match;
+                                        
+                                        while ((match = mentionPattern.exec(comment.content || '')) !== null) {
+                                          // Add text before mention
+                                          if (match.index > lastIndex) {
+                                            parts.push(comment.content?.slice(lastIndex, match.index));
+                                          }
+                                          
+                                          // Add highlighted mention
+                                          parts.push(
+                                            <span key={match.index} className={cn(
                                               "font-semibold px-1.5 py-0.5 rounded-md",
                                               isOwn 
                                                 ? "bg-primary-foreground/20 text-primary-foreground" 
                                                 : "bg-primary/10 text-primary"
                                             )}>
-                                              {part}
+                                              {match[0]}
                                             </span>
                                           );
+                                          
+                                          lastIndex = mentionPattern.lastIndex;
                                         }
-                                        return part;
-                                      })}
+                                        
+                                        // Add remaining text
+                                        if (lastIndex < (comment.content?.length || 0)) {
+                                          parts.push(comment.content?.slice(lastIndex));
+                                        }
+                                        
+                                        return parts.length > 0 ? parts : comment.content;
+                                      })()}
                                     </p>
                                     
                                     {/* Attachments */}
@@ -2119,6 +2305,30 @@ export function TaskDetailsModal({
                   </SelectContent>
                 </Select>
               </div>
+
+              {/* Points Reward Badge */}
+              {(() => {
+                const setting = pointsSettings.find((s: any) => s.statusName === currentStatus && s.isActive);
+                if (setting) {
+                  return (
+                    <div className="flex flex-col gap-1 px-3 py-2 mb-4 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
+                      <div className="flex items-center gap-2">
+                        <Coins className="w-4 h-4 text-amber-500" />
+                        <span className="text-sm text-amber-700 dark:text-amber-300">
+                          +{setting.pointsAmount} баллов за этот статус
+                        </span>
+                      </div>
+                      {setting.maxTimeInStatus > 0 && (
+                        <div className="flex items-center gap-2 text-xs text-amber-600 dark:text-amber-400">
+                          <Clock className="w-3 h-3" />
+                          <span>Максимум {setting.maxTimeInStatus} минут в статусе</span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                }
+                return null;
+              })()}
 
               {/* Attributes Blocks */}
               <div className="space-y-1">

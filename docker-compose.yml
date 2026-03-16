@@ -9,13 +9,19 @@ services:
     environment:
       NODE_ENV: production
       PORT: 3000
-      DATABASE_URL: postgresql://db_test:D2rGkB6CaIwpb@10.30.0.136:5532/db_test
-      SESSION_SECRET: teamsync_prod_secret_2026
-      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}
+      DATABASE_URL: ${DATABASE_URL:-postgresql://user:password@host:port/database}
+      SESSION_SECRET: ${SESSION_SECRET:-dev_secret_key_change_in_production}
+      REDIS_URL: ${REDIS_URL:-}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:8090,http://localhost:3000}
+      YANDEX_CLIENT_ID: ${YANDEX_CLIENT_ID:-}
+      YANDEX_CLIENT_SECRET: ${YANDEX_CLIENT_SECRET:-}
+      APP_URL: ${APP_URL:-http://localhost:8090}
     ports:
       - "3245:3000"
     networks:
-      - teamsync-network
+      - portal_teamsync-network
+    depends_on:
+      - client
 
   # Frontend Client with Nginx
   client:
@@ -26,11 +32,9 @@ services:
     restart: unless-stopped
     ports:
       - "8090:80"
-    depends_on:
-      - server
     networks:
-      - teamsync-network
+      - portal_teamsync-network
 
 networks:
-  teamsync-network:
+  portal_teamsync-network:
     driver: bridge

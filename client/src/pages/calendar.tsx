@@ -1,10 +1,27 @@
 import { Layout } from "@/components/layout/Layout";
 import { Button } from "@/components/ui/button";
 import { Calendar as CalendarUI } from "@/components/ui/calendar";
-import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
-import { useState, useMemo } from "react";
-import { ChevronLeft, ChevronRight, Clock, MapPin, Video, Mic, Plus, Users as UsersIcon, X, PhoneCall, Info } from "lucide-react";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useState, useMemo, useEffect } from "react";
+import { 
+  ChevronLeft, 
+  ChevronRight, 
+  Clock, 
+  Video, 
+  Mic, 
+  Plus, 
+  Users as UsersIcon, 
+  PhoneCall, 
+  Info,
+  Loader2,
+  AlertCircle,
+  RefreshCw,
+  Trash2,
+  Edit,
+  Calendar as CalendarIcon,
+  LayoutGrid
+} from "lucide-react";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -12,12 +29,18 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { apiRequest } from "@/lib/queryClient";
+import { useYandexCalendar } from "@/hooks/use-yandex-calendar";
+import { format, startOfMonth, endOfMonth, startOfWeek, endOfWeek, eachDayOfInterval, isSameMonth, isSameDay, addMonths, subMonths } from "date-fns";
+import { ru } from "date-fns/locale";
 
 interface CalendarEvent {
   id: string;
-  date: Date;
+  date: string;
   title: string;
   time: string;
   type: 'work' | 'social' | 'external' | 'video' | 'audio';
@@ -26,227 +49,613 @@ interface CalendarEvent {
   meetingUrl?: string;
 }
 
-const initialEvents: CalendarEvent[] = [
-  { id: "1", date: new Date(), title: "Ревью дизайна", time: "10:00", type: "work", description: "Обсуждение новых макетов для мобильного приложения" },
-  { id: "2", date: new Date(), title: "Обеденный перерыв команды", time: "12:30", type: "social" },
-  { id: "3", date: new Date(new Date().setDate(new Date().getDate() + 1)), title: "Планирование спринта", time: "11:00", type: "work" },
-  { id: "4", date: new Date(new Date().setDate(new Date().getDate() + 2)), title: "Звонок с клиентом", time: "15:00", type: "external" },
-  { id: "5", date: new Date(new Date().setDate(new Date().getDate() + 1)), title: "Встреча с Александром Петровым", time: "14:00", type: "video", contact: "Александр Петров", meetingUrl: "https://zoom.us/j/123456789" },
-  { id: "6", date: new Date(new Date().setDate(new Date().getDate() + 2)), title: "Ревью кода - Майк Росс", time: "15:30", type: "audio", contact: "Майк Росс", meetingUrl: "https://meet.google.com/abc-defg-hij" },
-];
+type ViewMode = 'month' | 'day';
+
+// Day View Component
+interface DayViewProps {
+  date: Date;
+  events: CalendarEvent[];
+  isLoading: boolean;
+  onEventClick: (event: CalendarEvent) => void;
+}
+
+function DayView({ date, events, isLoading, onEventClick }: DayViewProps) {
+  // Generate time slots from 00:00 to 23:00
+  const timeSlots = Array.from({ length: 24 }, (_, i) => {
+    const hour = i.toString().padStart(2, '0');
+    return `${hour}:00`;
+  });
+
+  // Sort events by time
+  const sortedEvents = [...events].sort((a, b) => {
+    return a.time.localeCompare(b.time);
+  });
+
+  // Calculate event position based on time
+  const getEventPosition = (time: string) => {
+    const [hours, minutes] = time.split(':').map(Number);
+    return hours * 60 + minutes;
+  };
+
+  if (isLoading) {
+    return (
+      <div className="p-6 space-y-4">
+        <Skeleton className="h-8 w-48" />
+        <div className="space-y-2">
+          {Array(5).fill(0).map((_, i) => (
+            <Skeleton key={i} className="h-20 w-full" />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="h-[calc(100vh-280px)] overflow-auto">
+      {/* Day Header */}
+      <div className="sticky top-0 bg-card/95 backdrop-blur z-20 p-4 border-b border-border/50">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-2xl font-bold capitalize">
+              {format(date, "EEEE, d MMMM yyyy", { locale: ru })}
+            </h2>
+            <p className="text-sm text-muted-foreground mt-1">
+              {events.length} {events.length === 1 ? 'событие' : events.length < 5 ? 'события' : 'событий'}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Timeline */}
+      <div className="relative min-h-[1440px]">
+        {/* Time slots */}
+        <div className="absolute left-0 top-0 w-16 h-full border-r border-border/30">
+          {timeSlots.map((time, index) => (
+            <div
+              key={time}
+              className="h-[60px] flex items-start justify-end pr-2 text-xs text-muted-foreground border-b border-border/20"
+              style={{ marginTop: index === 0 ? 0 : 0 }}
+            >
+              <span className="-mt-2">{time}</span>
+            </div>
+          ))}
+        </div>
+
+        {/* Grid lines */}
+        <div className="ml-16">
+          {timeSlots.map((time) => (
+            <div
+              key={time}
+              className="h-[60px] border-b border-border/20 relative"
+            >
+              {/* Half-hour marker */}
+              <div className="absolute top-[30px] left-0 right-0 border-t border-border/10" />
+            </div>
+          ))}
+
+          {/* Events */}
+          {sortedEvents.map((event, index) => {
+            const startMinutes = getEventPosition(event.time);
+            const top = (startMinutes / 1440) * 1440;
+            const duration = 60; // Default 1 hour duration
+            const height = (duration / 1440) * 1440;
+
+            return (
+              <div
+                key={event.id}
+                onClick={() => onEventClick(event)}
+                className={cn(
+                  "absolute left-2 right-2 rounded-lg p-3 cursor-pointer transition-all hover:shadow-md border-l-4",
+                  "hover:scale-[1.02] hover:z-10",
+                  event.type === 'video' ? "bg-purple-500/10 border-purple-500 hover:bg-purple-500/20" :
+                  event.type === 'audio' ? "bg-blue-500/10 border-blue-500 hover:bg-blue-500/20" :
+                  event.type === 'social' ? "bg-emerald-500/10 border-emerald-500 hover:bg-emerald-500/20" :
+                  "bg-primary/10 border-primary hover:bg-primary/20"
+                )}
+                style={{
+                  top: `${top}px`,
+                  height: `${Math.max(height, 60)}px`,
+                  minHeight: '60px'
+                }}
+              >
+                <div className="flex items-start gap-2 h-full overflow-hidden">
+                  <div className="flex-shrink-0">
+                    {event.type === 'video' && <Video className="w-4 h-4 text-purple-600" />}
+                    {event.type === 'audio' && <Mic className="w-4 h-4 text-blue-600" />}
+                    {event.type === 'work' && <Clock className="w-4 h-4 text-primary" />}
+                    {event.type === 'social' && <UsersIcon className="w-4 h-4 text-emerald-600" />}
+                    {event.type === 'external' && <PhoneCall className="w-4 h-4 text-primary" />}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold text-sm truncate">{event.title}</p>
+                    <p className="text-xs text-muted-foreground">{event.time}</p>
+                    {event.contact && (
+                      <p className="text-xs text-muted-foreground truncate mt-1">
+                        с {event.contact}
+                      </p>
+                    )}
+                    {event.description && (
+                      <p className="text-xs text-muted-foreground line-clamp-2 mt-1">
+                        {event.description}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+
+          {/* Current time indicator */}
+          {isSameDay(date, new Date()) && (
+            <CurrentTimeIndicator />
+          )}
+        </div>
+      </div>
+
+      {/* Empty state */}
+      {sortedEvents.length === 0 && !isLoading && (
+        <div className="flex flex-col items-center justify-center h-64 ml-16">
+          <Clock className="w-12 h-12 text-muted-foreground/30 mb-3" />
+          <p className="text-muted-foreground">Нет событий на этот день</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Current time indicator component
+function CurrentTimeIndicator() {
+  const [position, setPosition] = useState(() => {
+    const now = new Date();
+    const minutes = now.getHours() * 60 + now.getMinutes();
+    return (minutes / 1440) * 1440;
+  });
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const now = new Date();
+      const minutes = now.getHours() * 60 + now.getMinutes();
+      setPosition((minutes / 1440) * 1440);
+    }, 60000); // Update every minute
+
+    return () => clearInterval(interval);
+  }, []);
+
+  return (
+    <div
+      className="absolute left-0 right-0 flex items-center z-30 pointer-events-none"
+      style={{ top: `${position}px` }}
+    >
+      <div className="w-2 h-2 rounded-full bg-red-500 -ml-1" />
+      <div className="flex-1 h-0.5 bg-red-500" />
+    </div>
+  );
+}
 
 export default function CalendarPage() {
+  const queryClient = useQueryClient();
+  
+  // Initialize Yandex Calendar WebSocket listeners
+  useYandexCalendar();
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(new Date());
   const [viewDate, setViewDate] = useState<Date>(new Date());
-  const [events, setEvents] = useState<CalendarEvent[]>(initialEvents);
+  const [viewMode, setViewMode] = useState<ViewMode>('month');
   const [isAddEventOpen, setIsAddEventOpen] = useState(false);
+  const [isEditEventOpen, setIsEditEventOpen] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
-  
-  // New event form state
-  const [newEvent, setNewEvent] = useState<Partial<CalendarEvent>>({
+   
+  // Form state
+  const [eventForm, setEventForm] = useState<Partial<CalendarEvent>>({
     title: "",
     time: "10:00",
     type: "work",
     description: "",
-    meetingUrl: "https://teamsync.ru/room/user"
+    meetingUrl: "",
+    contact: ""
   });
 
-  const calendarDays = useMemo(() => {
-    const year = viewDate.getFullYear();
-    const month = viewDate.getMonth();
-    const firstDay = new Date(year, month, 1).getDay();
-    const daysInMonth = new Date(year, month + 1, 0).getDate();
-    
-    const days = [];
-    const prevMonthDays = new Date(year, month, 0).getDate();
-    
-    // Previous month padding
-    for (let i = firstDay - 1; i >= 0; i--) {
-      days.push(new Date(year, month - 1, prevMonthDays - i));
-    }
-    
-    // Current month
-    for (let i = 1; i <= daysInMonth; i++) {
-      days.push(new Date(year, month, i));
-    }
-    
-    // Next month padding
-    const remaining = 35 - days.length;
-    for (let i = 1; i <= remaining; i++) {
-      days.push(new Date(year, month + 1, i));
-    }
-    
-    return days;
+  // Calculate date range for the current view
+  const dateRange = useMemo(() => {
+    const start = startOfWeek(startOfMonth(viewDate), { weekStartsOn: 1 });
+    const end = endOfWeek(endOfMonth(viewDate), { weekStartsOn: 1 });
+    return { start, end };
   }, [viewDate]);
 
-  const getEventsForDate = (checkDate: Date) => {
-    return events.filter(
-      (event) =>
-        event.date.getDate() === checkDate.getDate() &&
-        event.date.getMonth() === checkDate.getMonth() &&
-        event.date.getFullYear() === checkDate.getFullYear()
-    );
+  // Fetch events
+  const { data: events = [], isLoading, error, refetch } = useQuery<CalendarEvent[]>({
+    queryKey: ["/api/calendar/events", dateRange.start.toISOString(), dateRange.end.toISOString()],
+    queryFn: async () => {
+      const res = await apiRequest(
+        "GET", 
+        `/api/calendar/events?startDate=${dateRange.start.toISOString()}&endDate=${dateRange.end.toISOString()}`
+      );
+      return res.json();
+    },
+  });
+
+  // Fetch Yandex Calendar events
+  const { data: yandexEvents = [] } = useQuery<any[]>({
+    queryKey: ["/api/calendar/yandex-events", dateRange.start.toISOString(), dateRange.end.toISOString()],
+    queryFn: async () => {
+      const res = await apiRequest(
+        "GET",
+        `/api/calendar/yandex-events?from=${dateRange.start.toISOString()}&to=${dateRange.end.toISOString()}`
+      );
+      const data = await res.json();
+      return data.events || [];
+    },
+  });
+
+  // Create event mutation
+  const createMutation = useMutation({
+    mutationFn: async (eventData: Partial<CalendarEvent>) => {
+      const res = await apiRequest("POST", "/api/calendar/events", {
+        ...eventData,
+        date: selectedDate?.toISOString()
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/calendar/events"] });
+      toast.success("Событие создано");
+      setIsAddEventOpen(false);
+      resetForm();
+    },
+    onError: () => {
+      toast.error("Не удалось создать событие");
+    }
+  });
+
+  // Update event mutation
+  const updateMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: Partial<CalendarEvent> }) => {
+      const res = await apiRequest("PATCH", `/api/calendar/events/${id}`, data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/calendar/events"] });
+      toast.success("Событие обновлено");
+      setIsEditEventOpen(false);
+      setSelectedEvent(null);
+      resetForm();
+    },
+    onError: () => {
+      toast.error("Не удалось обновить событие");
+    }
+  });
+
+  // Delete event mutation
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      await apiRequest("DELETE", `/api/calendar/events/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/calendar/events"] });
+      toast.success("Событие удалено");
+      setSelectedEvent(null);
+    },
+    onError: () => {
+      toast.error("Не удалось удалить событие");
+    }
+  });
+
+  const resetForm = () => {
+    setEventForm({
+      title: "",
+      time: "10:00",
+      type: "work",
+      description: "",
+      meetingUrl: "",
+      contact: ""
+    });
   };
 
   const handleAddEvent = () => {
-    if (newEvent.title && selectedDate) {
-      const event: CalendarEvent = {
-        id: Math.random().toString(36).substr(2, 9),
-        title: newEvent.title,
-        time: newEvent.time || "10:00",
-        type: newEvent.type as any || "work",
-        date: selectedDate,
-        description: newEvent.description,
-        contact: newEvent.contact,
-        meetingUrl: (newEvent.type === 'video' || newEvent.type === 'audio') ? (newEvent.meetingUrl || "https://team-sync.call/" + Math.random().toString(36).substr(2, 5)) : undefined
-      };
-      setEvents([...events, event]);
-      setIsAddEventOpen(false);
-      setNewEvent({ title: "", time: "10:00", type: "work", description: "", meetingUrl: "https://teamsync.ru/room/juli-dar" });
-      toast.success("Событие создано");
+    if (!eventForm.title) {
+      toast.error("Введите название события");
+      return;
     }
+    createMutation.mutate(eventForm);
+  };
+
+  const handleUpdateEvent = () => {
+    if (!selectedEvent || !eventForm.title) return;
+    updateMutation.mutate({ id: selectedEvent.id, data: eventForm });
+  };
+
+  const handleDeleteEvent = () => {
+    if (!selectedEvent) return;
+    deleteMutation.mutate(selectedEvent.id);
+  };
+
+  const openEditDialog = (event: CalendarEvent) => {
+    setEventForm({
+      title: event.title,
+      time: event.time,
+      type: event.type,
+      description: event.description || "",
+      meetingUrl: event.meetingUrl || "",
+      contact: event.contact || ""
+    });
+    setIsEditEventOpen(true);
+  };
+
+  const calendarDays = useMemo(() => {
+    const start = startOfWeek(startOfMonth(viewDate), { weekStartsOn: 1 });
+    const end = endOfWeek(endOfMonth(viewDate), { weekStartsOn: 1 });
+    return eachDayOfInterval({ start, end });
+  }, [viewDate]);
+
+  const getEventsForDate = (checkDate: Date) => {
+    const localEvents = events.filter((event) => {
+      const eventDate = new Date(event.date);
+      return isSameDay(eventDate, checkDate);
+    });
+
+    const yandexEventsForDate = yandexEvents.filter((event) => {
+      const eventDate = new Date(event.startDate);
+      return isSameDay(eventDate, checkDate);
+    }).map((event) => ({
+      ...event,
+      id: event.id,
+      date: event.startDate,
+      time: format(new Date(event.startDate), 'HH:mm'),
+      type: 'work' as const,
+      title: event.title,
+      description: event.description,
+      meetingUrl: event.meetingUrl,
+      contact: event.attendees?.[0]?.name || event.organizerEmail,
+      source: 'yandex' as const,
+      color: event.color || '#FC3F1D',
+      isReadOnly: true
+    }));
+
+    return [...localEvents, ...yandexEventsForDate];
   };
 
   const navigateMonth = (direction: number) => {
-    setViewDate(new Date(viewDate.getFullYear(), viewDate.getMonth() + direction, 1));
+    setViewDate(direction > 0 ? addMonths(viewDate, 1) : subMonths(viewDate, 1));
   };
 
-  const currentMonthName = viewDate.toLocaleString('ru-RU', { month: 'long', year: 'numeric' });
+  const navigateDay = (direction: number) => {
+    const newDate = new Date(viewDate);
+    newDate.setDate(newDate.getDate() + direction);
+    setViewDate(newDate);
+    setSelectedDate(newDate);
+  };
+
+  const currentMonthName = format(viewDate, "LLLL yyyy", { locale: ru });
+  const currentDayName = format(viewDate, "EEEE, d MMMM", { locale: ru });
+
+  if (error) {
+    return (
+      <Layout>
+        <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-4">
+          <AlertCircle className="w-16 h-16 text-destructive" />
+          <h2 className="text-xl font-semibold">Ошибка загрузки данных</h2>
+          <p className="text-muted-foreground">Не удалось загрузить события календаря</p>
+          <Button onClick={() => refetch()} variant="outline">
+            <RefreshCw className="w-4 h-4 mr-2" />
+            Повторить
+          </Button>
+        </div>
+      </Layout>
+    );
+  }
 
   return (
     <Layout>
       <div className="space-y-6 animate-in fade-in duration-500 p-6">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div>
-             <h1 className="text-3xl font-bold tracking-tight text-foreground capitalize">{currentMonthName}</h1>
-             <p className="text-muted-foreground mt-1">Управляйте графиком и событиями команды.</p>
-          </div>
-          <div className="flex items-center gap-3">
-            <div className="flex items-center bg-secondary/30 rounded-lg p-1 border border-border/50">
-              <Button variant="ghost" size="icon" onClick={() => navigateMonth(-1)} className="h-8 w-8">
-                <ChevronLeft className="w-4 h-4" />
-              </Button>
-              <Button 
-                variant="ghost" 
-                size="sm" 
-                onClick={() => { setViewDate(new Date()); setSelectedDate(new Date()); }}
-                className="px-3 h-8 text-xs font-semibold"
-              >
-                Сегодня
-              </Button>
-              <Button variant="ghost" size="icon" onClick={() => navigateMonth(1)} className="h-8 w-8">
-                <ChevronRight className="w-4 h-4" />
-              </Button>
-            </div>
-            <Button onClick={() => setIsAddEventOpen(true)} className="gap-2 shadow-lg shadow-primary/20">
-              <Plus className="w-4 h-4" />
-              Создать событие
-            </Button>
-          </div>
-        </div>
+         {/* Header */}
+         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+           <div>
+              <h1 className="text-3xl font-bold tracking-tight text-foreground capitalize">
+                {viewMode === 'month' ? currentMonthName : currentDayName}
+              </h1>
+              <p className="text-muted-foreground mt-1">Управляйте графиком и событиями команды.</p>
+           </div>
+           <div className="flex items-center gap-3 flex-wrap">
+              {/* View Mode Toggle */}
+              <div className="flex items-center bg-muted rounded-lg p-1 border border-border">
+                <Button 
+                  variant={viewMode === 'month' ? 'secondary' : 'ghost'} 
+                  size="sm" 
+                  onClick={() => setViewMode('month')}
+                  className="h-8 gap-2 text-foreground hover:text-foreground"
+                >
+                  <LayoutGrid className="w-4 h-4" />
+                  Месяц
+                </Button>
+                <Button 
+                  variant={viewMode === 'day' ? 'secondary' : 'ghost'} 
+                  size="sm" 
+                  onClick={() => setViewMode('day')}
+                  className="h-8 gap-2 text-foreground hover:text-foreground"
+                >
+                  <CalendarIcon className="w-4 h-4" />
+                  День
+                </Button>
+              </div>
+             
+              {/* Navigation */}
+              <div className="flex items-center bg-muted rounded-lg p-1 border border-border">
+                <Button 
+                  variant="ghost" 
+                  size="icon" 
+                  onClick={() => viewMode === 'month' ? navigateMonth(-1) : navigateDay(-1)} 
+                  className="h-8 w-8 text-foreground hover:text-foreground"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </Button>
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  onClick={() => { setViewDate(new Date()); setSelectedDate(new Date()); }}
+                  className="px-3 h-8 text-xs font-semibold text-foreground hover:text-foreground"
+                >
+                  Сегодня
+                </Button>
+                <Button 
+                  variant="ghost" 
+                  size="icon" 
+                  onClick={() => viewMode === 'month' ? navigateMonth(1) : navigateDay(1)} 
+                  className="h-8 w-8 text-foreground hover:text-foreground"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </Button>
+              </div>
+             
+             <Button 
+               onClick={() => {
+                 resetForm();
+                 setIsAddEventOpen(true);
+               }} 
+               className="gap-2 shadow-lg shadow-primary/20"
+               disabled={createMutation.isPending}
+             >
+               {createMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+               Создать событие
+             </Button>
+           </div>
+         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+           {/* Main Content - Month or Day View */}
            <Card className="lg:col-span-8 border-border/50 shadow-sm overflow-hidden bg-card/50 backdrop-blur-sm">
              <CardContent className="p-0">
+               {viewMode === 'month' ? (
+                 <>
                <div className="grid grid-cols-7 border-b border-border/50 bg-secondary/20">
-                  {["Вс", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"].map(day => (
+                  {["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"].map(day => (
                     <div key={day} className="py-3 text-center text-xs font-bold text-muted-foreground uppercase tracking-wider border-r border-border/50 last:border-r-0">
                       {day}
                     </div>
                   ))}
                </div>
                <div className="grid grid-cols-7 border-border/50">
-                  {calendarDays.map((dayDate, i) => {
-                    const dayEvents = getEventsForDate(dayDate);
-                    const isCurrentMonth = dayDate.getMonth() === viewDate.getMonth();
-                    const isToday = dayDate.toDateString() === new Date().toDateString();
-                    const isSelected = selectedDate?.toDateString() === dayDate.toDateString();
+                  {isLoading ? (
+                    // Loading skeleton
+                    Array(35).fill(0).map((_, i) => (
+                      <div key={i} className="border-b border-r border-border/50 p-2 min-h-[120px]">
+                        <Skeleton className="h-6 w-6 rounded-full mb-2" />
+                        <Skeleton className="h-4 w-full mb-1" />
+                        <Skeleton className="h-4 w-2/3" />
+                      </div>
+                    ))
+                  ) : (
+                    calendarDays.map((dayDate, i) => {
+                      const dayEvents = getEventsForDate(dayDate);
+                      const isCurrentMonth = isSameMonth(dayDate, viewDate);
+                      const isToday = isSameDay(dayDate, new Date());
+                      const isSelected = selectedDate && isSameDay(dayDate, selectedDate);
 
-                    return (
-                      <div
-                        key={i}
-                        onClick={() => setSelectedDate(dayDate)}
-                        className={cn(
-                          "border-b border-r border-border/50 p-2 min-h-[120px] hover:bg-secondary/20 transition-all group relative cursor-pointer",
-                          !isCurrentMonth && "bg-muted/10 opacity-50",
-                          isSelected && "ring-2 ring-primary ring-inset z-10"
-                        )}
-                      >
-                        <div className="flex justify-between items-start mb-2">
-                          <span
-                            className={cn(
-                              "text-xs font-bold w-6 h-6 flex items-center justify-center rounded-full transition-colors",
-                              isToday ? "bg-primary text-primary-foreground" : "text-muted-foreground group-hover:text-foreground",
-                              !isCurrentMonth && "text-muted-foreground/30"
-                            )}
-                          >
-                            {dayDate.getDate()}
-                          </span>
-                          {dayEvents.length > 0 && (
-                            <div className="w-1.5 h-1.5 rounded-full bg-primary" />
+                      return (
+                        <div
+                          key={i}
+                          onClick={() => setSelectedDate(dayDate)}
+                          className={cn(
+                            "border-b border-r border-border/50 p-2 min-h-[120px] hover:bg-secondary/20 transition-all group relative cursor-pointer",
+                            !isCurrentMonth && "bg-muted/10 opacity-50",
+                            isSelected && "ring-2 ring-primary ring-inset z-10"
                           )}
-                        </div>
-                        <div className="space-y-1">
-                          {dayEvents.slice(0, 3).map((event) => (
-                            <div 
-                              key={event.id}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setSelectedEvent(event);
-                              }}
+                        >
+                          <div className="flex justify-between items-start mb-2">
+                            <span
                               className={cn(
-                                "text-[10px] p-1.5 rounded-md font-medium border-l-2 truncate transition-transform hover:scale-[1.02]",
-                                event.type === 'video' ? "bg-purple-500/10 text-purple-600 border-purple-500" :
-                                event.type === 'audio' ? "bg-blue-500/10 text-blue-600 border-blue-500" :
-                                event.type === 'social' ? "bg-emerald-500/10 text-emerald-600 border-emerald-500" :
-                                "bg-primary/10 text-primary border-primary"
+                                "text-xs font-bold w-6 h-6 flex items-center justify-center rounded-full transition-colors",
+                                isToday ? "bg-primary text-primary-foreground" : "text-muted-foreground group-hover:text-foreground",
+                                !isCurrentMonth && "text-muted-foreground/30"
                               )}
                             >
-                              <div className="flex items-center gap-1">
-                                {event.type === 'video' && <Video className="w-2.5 h-2.5" />}
-                                {event.type === 'audio' && <Mic className="w-2.5 h-2.5" />}
-                                <span className="truncate">{event.title}</span>
+                              {format(dayDate, "d")}
+                            </span>
+                            {dayEvents.length > 0 && (
+                              <div className="w-1.5 h-1.5 rounded-full bg-primary" />
+                            )}
+                          </div>
+                          <div className="space-y-1">
+                            {dayEvents.slice(0, 3).map((event: any) => (
+                              <div 
+                                key={event.id}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setSelectedEvent(event);
+                                }}
+                                className={cn(
+                                  "text-[10px] p-1.5 rounded-md font-medium border-l-2 truncate transition-transform hover:scale-[1.02]",
+                                  event.source === 'yandex' ? "" :
+                                  event.type === 'video' ? "bg-purple-500/10 text-purple-600 border-purple-500" :
+                                  event.type === 'audio' ? "bg-blue-500/10 text-blue-600 border-blue-500" :
+                                  event.type === 'social' ? "bg-emerald-500/10 text-emerald-600 border-emerald-500" :
+                                  "bg-primary/10 text-primary border-primary"
+                                )}
+                                style={event.source === 'yandex' ? {
+                                  backgroundColor: `${event.color}15`,
+                                  borderLeftColor: event.color,
+                                  color: event.color
+                                } : undefined}
+                              >
+                                <div className="flex items-center gap-1">
+                                  {event.source === 'yandex' ? (
+                                    <span className="text-[8px] font-bold opacity-70">Я</span>
+                                  ) : (
+                                    <>
+                                      {event.type === 'video' && <Video className="w-2.5 h-2.5" />}
+                                      {event.type === 'audio' && <Mic className="w-2.5 h-2.5" />}
+                                    </>
+                                  )}
+                                  <span className="truncate">{event.title}</span>
+                                </div>
                               </div>
-                            </div>
-                          ))}
-                          {dayEvents.length > 3 && (
-                            <div className="text-[9px] text-muted-foreground font-bold pl-1">
-                              + еще {dayEvents.length - 3}
-                            </div>
-                          )}
+                            ))}
+                            {dayEvents.length > 3 && (
+                              <div className="text-[9px] text-muted-foreground font-bold pl-1">
+                                + еще {dayEvents.length - 3}
+                              </div>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    );
-                  })}
-               </div>
+                      );
+                    })
+                   )}
+                </div>
+                 </>
+               ) : (
+                 // Day View
+                 <DayView 
+                   date={viewDate}
+                   events={getEventsForDate(viewDate)}
+                   isLoading={isLoading}
+                   onEventClick={setSelectedEvent}
+                 />
+               )}
              </CardContent>
            </Card>
 
+           {/* Sidebar */}
            <div className="lg:col-span-4 space-y-6">
-             <Card className="border-border/50 shadow-sm bg-card/50 backdrop-blur-sm">
-               <CardContent className="p-4 flex justify-center">
-                 <CalendarUI
-                    mode="single"
-                    selected={selectedDate}
-                    onSelect={(d) => {
-                      setSelectedDate(d);
-                      if (d) setViewDate(d);
-                    }}
-                    className="rounded-md"
-                  />
-               </CardContent>
-             </Card>
-
              <Card className="border-border/50 shadow-sm bg-card/50 backdrop-blur-sm">
                <CardHeader className="pb-3 flex flex-row items-center justify-between">
                  <CardTitle className="text-lg">События дня</CardTitle>
                  <Badge variant="outline" className="text-[10px] uppercase font-bold tracking-wider">
-                   {selectedDate?.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })}
+                   {selectedDate ? format(selectedDate, "d MMM", { locale: ru }) : "—"}
                  </Badge>
                </CardHeader>
                <CardContent className="space-y-4">
                  <ScrollArea className="h-[400px] pr-4">
-                   {selectedDate && getEventsForDate(selectedDate).length > 0 ? (
+                   {isLoading ? (
+                     <div className="space-y-4">
+                       {Array(3).fill(0).map((_, i) => (
+                         <div key={i} className="flex gap-4">
+                           <Skeleton className="w-14 h-14 rounded-xl" />
+                           <div className="flex-1 space-y-2">
+                             <Skeleton className="h-4 w-full" />
+                             <Skeleton className="h-3 w-2/3" />
+                           </div>
+                         </div>
+                       ))}
+                     </div>
+                   ) : selectedDate && getEventsForDate(selectedDate).length > 0 ? (
                      <div className="space-y-4">
                        {getEventsForDate(selectedDate).map((event) => (
                          <div 
@@ -270,7 +679,10 @@ export default function CalendarPage() {
                                 )}
                                 <div className="flex flex-wrap gap-2 mt-2">
                                   <Badge variant="secondary" className="text-[9px] h-4 px-1.5 uppercase font-bold">
-                                    {event.type}
+                                    {event.type === 'work' ? 'Работа' :
+                                     event.type === 'video' ? 'Видео' :
+                                     event.type === 'audio' ? 'Аудио' :
+                                     event.type === 'social' ? 'Команда' : 'Клиент'}
                                   </Badge>
                                   {event.contact && (
                                     <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground font-medium">
@@ -294,7 +706,7 @@ export default function CalendarPage() {
                                 }}
                               >
                                 <PhoneCall className="w-3.5 h-3.5" />
-                                Подключиться к звонку
+                                Подключиться
                               </Button>
                             )}
                          </div>
@@ -310,7 +722,10 @@ export default function CalendarPage() {
                         variant="link" 
                         size="sm" 
                         className="mt-1 h-auto p-0 text-primary font-bold"
-                        onClick={() => setIsAddEventOpen(true)}
+                        onClick={() => {
+                          resetForm();
+                          setIsAddEventOpen(true);
+                        }}
                        >
                          Создать событие
                        </Button>
@@ -336,8 +751,8 @@ export default function CalendarPage() {
               <Input 
                 id="title" 
                 placeholder="Напр: Ревью кода" 
-                value={newEvent.title}
-                onChange={(e) => setNewEvent({...newEvent, title: e.target.value})}
+                value={eventForm.title}
+                onChange={(e) => setEventForm({...eventForm, title: e.target.value})}
               />
             </div>
             <div className="grid grid-cols-2 gap-4">
@@ -346,15 +761,15 @@ export default function CalendarPage() {
                 <Input 
                   id="time" 
                   type="time" 
-                  value={newEvent.time}
-                  onChange={(e) => setNewEvent({...newEvent, time: e.target.value})}
+                  value={eventForm.time}
+                  onChange={(e) => setEventForm({...eventForm, time: e.target.value})}
                 />
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="type">Тип</Label>
                 <Select 
-                  value={newEvent.type} 
-                  onValueChange={(val) => setNewEvent({...newEvent, type: val as any})}
+                  value={eventForm.type} 
+                  onValueChange={(val) => setEventForm({...eventForm, type: val as any})}
                 >
                   <SelectTrigger id="type">
                     <SelectValue />
@@ -369,7 +784,16 @@ export default function CalendarPage() {
                 </Select>
               </div>
             </div>
-            {(newEvent.type === 'video' || newEvent.type === 'audio') && (
+            <div className="grid gap-2">
+              <Label htmlFor="contact">Контакт (опционально)</Label>
+              <Input 
+                id="contact" 
+                placeholder="Имя участника" 
+                value={eventForm.contact}
+                onChange={(e) => setEventForm({...eventForm, contact: e.target.value})}
+              />
+            </div>
+            {(eventForm.type === 'video' || eventForm.type === 'audio') && (
               <div className="grid gap-2">
                 <div className="flex items-center justify-between">
                   <Label htmlFor="meeting-url">Ссылка на звонок</Label>
@@ -379,7 +803,7 @@ export default function CalendarPage() {
                         <Info className="w-4 h-4 text-muted-foreground cursor-help" />
                       </TooltipTrigger>
                       <TooltipContent>
-                        <p>Здесь указана ваша персональная комната. Вы можете изменить её для конкретного события.</p>
+                        <p>Укажите ссылку на конференцию (Zoom, Google Meet и т.д.)</p>
                       </TooltipContent>
                     </Tooltip>
                   </TooltipProvider>
@@ -387,8 +811,8 @@ export default function CalendarPage() {
                 <Input 
                   id="meeting-url" 
                   placeholder="https://..." 
-                  value={newEvent.meetingUrl}
-                  onChange={(e) => setNewEvent({...newEvent, meetingUrl: e.target.value})}
+                  value={eventForm.meetingUrl}
+                  onChange={(e) => setEventForm({...eventForm, meetingUrl: e.target.value})}
                   className="font-mono text-xs"
                 />
               </div>
@@ -398,25 +822,27 @@ export default function CalendarPage() {
               <Input 
                 id="desc" 
                 placeholder="Краткое описание события" 
-                value={newEvent.description}
-                onChange={(e) => setNewEvent({...newEvent, description: e.target.value})}
+                value={eventForm.description}
+                onChange={(e) => setEventForm({...eventForm, description: e.target.value})}
               />
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsAddEventOpen(false)}>Отмена</Button>
-            <Button onClick={handleAddEvent} disabled={!newEvent.title}>Создать</Button>
+            <Button 
+              onClick={handleAddEvent} 
+              disabled={!eventForm.title || createMutation.isPending}
+            >
+              {createMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              Создать
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Event Details Dialog */}
-      <Dialog open={!!selectedEvent} onOpenChange={() => setSelectedEvent(null)}>
+      {/* Event Details/Edit Dialog */}
+      <Dialog open={!!selectedEvent && !isEditEventOpen} onOpenChange={() => setSelectedEvent(null)}>
         <DialogContent className="sm:max-w-[425px]">
-          <DialogHeader className="sr-only">
-            <DialogTitle>Детали события</DialogTitle>
-            <DialogDescription>Просмотр информации о выбранном событии.</DialogDescription>
-          </DialogHeader>
           {selectedEvent && (
             <>
               <DialogHeader>
@@ -427,7 +853,10 @@ export default function CalendarPage() {
                     selectedEvent.type === 'audio' ? "bg-blue-500" :
                     selectedEvent.type === 'social' ? "bg-emerald-500" : "bg-primary"
                   )}>
-                    {selectedEvent.type}
+                    {selectedEvent.type === 'work' ? 'Работа' :
+                     selectedEvent.type === 'video' ? 'Видео' :
+                     selectedEvent.type === 'audio' ? 'Аудио' :
+                     selectedEvent.type === 'social' ? 'Команда' : 'Клиент'}
                   </Badge>
                   <span className="text-xs text-muted-foreground flex items-center gap-1">
                     <Clock className="w-3 h-3" /> {selectedEvent.time}
@@ -464,8 +893,12 @@ export default function CalendarPage() {
                       <PhoneCall className="w-4 h-4" /> Подключиться к звонку
                     </Button>
                   )}
-                  <Button variant="outline" className="gap-2">
-                    <UsersIcon className="w-4 h-4" /> Участники
+                  <Button 
+                    variant="outline" 
+                    className="gap-2"
+                    onClick={() => openEditDialog(selectedEvent)}
+                  >
+                    <Edit className="w-4 h-4" /> Редактировать
                   </Button>
                 </div>
               </div>
@@ -474,17 +907,104 @@ export default function CalendarPage() {
                   variant="ghost" 
                   size="sm" 
                   className="text-rose-500 hover:text-rose-600 hover:bg-rose-500/10"
-                  onClick={() => {
-                    setEvents(events.filter(e => e.id !== selectedEvent.id));
-                    setSelectedEvent(null);
-                  }}
+                  onClick={handleDeleteEvent}
+                  disabled={deleteMutation.isPending}
                 >
+                  {deleteMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4 mr-1" />}
                   Удалить
                 </Button>
                 <Button onClick={() => setSelectedEvent(null)}>Закрыть</Button>
               </DialogFooter>
             </>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Event Dialog */}
+      <Dialog open={isEditEventOpen} onOpenChange={setIsEditEventOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Редактировать событие</DialogTitle>
+            <DialogDescription>Измените детали события.</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label htmlFor="edit-title">Название</Label>
+              <Input 
+                id="edit-title" 
+                placeholder="Название события" 
+                value={eventForm.title}
+                onChange={(e) => setEventForm({...eventForm, title: e.target.value})}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2">
+                <Label htmlFor="edit-time">Время</Label>
+                <Input 
+                  id="edit-time" 
+                  type="time" 
+                  value={eventForm.time}
+                  onChange={(e) => setEventForm({...eventForm, time: e.target.value})}
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="edit-type">Тип</Label>
+                <Select 
+                  value={eventForm.type} 
+                  onValueChange={(val) => setEventForm({...eventForm, type: val as any})}
+                >
+                  <SelectTrigger id="edit-type">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="work">Работа</SelectItem>
+                    <SelectItem value="video">Видеозвонок</SelectItem>
+                    <SelectItem value="audio">Аудиозвонок</SelectItem>
+                    <SelectItem value="social">Команда</SelectItem>
+                    <SelectItem value="external">Клиент</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="edit-contact">Контакт</Label>
+              <Input 
+                id="edit-contact" 
+                placeholder="Имя участника" 
+                value={eventForm.contact}
+                onChange={(e) => setEventForm({...eventForm, contact: e.target.value})}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="edit-meeting-url">Ссылка на звонок</Label>
+              <Input 
+                id="edit-meeting-url" 
+                placeholder="https://..." 
+                value={eventForm.meetingUrl}
+                onChange={(e) => setEventForm({...eventForm, meetingUrl: e.target.value})}
+                className="font-mono text-xs"
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="edit-desc">Описание</Label>
+              <Input 
+                id="edit-desc" 
+                placeholder="Описание события" 
+                value={eventForm.description}
+                onChange={(e) => setEventForm({...eventForm, description: e.target.value})}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsEditEventOpen(false)}>Отмена</Button>
+            <Button 
+              onClick={handleUpdateEvent} 
+              disabled={!eventForm.title || updateMutation.isPending}
+            >
+              {updateMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              Сохранить
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </Layout>

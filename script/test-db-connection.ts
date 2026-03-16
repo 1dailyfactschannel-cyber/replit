@@ -1,4 +1,4 @@
-import { Pool } from 'pg';
+import postgres from 'postgres';
 import dotenv from 'dotenv';
 
 // Load environment variables
@@ -12,46 +12,39 @@ async function testDatabaseConnection() {
     process.exit(1);
   }
 
-  const pool = new Pool({
-    connectionString: process.env.DATABASE_URL,
+  const sql = postgres(process.env.DATABASE_URL, {
     max: 1,
-    idleTimeoutMillis: 30000,
-    connectionTimeoutMillis: 10000,
+    idle_timeout: 30,
+    connect_timeout: 10,
   });
 
   try {
     // Test connection with simple query
     console.log('Executing test query...');
-    const client = await pool.connect();
     
-    try {
-      const result = await client.query('SELECT version();');
-      console.log('✅ Database connection successful!');
-      console.log('PostgreSQL Version:', result.rows[0].version);
-      
-      // Test if database exists and is accessible
-      const dbResult = await client.query('SELECT current_database();');
-      console.log('Connected to database:', dbResult.rows[0].current_database);
-      
-      // Test if we can list tables
-      const tablesResult = await client.query(`
-        SELECT table_name 
-        FROM information_schema.tables 
-        WHERE table_schema = 'public'
-        ORDER BY table_name;
-      `);
-      
-      if (tablesResult.rows.length > 0) {
-        console.log('Existing tables:');
-        tablesResult.rows.forEach(row => {
-          console.log(`  - ${row.table_name}`);
-        });
-      } else {
-        console.log('No tables found in public schema');
-      }
-      
-    } finally {
-      client.release();
+    const version = await sql`SELECT version();`;
+    console.log('✅ Database connection successful!');
+    console.log('PostgreSQL Version:', version[0].version);
+    
+    // Test if database exists and is accessible
+    const dbResult = await sql`SELECT current_database();`;
+    console.log('Connected to database:', dbResult[0].current_database);
+    
+    // Test if we can list tables
+    const tables = await sql`
+      SELECT table_name 
+      FROM information_schema.tables 
+      WHERE table_schema = 'public'
+      ORDER BY table_name;
+    `;
+    
+    if (tables.length > 0) {
+      console.log('Existing tables:');
+      tables.forEach((row: any) => {
+        console.log(`  - ${row.table_name}`);
+      });
+    } else {
+      console.log('No tables found in public schema');
     }
     
     console.log('✅ Connection test completed successfully');
@@ -70,7 +63,7 @@ async function testDatabaseConnection() {
     
     process.exit(1);
   } finally {
-    await pool.end();
+    await sql.end();
   }
 }
 

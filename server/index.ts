@@ -2,6 +2,9 @@ import "dotenv/config";
 import path from "path";
 import { fileURLToPath } from "url";
 import rateLimit from "express-rate-limit";
+import cors from "cors";
+import helmet from "helmet";
+import cookieParser from "cookie-parser";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -9,12 +12,15 @@ const __dirname = path.dirname(__filename);
 console.log('DATABASE_URL:', process.env.DATABASE_URL ? 'set' : 'NOT SET');
 
 // Security: Rate limiting configuration
+const isDev = process.env.NODE_ENV === 'development';
 const globalLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // Limit each IP to 100 requests per windowMs
+  windowMs: 15 * 60 * 1000, // 15 minutes window
+  max: isDev ? 10000 : 2000, // 10000 requests in dev (practically unlimited), 2000 in prod per 15 min
   standardHeaders: true,
   legacyHeaders: false,
-  message: { message: "Too many requests, please try again later" }
+  message: { message: "Слишком много запросов. Пожалуйста, попробуйте позже." },
+  skip: (req) => isDev, // Skip rate limiting completely in development
+  skipSuccessfulRequests: false,
 });
 
 const loginLimiter = rateLimit({
@@ -34,6 +40,9 @@ import { registerRoutes } from "./routes";
 import { setupAuth } from "./auth";
 import { serveStatic } from "./static";
 import { createServer } from "http";
+import { yandexCalendarService } from "./services/yandex-calendar";
+import { yandexNotificationService } from "./services/yandex-notifications";
+import { getStorage } from "./postgres-storage";
 
 const app = express();
 const httpServer = createServer(app);
@@ -47,19 +56,76 @@ declare module "http" {
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: false, limit: '10mb' }));
 
+// Security: CORS configuration
+const getAllowedOrigins = (): string[] => {
+  const origins = process.env.ALLOWED_ORIGINS 
+    ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim()).filter(Boolean)
+    : null;
+  
+  // Production warning if ALLOWED_ORIGINS is not set
+  if (process.env.NODE_ENV === 'production' && !origins) {
+    console.warn('⚠️  WARNING: ALLOWED_ORIGINS environment variable is not set in production!');
+    console.warn('⚠️  CORS will reject all cross-origin requests.');
+    console.warn('⚠️  Set ALLOWED_ORIGINS to your domain(s), e.g.:');
+    console.warn('⚠️  ALLOWED_ORIGINS=https://yourdomain.com,https://www.yourdomain.com');
+    // In production without ALLOWED_ORIGINS, reject all cross-origin requests
+    return [];
+  }
+  
+  // Development default origins
+  if (!origins) {
+    return ['http://localhost:3005', 'http://localhost:3000', 'http://127.0.0.1:3005'];
+  }
+  
+  return origins;
+};
+
+const corsOptions = {
+  origin: getAllowedOrigins(),
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+};
+app.use(cors(corsOptions));
+
+// Security: Helmet for HTTP headers protection
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
+      styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+      styleSrcElem: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+      imgSrc: ["'self'", "data:", "blob:", "https:"],
+      connectSrc: ["'self'", "ws:", "wss:"],
+      workerSrc: ["'self'", "blob:"],
+    },
+  },
+  hsts: {
+    maxAge: 31536000, // 1 year in seconds
+    includeSubDomains: true,
+    preload: true,
+  },
+  xContentTypeOptions: true,
+  crossOriginEmbedderPolicy: false,
+}));
+
 // Enable compression for all responses
 import compression from 'compression';
 app.use(compression());
 
-// Cache storage (shared across all requests)
-const apiCache = new Map<string, { data: any; timestamp: number }>();
+// Cache storage (shared across all requests) - now with user isolation
+const apiCache = new Map<string, { data: any; timestamp: number; userId?: string }>();
 
-// Cache middleware for API responses
+// Cache middleware for API responses - user-aware caching
 const cacheMiddleware = (duration: number) => {
   return (req: Request, res: Response, next: NextFunction) => {
     if (req.method !== 'GET') return next();
-
-    const key = req.originalUrl;
+    
+    // Don't cache for unauthenticated requests or use user-specific cache
+    const userId = req.isAuthenticated() ? (req.user as any)?.id : 'anonymous';
+    const key = `${req.originalUrl}:${userId}`;
+    
     const cached = apiCache.get(key);
 
     if (cached && Date.now() - cached.timestamp < duration) {
@@ -69,7 +135,7 @@ const cacheMiddleware = (duration: number) => {
 
     const originalJson = res.json.bind(res);
     res.json = (data: any) => {
-      apiCache.set(key, { data, timestamp: Date.now() });
+      apiCache.set(key, { data, timestamp: Date.now(), userId });
       return originalJson(data);
     };
 
@@ -87,6 +153,18 @@ if (process.env.NODE_ENV === "production") {
     immutable: true
   }));
 }
+
+// Security: Cache-Control for sensitive endpoints
+app.use('/api/auth', (_req, res, next) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+  res.setHeader('Pragma', 'no-cache');
+  next();
+});
+
+app.use('/api/user', (_req, res, next) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+  next();
+});
 
 export function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {
@@ -128,7 +206,15 @@ app.use((req, res, next) => {
 });
 
 (async () => {
+  app.use(cookieParser());
   setupAuth(app);
+  
+  // CSRF Protection - apply after auth setup
+  import("./middleware/csrf").then(({ csrfProtect, getCsrfToken }) => {
+    app.use(csrfProtect);
+    app.get("/api/csrf-token", getCsrfToken);
+  });
+  
   await registerRoutes(httpServer, app);
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
@@ -156,6 +242,28 @@ app.use((req, res, next) => {
     },
     () => {
       log(`serving on port ${port}`);
+      
+      // Start Yandex Calendar sync cron job (every 10 minutes)
+      setInterval(async () => {
+        try {
+          const storage = getStorage();
+          const integrations = await storage.getActiveYandexIntegrations();
+          for (const integration of integrations) {
+            try {
+              await yandexCalendarService.syncUserCalendar(integration.id);
+            } catch (err) {
+              console.error(`Sync failed for ${integration.id}:`, err);
+            }
+          }
+        } catch (error) {
+          console.error("Error in Yandex calendar sync cron:", error);
+        }
+      }, 10 * 60 * 1000);
+      
+      // Start Yandex Calendar notification service
+      yandexNotificationService.startPeriodicTasks();
+      
+      log("Yandex Calendar services started");
     },
   );
 })();

@@ -3,7 +3,6 @@ import react from "@vitejs/plugin-react";
 import path from "path";
 import runtimeErrorOverlay from "@replit/vite-plugin-runtime-error-modal";
 import { metaImagesPlugin } from "./vite-plugin-meta-images";
-import { nodePolyfills } from "vite-plugin-node-polyfills";
 import gzipPlugin from "rollup-plugin-gzip";
 
 export default defineConfig(async ({ mode }): Promise<UserConfig> => ({
@@ -16,12 +15,6 @@ export default defineConfig(async ({ mode }): Promise<UserConfig> => ({
       },
     }),
     runtimeErrorOverlay(),
-    // Only include node polyfills in development
-    ...(mode !== "production" ? [
-      nodePolyfills({
-        include: ["buffer", "events", "stream", "util"],
-      })
-    ] : []),
     // Enable gzip compression for production
     ...(mode === "production" ? [
       gzipPlugin({

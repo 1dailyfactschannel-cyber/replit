@@ -11,6 +11,5 @@ docker-compose.yml
 Dockerfile
 Dockerfile.client
 migrations
-scripts
 *.log
 .DS_Store
