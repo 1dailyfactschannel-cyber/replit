@@ -1,5 +1,7 @@
 import { Layout } from "@/components/layout/Layout";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useDeferredValue } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { apiRequest } from "@/lib/queryClient";
 import { 
   Table, 
   TableBody, 
@@ -29,6 +31,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { StatusBadge, type Status } from "@/components/ui/status-badge";
 import { 
   MoreVertical, 
   UserMinus, 
@@ -43,20 +46,31 @@ import {
   Users,
   Plus,
   Pencil,
-  Trash2
+  Trash2,
+  Monitor,
+  Loader2,
+  Send as SendIcon
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useLocation } from "wouter";
 
 interface Employee {
   id: string;
-  name: string;
-  position: string;
+  firstName: string | null;
+  lastName: string | null;
   email: string;
-  status: 'active' | 'blocked' | 'on_leave';
-  points: number;
-  avatar?: string;
-  departmentId?: string;
+  position: string | null;
+  avatar: string | null;
+  department: string | null;
+  isActive: boolean;
+  isOnline: boolean;
+  lastSeen: string | null;
+  telegram: string | null;
+  telegramConnected: boolean;
+  pointsBalance: number;
+  status?: string;
+  statusColor?: string | null;
+  statusComment?: string;
 }
 
 interface Department {
@@ -73,16 +87,31 @@ const mockDepartments: Department[] = [
 ];
 
 const mockEmployees: Employee[] = [
-  { id: "2", name: "Александр Петров", position: "Senior Frontend Developer", email: "a.petrov@teamsync.ru", status: "active", points: 850, departmentId: "1" },
-  { id: "3", name: "Елена Сидорова", position: "UI/UX Designer", email: "e.sidorova@teamsync.ru", status: "on_leave", points: 2100, departmentId: "2" },
-  { id: "4", name: "Максим Иванов", position: "Backend Lead", email: "m.ivanov@teamsync.ru", status: "blocked", points: 450, departmentId: "1" },
-  { id: "5", name: "Дарья Козлова", position: "Marketing Specialist", email: "d.kozlova@teamsync.ru", status: "active", points: 1100, departmentId: "3" },
+  { id: "2", firstName: "Александр", lastName: "Петров", email: "a.petrov@teamsync.ru", position: "Senior Frontend Developer", isActive: true, isOnline: true, lastSeen: new Date().toISOString(), telegram: "alex_petrov", telegramConnected: true, pointsBalance: 850, avatar: null, department: "1", status: "online" },
+  { id: "3", firstName: "Елена", lastName: "Сидорова", email: "e.sidorova@teamsync.ru", position: "UI/UX Designer", isActive: true, isOnline: false, lastSeen: new Date(Date.now() - 3600000).toISOString(), telegram: null, telegramConnected: false, pointsBalance: 2100, avatar: null, department: "2", status: "offline" },
+  { id: "4", firstName: "Максим", lastName: "Иванов", email: "m.ivanov@teamsync.ru", position: "Backend Lead", isActive: false, isOnline: false, lastSeen: new Date(Date.now() - 86400000).toISOString(), telegram: "max_ivanov", telegramConnected: true, pointsBalance: 450, avatar: null, department: "1", status: "offline" },
+  { id: "5", firstName: "Дарья", lastName: "Козлова", email: "d.kozlova@teamsync.ru", position: "Marketing Specialist", isActive: true, isOnline: true, lastSeen: new Date().toISOString(), telegram: "darya_k", telegramConnected: true, pointsBalance: 1100, avatar: null, department: "3", status: "busy" },
 ];
 
 export default function EmployeesPage() {
   const [location] = useLocation();
   const searchParams = new URLSearchParams(window.location.search);
   const initialTab = searchParams.get('tab') || 'list';
+  
+  const [searchQuery, setSearchQuery] = useState("");
+  const deferredSearchQuery = useDeferredValue(searchQuery);
+  
+  const { data: apiEmployees = [], isLoading } = useQuery<Employee[]>({
+    queryKey: ["/api/users"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/users");
+      return res.json();
+    },
+  });
+
+  const { data: customStatuses = [] } = useQuery<{id: string; name: string; color: string; isDefault: boolean}[]>({
+    queryKey: ["/api/custom-statuses"],
+  });
   
   const [employees, setEmployees] = useState<Employee[]>(mockEmployees);
   const [departments, setDepartments] = useState<Department[]>(mockDepartments);
@@ -91,6 +120,63 @@ export default function EmployeesPage() {
   const [isCreateDeptOpen, setIsCreateDeptOpen] = useState(false);
   const [newDeptName, setNewDeptName] = useState("");
   const [activeTab, setActiveTab] = useState(initialTab);
+
+  // Sync API employees when loaded
+  useEffect(() => {
+    if (apiEmployees.length > 0) {
+      setEmployees(apiEmployees);
+    }
+  }, [apiEmployees]);
+
+  // Filter and sort employees
+  const processedEmployees = useMemo(() => {
+    let filtered = employees.filter((emp) => emp && emp.isActive !== false);
+    
+    // Remove duplicates by id
+    const uniqueUsers = Array.from(new Map(filtered.map(u => [u.id, u])).values());
+    
+    // Search filter
+    if (deferredSearchQuery.trim()) {
+      const query = deferredSearchQuery.toLowerCase();
+      const searched = uniqueUsers.filter((emp) => {
+        const fullName = `${emp.firstName || ""} ${emp.lastName || ""}`.toLowerCase();
+        const position = (emp.position || "").toLowerCase();
+        const email = (emp.email || "").toLowerCase();
+        const telegram = (emp.telegram || "").toLowerCase();
+        const status = (emp.status || "").toLowerCase();
+        const comment = (emp.statusComment || "").toLowerCase();
+        return fullName.includes(query) || position.includes(query) || email.includes(query) || telegram.includes(query) || status.includes(query) || comment.includes(query);
+      });
+      
+      // Sort searched results
+      const statusRank = (status?: Status) => {
+        if (status === "online") return 0;
+        if (status === "busy") return 1;
+        return 2;
+      };
+      
+      return searched.sort((a, b) => {
+        const rankA = statusRank(a.status);
+        const rankB = statusRank(b.status);
+        if (rankA !== rankB) return rankA - rankB;
+        return (a.lastName || "").localeCompare(b.lastName || "");
+      });
+    }
+    
+    // Sort: online -> busy -> offline, then by lastName
+    const statusRank = (status?: Status) => {
+      if (status === "online") return 0;
+      if (status === "busy") return 1;
+      return 2;
+    };
+    
+    return uniqueUsers.sort((a, b) => {
+      const rankA = statusRank(a.status);
+      const rankB = statusRank(b.status);
+      if (rankA !== rankB) return rankA - rankB;
+      return (a.lastName || "").localeCompare(b.lastName || "");
+    });
+  }, [employees, searchQuery]);
 
   useEffect(() => {
     const tab = new URLSearchParams(window.location.search).get('tab') || 'list';
@@ -108,14 +194,6 @@ export default function EmployeesPage() {
     setDepartments(prev => [...prev, newDept]);
     setNewDeptName("");
     setIsCreateDeptOpen(false);
-  };
-
-  const getStatusBadge = (status: Employee['status']) => {
-    switch (status) {
-      case 'active': return <Badge className="bg-emerald-500/10 text-emerald-500 border-emerald-500/20">Активен</Badge>;
-      case 'blocked': return <Badge variant="destructive" className="bg-rose-500/10 text-rose-500 border-rose-500/20">Заблокирован</Badge>;
-      case 'on_leave': return <Badge variant="outline" className="bg-amber-500/10 text-amber-500 border-amber-500/20">В отпуске</Badge>;
-    }
   };
 
   return (
@@ -141,7 +219,12 @@ export default function EmployeesPage() {
             <div className="flex items-center gap-4">
               <div className="relative flex-1 max-w-sm">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                <Input placeholder="Поиск сотрудника..." className="pl-9 bg-secondary/30 border-border/50" />
+                <Input 
+                  placeholder="Поиск сотрудника..." 
+                  className="pl-9 bg-secondary/30 border-border/50"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                />
               </div>
               <Button variant="outline" className="gap-2 border-border/50">
                 <Filter className="w-4 h-4" />
@@ -166,7 +249,9 @@ export default function EmployeesPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {employees.map((employee) => (
+                  {processedEmployees.map((employee) => {
+                    const fullName = `${employee.firstName || ""} ${employee.lastName || ""}`.trim();
+                    return (
                     <TableRow 
                       key={employee.id} 
                       className="cursor-pointer hover:bg-secondary/30 transition-colors"
@@ -178,30 +263,36 @@ export default function EmployeesPage() {
                        <TableCell className="font-medium text-foreground">
                         <div className="flex items-center gap-3">
                           <Avatar className="h-9 w-9 border border-border">
-                            <AvatarImage src={employee.avatar} />
-                            <AvatarFallback>{employee.name.split(' ').map(n => n[0]).join('')}</AvatarFallback>
+                            <AvatarImage src={employee.avatar || undefined} />
+                            <AvatarFallback>{fullName.split(" ").map(n => n[0]).join("")}</AvatarFallback>
                           </Avatar>
                           <div className="flex flex-col">
-                            <span className="text-sm font-semibold text-foreground">{employee.name}</span>
+                            <span className="text-sm font-semibold text-foreground">{fullName}</span>
                             <span className="text-xs text-foreground">{employee.email}</span>
                           </div>
                         </div>
                       </TableCell>
                       <TableCell>
-                        {employee.departmentId ? (
-                          <Badge variant="outline" className={cn("text-[10px] font-bold", departments.find(d => d.id === employee.departmentId)?.color.replace('bg-', 'text-'))}>
-                            {departments.find(d => d.id === employee.departmentId)?.name}
+                        {employee.department ? (
+                          <Badge variant="outline" className="text-[10px] font-bold">
+                            {employee.department}
                           </Badge>
                         ) : (
                           <span className="text-xs text-muted-foreground">—</span>
                         )}
                       </TableCell>
                       <TableCell className="text-sm text-foreground">{employee.position}</TableCell>
-                      <TableCell>{getStatusBadge(employee.status)}</TableCell>
+                      <TableCell>
+                        {customStatuses.length > 0 && employee.status && customStatuses.some(s => s.name === employee.status) ? (
+                          <StatusBadge status={employee.status} color={employee.statusColor || customStatuses.find(s => s.name === employee.status)?.color} />
+                        ) : customStatuses.length === 0 ? (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        ) : null}
+                      </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-1.5 font-medium text-foreground">
                           <Coins className="w-4 h-4 text-amber-500" />
-                          {employee.points}
+                          {employee.pointsBalance}
                         </div>
                       </TableCell>
                       <TableCell className="text-right">
@@ -215,20 +306,20 @@ export default function EmployeesPage() {
                             <DropdownMenuItem className="gap-2">
                               <UserCog className="w-4 h-4" /> Редактировать
                             </DropdownMenuItem>
-                            {employee.status === 'blocked' ? (
-                              <DropdownMenuItem className="gap-2 text-emerald-500">
-                                <UserCheck className="w-4 h-4" /> Разблокировать
-                              </DropdownMenuItem>
-                            ) : (
+                            {employee.isActive ? (
                               <DropdownMenuItem className="gap-2 text-rose-500">
                                 <UserMinus className="w-4 h-4" /> Заблокировать
+                              </DropdownMenuItem>
+                            ) : (
+                              <DropdownMenuItem className="gap-2 text-emerald-500">
+                                <UserCheck className="w-4 h-4" /> Разблокировать
                               </DropdownMenuItem>
                             )}
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </TableCell>
                     </TableRow>
-                  ))}
+                  );})}
                 </TableBody>
               </Table>
             </div>
@@ -297,18 +388,20 @@ export default function EmployeesPage() {
                   </div>
                   <h3 className="text-lg font-bold mb-1">{dept.name}</h3>
                   <p className="text-sm text-muted-foreground mb-4">
-                    {employees.filter(e => e.departmentId === dept.id).length} сотрудников
+                    {employees.filter(e => e.department === dept.name).length} сотрудников
                   </p>
                   <div className="flex -space-x-2 overflow-hidden">
-                    {employees.filter(e => e.departmentId === dept.id).slice(0, 5).map((e) => (
+                    {employees.filter(e => e.department === dept.name).slice(0, 5).map((e) => {
+                      const empFullName = `${e.firstName || ""} ${e.lastName || ""}`.trim();
+                      return (
                       <Avatar key={e.id} className="inline-block h-8 w-8 rounded-full ring-2 ring-background">
-                        <AvatarImage src={e.avatar} />
-                        <AvatarFallback>{e.name[0]}</AvatarFallback>
+                        <AvatarImage src={e.avatar || undefined} />
+                        <AvatarFallback>{empFullName[0]}</AvatarFallback>
                       </Avatar>
-                    ))}
-                    {employees.filter(e => e.departmentId === dept.id).length > 5 && (
+                    )})}
+                    {employees.filter(e => e.department === dept.name).length > 5 && (
                       <div className="flex items-center justify-center h-8 w-8 rounded-full bg-secondary text-[10px] font-bold ring-2 ring-background">
-                        +{employees.filter(e => e.departmentId === dept.id).length - 5}
+                        +{employees.filter(e => e.department === dept.name).length - 5}
                       </div>
                     )}
                   </div>
@@ -381,11 +474,11 @@ export default function EmployeesPage() {
             <DialogHeader className="p-6 bg-secondary/10 border-b border-border/50">
               <div className="flex items-center gap-4">
                 <Avatar className="h-12 w-12 border-2 border-background shadow-sm">
-                  <AvatarImage src={selectedEmployee?.avatar} />
-                  <AvatarFallback>{selectedEmployee?.name.split(' ').map(n => n[0]).join('')}</AvatarFallback>
+                  <AvatarImage src={selectedEmployee?.avatar || undefined} />
+                  <AvatarFallback>{selectedEmployee ? `${selectedEmployee.firstName?.[0] || ""}${selectedEmployee.lastName?.[0] || ""}` : ""}</AvatarFallback>
                 </Avatar>
                 <div>
-                  <DialogTitle className="text-xl">{selectedEmployee?.name}</DialogTitle>
+                  <DialogTitle className="text-xl">{selectedEmployee ? `${selectedEmployee.firstName || ""} ${selectedEmployee.lastName || ""}`.trim() : ""}</DialogTitle>
                   <DialogDescription className="text-sm text-muted-foreground">{selectedEmployee?.position}</DialogDescription>
                 </div>
               </div>
@@ -403,22 +496,24 @@ export default function EmployeesPage() {
                   <div className="grid grid-cols-2 gap-6">
                     <div className="space-y-2">
                       <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Имя Фамилия</Label>
-                      <Input defaultValue={selectedEmployee?.name} className="bg-secondary/30" />
+                      <Input defaultValue={selectedEmployee ? `${selectedEmployee.firstName || ""} ${selectedEmployee.lastName || ""}`.trim() : ""} className="bg-secondary/30" />
                     </div>
                     <div className="space-y-2">
                       <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Должность</Label>
-                      <Input defaultValue={selectedEmployee?.position} className="bg-secondary/30" />
+                      <Input defaultValue={selectedEmployee?.position || ""} className="bg-secondary/30" />
                     </div>
                     <div className="space-y-2">
                       <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Текущий статус</Label>
-                      <Badge className="w-fit block" variant={selectedEmployee?.status === 'blocked' ? 'destructive' : 'default'}>
-                        {selectedEmployee?.status === 'active' ? 'Активен' : selectedEmployee?.status === 'blocked' ? 'Заблокирован' : 'В отпуске'}
-                      </Badge>
+                      {customStatuses.length > 0 && selectedEmployee?.status && customStatuses.some(s => s.name === selectedEmployee.status) ? (
+                        <StatusBadge status={selectedEmployee.status} color={selectedEmployee.statusColor || customStatuses.find(s => s.name === selectedEmployee.status)?.color} />
+                      ) : customStatuses.length === 0 ? (
+                        <span className="text-xs text-muted-foreground">Статусы не созданы</span>
+                      ) : null}
                     </div>
                     <div className="space-y-2">
                       <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Баллы</Label>
                       <div className="flex gap-2">
-                        <Input type="number" defaultValue={selectedEmployee?.points} className="bg-secondary/30" />
+                        <Input type="number" defaultValue={selectedEmployee?.pointsBalance} className="bg-secondary/30" />
                         <Button variant="outline" size="icon" className="shrink-0"><Coins className="w-4 h-4 text-amber-500" /></Button>
                       </div>
                     </div>

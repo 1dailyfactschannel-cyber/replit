@@ -20,6 +20,9 @@ export const users = pgTable("users", {
   isActive: boolean("is_active").default(true),
   isOnline: boolean("is_online").default(false),
   lastSeen: timestamp("last_seen"),
+  status: text("status").default("online"), // custom status name
+  statusColor: text("status_color"), // custom status color
+  statusComment: text("status_comment"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
   telegram: text("telegram"),
@@ -34,6 +37,18 @@ export const users = pgTable("users", {
   usernameIdx: index("users_username_idx").on(table.username),
   emailIdx: index("users_email_idx").on(table.email),
 }));
+
+// Custom statuses table
+export const customStatuses = pgTable("custom_statuses", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  name: text("name").notNull(),
+  color: text("color").notNull().default("#22c55e"), // hex color
+  icon: text("icon"), // optional icon name
+  isDefault: boolean("is_default").default(false),
+  sortOrder: integer("sort_order").default(0),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
 
 // Roles table
 export const roles = pgTable("roles", {
@@ -389,7 +404,20 @@ export const insertUserSchema = createInsertSchema(users).pick({
   telegramConnected: true,
   telegramId: true,
   notes: true,
+  status: true,
+  statusComment: true,
 });
+
+export const insertCustomStatusSchema = createInsertSchema(customStatuses).pick({
+  name: true,
+  color: true,
+  icon: true,
+  isDefault: true,
+  sortOrder: true,
+});
+
+export type CustomStatus = typeof customStatuses.$inferSelect;
+export type InsertCustomStatus = z.infer<typeof insertCustomStatusSchema>;
 
 export const insertRoleSchema = createInsertSchema(roles).pick({
   name: true,

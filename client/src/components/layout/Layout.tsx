@@ -159,7 +159,9 @@ const SidebarContentComponent = React.memo(({
   setIsCollapsed,
   statusColors,
   statusLabels,
-  user
+  user,
+  customStatuses,
+  statusColor
 }: any) => {
   const displayName = user ? `${user.firstName || ""} ${user.lastName || ""}`.trim() || user.username : "Пользователь";
   const initials = user ? (user.firstName && user.lastName ? `${user.firstName[0]}${user.lastName[0]}` : user.username.substring(0, 2).toUpperCase()) : "П";
@@ -327,8 +329,20 @@ const SidebarContentComponent = React.memo(({
               className="gap-2 cursor-pointer"
               onClick={() => setIsStatusDialogOpen(true)}
             >
-              <span className={cn("w-2 h-2 rounded-full", statusColors[status as keyof typeof statusColors])} />
-              Статус: {statusLabels[status as keyof typeof statusLabels]}
+              {customStatuses.length > 0 && status ? (
+                <>
+                  <span 
+                    className="w-2 h-2 rounded-full" 
+                    style={{ backgroundColor: statusColor || customStatuses.find((s: { name: string; color: string }) => s.name === status)?.color || "#6b7280" }} 
+                  />
+                  Статус: {status}
+                </>
+              ) : (
+                <>
+                  <span className="w-2 h-2 rounded-full bg-slate-500" />
+                  Статус: Не установлен
+                </>
+              )}
             </DropdownMenuItem>
             <DropdownMenuItem 
               className="gap-2 cursor-pointer" 
@@ -369,7 +383,7 @@ const SidebarContentComponent = React.memo(({
 });
 
 export function Layout({ children, className }: { children: React.ReactNode, className?: string }) {
-  const { data: user, isLoading } = useQuery<UserType>({
+  const { data: user, isLoading, refetch: refetchUser } = useQuery<UserType>({
     queryKey: ["/api/user"],
     retry: false,
   });
@@ -391,8 +405,13 @@ export function Layout({ children, className }: { children: React.ReactNode, cla
     return false;
   });
   const [isStatusDialogOpen, setIsStatusDialogOpen] = useState(false);
-  const [status, setStatus] = useState("online");
-  const [statusComment, setStatusComment] = useState("");
+  const [status, setStatus] = useState(() => user?.status || "online");
+  const [statusComment, setStatusComment] = useState(() => user?.statusComment || "");
+  const [statusColor, setStatusColor] = useState(() => user?.statusColor || "");
+
+  const { data: customStatuses = [] } = useQuery<{id: string; name: string; color: string; isDefault: boolean}[]>({
+    queryKey: ["/api/custom-statuses"],
+  });
 
   // Memoize callbacks to prevent unnecessary re-renders of SidebarContentComponent
   const handleSetLocation = React.useCallback((href: string) => {
@@ -459,6 +478,8 @@ export function Layout({ children, className }: { children: React.ReactNode, cla
           statusColors={statusColors}
           statusLabels={statusLabels}
           user={user}
+          customStatuses={customStatuses}
+          statusColor={statusColor}
         />
       </div>
 
@@ -541,55 +562,67 @@ export function Layout({ children, className }: { children: React.ReactNode, cla
             <DialogDescription>Обновите ваш рабочий статус для коллег.</DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
-            <div className="space-y-2">
-              <Label>Выберите статус</Label>
-              <span className="sr-only">Статус</span>
-              <Select value={status} onValueChange={setStatus}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="online">
-                    <div className="flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                      В сети (пришел на работу)
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="offline">
-                    <div className="flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full bg-slate-500" />
-                      Не в сети (ушел с работы)
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="vacation">
-                    <div className="flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full bg-blue-500" />
-                      В отпуске
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="sick">
-                    <div className="flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full bg-rose-500" />
-                      Больничный
-                    </div>
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>Комментарий к статусу</Label>
-              <Textarea 
-                placeholder="Что происходит?" 
-                value={statusComment}
-                onChange={(e) => setStatusComment(e.target.value)}
-                className="resize-none"
-                rows={3}
-              />
-            </div>
+            {customStatuses.length === 0 ? (
+              <div className="text-center py-4 text-muted-foreground">
+                <p>Статусы не созданы.</p>
+                <p className="text-sm">Создайте статусы в разделе "Управление → Статусы"</p>
+              </div>
+            ) : (
+              <>
+                <div className="space-y-2">
+                  <Label>Выберите статус</Label>
+                  <span className="sr-only">Статус</span>
+                  <Select value={status} onValueChange={setStatus}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {customStatuses.map((s) => (
+                        <SelectItem key={s.id} value={s.name} onSelect={() => setStatusColor(s.color)}>
+                          <div className="flex items-center gap-2">
+                            <span className="w-2 h-2 rounded-full" style={{ backgroundColor: s.color }} />
+                            {s.name}
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Комментарий к статусу</Label>
+                  <Textarea 
+                    placeholder="Что происходит?" 
+                    value={statusComment}
+                    onChange={(e) => setStatusComment(e.target.value)}
+                    className="resize-none"
+                    rows={3}
+                  />
+                </div>
+              </>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsStatusDialogOpen(false)}>Отмена</Button>
-            <Button onClick={() => setIsStatusDialogOpen(false)}>Обновить</Button>
+            {customStatuses.length > 0 && (
+              <Button 
+                onClick={async () => {
+                  try {
+                    await apiRequest("PUT", `/api/users/${user?.id}`, {
+                      status,
+                      statusColor,
+                      statusComment
+                    });
+                    queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+                    refetchUser();
+                  } catch (error) {
+                    console.error("Failed to update status:", error);
+                  }
+                  setIsStatusDialogOpen(false);
+                }}
+              >
+                Обновить
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>

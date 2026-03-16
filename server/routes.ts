@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { getStorage, getReportOverview, getReportWorkspaces, getReportProjects, getReportBoards, getReportUsers } from "./postgres-storage";
-import { insertSiteSettingsSchema, insertUserSchema, insertNotificationSchema, insertLabelSchema, priorities, taskTypes } from "@shared/schema";
+import { insertSiteSettingsSchema, insertUserSchema, insertNotificationSchema, insertLabelSchema, insertCustomStatusSchema, priorities, taskTypes } from "@shared/schema";
 import * as schema from "@shared/schema";
 import { getStatusByColumnName } from "../shared/column-status-mapping";
 import { setupWebSockets, getIO } from "./socket";
@@ -404,6 +404,87 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error deleting user:", error);
       res.status(500).json({ message: "Failed to delete user" });
+    }
+  });
+
+  // Custom Statuses Routes
+  app.get("/api/custom-statuses", async (_req, res) => {
+    try {
+      const statuses = await storage.getAllCustomStatuses();
+      res.json(statuses);
+    } catch (error) {
+      console.error("Error fetching custom statuses:", error);
+      res.status(500).json({ message: "Failed to fetch custom statuses" });
+    }
+  });
+
+  app.get("/api/custom-statuses/:id", async (req, res) => {
+    try {
+      const status = await storage.getCustomStatus(req.params.id);
+      if (!status) {
+        return res.status(404).json({ message: "Custom status not found" });
+      }
+      res.json(status);
+    } catch (error) {
+      console.error("Error fetching custom status:", error);
+      res.status(500).json({ message: "Failed to fetch custom status" });
+    }
+  });
+
+  app.post("/api/custom-statuses", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+    try {
+      const parsed = insertCustomStatusSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ message: "Invalid data", errors: parsed.error.errors });
+      }
+      const status = await storage.createCustomStatus(parsed.data);
+      res.json(status);
+    } catch (error) {
+      console.error("Error creating custom status:", error);
+      res.status(500).json({ message: "Failed to create custom status" });
+    }
+  });
+
+  app.put("/api/custom-statuses/:id", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+    try {
+      const status = await storage.updateCustomStatus(req.params.id, req.body);
+      if (!status) {
+        return res.status(404).json({ message: "Custom status not found" });
+      }
+      res.json(status);
+    } catch (error) {
+      console.error("Error updating custom status:", error);
+      res.status(500).json({ message: "Failed to update custom status" });
+    }
+  });
+
+  app.delete("/api/custom-statuses/:id", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+    try {
+      const deleted = await storage.deleteCustomStatus(req.params.id);
+      if (!deleted) {
+        return res.status(404).json({ message: "Custom status not found" });
+      }
+      res.json({ message: "Custom status deleted successfully" });
+    } catch (error) {
+      console.error("Error deleting custom status:", error);
+      res.status(500).json({ message: "Failed to delete custom status" });
+    }
+  });
+
+  app.post("/api/custom-statuses/:id/set-default", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+    try {
+      const set = await storage.setDefaultCustomStatus(req.params.id);
+      if (!set) {
+        return res.status(404).json({ message: "Custom status not found" });
+      }
+      res.json({ message: "Default status set successfully" });
+    } catch (error) {
+      console.error("Error setting default custom status:", error);
+      res.status(500).json({ message: "Failed to set default custom status" });
     }
   });
 

@@ -3,6 +3,8 @@ import {
   type InsertUser, 
   type SiteSettings, 
   type InsertSiteSettings,
+  type CustomStatus,
+  type InsertCustomStatus,
   type ChatFolder,
   type InsertChatFolder,
   type Call,
@@ -145,6 +147,80 @@ export class PostgresStorage {
     } catch (error) {
       console.error("Error getting all users:", error);
       return [];
+    }
+  }
+
+  // Custom statuses methods
+  async getAllCustomStatuses(): Promise<schema.CustomStatus[]> {
+    try {
+      return await this.db.select().from(schema.customStatuses).orderBy(schema.customStatuses.sortOrder);
+    } catch (error) {
+      console.error("Error getting all custom statuses:", error);
+      return [];
+    }
+  }
+
+  async getCustomStatus(id: string): Promise<schema.CustomStatus | null> {
+    try {
+      const result = await this.db.select().from(schema.customStatuses).where(eq(schema.customStatuses.id, id));
+      return result[0] || null;
+    } catch (error) {
+      console.error("Error getting custom status:", error);
+      return null;
+    }
+  }
+
+  async getDefaultCustomStatus(): Promise<schema.CustomStatus | null> {
+    try {
+      const result = await this.db.select().from(schema.customStatuses).where(eq(schema.customStatuses.isDefault, true));
+      return result[0] || null;
+    } catch (error) {
+      console.error("Error getting default custom status:", error);
+      return null;
+    }
+  }
+
+  async createCustomStatus(data: schema.InsertCustomStatus): Promise<schema.CustomStatus | null> {
+    try {
+      const result = await this.db.insert(schema.customStatuses).values(data).returning();
+      return result[0] || null;
+    } catch (error) {
+      console.error("Error creating custom status:", error);
+      return null;
+    }
+  }
+
+  async updateCustomStatus(id: string, data: Partial<schema.InsertCustomStatus>): Promise<schema.CustomStatus | null> {
+    try {
+      const result = await this.db.update(schema.customStatuses)
+        .set({ ...data, updatedAt: new Date() })
+        .where(eq(schema.customStatuses.id, id))
+        .returning();
+      return result[0] || null;
+    } catch (error) {
+      console.error("Error updating custom status:", error);
+      return null;
+    }
+  }
+
+  async deleteCustomStatus(id: string): Promise<boolean> {
+    try {
+      await this.db.delete(schema.customStatuses).where(eq(schema.customStatuses.id, id));
+      return true;
+    } catch (error) {
+      console.error("Error deleting custom status:", error);
+      return false;
+    }
+  }
+
+  async setDefaultCustomStatus(id: string): Promise<boolean> {
+    try {
+      await this.db.update(schema.customStatuses).set({ isDefault: false }).where(eq(schema.customStatuses.isDefault, true));
+      await this.db.update(schema.customStatuses).set({ isDefault: true }).where(eq(schema.customStatuses.id, id));
+      return true;
+    } catch (error) {
+      console.error("Error setting default custom status:", error);
+      return false;
     }
   }
 
