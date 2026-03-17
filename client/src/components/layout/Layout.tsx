@@ -159,11 +159,8 @@ const SidebarContentComponent = React.memo(({
   setLocation, 
   setIsMobileOpen,
   setIsCollapsed,
-  statusColors,
-  statusLabels,
   user,
   customStatuses,
-  statusColor,
   isRemote
 }: any) => {
   const displayName = user ? `${user.firstName || ""} ${user.lastName || ""}`.trim() || user.username : "Пользователь";
@@ -316,7 +313,7 @@ const SidebarContentComponent = React.memo(({
               <div 
                 className="w-9 h-9 rounded-full shrink-0"
                 style={{ 
-                  background: `linear-gradient(#000, #000) padding-box, linear-gradient(to bottom, ${(statusColor && statusColor.trim()) || customStatuses.find((s: { name: string; color: string }) => s.name === status)?.color || '#6b7280'}, ${(statusColor && statusColor.trim()) || customStatuses.find((s: { name: string; color: string }) => s.name === status)?.color || '#6b7280'}) border-box`,
+                  background: `linear-gradient(#000, #000) padding-box, linear-gradient(to bottom, ${customStatuses.find((s: { name: string; color: string }) => s.name === status)?.color || '#6b7280'}, ${customStatuses.find((s: { name: string; color: string }) => s.name === status)?.color || '#6b7280'}) border-box`,
                   border: '2px solid transparent'
                 }}
               >
@@ -344,7 +341,7 @@ const SidebarContentComponent = React.memo(({
                 <>
                   <span 
                     className="w-2 h-2 rounded-full" 
-                    style={{ backgroundColor: (statusColor && statusColor.trim()) || customStatuses.find((s: { name: string; color: string }) => s.name === status)?.color || "#6b7280" }} 
+                    style={{ backgroundColor: customStatuses.find((s: { name: string; color: string }) => s.name === status)?.color || "#6b7280" }} 
                   />
                   Статус: {status}
                 </>
@@ -355,12 +352,13 @@ const SidebarContentComponent = React.memo(({
                 </>
               )}
             </DropdownMenuItem>
-            <DropdownMenuCheckboxItem
+              <DropdownMenuCheckboxItem
               checked={isRemote}
               onCheckedChange={async (checked) => {
                 try {
                   await apiRequest("PUT", `/api/users/${user?.id}`, { isRemote: checked });
                   queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+                  queryClient.invalidateQueries({ queryKey: ["/api/user"] });
                 } catch (error) {
                   console.error("Failed to update remote status:", error);
                 }
@@ -435,13 +433,11 @@ export function Layout({ children, className }: { children: React.ReactNode, cla
   const [isStatusDialogOpen, setIsStatusDialogOpen] = useState(false);
   const [status, setStatus] = useState(() => user?.status || "online");
   const [statusComment, setStatusComment] = useState(() => user?.statusComment || "");
-  const [statusColor, setStatusColor] = useState(() => user?.statusColor || "");
 
   // Синхронизация локального состояния статуса с данными пользователя
   useEffect(() => {
     if (user) {
       setStatus(user.status || "online");
-      setStatusColor(user.statusColor || "");
       setStatusComment(user.statusComment || "");
     }
   }, [user]);
@@ -471,16 +467,6 @@ export function Layout({ children, className }: { children: React.ReactNode, cla
     localStorage.setItem("sidebar-collapsed", isCollapsed.toString());
   }, [isCollapsed]);
 
-  const statusColors = customStatuses.reduce((acc, s) => {
-    acc[s.name] = `bg-[${s.color}]`;
-    return acc;
-  }, {} as Record<string, string>);
-  
-  const statusLabels = customStatuses.reduce((acc, s) => {
-    acc[s.name] = s.name;
-    return acc;
-  }, {} as Record<string, string>);
-
   // Убираем авто-сворачивание, чтобы пользователь сам решал, в каком состоянии должно быть меню
   /*
   useEffect(() => {
@@ -509,11 +495,8 @@ export function Layout({ children, className }: { children: React.ReactNode, cla
           setLocation={handleSetLocation}
           setIsMobileOpen={handleSetIsMobileOpen}
           setIsCollapsed={handleSetIsCollapsed}
-          statusColors={statusColors}
-          statusLabels={statusLabels}
           user={user}
           customStatuses={customStatuses}
-          statusColor={statusColor}
           isRemote={(user as any)?.isRemote || false}
         />
       </div>
@@ -541,11 +524,8 @@ export function Layout({ children, className }: { children: React.ReactNode, cla
                   setLocation={handleSetLocation}
                   setIsMobileOpen={handleSetIsMobileOpen}
                   setIsCollapsed={handleSetIsCollapsed}
-                  statusColors={statusColors}
-                  statusLabels={statusLabels}
                   user={user}
                   customStatuses={customStatuses}
-                  statusColor={statusColor}
                   isRemote={(user as any)?.isRemote || false}
                 />
               </SheetContent>
@@ -617,7 +597,7 @@ export function Layout({ children, className }: { children: React.ReactNode, cla
                     </SelectTrigger>
                     <SelectContent>
                       {customStatuses.map((s) => (
-                        <SelectItem key={s.id} value={s.name} onSelect={() => setStatusColor(s.color)}>
+                        <SelectItem key={s.id} value={s.name}>
                           <div className="flex items-center gap-2">
                             <span className="w-2 h-2 rounded-full" style={{ backgroundColor: s.color }} />
                             {s.name}
@@ -648,7 +628,6 @@ export function Layout({ children, className }: { children: React.ReactNode, cla
                   try {
                     await apiRequest("PUT", `/api/users/${user?.id}`, {
                       status,
-                      statusColor,
                       statusComment
                     });
                     queryClient.invalidateQueries({ queryKey: ["/api/users"] });

@@ -182,7 +182,6 @@ export default function EmployeesPage() {
     telegram: string;
     notes: string;
     status: string;
-    statusColor: string;
   } | null>(null);
 
   // Points operation state
@@ -212,12 +211,16 @@ export default function EmployeesPage() {
   });
 
   const updateStatusMutation = useMutation({
-    mutationFn: async ({ status, statusColor }: { status: string; statusColor?: string }) => {
-      const res = await apiRequest("PUT", `/api/users/${selectedEmployee?.id}`, { status, statusColor });
+    mutationFn: async ({ status }: { status: string }) => {
+      console.log("[DEBUG] updateStatusMutation called:", { employeeId: selectedEmployee?.id, status });
+      const res = await apiRequest("PUT", `/api/users/${selectedEmployee?.id}`, { status });
+      console.log("[DEBUG] updateStatusMutation response:", res.status);
       return res.json();
     },
     onSuccess: () => {
+      console.log("[DEBUG] updateStatusMutation success");
       queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+      queryClient.invalidateQueries({ queryKey: ["user-status-history", selectedEmployee?.id] });
     },
   });
 
@@ -259,7 +262,6 @@ export default function EmployeesPage() {
         telegram: selectedEmployee.telegram || "",
         notes: selectedEmployee.notes || "",
         status: selectedEmployee.status || "",
-        statusColor: selectedEmployee.statusColor || "",
       });
     }
   }, [selectedEmployee]);
@@ -656,9 +658,8 @@ export default function EmployeesPage() {
                     <Select 
                       value={editingEmployee?.status || ""} 
                       onValueChange={(value) => {
-                        const color = customStatuses.find(s => s.name === value)?.color || "";
-                        setEditingEmployee(prev => prev ? { ...prev, status: value, statusColor: color } : null);
-                        updateStatusMutation.mutate({ status: value, statusColor: color });
+                        setEditingEmployee(prev => prev ? { ...prev, status: value } : null);
+                        updateStatusMutation.mutate({ status: value });
                       }}
                     >
                       <SelectTrigger className="w-[140px] h-8">
@@ -818,7 +819,7 @@ export default function EmployeesPage() {
                         {editingEmployee?.status && customStatuses.find(s => s.name === editingEmployee.status) ? (
                           <StatusBadge 
                             status={editingEmployee.status} 
-                            color={editingEmployee.statusColor || customStatuses.find(s => s.name === editingEmployee.status)?.color} 
+                            color={customStatuses.find(s => s.name === editingEmployee.status)?.color} 
                           />
                         ) : (
                           <span className="text-xs text-muted-foreground">Не установлен</span>

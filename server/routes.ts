@@ -405,7 +405,13 @@ export async function registerRoutes(
   });
 
   app.put("/api/users/:id", async (req, res) => {
-    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+    console.log("========== PUT /api/users/:id CALLED ==========");
+    console.log("Params:", req.params);
+    console.log("Body:", req.body);
+    if (!req.isAuthenticated()) {
+      console.log("NOT AUTHENTICATED!");
+      return res.status(401).json({ message: "Unauthorized" });
+    }
     try {
       console.log("[UPDATE USER] Request received:", req.params.id);
       console.log("[UPDATE USER] Body:", JSON.stringify(req.body));
@@ -416,6 +422,11 @@ export async function registerRoutes(
       
       const newStatus = req.body.status;
       const newStatusComment = req.body.statusComment;
+      
+      console.log("[UPDATE USER] newStatus from body:", newStatus);
+      console.log("[UPDATE USER] currentUser.status:", currentUser?.status);
+      console.log("[UPDATE USER] newStatus !== currentUser.status:", newStatus && currentUser ? newStatus !== currentUser.status : "N/A");
+      
       const { isRemote, ...updateData } = req.body;
       
       console.log("[UPDATE USER] isRemote:", isRemote);
@@ -445,6 +456,12 @@ export async function registerRoutes(
       
       // If status is being changed, save to history
       if (currentUser && newStatus && newStatus !== currentUser.status) {
+        console.log("[UPDATE USER] Creating status history:", {
+          userId: req.params.id,
+          oldStatus: currentUser.status,
+          newStatus: newStatus,
+          changedBy: req.user?.id
+        });
         await storage.createUserStatusHistory({
           userId: req.params.id,
           oldStatus: currentUser.status || null,
@@ -452,6 +469,12 @@ export async function registerRoutes(
           comment: newStatusComment || null,
           changedBy: req.user!.id
         });
+        console.log("[UPDATE USER] Status history created successfully");
+      } else {
+        console.log("[UPDATE USER] NOT creating status history. Reason:");
+        if (!currentUser) console.log("  - currentUser is null");
+        if (!newStatus) console.log("  - newStatus is null/undefined");
+        if (currentUser && newStatus && newStatus === currentUser.status) console.log("  - newStatus === currentUser.status (no change)");
       }
       
       // Invalidate cache
