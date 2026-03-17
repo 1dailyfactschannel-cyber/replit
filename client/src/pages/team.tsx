@@ -58,7 +58,9 @@ import {
   Send as SendIcon,
   ChevronDown,
   Key,
-  RefreshCw
+  RefreshCw,
+  Eye,
+  EyeOff
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useLocation } from "wouter";
@@ -168,6 +170,8 @@ export default function EmployeesPage() {
     }
     setNewEmployee(prev => ({ ...prev, password }));
   };
+
+  const [showPassword, setShowPassword] = useState(false);
 
   // Get unique positions for filter
   const uniquePositions = useMemo(() => {
@@ -677,12 +681,21 @@ export default function EmployeesPage() {
                       <div className="flex gap-2">
                         <Input 
                           id="new-password" 
-                          type="password"
+                          type={showPassword ? "text" : "password"}
                           placeholder="Пароль"
                           value={newEmployee.password}
                           onChange={(e) => setNewEmployee(prev => ({ ...prev, password: e.target.value }))}
                           className="flex-1"
                         />
+                        <Button 
+                          type="button"
+                          variant="outline" 
+                          size="icon"
+                          onClick={() => setShowPassword(!showPassword)}
+                          title={showPassword ? "Скрыть пароль" : "Показать пароль"}
+                        >
+                          {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        </Button>
                         <Button 
                           type="button"
                           variant="outline" 
