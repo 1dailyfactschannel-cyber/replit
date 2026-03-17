@@ -93,6 +93,7 @@ export default function ManagementPage() {
 
   const sections = [
     { id: "team", label: "Команда", icon: Users, description: "Участники и приглашения" },
+    { id: "statuses", label: "Статусы", icon: Activity, description: "Управление статусами пользователей" },
     { id: "projects", label: "Проекты", icon: LayoutGrid, description: "Настройка проектов и приоритетов" },
     { id: "archive", label: "Архив задач", icon: Archive, description: "Архивированные задачи" },
     { id: "security", label: "Безопасность", icon: Shield, description: "Настройки безопасности аккаунта" },
@@ -194,6 +195,8 @@ export default function ManagementPage() {
                 <ArchiveManagement />
               ) : activeSection === "team" ? (
                 <TeamManagement />
+              ) : activeSection === "statuses" ? (
+                <StatusesManagement />
               ) : activeSection === "projects" ? (
                 <ProjectsManagement />
               ) : activeSection === "calls" ? (
@@ -678,6 +681,100 @@ function TeamManagement() {
     queryKey: ["/api/users"],
   });
 
+  // Department state
+  const [departments, setDepartments] = useState<{id: string; name: string; description: string | null; color: string}[]>([]);
+  const [isDeptDialogOpen, setIsDeptDialogOpen] = useState(false);
+  const [editingDept, setEditingDept] = useState<{id: string; name: string; description: string | null; color: string} | null>(null);
+  const [deptName, setDeptName] = useState("");
+  const [deptDescription, setDeptDescription] = useState("");
+  const [deptColor, setDeptColor] = useState("#3b82f6");
+  
+  const deptColors = ["#3b82f6", "#22c55e", "#ef4444", "#f59e0b", "#8b5cf6", "#ec4899", "#06b6d4", "#84cc16", "#f97316", "#6366f1"];
+
+  const { data: fetchedDepartments, refetch: refetchDepartments } = useQuery<{id: string; name: string; description: string | null; color: string}[]>({
+    queryKey: ["/api/departments"],
+  });
+
+  useEffect(() => {
+    if (fetchedDepartments) {
+      setDepartments(fetchedDepartments);
+    }
+  }, [fetchedDepartments]);
+
+  const createDeptMutation = useMutation({
+    mutationFn: async (data: { name: string; description: string; color: string }) => {
+      const res = await apiRequest("POST", "/api/departments", data);
+      return res.json();
+    },
+    onSuccess: () => {
+      refetchDepartments();
+      toast({ title: "Отдел создан", description: "Отдел успешно создан" });
+      resetDeptForm();
+    },
+    onError: (error: any) => {
+      toast({ title: "Ошибка", description: error?.message || "Не удалось создать отдел", variant: "destructive" });
+    }
+  });
+
+  const updateDeptMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: { name: string; description: string; color: string } }) => {
+      const res = await apiRequest("PUT", `/api/departments/${id}`, data);
+      return res.json();
+    },
+    onSuccess: () => {
+      refetchDepartments();
+      toast({ title: "Отдел обновлён", description: "Отдел успешно обновлён" });
+      resetDeptForm();
+    },
+    onError: (error: any) => {
+      toast({ title: "Ошибка", description: error?.message || "Не удалось обновить отдел", variant: "destructive" });
+    }
+  });
+
+  const deleteDeptMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await apiRequest("DELETE", `/api/departments/${id}`, {});
+      return res.json();
+    },
+    onSuccess: () => {
+      refetchDepartments();
+      toast({ title: "Отдел удалён", description: "Отдел успешно удалён" });
+    },
+    onError: (error: any) => {
+      toast({ title: "Ошибка", description: error?.message || "Не удалось удалить отдел", variant: "destructive" });
+    }
+  });
+
+  const resetDeptForm = () => {
+    setDeptName("");
+    setDeptDescription("");
+    setDeptColor("#3b82f6");
+    setEditingDept(null);
+    setIsDeptDialogOpen(false);
+  };
+
+  const handleEditDepartment = (dept: { id: string; name: string; description: string | null; color: string }) => {
+    setEditingDept(dept);
+    setDeptName(dept.name);
+    setDeptDescription(dept.description || "");
+    setDeptColor(dept.color);
+    setIsDeptDialogOpen(true);
+  };
+
+  const handleDeleteDepartment = (id: string, name: string) => {
+    if (confirm(`Вы уверены, что хотите удалить отдел "${name}"?`)) {
+      deleteDeptMutation.mutate(id);
+    }
+  };
+
+  const handleSaveDepartment = () => {
+    if (editingDept) {
+      updateDeptMutation.mutate({ id: editingDept.id, data: { name: deptName, description: deptDescription, color: deptColor } });
+    } else {
+      createDeptMutation.mutate({ name: deptName, description: deptDescription, color: deptColor });
+    }
+  };
+
   const deleteUserMutation = useMutation({
     mutationFn: async (id: string) => {
       const res = await apiRequest("DELETE", `/api/users/${id}`);
@@ -871,8 +968,128 @@ function TeamManagement() {
               </Button>
             </CardContent>
           </Card>
+
+          {/* Departments Section */}
+          <div className="space-y-4">
+            <div className="flex items-center justify-between px-1">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+                <Users className="w-3.5 h-3.5" />
+                Отделы
+              </h4>
+              <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={() => setIsDeptDialogOpen(true)}>
+                <Plus className="w-3 h-3" />
+                Добавить
+              </Button>
+            </div>
+            
+            <Card className="border-border/50 shadow-sm overflow-hidden bg-card/50">
+              <CardContent className="p-0">
+                <div className="divide-y divide-border/50">
+                  {departments.length === 0 ? (
+                    <div className="p-8 text-center space-y-2">
+                      <Users className="w-8 h-8 text-muted-foreground opacity-20 mx-auto" />
+                      <p className="text-[11px] text-muted-foreground">Нет отделов. Создайте первый отдел.</p>
+                    </div>
+                  ) : (
+                    departments.map((dept) => (
+                      <div key={dept.id} className="p-4 flex items-center justify-between hover:bg-muted/30 transition-colors group">
+                        <div className="flex items-center gap-3">
+                          <div 
+                            className="w-3 h-3 rounded-full" 
+                            style={{ backgroundColor: dept.color }}
+                          />
+                          <div className="flex flex-col">
+                            <span className="text-sm font-medium">{dept.name}</span>
+                            {dept.description && (
+                              <span className="text-[11px] text-muted-foreground">{dept.description}</span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                          <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                            onClick={() => handleEditDepartment(dept)}
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                          </Button>
+                          <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            className="h-7 w-7 text-muted-foreground hover:text-rose-500"
+                            onClick={() => handleDeleteDepartment(dept.id, dept.name)}
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </Button>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
         </div>
       </div>
+
+      {/* Department Dialog */}
+      <Dialog open={isDeptDialogOpen} onOpenChange={setIsDeptDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{editingDept ? "Редактировать отдел" : "Новый отдел"}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>Название</Label>
+              <Input
+                value={deptName}
+                onChange={(e) => setDeptName(e.target.value)}
+                placeholder="Например: Разработка"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Описание</Label>
+              <Input
+                value={deptDescription}
+                onChange={(e) => setDeptDescription(e.target.value)}
+                placeholder="Краткое описание отдела"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Цвет</Label>
+              <div className="flex gap-2 flex-wrap">
+                {deptColors.map((c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    className={cn(
+                      "w-8 h-8 rounded-full transition-transform",
+                      deptColor === c && "ring-2 ring-offset-2 ring-primary scale-110"
+                    )}
+                    style={{ backgroundColor: c }}
+                    onClick={() => setDeptColor(c)}
+                  />
+                ))}
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setIsDeptDialogOpen(false); resetDeptForm(); }}>
+              Отмена
+            </Button>
+            <Button
+              onClick={handleSaveDepartment}
+              disabled={!deptName || createDeptMutation.isPending || updateDeptMutation.isPending}
+            >
+              {createDeptMutation.isPending || updateDeptMutation.isPending ? (
+                <Loader2 className="w-4 h-4 animate-spin mr-2" />
+              ) : null}
+              {editingDept ? "Сохранить" : "Создать"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -981,6 +1198,263 @@ function TelegramSettings() {
           </Button>
         </CardFooter>
       </Card>
+    </div>
+  );
+}
+
+interface CustomStatus {
+  id: string;
+  name: string;
+  color: string;
+  icon: string | null;
+  isDefault: boolean;
+  sortOrder: number;
+}
+
+function StatusesManagement() {
+  const [statuses, setStatuses] = useState<CustomStatus[]>([]);
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [editingStatus, setEditingStatus] = useState<CustomStatus | null>(null);
+  const [name, setName] = useState("");
+  const [color, setColor] = useState("#22c55e");
+  const [isDefault, setIsDefault] = useState(false);
+
+  const { data: fetchedStatuses, isLoading, refetch } = useQuery<CustomStatus[]>({
+    queryKey: ["/api/custom-statuses"],
+  });
+
+  useEffect(() => {
+    if (fetchedStatuses) {
+      setStatuses(fetchedStatuses);
+    }
+  }, [fetchedStatuses]);
+
+  const createMutation = useMutation({
+    mutationFn: async (data: { name: string; color: string; isDefault: boolean }) => {
+      const res = await apiRequest("POST", "/api/custom-statuses", data);
+      return res.json();
+    },
+    onSuccess: () => {
+      refetch();
+      setIsDialogOpen(false);
+      resetForm();
+    },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: Partial<CustomStatus> }) => {
+      const res = await apiRequest("PUT", `/api/custom-statuses/${id}`, data);
+      return res.json();
+    },
+    onSuccess: () => {
+      refetch();
+      setIsDialogOpen(false);
+      resetForm();
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await apiRequest("DELETE", `/api/custom-statuses/${id}`, {});
+      return res.json();
+    },
+    onSuccess: () => {
+      refetch();
+    },
+  });
+
+  const setDefaultMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await apiRequest("POST", `/api/custom-statuses/${id}/set-default`, {});
+      return res.json();
+    },
+    onSuccess: () => {
+      refetch();
+    },
+  });
+
+  const resetForm = () => {
+    setName("");
+    setColor("#22c55e");
+    setIsDefault(false);
+    setEditingStatus(null);
+  };
+
+  const handleOpenDialog = (status?: CustomStatus) => {
+    if (status) {
+      setEditingStatus(status);
+      setName(status.name);
+      setColor(status.color);
+      setIsDefault(status.isDefault);
+    } else {
+      resetForm();
+    }
+    setIsDialogOpen(true);
+  };
+
+  const handleSave = () => {
+    if (editingStatus) {
+      updateMutation.mutate({ id: editingStatus.id, data: { name, color, isDefault } });
+    } else {
+      createMutation.mutate({ name, color, isDefault });
+    }
+  };
+
+  const handleDelete = (id: string) => {
+    if (confirm("Вы уверены, что хотите удалить этот статус?")) {
+      deleteMutation.mutate(id);
+    }
+  };
+
+  const handleSetDefault = (id: string) => {
+    setDefaultMutation.mutate(id);
+  };
+
+  const colors = [
+    "#22c55e", "#ef4444", "#3b82f6", "#f59e0b", "#8b5cf6", 
+    "#ec4899", "#06b6d4", "#84cc16", "#f97316", "#6366f1"
+  ];
+
+  return (
+    <div className="animate-in fade-in slide-in-from-bottom-2 duration-300 space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-bold">Статусы пользователей</h2>
+          <p className="text-muted-foreground mt-1">Создавайте и управляйте статусами для сотрудников</p>
+        </div>
+        <Button onClick={() => handleOpenDialog()} className="gap-2">
+          <Plus className="w-4 h-4" />
+          Добавить статус
+        </Button>
+      </div>
+
+      <div className="grid gap-4">
+        {isLoading ? (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+          </div>
+        ) : statuses.length === 0 ? (
+          <Card className="border-border/50">
+            <CardContent className="p-8 flex flex-col items-center justify-center text-center">
+              <Activity className="w-12 h-12 text-muted-foreground mb-4" />
+              <p className="text-muted-foreground">Нет статусов. Создайте первый статус.</p>
+            </CardContent>
+          </Card>
+        ) : (
+          statuses.map((status) => (
+            <Card key={status.id} className="border-border/50">
+              <CardContent className="p-4 flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <div
+                    className="w-4 h-4 rounded-full"
+                    style={{ backgroundColor: status.color }}
+                  />
+                  <div>
+                    <p className="font-medium">{status.name}</p>
+                    {status.isDefault && (
+                      <span className="text-xs text-muted-foreground">По умолчанию</span>
+                    )}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  {!status.isDefault && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleSetDefault(status.id)}
+                      disabled={setDefaultMutation.isPending}
+                    >
+                      По умолчанию
+                    </Button>
+                  )}
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => handleOpenDialog(status)}
+                  >
+                    <Pencil className="w-4 h-4" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => handleDelete(status.id)}
+                    disabled={deleteMutation.isPending}
+                  >
+                    <Trash2 className="w-4 h-4 text-rose-500" />
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          ))
+        )}
+      </div>
+
+      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {editingStatus ? "Редактировать статус" : "Новый статус"}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>Название</Label>
+              <Input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Например: Занят"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Цвет</Label>
+              <div className="flex gap-2 flex-wrap">
+                {colors.map((c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    className={cn(
+                      "w-8 h-8 rounded-full transition-transform",
+                      color === c && "ring-2 ring-offset-2 ring-primary scale-110"
+                    )}
+                    style={{ backgroundColor: c }}
+                    onClick={() => setColor(c)}
+                  />
+                ))}
+              </div>
+              <Input
+                type="color"
+                value={color}
+                onChange={(e) => setColor(e.target.value)}
+                className="h-10 w-full"
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="isDefault"
+                checked={isDefault}
+                onChange={(e) => setIsDefault(e.target.checked)}
+                className="w-4 h-4"
+              />
+              <Label htmlFor="isDefault">Статус по умолчанию</Label>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
+              Отмена
+            </Button>
+            <Button
+              onClick={handleSave}
+              disabled={!name || createMutation.isPending || updateMutation.isPending}
+            >
+              {createMutation.isPending || updateMutation.isPending ? (
+                <Loader2 className="w-4 h-4 animate-spin mr-2" />
+              ) : null}
+              {editingStatus ? "Сохранить" : "Создать"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

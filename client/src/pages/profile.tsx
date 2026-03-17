@@ -6,6 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Camera, Mail, Phone, Send, Briefcase, User, Save, FileText, Bell, ExternalLink, CheckCircle2, Building2, Loader2, Coins, TrendingUp, ShoppingBag, Award } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
@@ -26,6 +27,10 @@ export default function Profile() {
   const { data: transactions, isLoading: transactionsLoading } = useQuery<any[]>({
     queryKey: ["/api/users/me/points-history"],
     enabled: !!user,
+  });
+
+  const { data: departments = [] } = useQuery<{id: string; name: string; color: string}[]>({
+    queryKey: ["/api/departments"],
   });
 
   // Parse tab from URL
@@ -332,12 +337,25 @@ export default function Profile() {
                     <Label htmlFor="department" className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
                       <Building2 className="w-3.5 h-3.5" /> Отдел
                     </Label>
-                    <Input 
-                      id="department" 
-                      value={profile.department || ""} 
-                      onChange={(e) => setProfile({...profile, department: e.target.value})}
-                      className="bg-secondary/30 border-border/50 focus:bg-background transition-all"
-                    />
+                    <Select 
+                      value={profile.department || "__empty__"} 
+                      onValueChange={(value) => setProfile({...profile, department: value === "__empty__" ? "" : value})}
+                    >
+                      <SelectTrigger className="bg-secondary/30 border-border/50 focus:bg-background transition-all">
+                        <SelectValue placeholder="Выберите отдел" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__empty__">Без отдела</SelectItem>
+                        {departments.map((dept) => (
+                          <SelectItem key={dept.id} value={dept.name}>
+                            <div className="flex items-center gap-2">
+                              <span className="w-2 h-2 rounded-full" style={{ backgroundColor: dept.color }} />
+                              {dept.name}
+                            </div>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
 
                   <Separator />

@@ -2,6 +2,7 @@ import { Server as HttpServer } from "http";
 import { Server as SocketIOServer } from "socket.io";
 import { log } from "./index";
 import { getStorage } from "./postgres-storage";
+import { mediasoupServer } from "./mediasoup";
 
 const storage = getStorage();
 
@@ -206,8 +207,98 @@ export function setupWebSockets(httpServer: HttpServer) {
       });
     });
 
-    socket.on("disconnect", () => {
+    // ==================================
+    // Mediasoup WebRTC Signaling
+    // ==================================
+
+    // Join a call room and create transport
+    socket.on("mediasoup:join", async (data: { roomId: string; userId: string }) => {
+      log(`User ${data.userId} joining mediasoup room ${data.roomId}`, "mediasoup");
+      
+      try {
+        const transport = await mediasoupServer.createWebRtcTransport(data.roomId, data.userId);
+        const router = mediasoupServer.getRouter(data.roomId);
+        
+        log(`Router for room ${data.roomId}: ${router ? 'found' : 'not found'}`, "mediasoup");
+        if (router) {
+          log(`Router RTP capabilities: ${JSON.stringify(router.rtpCapabilities)}`, "mediasoup");
+        }
+        
+        socket.emit("mediasoup:transport-created", {
+          id: transport.id,
+          iceParameters: transport.iceParameters,
+          iceCandidates: transport.iceCandidates,
+          dtlsParameters: transport.dtlsParameters,
+          rtpCapabilities: router ? router.rtpCapabilities : null
+        });
+      } catch (error: any) {
+        log(`Error creating transport: ${error.message}`, "mediasoup");
+        socket.emit("mediasoup:error", { message: "Failed to create transport" });
+      }
+    });
+
+    // Connect transport with dtlsParameters
+    socket.on("mediasoup:connect-transport", async (data: { userId: string; dtlsParameters: any }) => {
+      try {
+        const transport = mediasoupServer.getTransport(data.userId);
+        if (transport) {
+          await transport.connect({ dtlsParameters: data.dtlsParameters });
+          log(`Transport connected for user: ${data.userId}`, "mediasoup");
+        }
+      } catch (error: any) {
+        log(`Error connecting transport: ${error.message}`, "mediasoup");
+      }
+    });
+
+    // Produce (publish) media stream
+    socket.on("mediasoup:produce", async (data: { userId: string; kind: 'audio' | 'video'; rtpParameters: any }) => {
+      try {
+        const producer = await mediasoupServer.createProducer(data.userId, data.kind, data.rtpParameters);
+        
+        if (producer) {
+          socket.emit("mediasoup:producer-id", { id: producer.id });
+          
+          // Notify other participants in the same room
+          const roomId = producer.appData?.roomId || 'unknown';
+          socket.to(`room-${roomId}`).emit("mediasoup:new-producer", {
+            producerId: producer.id,
+            userId: data.userId,
+            kind: data.kind
+          });
+        }
+      } catch (error: any) {
+        log(`Error producing media: ${error.message}`, "mediasoup");
+      }
+    });
+
+    // Consume (subscribe to) media stream
+    socket.on("mediasoup:consume", async (data: { userId: string; producerId: string; roomId: string }) => {
+      try {
+        const consumer = await mediasoupServer.createConsumer(data.userId, data.producerId, data.roomId);
+        
+        if (consumer) {
+          socket.emit("mediasoup:consumer-created", {
+            id: consumer.id,
+            producerId: consumer.producerId,
+            kind: consumer.kind,
+            rtpParameters: consumer.rtpParameters
+          });
+        }
+      } catch (error: any) {
+        log(`Error consuming media: ${error.message}`, "mediasoup");
+      }
+    });
+
+    // Resume consumer (after pause)
+    socket.on("mediasoup:resume-consumer", async (data: { consumerId: string }) => {
+      // Implementation would go here
+    });
+
+    socket.on("disconnect", async () => {
       log(`Socket ${socket.id} disconnected`, "socket.io");
+      
+      // Clean up mediasoup resources for disconnected user
+      // This would require tracking userId by socket.id
     });
   });
 

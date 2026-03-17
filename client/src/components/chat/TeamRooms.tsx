@@ -18,6 +18,8 @@ import {
   Lock,
   Volume2,
   VolumeX,
+  Monitor,
+  MonitorOff,
   MoreVertical,
   UserX,
   X,
@@ -41,6 +43,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { useSocket } from "@/hooks/use-socket";
 import { cn } from "@/lib/utils";
 import type { Socket } from "socket.io-client";
+import { Device, types as mediasoupTypes } from 'mediasoup-client';
 
 interface TeamRoom {
   id: string;
@@ -100,6 +103,7 @@ export function TeamRooms({ autoJoinRoomId }: { autoJoinRoomId?: string }) {
   const [isJoined, setIsJoined] = useState(false);
   const [isMicOn, setIsMicOn] = useState(true);
   const [isVideoOn, setIsVideoOn] = useState(true);
+  const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [isSpeakerOn, setIsSpeakerOn] = useState(true);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [participants, setParticipants] = useState<CallParticipant[]>([]);
@@ -112,6 +116,35 @@ export function TeamRooms({ autoJoinRoomId }: { autoJoinRoomId?: string }) {
   const analyserRef = useRef<AnalyserNode | null>(null);
   const microphoneStreamRef = useRef<MediaStream | null>(null);
   const animationFrameRef = useRef<number | null>(null);
+
+  // Mediasoup refs
+  const mediasoupRef = useRef<{
+    device: Device | null;
+    sendTransport: any;
+    recvTransport: any;
+    recvTransports: Map<string, any>;
+    producers: Map<string, any>;
+    consumers: Map<string, any>;
+    localStream: MediaStream | null;
+    screenShareStream: MediaStream | null;
+    transportParams: any;
+  }>({
+    device: null,
+    sendTransport: null,
+    recvTransport: null,
+    recvTransports: new Map(),
+    producers: new Map(),
+    consumers: new Map(),
+    localStream: null,
+    screenShareStream: null,
+    transportParams: null
+  });
+
+  // Video element refs
+  const localVideoRef = useRef<HTMLVideoElement>(null);
+  const activeSpeakerVideoRef = useRef<HTMLVideoElement>(null);
+  const videoRefs = useRef<Map<string, React.RefObject<HTMLVideoElement>>>(new Map());
+  const [activeSpeaker, setActiveSpeaker] = useState<CallParticipant | null>(null);
 
   const { data: rooms = [], isLoading: roomsLoading } = useQuery<TeamRoom[]>({
     queryKey: ["/api/team-rooms"],
@@ -129,6 +162,321 @@ export function TeamRooms({ autoJoinRoomId }: { autoJoinRoomId?: string }) {
     }
   }, [autoJoinRoomId, rooms, roomsLoading, socket, currentUser, isJoined]);
 
+  // ==================================
+  // Mediasoup Initialization
+  // ==================================
+  
+  const getIceServers = () => {
+    const turnServer = process.env.TURN_SERVER || 'localhost';
+    const turnPort = process.env.TURN_PORT || '3478';
+    
+    // STUN servers (public, always available)
+    const iceServers: { urls: string; username?: string; credential?: string }[] = [
+      { urls: 'stun:stun.l.google.com:19302' },
+      { urls: 'stun:stun1.l.google.com:19302' },
+      { urls: 'stun:stun2.l.google.com:19302' }
+    ];
+    
+    // Add TURN only if credentials are provided
+    if (process.env.TURN_USERNAME && process.env.TURN_PASSWORD) {
+      iceServers.push({
+        urls: `turn:${turnServer}:${turnPort}`,
+        username: process.env.TURN_USERNAME,
+        credential: process.env.TURN_PASSWORD
+      });
+    }
+    
+    return iceServers;
+  };
+
+  const initMediasoup = async (): Promise<boolean> => {
+    try {
+      const device = new Device();
+      mediasoupRef.current.device = device;
+      
+      // We need to get router rtpCapabilities from server
+      // This will be sent when transport is created
+      return true;
+    } catch (error: any) {
+      console.error('Failed to initialize mediasoup:', error);
+      toast.error('Не удалось инициализировать видеозвонок');
+      return false;
+    }
+  };
+
+  const getMediaStream = async (): Promise<MediaStream | null> => {
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+    
+    try {
+      // Try to get both video and audio
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          width: { ideal: isMobile ? 320 : 640 },
+          height: { ideal: isMobile ? 240 : 480 },
+          frameRate: { ideal: 30 },
+          facingMode: isMobile ? 'user' : undefined
+        },
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        }
+      });
+      
+      console.log('[Media] Got stream with video+audio');
+      mediasoupRef.current.localStream = stream;
+      
+      if (localVideoRef.current) {
+        localVideoRef.current.srcObject = stream;
+      }
+      
+      return stream;
+    } catch (error: any) {
+      console.warn('[Media] Failed to get video+audio, trying audio only:', error.name);
+      
+      // Try audio only
+      try {
+        const audioStream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true
+          }
+        });
+        
+        console.log('[Media] Got audio-only stream');
+        mediasoupRef.current.localStream = audioStream;
+        return audioStream;
+      } catch (audioError: any) {
+        console.warn('[Media] Failed to get audio:', audioError.name);
+        
+        // Try video only
+        try {
+          const videoStream = await navigator.mediaDevices.getUserMedia({
+            video: {
+              width: { ideal: isMobile ? 320 : 640 },
+              height: { ideal: isMobile ? 240 : 480 },
+              frameRate: { ideal: 30 },
+              facingMode: isMobile ? 'user' : undefined
+            }
+          });
+          
+          console.log('[Media] Got video-only stream');
+          mediasoupRef.current.localStream = videoStream;
+          
+          if (localVideoRef.current) {
+            localVideoRef.current.srcObject = videoStream;
+          }
+          
+          return videoStream;
+        } catch (videoError: any) {
+          console.warn('[Media] Failed to get video:', videoError.name);
+          // No devices available
+          return null;
+        }
+      }
+    }
+  };
+
+  const checkBrowserSupport = (): boolean => {
+    const isSupported = !!(
+      navigator.mediaDevices &&
+      typeof navigator.mediaDevices.getUserMedia === 'function' &&
+      window.RTCPeerConnection
+    );
+    
+    if (!isSupported) {
+      toast.error('Ваш браузер не поддерживает видеозвонки. Пожалуйста, используйте Chrome 90+, Firefox 88+ или Safari 14+');
+      return false;
+    }
+    
+    return true;
+  };
+
+  // ==================================
+  // Mediasoup Signaling
+  // ==================================
+
+  const joinMediasoupRoom = async (roomId: string, userId: string) => {
+    if (!socket) return;
+    
+    socket.emit('mediasoup:join', { roomId, userId });
+    
+    return new Promise<void>((resolve, reject) => {
+      socket.once('mediasoup:transport-created', async (data: any) => {
+        try {
+          if (!mediasoupRef.current.device) {
+            reject(new Error('Device not initialized'));
+            return;
+          }
+
+          console.log('[Mediasoup] Received transport data:', data);
+          console.log('[Mediasoup] RTP Capabilities:', data.rtpCapabilities);
+
+          // Load device with router RTP capabilities
+          if (data.rtpCapabilities) {
+            console.log('[Mediasoup] Loading device with RTP capabilities...');
+            await mediasoupRef.current.device.load({ routerRtpCapabilities: data.rtpCapabilities });
+            console.log('[Mediasoup] Device loaded successfully');
+          } else {
+            console.warn('[Mediasoup] No RTP capabilities received from server!');
+          }
+
+          // Use existing local stream if available (from handleJoin)
+          const stream = mediasoupRef.current.localStream;
+          
+          console.log('[Mediasoup] Creating send transport...');
+          const transport = mediasoupRef.current.device.createSendTransport({
+            id: data.id,
+            iceParameters: data.iceParameters,
+            iceCandidates: data.iceCandidates,
+            dtlsParameters: data.dtlsParameters,
+            iceServers: getIceServers()
+          });
+          console.log('[Mediasoup] Send transport created');
+
+          transport.on('connect', ({ dtlsParameters }: any) => {
+            console.log('[Mediasoup] Transport connect event, socket connected:', socket.connected);
+            if (socket.connected) {
+              socket.emit('mediasoup:connect-transport', {
+                userId,
+                dtlsParameters
+              });
+            } else {
+              console.error('[Mediasoup] Socket not connected!');
+            }
+          });
+
+          transport.on('produce', async (parameters: any) => {
+            console.log('[Mediasoup] Transport produce event:', parameters.kind, 'socket connected:', socket.connected);
+            if (socket.connected) {
+              socket.emit('mediasoup:produce', {
+                userId,
+                kind: parameters.kind,
+                rtpParameters: parameters.rtpParameters
+              });
+            } else {
+              console.error('[Mediasoup] Socket not connected for produce!');
+            }
+          });
+
+          mediasoupRef.current.sendTransport = transport;
+          mediasoupRef.current.transportParams = {
+            id: data.id,
+            iceParameters: data.iceParameters,
+            iceCandidates: data.iceCandidates,
+            dtlsParameters: data.dtlsParameters
+          };
+
+          if (stream) {
+            const videoTrack = stream.getVideoTracks()[0];
+            const audioTrack = stream.getAudioTracks()[0];
+
+            console.log('[Mediasoup] Stream available. Video:', !!videoTrack, 'Audio:', !!audioTrack);
+
+            // Produce tracks without waiting (handled asynchronously)
+            if (videoTrack) {
+              console.log('[Mediasoup] Producing video track...');
+              transport.produce({ track: videoTrack })
+                .then(() => console.log('[Mediasoup] Video track produced'))
+                .catch(e => console.error('[Mediasoup] produce video error:', e));
+            }
+            if (audioTrack) {
+              console.log('[Mediasoup] Producing audio track...');
+              transport.produce({ track: audioTrack })
+                .then(() => console.log('[Mediasoup] Audio track produced'))
+                .catch(e => console.error('[Mediasoup] produce audio error:', e));
+            }
+          } else {
+            console.log('[Mediasoup] No local stream, joining as listener only');
+          }
+
+          console.log('[Mediasoup] Joining completed, resolving...');
+          resolve();
+        } catch (error) {
+          console.error('[Mediasoup] Error in joinMediasoupRoom:', error);
+          reject(error);
+        }
+      });
+
+      // Don't use timeout - let it resolve naturally
+    });
+  };
+
+  // Listen for new producers from other participants
+  useEffect(() => {
+    if (!socket || !isJoined) return;
+
+    const handleNewProducer = (data: { producerId: string; userId: string; kind: string }) => {
+      // Subscribe to new producer
+      socket.emit('mediasoup:consume', {
+        userId: currentUser.id,
+        producerId: data.producerId,
+        roomId: activeRoom?.id
+      });
+    };
+
+    socket.on('mediasoup:new-producer', handleNewProducer);
+
+    return () => {
+      socket.off('mediasoup:new-producer', handleNewProducer);
+    };
+  }, [socket, isJoined, currentUser]);
+
+  // Handle incoming consumer creation
+  useEffect(() => {
+    if (!socket || !isJoined) return;
+
+    const handleConsumerCreated = async (data: any) => {
+      if (mediasoupRef.current.device) {
+        try {
+          // Create recv transport if not already created
+          if (!mediasoupRef.current.recvTransport && mediasoupRef.current.transportParams) {
+            mediasoupRef.current.recvTransport = await mediasoupRef.current.device.createRecvTransport({
+              id: mediasoupRef.current.transportParams.id,
+              iceParameters: mediasoupRef.current.transportParams.iceParameters,
+              iceCandidates: mediasoupRef.current.transportParams.iceCandidates,
+              dtlsParameters: mediasoupRef.current.transportParams.dtlsParameters,
+              iceServers: getIceServers()
+            });
+            
+            mediasoupRef.current.recvTransport.on('connect', ({ dtlsParameters }: any) => {
+              socket.emit('mediasoup:connect-transport', {
+                userId: currentUser.id,
+                dtlsParameters
+              });
+            });
+          }
+
+          if (!mediasoupRef.current.recvTransport) {
+            throw new Error('Recv transport not created');
+          }
+
+          const consumer = await mediasoupRef.current.recvTransport.consume({
+            id: data.id,
+            producerId: data.producerId,
+            kind: data.kind,
+            rtpParameters: data.rtpParameters
+          });
+
+          // Display remote video
+          const videoRef = videoRefs.current.get(data.producerId);
+          if (videoRef?.current && consumer.kind === 'video') {
+            videoRef.current.srcObject = new MediaStream([consumer.track]);
+          }
+        } catch (error: any) {
+          console.error('Failed to create consumer:', error);
+        }
+      }
+    };
+
+    socket.on('mediasoup:consumer-created', handleConsumerCreated);
+
+    return () => {
+      socket.off('mediasoup:consumer-created', handleConsumerCreated);
+    };
+  }, [socket, isJoined, currentUser]);
+
   const { data: callSettings } = useQuery<CallSettings>({
     queryKey: ["/api/call-settings"],
     enabled: isJoined,
@@ -139,6 +487,12 @@ export function TeamRooms({ autoJoinRoomId }: { autoJoinRoomId?: string }) {
     enabled: !!activeRoom && isJoined,
     refetchInterval: isJoined ? 5000 : false,
   });
+
+  // Update active speaker based on participants
+  useEffect(() => {
+    const speakingParticipant = participants.find(p => p.isSpeaking);
+    setActiveSpeaker(speakingParticipant || null);
+  }, [participants]);
 
   const updateSettingsMutation = useMutation({
     mutationFn: async (settings: Partial<CallSettings>) => {
@@ -328,10 +682,26 @@ export function TeamRooms({ autoJoinRoomId }: { autoJoinRoomId?: string }) {
     getDevices();
   }, [showSettingsDialog]);
 
-  const handleJoin = (room: TeamRoom) => {
+  const handleJoin = async (room: TeamRoom) => {
     setActiveRoom(room);
     setIsJoined(true);
     setShowParticipantsPanel(true);
+    
+    // Check browser support
+    if (!checkBrowserSupport()) {
+      setIsJoined(false);
+      setActiveRoom(null);
+      return;
+    }
+    
+    // Initialize mediasoup and get media stream
+    await initMediasoup();
+    const stream = await getMediaStream();
+    
+    // If no media devices, show notification but stay in room
+    if (!stream) {
+      toast.warning('Камера или микрофон не найдены. Вы присоединились без видео.');
+    }
     
     // Join via socket
     if (socket && currentUser) {
@@ -340,6 +710,14 @@ export function TeamRooms({ autoJoinRoomId }: { autoJoinRoomId?: string }) {
         userId: currentUser.id,
         user: currentUser
       });
+      
+      // Join mediasoup room
+      try {
+        await joinMediasoupRoom(room.id, currentUser.id);
+      } catch (error: any) {
+        console.error('Failed to join mediasoup room:', error);
+        toast.error('Не удалось присоединиться к видеозвонку');
+      }
     }
     
     notify(`Вы присоединились к залу: ${room.name}`, {
@@ -356,6 +734,35 @@ export function TeamRooms({ autoJoinRoomId }: { autoJoinRoomId?: string }) {
       });
     }
     
+    // Cleanup mediasoup resources
+    if (mediasoupRef.current.localStream) {
+      mediasoupRef.current.localStream.getTracks().forEach(track => track.stop());
+      mediasoupRef.current.localStream = null;
+    }
+    
+    // Cleanup screen share stream
+    if (mediasoupRef.current.screenShareStream) {
+      mediasoupRef.current.screenShareStream.getTracks().forEach(track => track.stop());
+      mediasoupRef.current.screenShareStream = null;
+    }
+    
+    setIsScreenSharing(false);
+    
+    mediasoupRef.current.sendTransport = null;
+    mediasoupRef.current.recvTransports.clear();
+    mediasoupRef.current.producers.clear();
+    mediasoupRef.current.consumers.clear();
+    
+    if (localVideoRef.current) {
+      localVideoRef.current.srcObject = null;
+    }
+    
+    videoRefs.current.forEach(ref => {
+      if (ref.current) {
+        ref.current.srcObject = null;
+      }
+    });
+    
     setIsJoined(false);
     setActiveRoom(null);
     setParticipants([]);
@@ -363,37 +770,173 @@ export function TeamRooms({ autoJoinRoomId }: { autoJoinRoomId?: string }) {
     setIsSpeaking(false);
     setIsMicOn(true);
     setIsVideoOn(true);
+    setActiveSpeaker(null);
     notify("Вы вышли из командного зала", { internalOnly: true });
   };
 
   const toggleMic = () => {
     const newState = !isMicOn;
-    setIsMicOn(newState);
     
-    // Reset speaking state when turning off microphone
-    if (!newState) {
-      setIsSpeaking(false);
+    if (!mediasoupRef.current.localStream) {
+      toast.error('Микрофон недоступен. Попробуйте перезайти в звонок.');
+      return;
     }
     
-    if (socket && activeRoom && currentUser) {
-      socket.emit("call:toggle-mic", {
-        roomId: activeRoom.id,
-        userId: currentUser.id,
-        isOn: newState
-      });
+    const audioTrack = mediasoupRef.current.localStream.getAudioTracks()[0];
+    if (audioTrack) {
+      audioTrack.enabled = newState;
+      setIsMicOn(newState);
+      
+      if (socket && activeRoom && currentUser) {
+        socket.emit("call:toggle-mic", {
+          roomId: activeRoom.id,
+          userId: currentUser.id,
+          isOn: newState
+        });
+      }
     }
   };
 
   const toggleVideo = () => {
     const newState = !isVideoOn;
-    setIsVideoOn(newState);
     
-    if (socket && activeRoom && currentUser) {
-      socket.emit("call:toggle-video", {
-        roomId: activeRoom.id,
-        userId: currentUser.id,
-        isOn: newState
+    const stream = mediasoupRef.current.localStream;
+    const videoTrack = stream?.getVideoTracks()[0];
+    
+    if (videoTrack) {
+      // Если есть видео трек - переключаем
+      videoTrack.enabled = newState;
+      setIsVideoOn(newState);
+      
+      if (socket && activeRoom && currentUser) {
+        socket.emit("call:toggle-video", {
+          roomId: activeRoom.id,
+          userId: currentUser.id,
+          isOn: newState
+        });
+      }
+    } else {
+      // Если нет видео - просто переключаем состояние UI
+      setIsVideoOn(newState);
+      toast.info(newState ? 'Включите камеру в настройках устройства' : 'Камера выключена');
+    }
+  };
+
+  const switchCamera = async (deviceId: string) => {
+    if (!mediasoupRef.current.localStream) {
+      toast.error('Камера недоступна.');
+      return;
+    }
+    
+    try {
+      // Get new video stream
+      const newStream = await navigator.mediaDevices.getUserMedia({
+        video: { deviceId: { exact: deviceId } },
+        audio: false
       });
+      
+      const newVideoTrack = newStream.getVideoTracks()[0];
+      
+      // Stop old video track
+      const oldVideoTrack = mediasoupRef.current.localStream.getVideoTracks()[0];
+      if (oldVideoTrack) {
+        oldVideoTrack.stop();
+        mediasoupRef.current.localStream.removeTrack(oldVideoTrack);
+      }
+      
+      // Add new track to local stream
+      mediasoupRef.current.localStream.addTrack(newVideoTrack);
+      
+      // Update local video element
+      if (localVideoRef.current) {
+        localVideoRef.current.srcObject = mediasoupRef.current.localStream;
+      }
+      
+      // Update mediasoup producer
+      const producers = Array.from(mediasoupRef.current.sendTransport?.producers || []);
+      const videoProducer = producers.find((p: any) => p.kind === 'video');
+      
+      // Simple-peer doesn't support replaceTrack, so we need to restart the call
+      // This is a simplified implementation
+      if (videoProducer && (videoProducer as any).replaceTrack) {
+        await (videoProducer as any).replaceTrack({ track: newVideoTrack });
+      } else {
+        console.warn('replaceTrack not available on producer - camera switch may require reconnection');
+        // For now, just update the local stream
+      }
+      
+      // Save preference
+      localStorage.setItem('preferredCamera', deviceId);
+      await apiRequest("PUT", `/api/call-settings`, { preferredCamera: deviceId });
+      
+      toast.success('Камера изменена');
+    } catch (error: any) {
+      console.error('Failed to switch camera:', error);
+      toast.error('Не удалось переключить камеру');
+    }
+  };
+
+  const toggleScreenShare = async () => {
+    const sendTransport = mediasoupRef.current.sendTransport;
+    
+    if (isScreenSharing) {
+      // Остановить демонстрацию экрана
+      console.log('[ScreenShare] Stopping screen share');
+      if (mediasoupRef.current.screenShareStream) {
+        mediasoupRef.current.screenShareStream.getTracks().forEach(track => track.stop());
+        mediasoupRef.current.screenShareStream = null;
+      }
+      
+      // Вернуть показ камеры
+      if (localVideoRef.current && mediasoupRef.current.localStream) {
+        localVideoRef.current.srcObject = mediasoupRef.current.localStream;
+      }
+      
+      setIsScreenSharing(false);
+      toast.info('Демонстрация экрана остановлена');
+    } else {
+      // Начать демонстрацию экрана
+      try {
+        console.log('[ScreenShare] Starting screen share...');
+        const screenStream = await navigator.mediaDevices.getDisplayMedia({
+          video: { cursor: "always" },
+          audio: false
+        });
+        
+        console.log('[ScreenShare] Got screen stream, tracks:', screenStream.getVideoTracks().length);
+        mediasoupRef.current.screenShareStream = screenStream;
+        setIsScreenSharing(true);
+        toast.success('Демонстрация экрана началась');
+        
+        // Показать экран в local video
+        if (localVideoRef.current) {
+          localVideoRef.current.srcObject = screenStream;
+        }
+        
+        // Отправить screen track в Mediasoup
+        const screenTrack = screenStream.getVideoTracks()[0];
+        console.log('[ScreenShare] Screen track:', screenTrack);
+        
+        if (sendTransport) {
+          console.log('[ScreenShare] Producing screen track...');
+          sendTransport.produce({ track: screenTrack, kind: 'video' })
+            .then(() => console.log('[ScreenShare] Screen track produced'))
+            .catch(e => console.error('[ScreenShare] Produce error:', e));
+        } else {
+          console.warn('[ScreenShare] No send transport!');
+        }
+        
+        // При закрытии окна демонстрации - остановить
+        screenTrack.onended = () => {
+          console.log('[ScreenShare] Screen share ended by user');
+          toggleScreenShare();
+        };
+      } catch (error: any) {
+        console.error('[ScreenShare] Error:', error);
+        if (error.name !== 'AbortError') {
+          toast.error('Не удалось начать демонстрацию экрана');
+        }
+      }
     }
   };
 
@@ -587,33 +1130,49 @@ export function TeamRooms({ autoJoinRoomId }: { autoJoinRoomId?: string }) {
 
                 {/* Main Video Area */}
                 <div className="flex-1 flex items-center justify-center bg-slate-950 relative">
-                  <div className="text-center space-y-4">
-                    <div 
-                      className="w-24 h-24 rounded-full flex items-center justify-center mx-auto"
-                      style={{ backgroundColor: activeRoom.color }}
-                    >
-                      <Video className="w-10 h-10 text-white" />
+                  {/* Active speaker or room placeholder */}
+                  {activeSpeaker ? (
+                    <video 
+                      ref={activeSpeakerVideoRef}
+                      autoPlay 
+                      playsInline
+                      className="w-full h-full object-contain"
+                    />
+                  ) : (
+                    <div className="text-center space-y-4">
+                      <div 
+                        className="w-24 h-24 rounded-full flex items-center justify-center mx-auto"
+                        style={{ backgroundColor: activeRoom.color }}
+                      >
+                        <Video className="w-10 h-10 text-white" />
+                      </div>
+                      <div>
+                        <p className="text-lg font-medium">{activeRoom.name}</p>
+                        <p className="text-sm text-slate-400">Ожидание участников...</p>
+                      </div>
                     </div>
-                    <div>
-                      <p className="text-lg font-medium">{activeRoom.name}</p>
-                      <p className="text-sm text-slate-400">Ожидание участников...</p>
-                    </div>
-                  </div>
+                  )}
 
                   {/* Self View */}
-                  <div className="absolute bottom-4 right-4 w-48 h-36 bg-slate-800 rounded-lg border border-slate-700 flex items-center justify-center">
-                    {isVideoOn ? (
-                      <div className="text-center">
-                        <div className="w-12 h-12 rounded-full bg-primary/20 flex items-center justify-center mx-auto mb-2">
-                          <span className="text-lg">Вы</span>
-                        </div>
-                      </div>
+                  <div className="absolute bottom-4 right-4 w-48 h-36 bg-slate-800 rounded-lg border border-slate-700 flex items-center justify-center overflow-hidden">
+                    {(isVideoOn || isScreenSharing) ? (
+                      <video 
+                        ref={localVideoRef}
+                        autoPlay 
+                        muted 
+                        playsInline
+                        className="w-full h-full object-cover"
+                      />
                     ) : (
                       <div className="text-center text-slate-500">
                         <VideoOff className="w-8 h-8 mx-auto mb-2" />
                         <p className="text-xs">Камера выключена</p>
                       </div>
                     )}
+                    {/* Name tag */}
+                    <div className="absolute bottom-1 left-1 px-1.5 py-0.5 bg-black/50 rounded text-white text-xs">
+                      Вы
+                    </div>
                   </div>
                 </div>
 
@@ -648,6 +1207,15 @@ export function TeamRooms({ autoJoinRoomId }: { autoJoinRoomId?: string }) {
                     onClick={toggleVideo}
                   >
                     {isVideoOn ? <Video className="w-5 h-5" /> : <VideoOff className="w-5 h-5" />}
+                  </Button>
+
+                  <Button
+                    variant={isScreenSharing ? "default" : "outline"}
+                    size="icon"
+                    className={isScreenSharing ? "h-12 w-12 rounded-full bg-green-600 hover:bg-green-700" : "h-12 w-12 rounded-full text-black dark:text-white border-slate-600"}
+                    onClick={toggleScreenShare}
+                  >
+                    {isScreenSharing ? <MonitorOff className="w-5 h-5" /> : <Monitor className="w-5 h-5" />}
                   </Button>
 
                   <Button
@@ -896,8 +1464,11 @@ export function TeamRooms({ autoJoinRoomId }: { autoJoinRoomId?: string }) {
                 <Label>Камера</Label>
                 <Select
                   value={callSettings?.preferredCamera || 'default'}
-                  onValueChange={(value) => {
+                  onValueChange={async (value) => {
                     updateSettingsMutation.mutate({ preferredCamera: value });
+                    if (value !== 'default' && isVideoOn) {
+                      await switchCamera(value);
+                    }
                   }}
                 >
                   <SelectTrigger>

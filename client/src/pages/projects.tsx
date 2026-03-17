@@ -217,7 +217,7 @@ const TaskCard = React.memo(({ task, index, onClick, columnColor, availableLabel
           onClick={() => onClick(task)}
           className={cn(
             "bg-card border border-border/60 p-2.5 rounded-lg shadow-sm hover:shadow-lg hover:border-primary/40 hover:-translate-y-0.5 transition-all duration-200 group/task relative overflow-hidden",
-            snapshot.isDragging ? "shadow-2xl ring-2 ring-primary/30 rotate-1 z-50 scale-105" : ""
+            snapshot.isDragging ? "shadow-xl ring-1 ring-primary/20 z-50" : ""
           )}
         >
           {/* Bottom border indicator for priority */}
@@ -620,7 +620,7 @@ const KanbanColumn = React.memo(({
             ref={taskProvided.innerRef}
             className={cn(
               "flex flex-col gap-3 min-h-[150px] rounded-xl p-1",
-              snapshot.isDraggingOver ? "bg-primary/5 ring-1 ring-primary/20" : ""
+              snapshot.isDraggingOver ? "bg-primary/10" : ""
             )}
           >
             {sortedTasks.map((task: any, index: number) => (

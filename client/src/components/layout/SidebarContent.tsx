@@ -1,6 +1,6 @@
 import React, { lazy, Suspense, useMemo } from "react";
 import { cn } from "@/lib/utils";
-import { ChevronLeft, ChevronRight, Menu, Plus } from "lucide-react";
+import { ChevronLeft, ChevronRight, Menu, Plus, Monitor } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
@@ -10,6 +10,7 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
+  DropdownMenuCheckboxItem,
 } from "@/components/ui/dropdown-menu";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useLocation } from "wouter";
@@ -76,6 +77,9 @@ interface SidebarContentProps {
   isCollapsed: boolean;
   location: string;
   status: string;
+  isRemote: boolean;
+  statusColor?: string;
+  customStatuses?: { id: string; name: string; color: string; isDefault: boolean }[];
   setIsStatusDialogOpen: (open: boolean) => void;
   setLocation: (href: string) => void;
   setIsMobileOpen: (open: boolean) => void;
@@ -88,6 +92,9 @@ export const SidebarContentComponent = React.memo(({
   isCollapsed, 
   location, 
   status,
+  isRemote,
+  statusColor,
+  customStatuses = [],
   setIsStatusDialogOpen,
   setLocation, 
   setIsMobileOpen,
@@ -96,6 +103,17 @@ export const SidebarContentComponent = React.memo(({
 }: SidebarContentProps) => {
   const [, navigate] = useLocation();
   const { toast } = useToast();
+  
+  // Get color from customStatuses based on status name
+  const getStatusColor = () => {
+    const customStatus = customStatuses.find(s => s.name === status);
+    if (customStatus) return customStatus.color;
+    // Fallback to statusColor prop if customStatus not found
+    if (statusColor && statusColor.trim()) return statusColor;
+    return "#6b7280";
+  };
+  
+  const statusColorValue = getStatusColor();
   
   const displayName = useMemo(() => 
     user ? `${user.firstName || ""} ${user.lastName || ""}`.trim() || user.username : "Пользователь",
@@ -118,19 +136,15 @@ export const SidebarContentComponent = React.memo(({
     }
   }, [navigate]);
 
-  const statusColors = {
-    online: "bg-emerald-500",
-    offline: "bg-slate-500",
-    vacation: "bg-blue-500",
-    sick: "bg-rose-500",
-  };
-
-  const statusLabels = {
-    online: "В сети",
-    offline: "Не в сети",
-    vacation: "В отпуске",
-    sick: "Больничный",
-  };
+  const statusColors = customStatuses.reduce((acc, s) => {
+    acc[s.name] = s.color;
+    return acc;
+  }, {} as Record<string, string>);
+  
+  const statusLabels = customStatuses.reduce((acc, s) => {
+    acc[s.name] = s.name;
+    return acc;
+  }, {} as Record<string, string>);
 
   return (
     <div className={cn(
@@ -225,11 +239,19 @@ export const SidebarContentComponent = React.memo(({
                 "flex items-center gap-3 p-2 rounded-lg hover:bg-sidebar-accent transition-colors cursor-pointer whitespace-nowrap",
                 isCollapsed && "px-1 justify-center"
               )}
-            >
-              <Avatar className="w-9 h-9 border border-border shrink-0">
-                <AvatarImage src={user?.avatar || ""} alt={displayName} />
-                <AvatarFallback>{initials}</AvatarFallback>
-              </Avatar>
+              >
+              <div 
+                className="w-9 h-9 rounded-full shrink-0"
+                style={{ 
+                  background: `linear-gradient(#000, #000) padding-box, linear-gradient(to bottom, ${statusColorValue}, ${statusColorValue}) border-box`,
+                  border: '2px solid transparent'
+                }}
+              >
+                <Avatar className="w-full h-full border-0">
+                  <AvatarImage src={user?.avatar || ""} alt={displayName} />
+                  <AvatarFallback>{initials}</AvatarFallback>
+                </Avatar>
+              </div>
               {!isCollapsed && (
                 <div className="flex-1 min-w-0 animate-in fade-in duration-300">
                   <p className="text-sm font-medium truncate">{displayName}</p>
@@ -245,9 +267,24 @@ export const SidebarContentComponent = React.memo(({
               className="gap-2 cursor-pointer"
               onClick={() => setIsStatusDialogOpen(true)}
             >
-              <span className={cn("w-2 h-2 rounded-full", statusColors[status as keyof typeof statusColors])} />
+              <span className="w-2 h-2 rounded-full" style={{ backgroundColor: statusColors[status as keyof typeof statusColors] || "#6b7280" }} />
               Статус: {statusLabels[status as keyof typeof statusLabels]}
             </DropdownMenuItem>
+            <DropdownMenuCheckboxItem
+              checked={isRemote}
+              onCheckedChange={async (checked) => {
+                try {
+                  await apiRequest("PUT", `/api/users/${user.id}`, { isRemote: checked });
+                  queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+                } catch (error) {
+                  console.error("Failed to update remote status:", error);
+                }
+              }}
+              className="gap-2 cursor-pointer"
+            >
+              <Monitor className="w-4 h-4" />
+              Удаленка
+            </DropdownMenuCheckboxItem>
             <DropdownMenuItem 
               className="gap-2 cursor-pointer" 
               onClick={() => setLocation("/profile")}

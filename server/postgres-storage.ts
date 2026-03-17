@@ -3,6 +3,12 @@ import {
   type InsertUser, 
   type SiteSettings, 
   type InsertSiteSettings,
+  type CustomStatus,
+  type InsertCustomStatus,
+  type UserStatusHistory,
+  type InsertUserStatusHistory,
+  type Department,
+  type InsertDepartment,
   type ChatFolder,
   type InsertChatFolder,
   type Call,
@@ -145,6 +151,176 @@ export class PostgresStorage {
     } catch (error) {
       console.error("Error getting all users:", error);
       return [];
+    }
+  }
+
+  // Custom statuses methods
+  async getAllCustomStatuses(): Promise<schema.CustomStatus[]> {
+    try {
+      return await this.db.select().from(schema.customStatuses).orderBy(schema.customStatuses.sortOrder);
+    } catch (error) {
+      console.error("Error getting all custom statuses:", error);
+      return [];
+    }
+  }
+
+  async getCustomStatus(id: string): Promise<schema.CustomStatus | null> {
+    try {
+      const result = await this.db.select().from(schema.customStatuses).where(eq(schema.customStatuses.id, id));
+      return result[0] || null;
+    } catch (error) {
+      console.error("Error getting custom status:", error);
+      return null;
+    }
+  }
+
+  async getDefaultCustomStatus(): Promise<schema.CustomStatus | null> {
+    try {
+      const result = await this.db.select().from(schema.customStatuses).where(eq(schema.customStatuses.isDefault, true));
+      return result[0] || null;
+    } catch (error) {
+      console.error("Error getting default custom status:", error);
+      return null;
+    }
+  }
+
+  async createCustomStatus(data: schema.InsertCustomStatus): Promise<schema.CustomStatus | null> {
+    try {
+      const result = await this.db.insert(schema.customStatuses).values(data).returning();
+      return result[0] || null;
+    } catch (error) {
+      console.error("Error creating custom status:", error);
+      return null;
+    }
+  }
+
+  async updateCustomStatus(id: string, data: Partial<schema.InsertCustomStatus>): Promise<schema.CustomStatus | null> {
+    try {
+      const result = await this.db.update(schema.customStatuses)
+        .set({ ...data, updatedAt: new Date() })
+        .where(eq(schema.customStatuses.id, id))
+        .returning();
+      return result[0] || null;
+    } catch (error) {
+      console.error("Error updating custom status:", error);
+      return null;
+    }
+  }
+
+  async deleteCustomStatus(id: string): Promise<boolean> {
+    try {
+      await this.db.delete(schema.customStatuses).where(eq(schema.customStatuses.id, id));
+      return true;
+    } catch (error) {
+      console.error("Error deleting custom status:", error);
+      return false;
+    }
+  }
+
+  async setDefaultCustomStatus(id: string): Promise<boolean> {
+    try {
+      await this.db.update(schema.customStatuses).set({ isDefault: false }).where(eq(schema.customStatuses.isDefault, true));
+      await this.db.update(schema.customStatuses).set({ isDefault: true }).where(eq(schema.customStatuses.id, id));
+      return true;
+    } catch (error) {
+      console.error("Error setting default custom status:", error);
+      return false;
+    }
+  }
+
+  // User status history methods
+  async getUserStatusHistory(userId: string): Promise<(UserStatusHistory & { changedByUser?: { firstName: string | null; lastName: string | null } })[]> {
+    try {
+      const history = await this.db
+        .select()
+        .from(schema.userStatusHistory)
+        .where(eq(schema.userStatusHistory.userId, userId))
+        .orderBy(desc(schema.userStatusHistory.createdAt));
+      
+      // Get changedBy user info
+      const historyWithUsers = await Promise.all(
+        history.map(async (item) => {
+          if (item.changedBy) {
+            const user = await this.db.select({
+              firstName: schema.users.firstName,
+              lastName: schema.users.lastName
+            }).from(schema.users).where(eq(schema.users.id, item.changedBy));
+            return {
+              ...item,
+              changedByUser: user[0] || undefined
+            };
+          }
+          return { ...item, changedByUser: undefined };
+        })
+      );
+      
+      return historyWithUsers;
+    } catch (error) {
+      console.error("Error getting user status history:", error);
+      return [];
+    }
+  }
+
+  async createUserStatusHistory(data: InsertUserStatusHistory): Promise<UserStatusHistory | null> {
+    try {
+      const result = await this.db.insert(schema.userStatusHistory).values(data).returning();
+      return result[0] || null;
+    } catch (error) {
+      console.error("Error creating user status history:", error);
+      return null;
+    }
+  }
+
+  // Department methods
+  async getAllDepartments(): Promise<Department[]> {
+    try {
+      return await this.db.select().from(schema.departments).orderBy(schema.departments.name);
+    } catch (error) {
+      console.error("Error getting all departments:", error);
+      return [];
+    }
+  }
+
+  async getDepartment(id: string): Promise<Department | null> {
+    try {
+      const result = await this.db.select().from(schema.departments).where(eq(schema.departments.id, id));
+      return result[0] || null;
+    } catch (error) {
+      console.error("Error getting department:", error);
+      return null;
+    }
+  }
+
+  async createDepartment(data: InsertDepartment): Promise<Department | null> {
+    try {
+      const result = await this.db.insert(schema.departments).values(data).returning();
+      return result[0] || null;
+    } catch (error) {
+      console.error("Error creating department:", error);
+      return null;
+    }
+  }
+
+  async updateDepartment(id: string, data: Partial<InsertDepartment>): Promise<Department | null> {
+    try {
+      const result = await this.db.update(schema.departments)
+        .set({ ...data, updatedAt: new Date() })
+        .where(eq(schema.departments.id, id))
+        .returning();
+      return result[0] || null;
+    } catch (error) {
+      console.error("Error updating department:", error);
+      return null;
+    }
+  }
+
+  async deleteDepartment(id: string): Promise<boolean> {
+    try {
+      await this.db.delete(schema.departments).where(eq(schema.departments.id, id));
+      return true;
+    } catch (error) {
+      console.error("Error deleting department:", error);
+      return false;
     }
   }
 
@@ -2321,13 +2497,13 @@ export class PostgresStorage {
     }
   }
 
-  async getUserTransactions(userId: string, options?: { type?: string; limit?: number; offset?: number }): Promise<UserPointsTransaction[]> {
+  async getUserTransactions(userId: string, options?: { type?: string; limit?: number; offset?: number }): Promise<(UserPointsTransaction & { changedByUser?: { firstName: string | null; lastName: string | null }; task?: { id: string; title: string } | null })[]> {
     try {
       // Build conditions array
       const conditions: any[] = [eq(schema.userPointsTransactions.userId, userId)];
       
       if (options?.type) {
-        conditions.push(sql`${schema.userPointsTransactions.type} = ${options.type}`);
+        conditions.push(sql`${schema.userPointsTransactions.type} ${sql`=`} ${options.type}`);
       }
       
       const results = await this.db
@@ -2338,7 +2514,37 @@ export class PostgresStorage {
         .limit(options?.limit || 100)
         .offset(options?.offset || 0);
       
-      return results;
+      // Get changedBy user info and task info
+      const resultsWithUsers = await Promise.all(
+        results.map(async (item) => {
+          let changedByUser = undefined;
+          let task = null;
+          
+          if (item.changedBy) {
+            const user = await this.db.select({
+              firstName: schema.users.firstName,
+              lastName: schema.users.lastName
+            }).from(schema.users).where(eq(schema.users.id, item.changedBy));
+            changedByUser = user[0] || undefined;
+          }
+          
+          if (item.taskId) {
+            const taskData = await this.db.select({
+              id: schema.tasks.id,
+              title: schema.tasks.title
+            }).from(schema.tasks).where(eq(schema.tasks.id, item.taskId));
+            task = taskData[0] || null;
+          }
+          
+          return {
+            ...item,
+            changedByUser,
+            task
+          };
+        })
+      );
+      
+      return resultsWithUsers;
     } catch (error) {
       console.error("Error getting user transactions:", error);
       return [];

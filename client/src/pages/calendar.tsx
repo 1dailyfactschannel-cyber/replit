@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Calendar as CalendarUI } from "@/components/ui/calendar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useState, useMemo, useEffect } from "react";
+import { useLocation } from "wouter";
 import { 
   ChevronLeft, 
   ChevronRight, 
@@ -47,6 +48,14 @@ interface CalendarEvent {
   contact?: string;
   description?: string;
   meetingUrl?: string;
+  roomId?: string;
+}
+
+interface TeamRoomWithAdmin {
+  id: string;
+  name: string;
+  slug: string;
+  isAdmin: boolean;
 }
 
 type ViewMode = 'month' | 'day';
@@ -76,6 +85,36 @@ function DayView({ date, events, isLoading, onEventClick }: DayViewProps) {
     const [hours, minutes] = time.split(':').map(Number);
     return hours * 60 + minutes;
   };
+
+  // Group events by hour and calculate column positions
+  const getEventLayout = () => {
+    // Group events by hour
+    const eventsByHour: Record<string, typeof events> = {};
+    sortedEvents.forEach(event => {
+      const hour = event.time.split(':')[0];
+      if (!eventsByHour[hour]) {
+        eventsByHour[hour] = [];
+      }
+      eventsByHour[hour].push(event);
+    });
+
+    // Calculate column for each event
+    return sortedEvents.map(event => {
+      const hour = event.time.split(':')[0];
+      const hourEvents = eventsByHour[hour];
+      const columnIndex = hourEvents.indexOf(event);
+      const totalColumns = hourEvents.length;
+      
+      return {
+        event,
+        columnIndex,
+        totalColumns,
+        hour
+      };
+    });
+  };
+
+  const eventLayouts = getEventLayout();
 
   if (isLoading) {
     return (
@@ -134,18 +173,27 @@ function DayView({ date, events, isLoading, onEventClick }: DayViewProps) {
           ))}
 
           {/* Events */}
-          {sortedEvents.map((event, index) => {
+          {eventLayouts.map((layout) => {
+            const event = layout.event;
             const startMinutes = getEventPosition(event.time);
             const top = (startMinutes / 1440) * 1440;
             const duration = 60; // Default 1 hour duration
             const height = (duration / 1440) * 1440;
+
+            // Calculate horizontal position based on column
+            const leftPercent = layout.totalColumns > 1 
+              ? (layout.columnIndex / layout.totalColumns) * 100 
+              : 2;
+            const widthPercent = layout.totalColumns > 1 
+              ? (1 / layout.totalColumns) * 100 - 1 
+              : 96;
 
             return (
               <div
                 key={event.id}
                 onClick={() => onEventClick(event)}
                 className={cn(
-                  "absolute left-2 right-2 rounded-lg p-3 cursor-pointer transition-all hover:shadow-md border-l-4",
+                  "absolute rounded-lg p-2 cursor-pointer transition-all hover:shadow-md border-l-4",
                   "hover:scale-[1.02] hover:z-10",
                   event.type === 'video' ? "bg-purple-500/10 border-purple-500 hover:bg-purple-500/20" :
                   event.type === 'audio' ? "bg-blue-500/10 border-blue-500 hover:bg-blue-500/20" :
@@ -154,28 +202,30 @@ function DayView({ date, events, isLoading, onEventClick }: DayViewProps) {
                 )}
                 style={{
                   top: `${top}px`,
-                  height: `${Math.max(height, 60)}px`,
-                  minHeight: '60px'
+                  height: `${Math.max(height, 40)}px`,
+                  minHeight: '40px',
+                  left: `${leftPercent}%`,
+                  width: `${widthPercent}%`
                 }}
               >
-                <div className="flex items-start gap-2 h-full overflow-hidden">
-                  <div className="flex-shrink-0">
-                    {event.type === 'video' && <Video className="w-4 h-4 text-purple-600" />}
-                    {event.type === 'audio' && <Mic className="w-4 h-4 text-blue-600" />}
-                    {event.type === 'work' && <Clock className="w-4 h-4 text-primary" />}
-                    {event.type === 'social' && <UsersIcon className="w-4 h-4 text-emerald-600" />}
-                    {event.type === 'external' && <PhoneCall className="w-4 h-4 text-primary" />}
+                <div className="flex items-start gap-1.5 h-full overflow-hidden">
+                  <div className="flex-shrink-0 mt-0.5">
+                    {event.type === 'video' && <Video className="w-3 h-3 text-purple-600" />}
+                    {event.type === 'audio' && <Mic className="w-3 h-3 text-blue-600" />}
+                    {event.type === 'work' && <Clock className="w-3 h-3 text-primary" />}
+                    {event.type === 'social' && <UsersIcon className="w-3 h-3 text-emerald-600" />}
+                    {event.type === 'external' && <PhoneCall className="w-3 h-3 text-primary" />}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="font-semibold text-sm truncate">{event.title}</p>
-                    <p className="text-xs text-muted-foreground">{event.time}</p>
+                    <p className="font-semibold text-xs truncate">{event.title}</p>
+                    <p className="text-[10px] text-muted-foreground">{event.time}</p>
                     {event.contact && (
-                      <p className="text-xs text-muted-foreground truncate mt-1">
+                      <p className="text-[10px] text-muted-foreground truncate mt-0.5">
                         с {event.contact}
                       </p>
                     )}
                     {event.description && (
-                      <p className="text-xs text-muted-foreground line-clamp-2 mt-1">
+                      <p className="text-[10px] text-muted-foreground line-clamp-1 mt-0.5">
                         {event.description}
                       </p>
                     )}
@@ -233,6 +283,7 @@ function CurrentTimeIndicator() {
 }
 
 export default function CalendarPage() {
+  const [location, setLocation] = useLocation();
   const queryClient = useQueryClient();
   
   // Initialize Yandex Calendar WebSocket listeners
@@ -251,7 +302,14 @@ export default function CalendarPage() {
     type: "work",
     description: "",
     meetingUrl: "",
-    contact: ""
+    contact: "",
+    roomId: ""
+  });
+
+  // Fetch team rooms for selection
+  const { data: teamRooms = [] } = useQuery<TeamRoomWithAdmin[]>({
+    queryKey: ["/api/team-rooms/with-admin-status"],
+    staleTime: 60000,
   });
 
   // Calculate date range for the current view
@@ -272,6 +330,19 @@ export default function CalendarPage() {
       return res.json();
     },
   });
+
+  // Handle eventId from URL
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const eventId = params.get('eventId');
+    if (eventId && events.length > 0) {
+      const event = events.find(e => e.id === eventId);
+      if (event) {
+        setSelectedEvent(event);
+        setLocation('/calendar', { replace: true });
+      }
+    }
+  }, [events, setLocation]);
 
   // Fetch Yandex Calendar events
   const { data: yandexEvents = [] } = useQuery<any[]>({
@@ -410,7 +481,8 @@ export default function CalendarPage() {
       isReadOnly: true
     }));
 
-    return [...localEvents, ...yandexEventsForDate];
+    const allEvents = [...localEvents, ...yandexEventsForDate];
+    return allEvents.sort((a, b) => a.time.localeCompare(b.time));
   };
 
   const navigateMonth = (direction: number) => {
@@ -641,8 +713,8 @@ export default function CalendarPage() {
                    {selectedDate ? format(selectedDate, "d MMM", { locale: ru }) : "—"}
                  </Badge>
                </CardHeader>
-               <CardContent className="space-y-4">
-                 <ScrollArea className="h-[400px] pr-4">
+                <CardContent className="space-y-4">
+                  <ScrollArea className="h-[500px] pr-4">
                    {isLoading ? (
                      <div className="space-y-4">
                        {Array(3).fill(0).map((_, i) => (
@@ -696,13 +768,18 @@ export default function CalendarPage() {
                               </div>
                             </div>
                             
-                            {(event.type === 'video' || event.type === 'audio' || event.meetingUrl) && (
+                            {(event.type === 'video' || event.type === 'audio' || event.meetingUrl || event.roomId) && (
                               <Button 
                                 className="w-full h-8 gap-2 bg-primary/90 hover:bg-primary shadow-sm text-xs font-bold"
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   toast.success("Подключение к конференции...");
-                                  if (event.meetingUrl) window.open(event.meetingUrl, '_blank');
+                                  if (event.roomId) {
+                                    // Navigate to chat with auto-join
+                                    window.location.href = `/chat?room=${event.roomId}&autoJoin=true`;
+                                  } else if (event.meetingUrl) {
+                                    window.open(event.meetingUrl, '_blank');
+                                  }
                                 }}
                               >
                                 <PhoneCall className="w-3.5 h-3.5" />
@@ -784,6 +861,29 @@ export default function CalendarPage() {
                 </Select>
               </div>
             </div>
+            
+            {/* Room Selection */}
+            <div className="grid gap-2">
+              <Label htmlFor="room">Командный зал</Label>
+              <Select 
+                value={eventForm.roomId || ""} 
+                onValueChange={(val) => setEventForm({...eventForm, roomId: val || undefined})}
+              >
+                <SelectTrigger id="room">
+                  <SelectValue placeholder="Выберите зал (опционально)" />
+                </SelectTrigger>
+                <SelectContent>
+                  {teamRooms.map((room) => (
+                    <SelectItem key={room.id} value={room.id}>
+                      <div className="flex items-center gap-2">
+                        <span>{room.name}</span>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            
             <div className="grid gap-2">
               <Label htmlFor="contact">Контакт (опционально)</Label>
               <Input 
@@ -858,18 +958,41 @@ export default function CalendarPage() {
                      selectedEvent.type === 'audio' ? 'Аудио' :
                      selectedEvent.type === 'social' ? 'Команда' : 'Клиент'}
                   </Badge>
-                  <span className="text-xs text-muted-foreground flex items-center gap-1">
-                    <Clock className="w-3 h-3" /> {selectedEvent.time}
-                  </span>
                 </div>
                 <DialogTitle className="text-xl">{selectedEvent.title}</DialogTitle>
               </DialogHeader>
               <div className="py-4 space-y-4">
+                {/* Date and Time */}
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <CalendarIcon className="w-4 h-4" />
+                  <span>{selectedEvent.date ? format(new Date(selectedEvent.date), "d MMMM yyyy", { locale: ru }) : ''}</span>
+                  <Clock className="w-4 h-4 ml-2" />
+                  <span>{selectedEvent.time}</span>
+                </div>
+
+                {/* Room */}
+                {selectedEvent.roomId && (
+                  <div className="flex items-center gap-2 text-sm bg-secondary/30 p-3 rounded-lg border border-border/50">
+                    <UsersIcon className="w-4 h-4 text-primary" />
+                    <span>Командный зал</span>
+                  </div>
+                )}
+
+                {/* Meeting URL */}
+                {selectedEvent.meetingUrl && (
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <span className="text-xs">Ссылка: {selectedEvent.meetingUrl}</span>
+                  </div>
+                )}
+
+                {/* Description */}
                 {selectedEvent.description && (
                   <p className="text-sm text-muted-foreground bg-secondary/30 p-3 rounded-lg border border-border/50">
                     {selectedEvent.description}
                   </p>
                 )}
+                
+                {/* Contact */}
                 {selectedEvent.contact && (
                   <div className="flex items-center gap-3 p-3 rounded-lg border border-border/50">
                     <Avatar className="w-10 h-10 border-2 border-primary/20">
@@ -882,12 +1005,16 @@ export default function CalendarPage() {
                   </div>
                 )}
                 <div className="grid grid-cols-1 gap-3">
-                  {(selectedEvent.type === 'video' || selectedEvent.type === 'audio' || selectedEvent.meetingUrl) && (
+                  {(selectedEvent.type === 'video' || selectedEvent.type === 'audio' || selectedEvent.meetingUrl || selectedEvent.roomId) && (
                     <Button 
                       className="gap-2 w-full h-12 text-sm font-bold shadow-lg shadow-primary/20"
                       onClick={() => {
                          toast.success("Подключение...");
-                         if (selectedEvent.meetingUrl) window.open(selectedEvent.meetingUrl, '_blank');
+                         if (selectedEvent.roomId) {
+                           window.location.href = `/chat?room=${selectedEvent.roomId}&autoJoin=true`;
+                         } else if (selectedEvent.meetingUrl) {
+                           window.open(selectedEvent.meetingUrl, '_blank');
+                         }
                       }}
                     >
                       <PhoneCall className="w-4 h-4" /> Подключиться к звонку

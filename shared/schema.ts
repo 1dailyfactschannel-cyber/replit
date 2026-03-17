@@ -20,6 +20,9 @@ export const users = pgTable("users", {
   isActive: boolean("is_active").default(true),
   isOnline: boolean("is_online").default(false),
   lastSeen: timestamp("last_seen"),
+  status: text("status").default("online"), // custom status name
+  statusColor: text("status_color"), // custom status color
+  statusComment: text("status_comment"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
   telegram: text("telegram"),
@@ -30,9 +33,36 @@ export const users = pgTable("users", {
   totalPointsEarned: integer("total_points_earned").default(0),
   totalPointsSpent: integer("total_points_spent").default(0),
   level: integer("level").default(0),
+  isRemote: boolean("is_remote").default(false),
 }, (table) => ({
   usernameIdx: index("users_username_idx").on(table.username),
   emailIdx: index("users_email_idx").on(table.email),
+}));
+
+// Custom statuses table
+export const customStatuses = pgTable("custom_statuses", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  name: text("name").notNull(),
+  color: text("color").notNull().default("#22c55e"), // hex color
+  icon: text("icon"), // optional icon name
+  isDefault: boolean("is_default").default(false),
+  sortOrder: integer("sort_order").default(0),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// User status history table
+export const userStatusHistory = pgTable("user_status_history", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  oldStatus: text("old_status"),
+  newStatus: text("new_status").notNull(),
+  comment: text("comment"),
+  changedBy: uuid("changed_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  userIdIdx: index("user_status_history_user_id_idx").on(table.userId),
+  createdAtIdx: index("user_status_history_created_at_idx").on(table.createdAt),
 }));
 
 // Roles table
@@ -389,7 +419,31 @@ export const insertUserSchema = createInsertSchema(users).pick({
   telegramConnected: true,
   telegramId: true,
   notes: true,
+  status: true,
+  statusComment: true,
 });
+
+export const insertCustomStatusSchema = createInsertSchema(customStatuses).pick({
+  name: true,
+  color: true,
+  icon: true,
+  isDefault: true,
+  sortOrder: true,
+});
+
+export type CustomStatus = typeof customStatuses.$inferSelect;
+export type InsertCustomStatus = z.infer<typeof insertCustomStatusSchema>;
+
+export const insertUserStatusHistorySchema = createInsertSchema(userStatusHistory).pick({
+  userId: true,
+  oldStatus: true,
+  newStatus: true,
+  comment: true,
+  changedBy: true,
+});
+
+export type UserStatusHistory = typeof userStatusHistory.$inferSelect;
+export type InsertUserStatusHistory = z.infer<typeof insertUserStatusHistorySchema>;
 
 export const insertRoleSchema = createInsertSchema(roles).pick({
   name: true,
@@ -892,6 +946,7 @@ export const userPointsTransactions = pgTable("user_points_transactions", {
   type: text("type").$type<"earned" | "spent" | "reverted">(),
   amount: integer("amount").notNull(),
   description: text("description"),
+  changedBy: uuid("changed_by").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow(),
 }, (table) => ({
   userIdIdx: index("transactions_user_id_idx").on(table.userId),
@@ -906,6 +961,7 @@ export const insertUserPointsTransactionSchema = createInsertSchema(userPointsTr
   type: true,
   amount: true,
   description: true,
+  changedBy: true,
 });
 
 export type UserPointsTransaction = typeof userPointsTransactions.$inferSelect;
