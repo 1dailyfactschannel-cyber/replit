@@ -3,12 +3,21 @@ import react from "@vitejs/plugin-react";
 import path from "path";
 import runtimeErrorOverlay from "@replit/vite-plugin-runtime-error-modal";
 import { metaImagesPlugin } from "./vite-plugin-meta-images";
-import { nodePolyfills } from "vite-plugin-node-polyfills";
 import gzipPlugin from "rollup-plugin-gzip";
+import { nodePolyfills } from "vite-plugin-node-polyfills";
 
 export default defineConfig(async ({ mode }): Promise<UserConfig> => ({
   root: 'client',
+  define: {
+    global: 'globalThis',
+  },
   plugins: [
+    nodePolyfills({
+      // Whether to polyfill Node.js globals (e.g. Buffer, process, etc.)
+      globals: true,
+      // Whether to polyfill Node.js built-in modules (e.g. fs, path, etc.)
+      protocolImports: true,
+    }),
     react({
       // Enable React Compiler for better performance
       babel: {
@@ -16,12 +25,6 @@ export default defineConfig(async ({ mode }): Promise<UserConfig> => ({
       },
     }),
     runtimeErrorOverlay(),
-    // Only include node polyfills in development
-    ...(mode !== "production" ? [
-      nodePolyfills({
-        include: ["buffer", "events", "stream", "util"],
-      })
-    ] : []),
     // Enable gzip compression for production
     ...(mode === "production" ? [
       gzipPlugin({
@@ -101,11 +104,6 @@ export default defineConfig(async ({ mode }): Promise<UserConfig> => ({
       strict: false,
       deny: ["**/.*"],
     },
-    proxy: {
-      '/api': {
-        target: 'http://localhost:3005',
-        changeOrigin: true,
-      },
-    },
+    proxy: {},
   },
 }));

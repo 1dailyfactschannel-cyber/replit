@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, integer, boolean, timestamp, uuid, jsonb, primaryKey, index } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, boolean, timestamp, uuid, jsonb, primaryKey, index, uniqueIndex } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -20,15 +20,49 @@ export const users = pgTable("users", {
   isActive: boolean("is_active").default(true),
   isOnline: boolean("is_online").default(false),
   lastSeen: timestamp("last_seen"),
+  status: text("status").default("online"), // custom status name
+  statusColor: text("status_color"), // custom status color
+  statusComment: text("status_comment"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
   telegram: text("telegram"),
   telegramConnected: boolean("telegram_connected").default(false),
   telegramId: text("telegram_id"),
   notes: text("notes"),
+  pointsBalance: integer("points_balance").default(0),
+  totalPointsEarned: integer("total_points_earned").default(0),
+  totalPointsSpent: integer("total_points_spent").default(0),
+  level: integer("level").default(0),
+  isRemote: boolean("is_remote").default(false),
 }, (table) => ({
   usernameIdx: index("users_username_idx").on(table.username),
   emailIdx: index("users_email_idx").on(table.email),
+}));
+
+// Custom statuses table
+export const customStatuses = pgTable("custom_statuses", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  name: text("name").notNull(),
+  color: text("color").notNull().default("#22c55e"), // hex color
+  icon: text("icon"), // optional icon name
+  isDefault: boolean("is_default").default(false),
+  sortOrder: integer("sort_order").default(0),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// User status history table
+export const userStatusHistory = pgTable("user_status_history", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  oldStatus: text("old_status"),
+  newStatus: text("new_status").notNull(),
+  comment: text("comment"),
+  changedBy: uuid("changed_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  userIdIdx: index("user_status_history_user_id_idx").on(table.userId),
+  createdAtIdx: index("user_status_history_created_at_idx").on(table.createdAt),
 }));
 
 // Roles table
@@ -46,8 +80,31 @@ export const roles = pgTable("roles", {
 export const userRoles = pgTable("user_roles", {
   userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   roleId: uuid("role_id").notNull().references(() => roles.id, { onDelete: "cascade" }),
+  assignedAt: timestamp("assigned_at").defaultNow(),
+  assignedBy: uuid("assigned_by").references(() => users.id),
 }, (table) => ({
   pk: primaryKey({ columns: [table.userId, table.roleId] }),
+}));
+
+// Permissions table
+export const permissions = pgTable("permissions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  key: text("key").notNull().unique(),
+  name: text("name").notNull(),
+  description: text("description"),
+  category: text("category").notNull(), // 'pages' or 'management'
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// User hidden objects table (for object-level permissions)
+export const userHiddenObjects = pgTable("user_hidden_objects", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  objectType: text("object_type").notNull(), // 'workspace' or 'project'
+  objectId: uuid("object_id").notNull(),
+  hiddenAt: timestamp("hidden_at").defaultNow(),
+}, (table) => ({
+  uniqueUserObject: uniqueIndex("unique_user_object").on(table.userId, table.objectType, table.objectId),
 }));
 
 // Departments table
@@ -215,6 +272,21 @@ export const taskStatusHistory = pgTable("task_status_history", {
   statusIdx: index("task_status_history_status_idx").on(table.status),
 }));
 
+// Task user time tracking table for tracking time spent by each user in each status
+export const taskUserTimeTracking = pgTable("task_user_time_tracking", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  taskId: uuid("task_id").notNull().references(() => tasks.id, { onDelete: "cascade" }),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  status: text("status").notNull(), // status name (e.g., "В планах", "В работе")
+  startedAt: timestamp("started_at").notNull().defaultNow(),
+  endedAt: timestamp("ended_at"),
+  durationSeconds: integer("duration_seconds"), // Duration in seconds
+}, (table) => ({
+  taskIdIdx: index("task_user_time_task_id_idx").on(table.taskId),
+  userIdIdx: index("task_user_time_user_id_idx").on(table.userId),
+  statusIdx: index("task_user_time_status_idx").on(table.status),
+}));
+
 // Task history table for tracking all changes
 export const taskHistory = pgTable("task_history", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -286,6 +358,15 @@ export const insertTaskStatusHistorySchema = createInsertSchema(taskStatusHistor
   durationSeconds: true,
 });
 
+export const insertTaskUserTimeTrackingSchema = createInsertSchema(taskUserTimeTracking).pick({
+  taskId: true,
+  userId: true,
+  status: true,
+  startedAt: true,
+  endedAt: true,
+  durationSeconds: true,
+});
+
 export const insertTaskHistorySchema = createInsertSchema(taskHistory).pick({
   taskId: true,
   userId: true,
@@ -315,7 +396,7 @@ export const siteSettings = pgTable("site_settings", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
-// Sessions table (for connect-pg-simple)
+// Sessions table (legacy - now using memorystore for sessions)
 export const sessions = pgTable("sessions", {
   sid: varchar("sid", { length: 128 }).primaryKey(),
   sess: jsonb("sess").notNull(),
@@ -338,12 +419,49 @@ export const insertUserSchema = createInsertSchema(users).pick({
   telegramConnected: true,
   telegramId: true,
   notes: true,
+  status: true,
+  statusComment: true,
 });
+
+export const insertCustomStatusSchema = createInsertSchema(customStatuses).pick({
+  name: true,
+  color: true,
+  icon: true,
+  isDefault: true,
+  sortOrder: true,
+});
+
+export type CustomStatus = typeof customStatuses.$inferSelect;
+export type InsertCustomStatus = z.infer<typeof insertCustomStatusSchema>;
+
+export const insertUserStatusHistorySchema = createInsertSchema(userStatusHistory).pick({
+  userId: true,
+  oldStatus: true,
+  newStatus: true,
+  comment: true,
+  changedBy: true,
+});
+
+export type UserStatusHistory = typeof userStatusHistory.$inferSelect;
+export type InsertUserStatusHistory = z.infer<typeof insertUserStatusHistorySchema>;
 
 export const insertRoleSchema = createInsertSchema(roles).pick({
   name: true,
   description: true,
   permissions: true,
+});
+
+export const insertPermissionSchema = createInsertSchema(permissions).pick({
+  key: true,
+  name: true,
+  description: true,
+  category: true,
+});
+
+export const insertUserHiddenObjectSchema = createInsertSchema(userHiddenObjects).pick({
+  userId: true,
+  objectType: true,
+  objectId: true,
 });
 
 export const insertDepartmentSchema = createInsertSchema(departments).pick({
@@ -508,6 +626,8 @@ export const messages = pgTable("messages", {
   // @ts-ignore - recursive reference
   replyToId: uuid("reply_to_id").references(() => messages.id, { onDelete: "set null" }),
   isRead: boolean("is_read").default(false),
+  type: text("type").$type<"message" | "system_event" | "system_reminder">().default("message"),
+  metadata: jsonb("metadata"),
   createdAt: timestamp("created_at").defaultNow(),
 }, (table) => ({
   chatIdIdx: index("messages_chat_id_idx").on(table.chatId),
@@ -532,7 +652,7 @@ export const calls = pgTable("calls", {
   id: uuid("id").primaryKey().defaultRandom(),
   chatId: uuid("chat_id").notNull().references(() => chats.id, { onDelete: "cascade" }),
   callerId: uuid("caller_id").notNull().references(() => users.id),
-  receiverId: uuid("receiver_id").notNull().references(() => users.id),
+  receiverId: uuid("receiver_id").references(() => users.id), // nullable for group calls
   type: text("type").notNull().default("audio"), // audio, video
   status: text("status").notNull().default("missed"), // completed, missed, rejected, busy
   duration: integer("duration"), // in seconds
@@ -543,6 +663,19 @@ export const calls = pgTable("calls", {
   receiverIdIdx: index("calls_receiver_id_idx").on(table.receiverId),
 }));
 
+// Message reactions table
+export const messageReactions = pgTable("message_reactions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  messageId: uuid("message_id").notNull().references(() => messages.id, { onDelete: "cascade" }),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  emoji: text("emoji").notNull(), // e.g., "👍", "❤️", "😂"
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  messageIdIdx: index("reactions_message_id_idx").on(table.messageId),
+  userIdIdx: index("reactions_user_id_idx").on(table.userId),
+  uniqueReaction: index("reactions_unique_idx").on(table.messageId, table.userId, table.emoji),
+}));
+
 // Export chat types
 export type Chat = typeof chats.$inferSelect;
 export type ChatParticipant = typeof chatParticipants.$inferSelect;
@@ -550,6 +683,9 @@ export type Message = typeof messages.$inferSelect;
 export type ChatFolder = typeof chatFolders.$inferSelect;
 export type MessageAttachment = typeof messageAttachments.$inferSelect;
 export type Call = typeof calls.$inferSelect;
+
+export type MessageReaction = typeof messageReactions.$inferSelect;
+export type InsertMessageReaction = z.infer<typeof insertMessageReactionSchema>;
 
 export const insertChatSchema = createInsertSchema(chats).pick({
   name: true,
@@ -584,6 +720,17 @@ export const insertCallSchema = createInsertSchema(calls).pick({
   endedAt: true,
 });
 
+export type InsertChat = z.infer<typeof insertChatSchema>;
+export type InsertMessage = z.infer<typeof insertMessageSchema>;
+export type InsertChatFolder = z.infer<typeof insertChatFolderSchema>;
+export type InsertCall = z.infer<typeof insertCallSchema>;
+
+export const insertMessageReactionSchema = createInsertSchema(messageReactions).pick({
+  messageId: true,
+  userId: true,
+  emoji: true,
+});
+
 export const insertMessageAttachmentSchema = createInsertSchema(messageAttachments).pick({
   messageId: true,
   name: true,
@@ -592,11 +739,34 @@ export const insertMessageAttachmentSchema = createInsertSchema(messageAttachmen
   size: true,
 });
 
-export type InsertChat = z.infer<typeof insertChatSchema>;
-export type InsertMessage = z.infer<typeof insertMessageSchema>;
-export type InsertChatFolder = z.infer<typeof insertChatFolderSchema>;
-export type InsertCall = z.infer<typeof insertCallSchema>;
 export type InsertMessageAttachment = z.infer<typeof insertMessageAttachmentSchema>;
+
+// File attachments table (for storing uploaded files in database)
+export const fileAttachments = pgTable("file_attachments", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  filename: text("filename").notNull(),
+  originalName: text("original_name").notNull(),
+  mimeType: text("mime_type").notNull(),
+  size: integer("size").notNull(),
+  data: text("data").notNull(), // base64 encoded file data
+  uploadedBy: uuid("uploaded_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  uploadedByIdx: index("file_attachments_uploaded_by_idx").on(table.uploadedBy),
+  createdAtIdx: index("file_attachments_created_at_idx").on(table.createdAt),
+}));
+
+export const insertFileAttachmentSchema = createInsertSchema(fileAttachments).pick({
+  filename: true,
+  originalName: true,
+  mimeType: true,
+  size: true,
+  data: true,
+  uploadedBy: true,
+});
+
+export type FileAttachment = typeof fileAttachments.$inferSelect;
+export type InsertFileAttachment = z.infer<typeof insertFileAttachmentSchema>;
 
 // Export core types
 export type User = typeof users.$inferSelect;
@@ -604,6 +774,12 @@ export type InsertUser = z.infer<typeof insertUserSchema>;
 
 export type Role = typeof roles.$inferSelect;
 export type InsertRole = z.infer<typeof insertRoleSchema>;
+
+export type Permission = typeof permissions.$inferSelect;
+export type InsertPermission = z.infer<typeof insertPermissionSchema>;
+
+export type UserHiddenObject = typeof userHiddenObjects.$inferSelect;
+export type InsertUserHiddenObject = z.infer<typeof insertUserHiddenObjectSchema>;
 
 export type Department = typeof departments.$inferSelect;
 export type InsertDepartment = z.infer<typeof insertDepartmentSchema>;
@@ -628,6 +804,9 @@ export type InsertSubtask = z.infer<typeof insertSubtaskSchema>;
 
 export type TaskStatusHistory = typeof taskStatusHistory.$inferSelect;
 export type InsertTaskStatusHistory = z.infer<typeof insertTaskStatusHistorySchema>;
+
+export type TaskUserTimeTracking = typeof taskUserTimeTracking.$inferSelect;
+export type InsertTaskUserTimeTracking = z.infer<typeof insertTaskUserTimeTrackingSchema>;
 
 export type TaskHistory = typeof taskHistory.$inferSelect;
 export type InsertTaskHistory = z.infer<typeof insertTaskHistorySchema>;
@@ -664,7 +843,7 @@ export const notifications = pgTable("notifications", {
   id: uuid("id").primaryKey().defaultRandom(),
   userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   senderId: uuid("sender_id").references(() => users.id, { onDelete: "set null" }),
-  type: text("type").notNull(), // message, task_assigned, project_update, etc.
+  type: text("type").$type<"chat" | "task" | "calendar" | "call" | "system">().notNull(),
   title: text("title").notNull(),
   message: text("message").notNull(),
   link: text("link"), // Optional link to redirect
@@ -672,7 +851,7 @@ export const notifications = pgTable("notifications", {
   createdAt: timestamp("created_at").defaultNow(),
 }, (table) => ({
   userIdIdx: index("notifications_user_id_idx").on(table.userId),
-  userIdIsReadIdx: index("notifications_user_is_read_idx").on(table.userId, table.isRead),
+  userIdIsReadIdx: index("notifications_user_id_idx").on(table.userId, table.isRead),
 }));
 
 export const insertNotificationSchema = createInsertSchema(notifications).pick({
@@ -687,4 +866,386 @@ export const insertNotificationSchema = createInsertSchema(notifications).pick({
 
 export type Notification = typeof notifications.$inferSelect;
 export type InsertNotification = z.infer<typeof insertNotificationSchema>;
+
+// Shop items table
+export const shopItems = pgTable("shop_items", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  name: text("name").notNull(),
+  description: text("description"),
+  cost: integer("cost").notNull(),
+  image: text("image"),
+  category: text("category"),
+  stock: integer("stock").default(0),
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertShopItemSchema = createInsertSchema(shopItems).pick({
+  name: true,
+  description: true,
+  cost: true,
+  image: true,
+  category: true,
+  stock: true,
+  isActive: true,
+});
+
+export type ShopItem = typeof shopItems.$inferSelect;
+export type InsertShopItem = z.infer<typeof insertShopItemSchema>;
+
+// Shop purchases table
+export const shopPurchases = pgTable("shop_purchases", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  itemId: uuid("item_id").notNull().references(() => shopItems.id),
+  quantity: integer("quantity").default(1),
+  totalCost: integer("total_cost").notNull(),
+  status: text("status").default("pending"),
+  purchasedAt: timestamp("purchased_at").defaultNow(),
+}, (table) => ({
+  userIdIdx: index("shop_purchases_user_id_idx").on(table.userId),
+}));
+
+export const insertShopPurchaseSchema = createInsertSchema(shopPurchases).pick({
+  userId: true,
+  itemId: true,
+  quantity: true,
+  totalCost: true,
+  status: true,
+});
+
+export type ShopPurchase = typeof shopPurchases.$inferSelect;
+export type InsertShopPurchase = z.infer<typeof insertShopPurchaseSchema>;
+
+// Points settings table
+export const pointsSettings = pgTable("points_settings", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  statusName: text("status_name").notNull().unique(),
+  pointsAmount: integer("points_amount").default(1),
+  maxTimeInStatus: integer("max_time_in_status").default(0), // Maximum time in minutes to earn points (0 = unlimited)
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertPointsSettingSchema = createInsertSchema(pointsSettings).pick({
+  statusName: true,
+  pointsAmount: true,
+  maxTimeInStatus: true,
+  isActive: true,
+});
+
+export type PointsSetting = typeof pointsSettings.$inferSelect;
+export type InsertPointsSetting = z.infer<typeof insertPointsSettingSchema>;
+
+// User points transactions table
+export const userPointsTransactions = pgTable("user_points_transactions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  taskId: uuid("task_id").references(() => tasks.id, { onDelete: "set null" }),
+  statusName: text("status_name"),
+  type: text("type").$type<"earned" | "spent" | "reverted">(),
+  amount: integer("amount").notNull(),
+  description: text("description"),
+  changedBy: uuid("changed_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  userIdIdx: index("transactions_user_id_idx").on(table.userId),
+  taskIdIdx: index("transactions_task_id_idx").on(table.taskId),
+  createdAtIdx: index("transactions_created_at_idx").on(table.createdAt),
+}));
+
+export const insertUserPointsTransactionSchema = createInsertSchema(userPointsTransactions).pick({
+  userId: true,
+  taskId: true,
+  statusName: true,
+  type: true,
+  amount: true,
+  description: true,
+  changedBy: true,
+});
+
+export type UserPointsTransaction = typeof userPointsTransactions.$inferSelect;
+export type InsertUserPointsTransaction = z.infer<typeof insertUserPointsTransactionSchema>;
+
+// Calendar events table
+export const calendarEvents = pgTable("calendar_events", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  roomId: uuid("room_id").references(() => chats.id, { onDelete: "cascade" }),
+  title: text("title").notNull(),
+  description: text("description"),
+  date: timestamp("date").notNull(),
+  time: text("time").notNull(),
+  type: text("type").$type<"work" | "social" | "external" | "video" | "audio">().default("work"),
+  contact: text("contact"),
+  meetingUrl: text("meeting_url"),
+  reminder: boolean("reminder").default(false),
+  reminderMinutes: integer("reminder_minutes"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  userIdIdx: index("calendar_events_user_id_idx").on(table.userId),
+  roomIdIdx: index("calendar_events_room_id_idx").on(table.roomId),
+  dateIdx: index("calendar_events_date_idx").on(table.date),
+}));
+
+export const insertCalendarEventSchema = createInsertSchema(calendarEvents).pick({
+  userId: true,
+  roomId: true,
+  title: true,
+  description: true,
+  date: true,
+  time: true,
+  type: true,
+  contact: true,
+  meetingUrl: true,
+  reminder: true,
+  reminderMinutes: true,
+});
+
+export type CalendarEvent = typeof calendarEvents.$inferSelect;
+export type InsertCalendarEvent = z.infer<typeof insertCalendarEventSchema>;
+
+// Yandex Calendar Integration - personal OAuth connection
+export const yandexCalendarIntegrations = pgTable("yandex_calendar_integrations", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  
+  // OAuth tokens
+  accessToken: text("access_token").notNull(),
+  refreshToken: text("refresh_token"),
+  tokenExpiresAt: timestamp("token_expires_at"),
+  
+  // Calendar info
+  calendarId: text("calendar_id").notNull(),
+  calendarName: text("calendar_name"),
+  syncEnabled: boolean("sync_enabled").default(true),
+  
+  // Sync tracking
+  lastSyncAt: timestamp("last_sync_at"),
+  lastSyncToken: text("last_sync_token"), // For incremental sync
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  userIdIdx: index("yandex_cal_user_id_idx").on(table.userId),
+}));
+
+export const insertYandexCalendarIntegrationSchema = createInsertSchema(yandexCalendarIntegrations).pick({
+  userId: true,
+  accessToken: true,
+  refreshToken: true,
+  tokenExpiresAt: true,
+  calendarId: true,
+  calendarName: true,
+  syncEnabled: true,
+});
+
+export type YandexCalendarIntegration = typeof yandexCalendarIntegrations.$inferSelect;
+export type InsertYandexCalendarIntegration = z.infer<typeof insertYandexCalendarIntegrationSchema>;
+
+// Yandex Calendar Events - synced from Yandex
+export const yandexCalendarEvents = pgTable("yandex_calendar_events", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  integrationId: uuid("integration_id").notNull().references(() => yandexCalendarIntegrations.id, { onDelete: "cascade" }),
+  
+  // Yandex event data
+  yandexEventId: text("yandex_event_id").notNull(),
+  yandexEtag: text("yandex_etag"),
+  
+  title: text("title").notNull(),
+  description: text("description"),
+  startDate: timestamp("start_date").notNull(),
+  endDate: timestamp("end_date").notNull(),
+  
+  // Recurring events
+  recurrenceRule: text("recurrence_rule"), // RRULE
+  recurrenceId: text("recurrence_id"),
+  isRecurring: boolean("is_recurring").default(false),
+  
+  // Attendees and organizer
+  attendees: jsonb("attendees").default(sql`'[]'::jsonb`), // [{email, name, status}]
+  organizerEmail: text("organizer_email"),
+  
+  // Visual settings
+  color: text("color"), // Color from Yandex
+  
+  // Reminders (from Yandex)
+  reminders: jsonb("reminders").default(sql`'[]'::jsonb`), // [{minutes, method}]
+  
+  // Metadata
+  location: text("location"),
+  meetingUrl: text("meeting_url"),
+  status: text("status").default("confirmed"), // confirmed, tentative, cancelled
+  
+  // Sync tracking
+  lastSyncedAt: timestamp("last_synced_at").defaultNow(),
+  deleted: boolean("deleted").default(false),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  yandexEventIdIdx: index("yandex_events_yandex_id_idx").on(table.yandexEventId),
+  startDateIdx: index("yandex_events_start_date_idx").on(table.startDate),
+  integrationIdx: index("yandex_events_integration_idx").on(table.integrationId),
+  attendeesIdx: index("yandex_events_attendees_idx").using("gin", table.attendees),
+}));
+
+export const insertYandexCalendarEventSchema = createInsertSchema(yandexCalendarEvents).pick({
+  integrationId: true,
+  yandexEventId: true,
+  yandexEtag: true,
+  title: true,
+  description: true,
+  startDate: true,
+  endDate: true,
+  recurrenceRule: true,
+  recurrenceId: true,
+  isRecurring: true,
+  attendees: true,
+  organizerEmail: true,
+  color: true,
+  reminders: true,
+  location: true,
+  meetingUrl: true,
+  status: true,
+});
+
+export type YandexCalendarEvent = typeof yandexCalendarEvents.$inferSelect;
+export type InsertYandexCalendarEvent = z.infer<typeof insertYandexCalendarEventSchema>;
+
+// Yandex Calendar Notifications tracking
+export const yandexCalendarNotifications = pgTable("yandex_calendar_notifications", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  eventId: uuid("event_id").notNull().references(() => yandexCalendarEvents.id, { onDelete: "cascade" }),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  notificationType: text("notification_type").notNull(), // 'event_changed', 'reminder', 'new_event'
+  reminderMinutes: integer("reminder_minutes"),
+  sentAt: timestamp("sent_at").defaultNow(),
+}, (table) => ({
+  eventIdIdx: index("yandex_notif_event_id_idx").on(table.eventId),
+  userIdIdx: index("yandex_notif_user_id_idx").on(table.userId),
+}));
+
+export type YandexCalendarNotification = typeof yandexCalendarNotifications.$inferSelect;
+
+// Team Rooms table for video conferencing rooms
+export const teamRooms = pgTable("team_rooms", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  name: text("name").notNull(),
+  description: text("description"),
+  slug: text("slug").notNull().unique(), // Human-readable part of URL
+  inviteCode: text("invite_code").notNull().unique(), // 8 char unique code
+  accessType: text("access_type").notNull().default("open"), // 'open' or 'closed'
+  color: text("color").default("#3b82f6"),
+  createdBy: uuid("created_by").notNull().references(() => users.id),
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  slugIdx: index("team_rooms_slug_idx").on(table.slug),
+  inviteCodeIdx: index("team_rooms_invite_code_idx").on(table.inviteCode),
+  createdByIdx: index("team_rooms_created_by_idx").on(table.createdBy),
+}));
+
+export const insertTeamRoomSchema = createInsertSchema(teamRooms).pick({
+  name: true,
+  description: true,
+  slug: true,
+  inviteCode: true,
+  accessType: true,
+  color: true,
+  createdBy: true,
+  isActive: true,
+});
+
+export const updateTeamRoomSchema = createInsertSchema(teamRooms).pick({
+  name: true,
+  description: true,
+  accessType: true,
+  color: true,
+  isActive: true,
+}).partial();
+
+export type TeamRoom = typeof teamRooms.$inferSelect;
+export type InsertTeamRoom = z.infer<typeof insertTeamRoomSchema>;
+export type UpdateTeamRoom = z.infer<typeof updateTeamRoomSchema>;
+
+// Call Settings table
+export const callSettings = pgTable("call_settings", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  preferredMic: text("preferred_mic"),
+  preferredCamera: text("preferred_camera"),
+  preferredSpeaker: text("preferred_speaker"),
+  micVolume: integer("mic_volume").default(100),
+  speakerVolume: integer("speaker_volume").default(100),
+  videoQuality: text("video_quality").default("medium"),
+  noiseSuppression: boolean("noise_suppression").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  userIdIdx: index("call_settings_user_id_idx").on(table.userId),
+}));
+
+// Call Participants table
+export const callParticipants = pgTable("call_participants", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  roomId: uuid("room_id").notNull().references(() => teamRooms.id, { onDelete: "cascade" }),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  isMicOn: boolean("is_mic_on").default(true),
+  isVideoOn: boolean("is_video_on").default(true),
+  isSpeaking: boolean("is_speaking").default(false),
+  joinedAt: timestamp("joined_at").defaultNow(),
+  leftAt: timestamp("left_at"),
+  isActive: boolean("is_active").default(true),
+}, (table) => ({
+  roomIdIdx: index("call_participants_room_id_idx").on(table.roomId),
+  userIdIdx: index("call_participants_user_id_idx").on(table.userId),
+  activeIdx: index("call_participants_active_idx").on(table.isActive),
+}));
+
+// Team Room Admins table
+export const teamRoomAdmins = pgTable("team_room_admins", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  roomId: uuid("room_id").notNull().references(() => teamRooms.id, { onDelete: "cascade" }),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  grantedBy: uuid("granted_by").notNull().references(() => users.id),
+  grantedAt: timestamp("granted_at").defaultNow(),
+}, (table) => ({
+  roomIdIdx: index("team_room_admins_room_id_idx").on(table.roomId),
+  userIdIdx: index("team_room_admins_user_id_idx").on(table.userId),
+}));
+
+export const insertCallSettingsSchema = createInsertSchema(callSettings).pick({
+  userId: true,
+  preferredMic: true,
+  preferredCamera: true,
+  preferredSpeaker: true,
+  micVolume: true,
+  speakerVolume: true,
+  videoQuality: true,
+  noiseSuppression: true,
+});
+
+export const insertCallParticipantSchema = createInsertSchema(callParticipants).pick({
+  roomId: true,
+  userId: true,
+  isMicOn: true,
+  isVideoOn: true,
+  isSpeaking: true,
+});
+
+export const insertTeamRoomAdminSchema = createInsertSchema(teamRoomAdmins).pick({
+  roomId: true,
+  userId: true,
+  grantedBy: true,
+});
+
+export type CallSettings = typeof callSettings.$inferSelect;
+export type InsertCallSettings = z.infer<typeof insertCallSettingsSchema>;
+export type CallParticipant = typeof callParticipants.$inferSelect;
+export type InsertCallParticipant = z.infer<typeof insertCallParticipantSchema>;
+export type TeamRoomAdmin = typeof teamRoomAdmins.$inferSelect;
+export type InsertTeamRoomAdmin = z.infer<typeof insertTeamRoomAdminSchema>;
 

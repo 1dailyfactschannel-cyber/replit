@@ -107,15 +107,32 @@ export function CallOverlay({ socket, currentUser, activeCall, outboundCall, onC
 
   const cleanup = () => {
     if (stream) {
-      stream.getTracks().forEach(track => track.stop());
+      stream.getTracks().forEach(track => {
+        track.stop();
+        track.enabled = false;
+      });
     }
     if (connectionRef.current) {
-      connectionRef.current.destroy();
+      try {
+        connectionRef.current.removeAllListeners();
+        connectionRef.current.destroy();
+      } catch (err) {
+        // Ignore errors when destroying connection (e.g., "Close called")
+        console.log("Peer connection cleanup (expected):", err);
+      }
+      connectionRef.current = null;
     }
   };
 
   const callUser = async (currentStream: MediaStream) => {
     if (!outboundCall) return;
+
+    // For direct calls, receiver is required
+    if (!outboundCall.to) {
+      toast.error("Не удалось определить получателя звонка");
+      onClose();
+      return;
+    }
 
     try {
       // Create call record in DB
@@ -153,6 +170,19 @@ export function CallOverlay({ socket, currentUser, activeCall, outboundCall, onC
         }
       });
 
+      peer.on("error", (err: any) => {
+        // Handle expected errors gracefully
+        if (err.message?.includes("Close called") || err.message?.includes("User-Initiated Abort")) {
+          console.log("Peer connection closed (expected)");
+          return;
+        }
+        console.error("Peer error:", err);
+      });
+
+      peer.on("close", () => {
+        console.log("Peer connection closed");
+      });
+
       connectionRef.current = peer;
     } catch (error) {
       console.error("Error creating call record:", error);
@@ -182,6 +212,19 @@ export function CallOverlay({ socket, currentUser, activeCall, outboundCall, onC
       }
     });
 
+    peer.on("error", (err: any) => {
+      // Handle expected errors gracefully
+      if (err.message?.includes("Close called") || err.message?.includes("User-Initiated Abort")) {
+        console.log("Peer connection closed (expected)");
+        return;
+      }
+      console.error("Peer error:", err);
+    });
+
+    peer.on("close", () => {
+      console.log("Peer connection closed");
+    });
+
     peer.signal(activeCall.signal);
     connectionRef.current = peer;
 
@@ -192,17 +235,25 @@ export function CallOverlay({ socket, currentUser, activeCall, outboundCall, onC
   };
 
   const rejectCall = async () => {
+    cleanup();
     if (activeCall) {
       socket.emit("reject-call", { to: activeCall.from });
       // Update call status to rejected in DB
       if (activeCall.callId) {
-        await apiRequest("PATCH", `/api/calls/${activeCall.callId}`, { status: 'rejected' });
+        try {
+          await apiRequest("PATCH", `/api/calls/${activeCall.callId}`, { status: 'rejected' });
+        } catch (err) {
+          console.error("Error updating call record:", err);
+        }
       }
     }
     onClose();
   };
 
   const endCall = async () => {
+    // Cleanup peer connection first to prevent errors
+    cleanup();
+    
     const to = activeCall?.from || outboundCall?.to;
     if (to) {
       socket.emit("end-call", { to });
@@ -212,10 +263,14 @@ export function CallOverlay({ socket, currentUser, activeCall, outboundCall, onC
     const currentCallId = callIdRef.current;
     if (currentCallId) {
       const duration = callAccepted ? Math.floor((Date.now() - startTimeRef.current) / 1000) : 0;
-      await apiRequest("PATCH", `/api/calls/${currentCallId}`, { 
-        status: callAccepted ? 'completed' : 'missed',
-        duration 
-      });
+      try {
+        await apiRequest("PATCH", `/api/calls/${currentCallId}`, { 
+          status: callAccepted ? 'completed' : 'missed',
+          duration 
+        });
+      } catch (err) {
+        console.error("Error updating call record:", err);
+      }
     }
 
     onClose();

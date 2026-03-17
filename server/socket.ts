@@ -1,6 +1,19 @@
 import { Server as HttpServer } from "http";
 import { Server as SocketIOServer } from "socket.io";
 import { log } from "./index";
+import { getStorage } from "./postgres-storage";
+import { mediasoupServer } from "./mediasoup";
+
+const storage = getStorage();
+
+let ioInstance: SocketIOServer | null = null;
+
+export function getIO(): SocketIOServer {
+  if (!ioInstance) {
+    throw new Error("Socket.io not initialized");
+  }
+  return ioInstance;
+}
 
 export function setupWebSockets(httpServer: HttpServer) {
   // Security: Restrict CORS to specific origins
@@ -18,6 +31,7 @@ export function setupWebSockets(httpServer: HttpServer) {
     pingTimeout: 10000,
   });
 
+  ioInstance = io;
   log("WebSockets setup complete", "socket.io");
 
   io.on("connection", (socket) => {
@@ -120,8 +134,171 @@ export function setupWebSockets(httpServer: HttpServer) {
       socket.to(`user:${data.to}`).emit("ice-candidate", data.candidate);
     });
 
-    socket.on("disconnect", () => {
+    // Team Room Call Events
+    socket.on("call:join", async (data: { roomId: string, userId: string, user: any }) => {
+      socket.join(`call-${data.roomId}`);
+      log(`User ${data.userId} joined call room ${data.roomId}`, "socket.io");
+      
+      try {
+        // Save participant to database
+        await storage.joinCall({
+          roomId: data.roomId,
+          userId: data.userId,
+          isMicOn: true,
+          isVideoOn: true,
+          isSpeaking: false
+        });
+        
+        // Get existing participants from database (excluding current user)
+        const participants = await storage.getCallParticipantsWithUsers(data.roomId);
+        const otherParticipants = participants.filter(p => p.userId !== data.userId);
+        
+        // Send existing participants to the newly joined user
+        socket.emit("call:existing-participants", otherParticipants);
+        
+        // Notify other participants about the new user
+        socket.to(`call-${data.roomId}`).emit("call:participant-joined", {
+          userId: data.userId,
+          user: data.user,
+          isMicOn: true,
+          isVideoOn: true,
+          isSpeaking: false
+        });
+      } catch (error: any) {
+        log(`Error joining call: ${error.message}`, "socket.io");
+      }
+    });
+
+    socket.on("call:leave", async (data: { roomId: string, userId: string }) => {
+      socket.leave(`call-${data.roomId}`);
+      log(`User ${data.userId} left call room ${data.roomId}`, "socket.io");
+      
+      try {
+        // Update database to mark participant as inactive
+        await storage.leaveCall(data.roomId, data.userId);
+      } catch (error: any) {
+        log(`Error leaving call: ${error.message}`, "socket.io");
+      }
+      
+      // Notify other participants
+      socket.to(`call-${data.roomId}`).emit("call:participant-left", {
+        userId: data.userId
+      });
+    });
+
+    socket.on("call:toggle-mic", (data: { roomId: string, userId: string, isOn: boolean }) => {
+      socket.to(`call-${data.roomId}`).emit("call:participant-updated", {
+        userId: data.userId,
+        isMicOn: data.isOn
+      });
+    });
+
+    socket.on("call:toggle-video", (data: { roomId: string, userId: string, isOn: boolean }) => {
+      socket.to(`call-${data.roomId}`).emit("call:participant-updated", {
+        userId: data.userId,
+        isVideoOn: data.isOn
+      });
+    });
+
+    socket.on("call:speaking", (data: { roomId: string, userId: string, isSpeaking: boolean }) => {
+      socket.to(`call-${data.roomId}`).emit("call:participant-updated", {
+        userId: data.userId,
+        isSpeaking: data.isSpeaking
+      });
+    });
+
+    // ==================================
+    // Mediasoup WebRTC Signaling
+    // ==================================
+
+    // Join a call room and create transport
+    socket.on("mediasoup:join", async (data: { roomId: string; userId: string }) => {
+      log(`User ${data.userId} joining mediasoup room ${data.roomId}`, "mediasoup");
+      
+      try {
+        const transport = await mediasoupServer.createWebRtcTransport(data.roomId, data.userId);
+        const router = mediasoupServer.getRouter(data.roomId);
+        
+        log(`Router for room ${data.roomId}: ${router ? 'found' : 'not found'}`, "mediasoup");
+        if (router) {
+          log(`Router RTP capabilities: ${JSON.stringify(router.rtpCapabilities)}`, "mediasoup");
+        }
+        
+        socket.emit("mediasoup:transport-created", {
+          id: transport.id,
+          iceParameters: transport.iceParameters,
+          iceCandidates: transport.iceCandidates,
+          dtlsParameters: transport.dtlsParameters,
+          rtpCapabilities: router ? router.rtpCapabilities : null
+        });
+      } catch (error: any) {
+        log(`Error creating transport: ${error.message}`, "mediasoup");
+        socket.emit("mediasoup:error", { message: "Failed to create transport" });
+      }
+    });
+
+    // Connect transport with dtlsParameters
+    socket.on("mediasoup:connect-transport", async (data: { userId: string; dtlsParameters: any }) => {
+      try {
+        const transport = mediasoupServer.getTransport(data.userId);
+        if (transport) {
+          await transport.connect({ dtlsParameters: data.dtlsParameters });
+          log(`Transport connected for user: ${data.userId}`, "mediasoup");
+        }
+      } catch (error: any) {
+        log(`Error connecting transport: ${error.message}`, "mediasoup");
+      }
+    });
+
+    // Produce (publish) media stream
+    socket.on("mediasoup:produce", async (data: { userId: string; kind: 'audio' | 'video'; rtpParameters: any }) => {
+      try {
+        const producer = await mediasoupServer.createProducer(data.userId, data.kind, data.rtpParameters);
+        
+        if (producer) {
+          socket.emit("mediasoup:producer-id", { id: producer.id });
+          
+          // Notify other participants in the same room
+          const roomId = producer.appData?.roomId || 'unknown';
+          socket.to(`room-${roomId}`).emit("mediasoup:new-producer", {
+            producerId: producer.id,
+            userId: data.userId,
+            kind: data.kind
+          });
+        }
+      } catch (error: any) {
+        log(`Error producing media: ${error.message}`, "mediasoup");
+      }
+    });
+
+    // Consume (subscribe to) media stream
+    socket.on("mediasoup:consume", async (data: { userId: string; producerId: string; roomId: string }) => {
+      try {
+        const consumer = await mediasoupServer.createConsumer(data.userId, data.producerId, data.roomId);
+        
+        if (consumer) {
+          socket.emit("mediasoup:consumer-created", {
+            id: consumer.id,
+            producerId: consumer.producerId,
+            kind: consumer.kind,
+            rtpParameters: consumer.rtpParameters
+          });
+        }
+      } catch (error: any) {
+        log(`Error consuming media: ${error.message}`, "mediasoup");
+      }
+    });
+
+    // Resume consumer (after pause)
+    socket.on("mediasoup:resume-consumer", async (data: { consumerId: string }) => {
+      // Implementation would go here
+    });
+
+    socket.on("disconnect", async () => {
       log(`Socket ${socket.id} disconnected`, "socket.io");
+      
+      // Clean up mediasoup resources for disconnected user
+      // This would require tracking userId by socket.id
     });
   });
 

@@ -4,6 +4,10 @@ import { type Server } from "http";
 import fs from "fs";
 import path from "path";
 import { nanoid } from "nanoid";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const viteLogger = createLogger();
 
@@ -16,8 +20,11 @@ export async function setupVite(server: Server, app: Express) {
     allowedHosts: true as const,
   };
 
+  // В CommonJS используем __dirname
+  const viteConfigPath = path.resolve(__dirname, "..", "vite.config.ts");
+  
   const vite = await createViteServer({
-    configFile: path.resolve(import.meta.dirname, "..", "vite.config.ts"),
+    configFile: viteConfigPath,
     server: serverOptions,
     appType: "custom",
     customLogger: {

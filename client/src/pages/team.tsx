@@ -1,5 +1,7 @@
 import { Layout } from "@/components/layout/Layout";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useDeferredValue } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import { 
   Table, 
   TableBody, 
@@ -12,7 +14,8 @@ import {
   DropdownMenu, 
   DropdownMenuContent, 
   DropdownMenuItem, 
-  DropdownMenuTrigger 
+  DropdownMenuTrigger,
+  DropdownMenuCheckboxItem 
 } from "@/components/ui/dropdown-menu";
 import { 
   Dialog, 
@@ -29,6 +32,9 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { StatusBadge, type Status } from "@/components/ui/status-badge";
 import { 
   MoreVertical, 
   UserMinus, 
@@ -38,25 +44,39 @@ import {
   Coins, 
   UserCog,
   Search,
-  Filter,
   Calendar as CalendarIcon,
   Users,
   Plus,
   Pencil,
-  Trash2
+  Trash2,
+  Monitor,
+  Loader2,
+  Send as SendIcon
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useLocation } from "wouter";
+import { useToast } from "@/hooks/use-toast";
 
 interface Employee {
   id: string;
-  name: string;
-  position: string;
+  firstName: string | null;
+  lastName: string | null;
   email: string;
-  status: 'active' | 'blocked' | 'on_leave';
-  points: number;
-  avatar?: string;
-  departmentId?: string;
+  position: string | null;
+  avatar: string | null;
+  department: string | null;
+  isActive: boolean;
+  isOnline: boolean;
+  lastSeen: string | null;
+  telegram: string | null;
+  telegramConnected: boolean;
+  pointsBalance: number;
+  phone: string | null;
+  notes: string | null;
+  status?: string;
+  statusColor?: string | null;
+  statusComment?: string;
+  isRemote?: boolean;
 }
 
 interface Department {
@@ -73,17 +93,45 @@ const mockDepartments: Department[] = [
 ];
 
 const mockEmployees: Employee[] = [
-  { id: "2", name: "Александр Петров", position: "Senior Frontend Developer", email: "a.petrov@teamsync.ru", status: "active", points: 850, departmentId: "1" },
-  { id: "3", name: "Елена Сидорова", position: "UI/UX Designer", email: "e.sidorova@teamsync.ru", status: "on_leave", points: 2100, departmentId: "2" },
-  { id: "4", name: "Максим Иванов", position: "Backend Lead", email: "m.ivanov@teamsync.ru", status: "blocked", points: 450, departmentId: "1" },
-  { id: "5", name: "Дарья Козлова", position: "Marketing Specialist", email: "d.kozlova@teamsync.ru", status: "active", points: 1100, departmentId: "3" },
+  { id: "2", firstName: "Александр", lastName: "Петров", email: "a.petrov@teamsync.ru", position: "Senior Frontend Developer", isActive: true, isOnline: true, lastSeen: new Date().toISOString(), telegram: "alex_petrov", telegramConnected: true, pointsBalance: 850, avatar: null, department: "1", status: "online", phone: null, notes: null },
+  { id: "3", firstName: "Елена", lastName: "Сидорова", email: "e.sidorova@teamsync.ru", position: "UI/UX Designer", isActive: true, isOnline: false, lastSeen: new Date(Date.now() - 3600000).toISOString(), telegram: null, telegramConnected: false, pointsBalance: 2100, avatar: null, department: "2", status: "offline", phone: null, notes: null },
+  { id: "4", firstName: "Максим", lastName: "Иванов", email: "m.ivanov@teamsync.ru", position: "Backend Lead", isActive: false, isOnline: false, lastSeen: new Date(Date.now() - 86400000).toISOString(), telegram: "max_ivanov", telegramConnected: true, pointsBalance: 450, avatar: null, department: "1", status: "offline", phone: null, notes: null },
+  { id: "5", firstName: "Дарья", lastName: "Козлова", email: "d.kozlova@teamsync.ru", position: "Marketing Specialist", isActive: true, isOnline: true, lastSeen: new Date().toISOString(), telegram: "darya_k", telegramConnected: true, pointsBalance: 1100, avatar: null, department: "3", status: "busy", phone: null, notes: null },
 ];
 
 export default function EmployeesPage() {
-  const [location] = useLocation();
+  const [location, navigate] = useLocation();
   const searchParams = new URLSearchParams(window.location.search);
   const initialTab = searchParams.get('tab') || 'list';
   
+  const { toast } = useToast();
+  
+  const [searchQuery, setSearchQuery] = useState("");
+  const deferredSearchQuery = useDeferredValue(searchQuery);
+  
+  const [filters, setFilters] = useState({
+    status: "all",
+    department: "all",
+    isRemote: "all" as "all" | boolean,
+    position: "all"
+  });
+  
+  const { data: apiEmployees = [], isLoading } = useQuery<Employee[]>({
+    queryKey: ["/api/users"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/users");
+      return res.json();
+    },
+  });
+
+  const { data: customStatuses = [] } = useQuery<{id: string; name: string; color: string; isDefault: boolean}[]>({
+    queryKey: ["/api/custom-statuses"],
+  });
+
+  const { data: apiDepartments = [] } = useQuery<{id: string; name: string; description: string | null; color: string}[]>({
+    queryKey: ["/api/departments"],
+  });
+
   const [employees, setEmployees] = useState<Employee[]>(mockEmployees);
   const [departments, setDepartments] = useState<Department[]>(mockDepartments);
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
@@ -91,6 +139,218 @@ export default function EmployeesPage() {
   const [isCreateDeptOpen, setIsCreateDeptOpen] = useState(false);
   const [newDeptName, setNewDeptName] = useState("");
   const [activeTab, setActiveTab] = useState(initialTab);
+
+  // Get unique positions for filter
+  const uniquePositions = useMemo(() => {
+    const positions = new Set(employees.map(e => e.position).filter(Boolean));
+    return Array.from(positions) as string[];
+  }, [employees]);
+
+  // Status history - fetch when modal is open and employee is selected
+  const userIdForHistory = selectedEmployee?.id;
+  const { data: statusHistory = [] } = useQuery<{
+    id: string;
+    oldStatus: string | null;
+    newStatus: string;
+    comment: string | null;
+    changedBy: string | null;
+    createdAt: string;
+    changedByUser: { firstName: string | null; lastName: string | null } | undefined;
+  }[]>({
+    queryKey: ["user-status-history", userIdForHistory || "none"],
+    queryFn: async () => {
+      if (!userIdForHistory) return [];
+      const res = await apiRequest("GET", `/api/users/${userIdForHistory}/status-history`);
+      return res.json();
+    },
+  });
+
+  // Points history
+  const { data: pointsHistory = [] } = useQuery<{
+    id: string;
+    type: string;
+    amount: number;
+    description: string | null;
+    changedBy: string | null;
+    createdAt: string;
+    changedByUser: { firstName: string | null; lastName: string | null } | undefined;
+    task: { id: string; title: string } | null;
+  }[]>({
+    queryKey: ["user-points-history", userIdForHistory || "none"],
+    queryFn: async () => {
+      if (!userIdForHistory) return [];
+      const res = await apiRequest("GET", `/api/users/${userIdForHistory}/points-history`);
+      return res.json();
+    },
+  });
+
+  // Employee editing state
+  const [editingEmployee, setEditingEmployee] = useState<{
+    firstName: string;
+    lastName: string;
+    position: string;
+    phone: string;
+    department: string;
+    telegram: string;
+    notes: string;
+    status: string;
+  } | null>(null);
+
+  // Points operation state
+  const [pointsAmount, setPointsAmount] = useState("");
+  const [pointsOperation, setPointsOperation] = useState<"add" | "subtract">("add");
+  const [pointsComment, setPointsComment] = useState("");
+
+  // Mutations
+  const updateEmployeeMutation = useMutation({
+    mutationFn: async (data: any) => {
+      const res = await apiRequest("PUT", `/api/users/${selectedEmployee?.id}`, data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/user"] });
+      toast({ title: "Успешно", description: "Статус сотрудника обновлён" });
+      setIsDetailsOpen(false);
+    },
+    onError: (error: any) => {
+      toast({ 
+        title: "Ошибка", 
+        description: error.message || "Не удалось обновить статус", 
+        variant: "destructive" 
+      });
+    }
+  });
+
+  const updateStatusMutation = useMutation({
+    mutationFn: async ({ status }: { status: string }) => {
+      const res = await apiRequest("PUT", `/api/users/${selectedEmployee?.id}`, { status });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+      queryClient.invalidateQueries({ queryKey: ["user-status-history", selectedEmployee?.id] });
+    },
+  });
+
+  const updatePointsMutation = useMutation({
+    mutationFn: async ({ amount, operation, comment }: { amount: number; operation: string; comment: string }) => {
+      const res = await apiRequest("POST", `/api/users/${selectedEmployee?.id}/points`, { amount, operation, comment });
+      return res.json();
+    },
+    onSuccess: (data) => {
+      console.log("Points updated:", data);
+      queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/user"] });
+      
+      // Update selected employee with new balance
+      if (selectedEmployee && data?.newBalance !== undefined) {
+        setSelectedEmployee({
+          ...selectedEmployee,
+          pointsBalance: data.newBalance
+        });
+      }
+      
+      setPointsAmount("");
+      setPointsComment("");
+    },
+    onError: (error) => {
+      console.error("Failed to update points:", error);
+    },
+  });
+
+  // Initialize editing employee when modal opens
+  useEffect(() => {
+    if (selectedEmployee) {
+      setEditingEmployee({
+        firstName: selectedEmployee.firstName || "",
+        lastName: selectedEmployee.lastName || "",
+        position: selectedEmployee.position || "",
+        phone: selectedEmployee.phone || "",
+        department: selectedEmployee.department || "",
+        telegram: selectedEmployee.telegram || "",
+        notes: selectedEmployee.notes || "",
+        status: selectedEmployee.status || "",
+      });
+    }
+  }, [selectedEmployee]);
+
+  // Sync API employees when loaded
+  useEffect(() => {
+    if (apiEmployees.length > 0) {
+      setEmployees(apiEmployees);
+    }
+  }, [apiEmployees]);
+
+  // Sync API departments when loaded
+  useEffect(() => {
+    if (apiDepartments.length > 0) {
+      setDepartments(apiDepartments.map(d => ({
+        id: d.id,
+        name: d.name,
+        color: d.color
+      })));
+    }
+  }, [apiDepartments]);
+
+  // Filter and sort employees
+  const processedEmployees = useMemo(() => {
+    let filtered = employees.filter((emp) => emp && emp.isActive !== false);
+    
+    // Remove duplicates by id
+    const uniqueUsers = Array.from(new Map(filtered.map(u => [u.id, u])).values());
+    
+    // Apply filters
+    let result = uniqueUsers;
+    
+    // Status filter
+    if (filters.status !== "all") {
+      result = result.filter(emp => emp.status === filters.status);
+    }
+    
+    // Department filter
+    if (filters.department !== "all") {
+      result = result.filter(emp => emp.department === filters.department);
+    }
+    
+    // Remote filter
+    if (filters.isRemote !== "all") {
+      result = result.filter(emp => emp.isRemote === filters.isRemote);
+    }
+    
+    // Position filter
+    if (filters.position !== "all") {
+      result = result.filter(emp => emp.position === filters.position);
+    }
+    
+    // Search filter
+    if (deferredSearchQuery.trim()) {
+      const query = deferredSearchQuery.toLowerCase();
+      result = result.filter((emp) => {
+        const fullName = `${emp.firstName || ""} ${emp.lastName || ""}`.toLowerCase();
+        const position = (emp.position || "").toLowerCase();
+        const email = (emp.email || "").toLowerCase();
+        const telegram = (emp.telegram || "").toLowerCase();
+        const status = (emp.status || "").toLowerCase();
+        const comment = (emp.statusComment || "").toLowerCase();
+        return fullName.includes(query) || position.includes(query) || email.includes(query) || telegram.includes(query) || status.includes(query) || comment.includes(query);
+      });
+    }
+    
+    // Sort: online -> busy -> offline, then by lastName
+    const statusRank = (status?: Status) => {
+      if (status === "online") return 0;
+      if (status === "busy") return 1;
+      return 2;
+    };
+    
+    return result.sort((a, b) => {
+      const rankA = statusRank(a.status);
+      const rankB = statusRank(b.status);
+      if (rankA !== rankB) return rankA - rankB;
+      return (a.lastName || "").localeCompare(b.lastName || "");
+    });
+  }, [employees, searchQuery, filters]);
 
   useEffect(() => {
     const tab = new URLSearchParams(window.location.search).get('tab') || 'list';
@@ -108,14 +368,6 @@ export default function EmployeesPage() {
     setDepartments(prev => [...prev, newDept]);
     setNewDeptName("");
     setIsCreateDeptOpen(false);
-  };
-
-  const getStatusBadge = (status: Employee['status']) => {
-    switch (status) {
-      case 'active': return <Badge className="bg-emerald-500/10 text-emerald-500 border-emerald-500/20">Активен</Badge>;
-      case 'blocked': return <Badge variant="destructive" className="bg-rose-500/10 text-rose-500 border-rose-500/20">Заблокирован</Badge>;
-      case 'on_leave': return <Badge variant="outline" className="bg-amber-500/10 text-amber-500 border-amber-500/20">В отпуске</Badge>;
-    }
   };
 
   return (
@@ -141,12 +393,97 @@ export default function EmployeesPage() {
             <div className="flex items-center gap-4">
               <div className="relative flex-1 max-w-sm">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                <Input placeholder="Поиск сотрудника..." className="pl-9 bg-secondary/30 border-border/50" />
+                <Input 
+                  placeholder="Поиск сотрудника..." 
+                  className="pl-9 bg-secondary/30 border-border/50"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                />
               </div>
-              <Button variant="outline" className="gap-2 border-border/50">
-                <Filter className="w-4 h-4" />
-                Фильтры
-              </Button>
+              
+              {/* Filters */}
+              <div className="flex items-center gap-2">
+                <Select 
+                  value={filters.status} 
+                  onValueChange={(value) => setFilters(f => ({ ...f, status: value }))}
+                >
+                  <SelectTrigger className="w-[140px] h-9 !bg-background">
+                    <SelectValue placeholder="Статус" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Все статусы</SelectItem>
+                    {customStatuses.map((s) => (
+                      <SelectItem key={s.id} value={s.name}>
+                        <div className="flex items-center gap-2">
+                          <span className="w-2 h-2 rounded-full" style={{ backgroundColor: s.color }} />
+                          {s.name}
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                <Select 
+                  value={filters.department} 
+                  onValueChange={(value) => setFilters(f => ({ ...f, department: value }))}
+                >
+                  <SelectTrigger className="w-[140px] h-9 !bg-background">
+                    <SelectValue placeholder="Отдел" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Все отделы</SelectItem>
+                    {departments.map((d) => (
+                      <SelectItem key={d.id} value={d.name}>
+                        <div className="flex items-center gap-2">
+                          <span className="w-2 h-2 rounded-full" style={{ backgroundColor: d.color }} />
+                          {d.name}
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                <Select 
+                  value={String(filters.isRemote)} 
+                  onValueChange={(value) => setFilters(f => ({ ...f, isRemote: value === "all" ? "all" : value === "true" }))}
+                >
+                  <SelectTrigger className="w-[120px] h-9 !bg-background">
+                    <SelectValue placeholder="Удаленка" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Все</SelectItem>
+                    <SelectItem value="true">Да</SelectItem>
+                    <SelectItem value="false">Нет</SelectItem>
+                  </SelectContent>
+                </Select>
+
+                <Select 
+                  value={filters.position} 
+                  onValueChange={(value) => setFilters(f => ({ ...f, position: value }))}
+                >
+                  <SelectTrigger className="w-[140px] h-9 !bg-background">
+                    <SelectValue placeholder="Должность" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Все должности</SelectItem>
+                    {uniquePositions.map((pos) => (
+                      <SelectItem key={pos} value={pos!}>{pos}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                {(filters.status !== "all" || filters.department !== "all" || filters.isRemote !== "all" || filters.position !== "all") && (
+                  <Button 
+                    variant="ghost" 
+                    size="sm"
+                    onClick={() => setFilters({ status: "all", department: "all", isRemote: "all", position: "all" })}
+                    className="text-muted-foreground"
+                  >
+                    Сбросить
+                  </Button>
+                )}
+              </div>
+
               <Button className="gap-2">
                 <UserCog className="w-4 h-4" />
                 Добавить сотрудника
@@ -158,15 +495,18 @@ export default function EmployeesPage() {
                 <TableHeader className="bg-secondary/20">
                   <TableRow>
                     <TableHead className="w-[300px]">Сотрудник</TableHead>
-                    <TableHead>Отдел</TableHead>
                     <TableHead>Должность</TableHead>
                     <TableHead>Статус</TableHead>
+                    <TableHead>Комментарий</TableHead>
                     <TableHead>Баллы</TableHead>
+                    <TableHead className="w-[80px] text-center">Удаленка</TableHead>
                     <TableHead className="text-right">Действия</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {employees.map((employee) => (
+                  {processedEmployees.map((employee) => {
+                    const fullName = `${employee.firstName || ""} ${employee.lastName || ""}`.trim();
+                    return (
                     <TableRow 
                       key={employee.id} 
                       className="cursor-pointer hover:bg-secondary/30 transition-colors"
@@ -178,31 +518,40 @@ export default function EmployeesPage() {
                        <TableCell className="font-medium text-foreground">
                         <div className="flex items-center gap-3">
                           <Avatar className="h-9 w-9 border border-border">
-                            <AvatarImage src={employee.avatar} />
-                            <AvatarFallback>{employee.name.split(' ').map(n => n[0]).join('')}</AvatarFallback>
+                            <AvatarImage src={employee.avatar || undefined} />
+                            <AvatarFallback>{fullName.split(" ").map(n => n[0]).join("")}</AvatarFallback>
                           </Avatar>
                           <div className="flex flex-col">
-                            <span className="text-sm font-semibold text-foreground">{employee.name}</span>
+                            <span className="text-sm font-semibold text-foreground">{fullName}</span>
                             <span className="text-xs text-foreground">{employee.email}</span>
                           </div>
                         </div>
                       </TableCell>
+                      <TableCell className="text-sm text-foreground">{employee.position}</TableCell>
                       <TableCell>
-                        {employee.departmentId ? (
-                          <Badge variant="outline" className={cn("text-[10px] font-bold", departments.find(d => d.id === employee.departmentId)?.color.replace('bg-', 'text-'))}>
-                            {departments.find(d => d.id === employee.departmentId)?.name}
-                          </Badge>
+                        {customStatuses.length > 0 && employee.status ? (
+                          <StatusBadge status={employee.status} color={customStatuses.find(s => s.name === employee.status)?.color} />
+                        ) : customStatuses.length === 0 ? (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        ) : null}
+                      </TableCell>
+                      <TableCell>
+                        {employee.statusComment ? (
+                          <span className="text-sm text-muted-foreground max-w-[150px] truncate block" title={employee.statusComment}>
+                            {employee.statusComment}
+                          </span>
                         ) : (
                           <span className="text-xs text-muted-foreground">—</span>
                         )}
                       </TableCell>
-                      <TableCell className="text-sm text-foreground">{employee.position}</TableCell>
-                      <TableCell>{getStatusBadge(employee.status)}</TableCell>
                       <TableCell>
                         <div className="flex items-center gap-1.5 font-medium text-foreground">
                           <Coins className="w-4 h-4 text-amber-500" />
-                          {employee.points}
+                          {employee.pointsBalance}
                         </div>
+                      </TableCell>
+                      <TableCell className="text-center">
+                        {employee.isRemote ? <Monitor className="w-4 h-4 text-muted-foreground" /> : null}
                       </TableCell>
                       <TableCell className="text-right">
                         <DropdownMenu>
@@ -215,20 +564,29 @@ export default function EmployeesPage() {
                             <DropdownMenuItem className="gap-2">
                               <UserCog className="w-4 h-4" /> Редактировать
                             </DropdownMenuItem>
-                            {employee.status === 'blocked' ? (
-                              <DropdownMenuItem className="gap-2 text-emerald-500">
-                                <UserCheck className="w-4 h-4" /> Разблокировать
-                              </DropdownMenuItem>
-                            ) : (
+                            <DropdownMenuCheckboxItem
+                              checked={employee.isRemote}
+                              onCheckedChange={(checked) => {
+                                updateEmployeeMutation.mutate({ id: employee.id, isRemote: checked });
+                              }}
+                              className="gap-2"
+                            >
+                              <Monitor className="w-4 h-4" /> Удаленка
+                            </DropdownMenuCheckboxItem>
+                            {employee.isActive ? (
                               <DropdownMenuItem className="gap-2 text-rose-500">
                                 <UserMinus className="w-4 h-4" /> Заблокировать
+                              </DropdownMenuItem>
+                            ) : (
+                              <DropdownMenuItem className="gap-2 text-emerald-500">
+                                <UserCheck className="w-4 h-4" /> Разблокировать
                               </DropdownMenuItem>
                             )}
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </TableCell>
                     </TableRow>
-                  ))}
+                  );})}
                 </TableBody>
               </Table>
             </div>
@@ -297,18 +655,20 @@ export default function EmployeesPage() {
                   </div>
                   <h3 className="text-lg font-bold mb-1">{dept.name}</h3>
                   <p className="text-sm text-muted-foreground mb-4">
-                    {employees.filter(e => e.departmentId === dept.id).length} сотрудников
+                    {employees.filter(e => e.department === dept.name).length} сотрудников
                   </p>
                   <div className="flex -space-x-2 overflow-hidden">
-                    {employees.filter(e => e.departmentId === dept.id).slice(0, 5).map((e) => (
+                    {employees.filter(e => e.department === dept.name).slice(0, 5).map((e) => {
+                      const empFullName = `${e.firstName || ""} ${e.lastName || ""}`.trim();
+                      return (
                       <Avatar key={e.id} className="inline-block h-8 w-8 rounded-full ring-2 ring-background">
-                        <AvatarImage src={e.avatar} />
-                        <AvatarFallback>{e.name[0]}</AvatarFallback>
+                        <AvatarImage src={e.avatar || undefined} />
+                        <AvatarFallback>{empFullName[0]}</AvatarFallback>
                       </Avatar>
-                    ))}
-                    {employees.filter(e => e.departmentId === dept.id).length > 5 && (
+                    )})}
+                    {employees.filter(e => e.department === dept.name).length > 5 && (
                       <div className="flex items-center justify-center h-8 w-8 rounded-full bg-secondary text-[10px] font-bold ring-2 ring-background">
-                        +{employees.filter(e => e.departmentId === dept.id).length - 5}
+                        +{employees.filter(e => e.department === dept.name).length - 5}
                       </div>
                     )}
                   </div>
@@ -379,15 +739,95 @@ export default function EmployeesPage() {
         <Dialog open={isDetailsOpen} onOpenChange={setIsDetailsOpen}>
           <DialogContent className="max-w-2xl p-0 overflow-hidden border-border/50">
             <DialogHeader className="p-6 bg-secondary/10 border-b border-border/50">
-              <div className="flex items-center gap-4">
-                <Avatar className="h-12 w-12 border-2 border-background shadow-sm">
-                  <AvatarImage src={selectedEmployee?.avatar} />
-                  <AvatarFallback>{selectedEmployee?.name.split(' ').map(n => n[0]).join('')}</AvatarFallback>
-                </Avatar>
-                <div>
-                  <DialogTitle className="text-xl">{selectedEmployee?.name}</DialogTitle>
-                  <DialogDescription className="text-sm text-muted-foreground">{selectedEmployee?.position}</DialogDescription>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <Avatar className="h-12 w-12 border-2 border-background shadow-sm">
+                    <AvatarImage src={selectedEmployee?.avatar || undefined} />
+                    <AvatarFallback>{selectedEmployee ? `${selectedEmployee.firstName?.[0] || ""}${selectedEmployee.lastName?.[0] || ""}` : ""}</AvatarFallback>
+                  </Avatar>
+                  <div>
+                    <DialogTitle className="text-xl">{selectedEmployee ? `${selectedEmployee.firstName || ""} ${selectedEmployee.lastName || ""}`.trim() : ""}</DialogTitle>
+                    <DialogDescription className="text-sm text-muted-foreground">{selectedEmployee?.position}</DialogDescription>
+                  </div>
                 </div>
+                <div className="flex items-center gap-3">
+                  {/* Status Select */}
+                  {customStatuses.length > 0 ? (
+                    <Select 
+                      value={editingEmployee?.status || ""} 
+                      onValueChange={(value) => {
+                        setEditingEmployee(prev => prev ? { ...prev, status: value } : null);
+                        updateStatusMutation.mutate({ status: value });
+                      }}
+                    >
+                      <SelectTrigger className="w-[140px] h-8">
+                        <SelectValue placeholder="Статус" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {customStatuses.map((s) => (
+                          <SelectItem key={s.id} value={s.name}>
+                            <div className="flex items-center gap-2">
+                              <span className="w-2 h-2 rounded-full" style={{ backgroundColor: s.color }} />
+                              {s.name}
+                            </div>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">Статусы не созданы</span>
+                  )}
+                  {/* Points display */}
+                  <div className="flex items-center gap-1.5 bg-amber-500/10 px-3 py-1.5 rounded-lg border border-amber-500/20">
+                    <Coins className="w-4 h-4 text-amber-500" />
+                    <span className="text-sm font-bold text-amber-600">{selectedEmployee?.pointsBalance || 0}</span>
+                  </div>
+                </div>
+              </div>
+              {/* Points Operation Row */}
+              <div className="flex items-center gap-2 mt-4 pt-4 border-t border-border/30">
+                <Input 
+                  type="number" 
+                  placeholder="Сумма" 
+                  className="w-24 h-8"
+                  value={pointsAmount}
+                  onChange={(e) => setPointsAmount(e.target.value)}
+                />
+                <Select value={pointsOperation} onValueChange={(v) => setPointsOperation(v as "add" | "subtract")}>
+                  <SelectTrigger className="w-[120px] h-8">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="add">Начислить</SelectItem>
+                    <SelectItem value="subtract">Списать</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Input 
+                  placeholder="Комментарий" 
+                  className="flex-1 h-8"
+                  value={pointsComment}
+                  onChange={(e) => setPointsComment(e.target.value)}
+                />
+                <Button 
+                  size="sm" 
+                  className="h-8"
+                  disabled={!pointsAmount}
+                  onClick={() => {
+                    const amount = parseInt(pointsAmount);
+                    console.log("Click! amount:", amount, "selectedEmployee:", selectedEmployee?.id);
+                    if (amount > 0 && selectedEmployee?.id) {
+                      updatePointsMutation.mutate({ 
+                        amount, 
+                        operation: pointsOperation, 
+                        comment: pointsComment 
+                      });
+                    } else {
+                      console.log("Validation failed - no amount or no employee");
+                    }
+                  }}
+                >
+                  Ок
+                </Button>
               </div>
             </DialogHeader>
             <Tabs defaultValue="edit" className="w-full">
@@ -402,78 +842,227 @@ export default function EmployeesPage() {
                 <TabsContent value="edit" className="mt-0 space-y-6">
                   <div className="grid grid-cols-2 gap-6">
                     <div className="space-y-2">
-                      <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Имя Фамилия</Label>
-                      <Input defaultValue={selectedEmployee?.name} className="bg-secondary/30" />
+                      <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Имя</Label>
+                      <Input 
+                        value={editingEmployee?.firstName || ""} 
+                        onChange={(e) => setEditingEmployee(prev => prev ? { ...prev, firstName: e.target.value } : null)}
+                        className="bg-secondary/30" 
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Фамилия</Label>
+                      <Input 
+                        value={editingEmployee?.lastName || ""} 
+                        onChange={(e) => setEditingEmployee(prev => prev ? { ...prev, lastName: e.target.value } : null)}
+                        className="bg-secondary/30" 
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Email</Label>
+                      <Input 
+                        value={selectedEmployee?.email || ""} 
+                        disabled 
+                        className="bg-secondary/30 opacity-60" 
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Телефон</Label>
+                      <Input 
+                        value={editingEmployee?.phone || ""} 
+                        onChange={(e) => setEditingEmployee(prev => prev ? { ...prev, phone: e.target.value } : null)}
+                        className="bg-secondary/30" 
+                      />
                     </div>
                     <div className="space-y-2">
                       <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Должность</Label>
-                      <Input defaultValue={selectedEmployee?.position} className="bg-secondary/30" />
+                      <Input 
+                        value={editingEmployee?.position || ""} 
+                        onChange={(e) => setEditingEmployee(prev => prev ? { ...prev, position: e.target.value } : null)}
+                        className="bg-secondary/30" 
+                      />
                     </div>
                     <div className="space-y-2">
-                      <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Текущий статус</Label>
-                      <Badge className="w-fit block" variant={selectedEmployee?.status === 'blocked' ? 'destructive' : 'default'}>
-                        {selectedEmployee?.status === 'active' ? 'Активен' : selectedEmployee?.status === 'blocked' ? 'Заблокирован' : 'В отпуске'}
-                      </Badge>
+                      <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Отдел</Label>
+                      <Select 
+                        value={editingEmployee?.department || "__empty__"} 
+                        onValueChange={(value) => setEditingEmployee(prev => prev ? { ...prev, department: value === "__empty__" ? "" : value } : null)}
+                      >
+                        <SelectTrigger className="bg-secondary/30">
+                          <SelectValue placeholder="Выберите отдел" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__empty__">Без отдела</SelectItem>
+                          {apiDepartments.map((dept) => (
+                            <SelectItem key={dept.id} value={dept.name}>
+                              <div className="flex items-center gap-2">
+                                <span className="w-2 h-2 rounded-full" style={{ backgroundColor: dept.color }} />
+                                {dept.name}
+                              </div>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </div>
                     <div className="space-y-2">
-                      <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Баллы</Label>
-                      <div className="flex gap-2">
-                        <Input type="number" defaultValue={selectedEmployee?.points} className="bg-secondary/30" />
-                        <Button variant="outline" size="icon" className="shrink-0"><Coins className="w-4 h-4 text-amber-500" /></Button>
+                      <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Telegram</Label>
+                      <Input 
+                        value={editingEmployee?.telegram || ""} 
+                        onChange={(e) => setEditingEmployee(prev => prev ? { ...prev, telegram: e.target.value } : null)}
+                        className="bg-secondary/30" 
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Статус</Label>
+                      <div>
+                        {editingEmployee?.status && customStatuses.find(s => s.name === editingEmployee.status) ? (
+                          <StatusBadge 
+                            status={editingEmployee.status} 
+                            color={customStatuses.find(s => s.name === editingEmployee.status)?.color} 
+                          />
+                        ) : (
+                          <span className="text-xs text-muted-foreground">Не установлен</span>
+                        )}
                       </div>
+                    </div>
+                    <div className="col-span-2 space-y-2">
+                      <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Заметки</Label>
+                      <Textarea 
+                        value={editingEmployee?.notes || ""} 
+                        onChange={(e) => setEditingEmployee(prev => prev ? { ...prev, notes: e.target.value } : null)}
+                        className="bg-secondary/30 min-h-[100px]" 
+                        placeholder="Заметки о сотруднике..."
+                      />
                     </div>
                   </div>
                   <div className="flex justify-end gap-3 pt-4 border-t border-border/50">
                     <Button variant="outline" onClick={() => setIsDetailsOpen(false)}>Отмена</Button>
-                    <Button>Сохранить изменения</Button>
+                    <Button 
+                      disabled={updateEmployeeMutation.isPending}
+                      onClick={() => {
+                        if (editingEmployee) {
+                          updateEmployeeMutation.mutate(editingEmployee);
+                        }
+                      }}
+                    >
+                      Сохранить изменения
+                    </Button>
                   </div>
                 </TabsContent>
 
-                <TabsContent value="audit_status" className="mt-0 space-y-4">
-                  <div className="space-y-4">
-                    {[
-                      { date: "03.01.2026 14:20", old: "В отпуске", new: "Активен", actor: "HR-отдел" },
-                      { date: "20.12.2025 09:00", old: "Активен", new: "В отпуске", actor: "Система" },
-                      { date: "15.11.2025 11:30", old: "Заблокирован", new: "Активен", actor: "Администратор" }
-                    ].map((entry, i) => (
-                      <div key={i} className="flex items-start gap-4 p-3 rounded-lg bg-secondary/20 border border-border/30">
-                        <div className="mt-1"><History className="w-4 h-4 text-muted-foreground" /></div>
-                        <div className="flex-1 space-y-1">
-                          <div className="flex justify-between items-center">
-                            <span className="text-sm font-medium text-foreground">{entry.date}</span>
-                            <span className="text-xs text-foreground">{entry.actor}</span>
-                          </div>
-                          <p className="text-xs text-muted-foreground">
-                            Статус изменен с <span className="text-foreground font-medium">"{entry.old}"</span> на <span className="text-foreground font-medium">"{entry.new}"</span>
-                          </p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+                <TabsContent value="audit_status" className="mt-0">
+                  {statusHistory.length === 0 ? (
+                    <div className="text-center py-8 text-muted-foreground">
+                      <History className="w-8 h-8 mx-auto mb-2 opacity-20" />
+                      <p className="text-sm">История статусов пуста</p>
+                    </div>
+                  ) : (
+                    <div className="max-h-[400px] overflow-y-auto">
+                      <Table>
+                        <TableHeader className="bg-secondary/20 sticky top-0">
+                          <TableRow>
+                            <TableHead className="w-[120px]">Статус</TableHead>
+                            <TableHead>Комментарий</TableHead>
+                            <TableHead className="w-[140px]">Кем выполнено</TableHead>
+                            <TableHead className="w-[120px]">Дата и время</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {statusHistory.map((entry) => (
+                            <TableRow key={entry.id}>
+                              <TableCell>
+                                <StatusBadge 
+                                  status={entry.newStatus} 
+                                  color={customStatuses.find(s => s.name === entry.newStatus)?.color}
+                                />
+                              </TableCell>
+                              <TableCell className="text-sm">
+                                {entry.comment || '—'}
+                              </TableCell>
+                              <TableCell className="text-sm text-muted-foreground">
+                                {entry.changedByUser 
+                                  ? `${entry.changedByUser.firstName || ''} ${entry.changedByUser.lastName || ''}`.trim() || 'Система'
+                                  : 'Система'}
+                              </TableCell>
+                              <TableCell className="text-sm text-muted-foreground">
+                                {entry.createdAt ? new Date(entry.createdAt).toLocaleString('ru-RU', { 
+                                day: '2-digit', 
+                                month: '2-digit', 
+                                year: 'numeric', 
+                                hour: '2-digit', 
+                                minute: '2-digit'
+                              }) : '—'}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                      </Table>
+                    </div>
+                  )}
                 </TabsContent>
 
-                <TabsContent value="audit_points" className="mt-0 space-y-4">
-                  <div className="space-y-4">
-                    {[
-                      { date: "02.01.2026 18:45", change: "+150", reason: "Завершение проекта 'Phoenix'", actor: "PM" },
-                      { date: "28.12.2025 12:00", change: "+50", reason: "Помощь коллеге", actor: "Юлия Дарицкая" },
-                      { date: "15.12.2025 10:00", change: "-200", reason: "Покупка мерча в магазине", actor: "Магазин" }
-                    ].map((entry, i) => (
-                      <div key={i} className="flex items-start gap-4 p-3 rounded-lg bg-secondary/20 border border-border/30">
-                        <div className="mt-1"><Coins className="w-4 h-4 text-amber-500" /></div>
-                        <div className="flex-1 space-y-1">
-                          <div className="flex justify-between items-center">
-                            <span className="text-sm font-medium text-foreground">{entry.date}</span>
-                            <span className={cn("text-sm font-bold", entry.change.startsWith('+') ? "text-emerald-500" : "text-rose-500")}>
-                              {entry.change}
-                            </span>
-                          </div>
-                          <p className="text-xs font-medium text-foreground">{entry.reason}</p>
-                          <p className="text-[10px] text-foreground uppercase tracking-tight">Изменил: {entry.actor}</p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+                <TabsContent value="audit_points" className="mt-0">
+                  {pointsHistory.length === 0 ? (
+                    <div className="text-center py-8 text-muted-foreground">
+                      <Coins className="w-8 h-8 mx-auto mb-2 opacity-20" />
+                      <p className="text-sm">История баллов пуста</p>
+                    </div>
+                  ) : (
+                    <div className="max-h-[400px] overflow-y-auto">
+                      <Table>
+                        <TableHeader className="bg-secondary/20 sticky top-0">
+                          <TableRow>
+                            <TableHead className="w-[80px]">Тип операции</TableHead>
+                            <TableHead className="w-[80px]">Баллы</TableHead>
+                            <TableHead>Комментарий</TableHead>
+                            <TableHead className="w-[140px]">Кем выполнено</TableHead>
+                            <TableHead className="w-[120px]">Дата и время</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {pointsHistory.map((entry) => (
+                            <TableRow key={entry.id}>
+                              <TableCell className="font-medium">
+                                {entry.type === "earned" ? "Начисление" : entry.type === "spent" ? "Списание" : "Возврат"}
+                              </TableCell>
+                              <TableCell>
+                                <span className={cn("font-bold", entry.amount > 0 ? "text-emerald-500" : "text-rose-500")}>
+                                  {entry.amount > 0 ? "+" : ""}{entry.amount}
+                                </span>
+                              </TableCell>
+                              <TableCell className="text-sm">
+                                {entry.task ? (
+                                  <button
+                                    onClick={() => navigate(`/projects?taskId=${entry.task!.id}`)}
+                                    className="text-blue-600 hover:underline cursor-pointer text-left"
+                                  >
+                                    {entry.task.title}
+                                  </button>
+                                ) : entry.description ? (
+                                  entry.description
+                                ) : (
+                                  '—'
+                                )}
+                              </TableCell>
+                              <TableCell className="text-sm text-muted-foreground">
+                                {entry.changedByUser 
+                                  ? `${entry.changedByUser.firstName || ''} ${entry.changedByUser.lastName || ''}`.trim() || 'Система'
+                                  : 'Система'}
+                              </TableCell>
+                              <TableCell className="text-sm text-muted-foreground">
+                                {entry.createdAt ? new Date(entry.createdAt).toLocaleString('ru-RU', { 
+                                  day: '2-digit', 
+                                  month: '2-digit', 
+                                  year: 'numeric', 
+                                  hour: '2-digit', 
+                                  minute: '2-digit'
+                                }) : '—'}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  )}
                 </TabsContent>
               </div>
             </Tabs>

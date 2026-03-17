@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import type { User as UserType } from "@shared/schema";
 import {
   LayoutDashboard,
   Kanban,
@@ -11,7 +12,6 @@ import {
   Calendar,
   MessageSquare,
   Users,
-  User,
   Settings,
   LogOut,
   Menu,
@@ -25,7 +25,10 @@ import {
   ChevronDown,
   Pencil,
   Trash2,
-  BarChart2
+  BarChart2,
+  Coins,
+  User,
+  Monitor
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -40,6 +43,7 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
+  DropdownMenuCheckboxItem,
 } from "@/components/ui/dropdown-menu";
 import {
   Collapsible,
@@ -66,6 +70,7 @@ const sidebarItems = [
   { icon: CheckSquare, label: "Мои задачи", href: "/tasks" },
   { icon: Calendar, label: "Календарь", href: "/calendar" },
   { icon: MessageSquare, label: "Общение", href: "/chat" },
+  { icon: Bell, label: "Уведомления", href: "/notifications" },
   { 
     icon: Users, 
     label: "Команда", 
@@ -154,9 +159,9 @@ const SidebarContentComponent = React.memo(({
   setLocation, 
   setIsMobileOpen,
   setIsCollapsed,
-  statusColors,
-  statusLabels,
-  user
+  user,
+  customStatuses,
+  isRemote
 }: any) => {
   const displayName = user ? `${user.firstName || ""} ${user.lastName || ""}`.trim() || user.username : "Пользователь";
   const initials = user ? (user.firstName && user.lastName ? `${user.firstName[0]}${user.lastName[0]}` : user.username.substring(0, 2).toUpperCase()) : "П";
@@ -186,7 +191,7 @@ const SidebarContentComponent = React.memo(({
             <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center text-primary-foreground font-bold text-xl shrink-0">
               T
             </div>
-            {!isCollapsed && <span className="font-sans font-bold text-lg animate-in fade-in duration-300">TeamSync</span>}
+            {!isCollapsed && <span className="font-sans font-bold text-lg animate-in fade-in duration-300">m4portal</span>}
           </div>
           {!isCollapsed && (
             <Button 
@@ -269,7 +274,7 @@ const SidebarContentComponent = React.memo(({
         <div className="mt-8 space-y-1">
           {!isCollapsed && <p className="text-xs font-medium text-muted-foreground px-2 mb-2 uppercase tracking-wider animate-in fade-in duration-300">Проекты</p>}
           {[
-            { name: "TeamSync Web", priority: "Высокий" },
+            { name: "m4portal Web", priority: "Высокий" },
             { name: "Mobile App", priority: "Средний" },
             { name: "Internal API", priority: "Низкий" }
           ].map((project, i) => (
@@ -305,10 +310,18 @@ const SidebarContentComponent = React.memo(({
                 isCollapsed && "px-1 justify-center"
               )}
             >
-              <Avatar className="w-9 h-9 border border-border shrink-0">
-                <AvatarImage src={user?.avatar || ""} alt={displayName} />
-                <AvatarFallback>{initials}</AvatarFallback>
-              </Avatar>
+              <div 
+                className="w-9 h-9 rounded-full shrink-0"
+                style={{ 
+                  background: `linear-gradient(#000, #000) padding-box, linear-gradient(to bottom, ${customStatuses.find((s: { name: string; color: string }) => s.name === status)?.color || '#6b7280'}, ${customStatuses.find((s: { name: string; color: string }) => s.name === status)?.color || '#6b7280'}) border-box`,
+                  border: '2px solid transparent'
+                }}
+              >
+                <Avatar className="w-full h-full border-0">
+                  <AvatarImage src={user?.avatar || ""} alt={displayName} className="rounded-full" />
+                  <AvatarFallback className="text-xs">{initials}</AvatarFallback>
+                </Avatar>
+              </div>
               {!isCollapsed && (
                 <div className="flex-1 min-w-0 animate-in fade-in duration-300">
                   <p className="text-sm font-medium truncate">{displayName}</p>
@@ -324,9 +337,37 @@ const SidebarContentComponent = React.memo(({
               className="gap-2 cursor-pointer"
               onClick={() => setIsStatusDialogOpen(true)}
             >
-              <span className={cn("w-2 h-2 rounded-full", statusColors[status as keyof typeof statusColors])} />
-              Статус: {statusLabels[status as keyof typeof statusLabels]}
+              {customStatuses.length > 0 && status ? (
+                <>
+                  <span 
+                    className="w-2 h-2 rounded-full" 
+                    style={{ backgroundColor: customStatuses.find((s: { name: string; color: string }) => s.name === status)?.color || "#6b7280" }} 
+                  />
+                  Статус: {status}
+                </>
+              ) : (
+                <>
+                  <span className="w-2 h-2 rounded-full bg-slate-500" />
+                  Статус: Не установлен
+                </>
+              )}
             </DropdownMenuItem>
+              <DropdownMenuCheckboxItem
+              checked={isRemote}
+              onCheckedChange={async (checked) => {
+                try {
+                  await apiRequest("PUT", `/api/users/${user?.id}`, { isRemote: checked });
+                  queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+                  queryClient.invalidateQueries({ queryKey: ["/api/user"] });
+                } catch (error) {
+                  console.error("Failed to update remote status:", error);
+                }
+              }}
+              className="gap-2 cursor-pointer"
+            >
+              <Monitor className="w-4 h-4" />
+              Удаленка
+            </DropdownMenuCheckboxItem>
             <DropdownMenuItem 
               className="gap-2 cursor-pointer" 
               onClick={() => setLocation("/profile")}
@@ -366,10 +407,12 @@ const SidebarContentComponent = React.memo(({
 });
 
 export function Layout({ children, className }: { children: React.ReactNode, className?: string }) {
-  const { data: user, isLoading } = useQuery({
+  const { data: user, isLoading, refetch: refetchUser } = useQuery<UserType>({
     queryKey: ["/api/user"],
     retry: false,
   });
+  
+  const { toast } = useToast();
   
   // Show loading while checking auth
   if (isLoading) {
@@ -388,8 +431,20 @@ export function Layout({ children, className }: { children: React.ReactNode, cla
     return false;
   });
   const [isStatusDialogOpen, setIsStatusDialogOpen] = useState(false);
-  const [status, setStatus] = useState("online");
-  const [statusComment, setStatusComment] = useState("");
+  const [status, setStatus] = useState(() => user?.status || "online");
+  const [statusComment, setStatusComment] = useState(() => user?.statusComment || "");
+
+  // Синхронизация локального состояния статуса с данными пользователя
+  useEffect(() => {
+    if (user) {
+      setStatus(user.status || "online");
+      setStatusComment(user.statusComment || "");
+    }
+  }, [user]);
+
+  const { data: customStatuses = [] } = useQuery<{id: string; name: string; color: string; isDefault: boolean}[]>({
+    queryKey: ["/api/custom-statuses"],
+  });
 
   // Memoize callbacks to prevent unnecessary re-renders of SidebarContentComponent
   const handleSetLocation = React.useCallback((href: string) => {
@@ -412,20 +467,6 @@ export function Layout({ children, className }: { children: React.ReactNode, cla
     localStorage.setItem("sidebar-collapsed", isCollapsed.toString());
   }, [isCollapsed]);
 
-  const statusColors = {
-    online: "bg-emerald-500",
-    offline: "bg-slate-500",
-    vacation: "bg-blue-500",
-    sick: "bg-rose-500",
-  };
-
-  const statusLabels = {
-    online: "В сети",
-    offline: "Не в сети",
-    vacation: "В отпуске",
-    sick: "Больничный",
-  };
-
   // Убираем авто-сворачивание, чтобы пользователь сам решал, в каком состоянии должно быть меню
   /*
   useEffect(() => {
@@ -445,6 +486,7 @@ export function Layout({ children, className }: { children: React.ReactNode, cla
         isCollapsed ? "w-20" : "w-64"
       )}>
         <SidebarContentComponent 
+          key={`${status}-${customStatuses.length}`}
           isCollapsed={isCollapsed}
           location={location}
           status={status}
@@ -453,9 +495,9 @@ export function Layout({ children, className }: { children: React.ReactNode, cla
           setLocation={handleSetLocation}
           setIsMobileOpen={handleSetIsMobileOpen}
           setIsCollapsed={handleSetIsCollapsed}
-          statusColors={statusColors}
-          statusLabels={statusLabels}
           user={user}
+          customStatuses={customStatuses}
+          isRemote={(user as any)?.isRemote || false}
         />
       </div>
 
@@ -473,6 +515,7 @@ export function Layout({ children, className }: { children: React.ReactNode, cla
               </SheetTrigger>
               <SheetContent side="left" className="p-0 w-72 border-r-sidebar-border bg-sidebar text-sidebar-foreground">
                 <SidebarContentComponent 
+                  key={`${status}-${customStatuses.length}-mobile`}
                   isCollapsed={false}
                   location={location}
                   status={status}
@@ -481,9 +524,9 @@ export function Layout({ children, className }: { children: React.ReactNode, cla
                   setLocation={handleSetLocation}
                   setIsMobileOpen={handleSetIsMobileOpen}
                   setIsCollapsed={handleSetIsCollapsed}
-                  statusColors={statusColors}
-                  statusLabels={statusLabels}
                   user={user}
+                  customStatuses={customStatuses}
+                  isRemote={(user as any)?.isRemote || false}
                 />
               </SheetContent>
             </Sheet>
@@ -509,8 +552,18 @@ export function Layout({ children, className }: { children: React.ReactNode, cla
             </div>
           </div>
 
-          {/* Right side - Theme toggle and notifications */}
+          {/* Right side - Balance, Theme toggle and notifications */}
           <div className="flex items-center gap-3">
+            {user && (
+              <div 
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 font-medium text-sm cursor-pointer hover:bg-amber-200 dark:hover:bg-amber-900/50 transition-colors"
+                onClick={() => setLocation("/profile?tab=balance")}
+                title="Перейти к балансу"
+              >
+                <Coins className="w-4 h-4" />
+                <span>{user.pointsBalance || 0}</span>
+              </div>
+            )}
             <ThemeToggle />
             <NotificationAlertDialog />
           </div>
@@ -528,55 +581,69 @@ export function Layout({ children, className }: { children: React.ReactNode, cla
             <DialogDescription>Обновите ваш рабочий статус для коллег.</DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
-            <div className="space-y-2">
-              <Label>Выберите статус</Label>
-              <span className="sr-only">Статус</span>
-              <Select value={status} onValueChange={setStatus}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="online">
-                    <div className="flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                      В сети (пришел на работу)
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="offline">
-                    <div className="flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full bg-slate-500" />
-                      Не в сети (ушел с работы)
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="vacation">
-                    <div className="flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full bg-blue-500" />
-                      В отпуске
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="sick">
-                    <div className="flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full bg-rose-500" />
-                      Больничный
-                    </div>
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>Комментарий к статусу</Label>
-              <Textarea 
-                placeholder="Что происходит?" 
-                value={statusComment}
-                onChange={(e) => setStatusComment(e.target.value)}
-                className="resize-none"
-                rows={3}
-              />
-            </div>
+            {customStatuses.length === 0 ? (
+              <div className="text-center py-4 text-muted-foreground">
+                <p>Статусы не созданы.</p>
+                <p className="text-sm">Создайте статусы в разделе "Управление → Статусы"</p>
+              </div>
+            ) : (
+              <>
+                <div className="space-y-2">
+                  <Label>Выберите статус</Label>
+                  <span className="sr-only">Статус</span>
+                  <Select value={status} onValueChange={setStatus}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {customStatuses.map((s) => (
+                        <SelectItem key={s.id} value={s.name}>
+                          <div className="flex items-center gap-2">
+                            <span className="w-2 h-2 rounded-full" style={{ backgroundColor: s.color }} />
+                            {s.name}
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Комментарий к статусу</Label>
+                  <Textarea 
+                    placeholder="Что происходит?" 
+                    value={statusComment}
+                    onChange={(e) => setStatusComment(e.target.value)}
+                    className="resize-none"
+                    rows={3}
+                  />
+                </div>
+              </>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsStatusDialogOpen(false)}>Отмена</Button>
-            <Button onClick={() => setIsStatusDialogOpen(false)}>Обновить</Button>
+            {customStatuses.length > 0 && (
+              <Button 
+                onClick={async () => {
+                  try {
+                    await apiRequest("PUT", `/api/users/${user?.id}`, {
+                      status,
+                      statusComment
+                    });
+                    queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+                    queryClient.invalidateQueries({ queryKey: ["/api/user"] });
+                    refetchUser();
+                    toast({ title: "Успешно", description: "Ваш статус обновлён" });
+                  } catch (error) {
+                    console.error("Failed to update status:", error);
+                    toast({ title: "Ошибка", description: "Не удалось обновить статус", variant: "destructive" });
+                  }
+                  setIsStatusDialogOpen(false);
+                }}
+              >
+                Обновить
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>

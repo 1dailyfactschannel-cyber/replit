@@ -1,12 +1,14 @@
 "use client"
 
-import { BellRing, X, Clock, Check } from "lucide-react"
+import { BellRing, Clock, CheckSquare, MessageSquare, Calendar, Phone, Settings } from "lucide-react"
 import { useState, useEffect } from "react"
-import { useQuery, useMutation } from "@tanstack/react-query"
-import { apiRequest, queryClient } from "@/lib/queryClient"
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
+import { apiRequest } from "@/lib/queryClient"
 import type { Notification } from "@shared/schema"
 import { formatDistanceToNow } from "date-fns"
 import { ru } from "date-fns/locale"
+import { io, Socket } from "socket.io-client"
+import { useLocation } from "wouter"
 
 import {
     AlertDialog,
@@ -22,9 +24,79 @@ import {
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 
+const notificationTypeConfig = {
+  task: { icon: CheckSquare, color: "text-blue-500", bgColor: "bg-blue-500/10" },
+  chat: { icon: MessageSquare, color: "text-green-500", bgColor: "bg-green-500/10" },
+  calendar: { icon: Calendar, color: "text-purple-500", bgColor: "bg-purple-500/10" },
+  call: { icon: Phone, color: "text-orange-500", bgColor: "bg-orange-500/10" },
+  system: { icon: Settings, color: "text-gray-500", bgColor: "bg-gray-500/10" },
+}
+
+function getNotificationType(type: string) {
+  if (type in notificationTypeConfig) {
+    return type as keyof typeof notificationTypeConfig
+  }
+  return "system"
+}
+
+// Parse notification message (JSON or plain text)
+interface ParsedNotificationData {
+  action: string;
+  fieldName?: string;
+  oldValue?: string;
+  newValue?: string;
+  taskTitle?: string;
+  boardName?: string;
+  userName: string;
+}
+
+function parseNotificationMessage(message: string): ParsedNotificationData | null {
+  try {
+    const parsed = JSON.parse(message)
+    return parsed as ParsedNotificationData
+  } catch {
+    return null
+  }
+}
+
+// Format notification content for display
+function formatNotificationContent(notification: Notification) {
+  const data = parseNotificationMessage(notification.message)
+  
+  if (!data) {
+    return {
+      userName: null,
+      action: null,
+      detail: notification.message,
+    }
+  }
+
+  const actionVerbs: Record<string, string> = {
+    created: "создал(-а)",
+    updated: "обновил(-а)",
+    assigned: "назначил(-а)",
+    changed: "изменил(-а)",
+    comment_added: "прокомментировал(-а)",
+    completed: "завершил(-а)",
+  }
+
+  const verb = actionVerbs[data.action] || data.action
+
+  return {
+    userName: data.userName,
+    action: verb,
+    fieldName: data.fieldName,
+    oldValue: data.oldValue,
+    newValue: data.newValue,
+    taskTitle: data.taskTitle,
+    boardName: data.boardName,
+  }
+}
+
 export function NotificationAlertDialog() {
     const [isDialogOpen, setIsDialogOpen] = useState(false)
-    const [showAllNotifications, setShowAllNotifications] = useState(false)
+    const [, setLocation] = useLocation()
+    const queryClient = useQueryClient()
 
     const { data: notifications = [] } = useQuery<Notification[]>({
         queryKey: ["/api/notifications"],
@@ -48,248 +120,192 @@ export function NotificationAlertDialog() {
         },
     })
 
-    const deleteMutation = useMutation({
-        mutationFn: async (id: string) => {
-            await apiRequest("DELETE", `/api/notifications/${id}`)
-        },
-        onSuccess: () => {
+    useEffect(() => {
+        const socket: Socket = io({
+            transports: ["websocket"],
+        })
+
+        socket.on("connect", () => {
+            console.log("Notification socket connected")
+        })
+
+        socket.on("new-notification", () => {
             queryClient.invalidateQueries({ queryKey: ["/api/notifications"] })
-        },
-    })
+        })
+
+        return () => {
+            socket.disconnect()
+        }
+    }, [queryClient])
 
     const unreadCount = notifications?.filter((n) => !n.isRead).length ?? 0
-
-    const getInitials = (title: string) => {
-        return title
-            .split(" ")
-            .map((n) => n[0])
-            .join("")
-            .toUpperCase()
-            .substring(0, 2)
-    }
 
     const formatTime = (date: Date | string | null) => {
         if (!date) return ""
         return formatDistanceToNow(new Date(date), { addSuffix: true, locale: ru })
     }
 
+    const handleNotificationClick = (notification: Notification) => {
+        if (!notification.isRead) {
+            markAsReadMutation.mutate(notification.id)
+        }
+        setIsDialogOpen(false)
+        
+        if (notification.link) {
+            setLocation(notification.link)
+            return
+        }
+
+        const type = getNotificationType(notification.type)
+        switch (type) {
+            case "task":
+                setLocation("/tasks")
+                break
+            case "chat":
+                setLocation("/chat")
+                break
+            case "calendar":
+                setLocation("/calendar")
+                break
+            case "call":
+                setLocation("/call")
+                break
+            default:
+                break
+        }
+    }
+
+    const handleShowAll = () => {
+        setIsDialogOpen(false)
+        setLocation("/notifications")
+    }
+
     return (
-        <>
-            <AlertDialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-                <AlertDialogTrigger asChild>
-                    <Button variant="ghost" size="icon" className="relative rounded-full hover:bg-secondary">
-                        <BellRing className="h-5 w-5 text-muted-foreground" />
-                        {unreadCount > 0 && (
-                            <span className="absolute top-2.5 right-2.5 w-2 h-2 bg-red-500 rounded-full border-2 border-background" />
-                        )}
-                    </Button>
-                </AlertDialogTrigger>
-                <AlertDialogContent className="border-indigo-200 dark:border-indigo-900 border-2 max-w-md bg-white dark:bg-gray-900">
-                    <AlertDialogHeader>
-                        <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-2">
-                                <BellRing className="h-5 w-5 text-indigo-500 dark:text-indigo-400" />
-                                <AlertDialogTitle className="dark:text-white text-foreground">Уведомления</AlertDialogTitle>
-                            </div>
-                            {unreadCount > 0 && (
-                                <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => markAllAsReadMutation.mutate()}
-                                    className="text-xs text-indigo-500 hover:text-indigo-600 dark:text-indigo-400 dark:hover:text-indigo-300 dark:hover:bg-black/50"
-                                >
-                                    Прочитать все
-                                </Button>
-                            )}
+        <AlertDialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+            <AlertDialogTrigger asChild>
+                <Button variant="ghost" size="icon" className="relative rounded-full hover:bg-secondary">
+                    <BellRing className="h-5 w-5 text-muted-foreground" />
+                    {unreadCount > 0 && (
+                        <span className="absolute -top-0.5 -right-0.5 min-w-5 h-5 flex items-center justify-center bg-red-500 text-white text-xs font-bold rounded-full">
+                            {unreadCount > 9 ? "9+" : unreadCount}
+                        </span>
+                    )}
+                </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent className="border-border max-w-md">
+                <AlertDialogHeader>
+                    <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                            <BellRing className="h-5 w-5 text-primary" />
+                            <AlertDialogTitle>Уведомления</AlertDialogTitle>
                         </div>
-                        <AlertDialogDescription className="dark:text-gray-400">
-                            У вас {unreadCount} {unreadCount === 1 ? "непрочитанное сообщение" : "непрочитанных сообщений"}.
-                        </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <div className="my-3 space-y-2 max-h-[300px] overflow-y-auto">
-                        {!notifications || notifications.length === 0 ? (
-                            <p className="text-center py-4 text-muted-foreground">Нет уведомлений</p>
-                        ) : (
-                            notifications.slice(0, 3).map((notification) => (
-                                <div
-                                    key={notification.id}
-                                    className={cn(
-                                        "flex items-center gap-3 p-3 rounded-md transition-all duration-200 cursor-pointer",
-                                        notification.isRead ? "bg-gray-100 dark:bg-gray-800" : "bg-indigo-50 dark:bg-indigo-900/40 shadow-sm",
-                                    )}
-                                    onClick={() => !notification.isRead && markAsReadMutation.mutate(notification.id)}
-                                >
-                                    <div
-                                        className={cn(
-                                            "w-10 h-10 rounded-full flex items-center justify-center font-medium shrink-0",
-                                            notification.isRead
-                                                ? "bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-300"
-                                                : "bg-indigo-200 text-indigo-700 dark:bg-indigo-800 dark:text-indigo-300",
-                                        )}
-                                    >
-                                        {getInitials(notification.title)}
-                                    </div>
-                                    <div className="flex-1 min-w-0 text-left">
-                                        <p
-                                            className={cn(
-                                                "text-sm font-medium",
-                                                notification.isRead ? "text-gray-700 dark:text-gray-300" : "text-gray-900 dark:text-white",
-                                            )}
-                                        >
-                                            {notification.title}
-                                        </p>
-                                        <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{notification.message}</p>
-                                        <div className="flex items-center text-xs text-gray-400 dark:text-gray-500 mt-1">
-                                            <Clock className="h-3 w-3 mr-1" />
-                                            {formatTime(notification.createdAt)}
-                                        </div>
-                                    </div>
-                                    {!notification.isRead && (
-                                        <span className="h-2.5 w-2.5 rounded-full bg-indigo-500 dark:bg-indigo-400 shrink-0"></span>
-                                    )}
-                                </div>
-                            ))
-                        )}
-                    </div>
-                    <AlertDialogFooter>
-                        <AlertDialogCancel
-                            className="border-indigo-200 text-indigo-700 hover:bg-indigo-50 dark:border-indigo-800 dark:text-indigo-400 dark:hover:bg-indigo-900/40"
-                        >
-                            Закрыть
-                        </AlertDialogCancel>
-                        <AlertDialogAction
-                            className="bg-indigo-500 hover:bg-indigo-600 dark:text-white dark:bg-indigo-700 dark:hover:bg-indigo-800"
-                            onClick={() => {
-                                setShowAllNotifications(true)
-                                document.body.classList.add("overflow-hidden")
-                            }}
-                        >
-                            Показать все
-                        </AlertDialogAction>
-                    </AlertDialogFooter>
-                </AlertDialogContent>
-            </AlertDialog>
-            <div
-                className={cn(
-                    "fixed inset-0 bg-black/60 dark:bg-black/80 z-[60] transition-opacity duration-300",
-                    showAllNotifications ? "opacity-100" : "opacity-0 pointer-events-none",
-                )}
-                onClick={() => {
-                    setShowAllNotifications(false)
-                    document.body.classList.remove("overflow-hidden")
-                }}
-            />
-            <div
-                className={cn(
-                    "fixed top-0 right-0 h-full shadow-2xl transition-transform duration-300 ease-in-out transform w-full max-w-md z-[70]",
-                    "bg-white dark:bg-[#0f172a] border-l border-gray-200 dark:border-gray-800",
-                    showAllNotifications ? "translate-x-0" : "translate-x-full",
-                )}
-            >
-                    <div className="flex flex-col h-full">
-                        <div className="p-4 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between">
-                            <div className="flex items-center gap-2">
-                                <BellRing className="h-5 w-5 text-indigo-500 dark:text-indigo-400" />
-                                <h2 className="text-lg font-semibold dark:text-white text-foreground">Все уведомления</h2>
-                            </div>
+                        {unreadCount > 0 && (
                             <Button
                                 variant="ghost"
-                                size="icon"
-                                onClick={() => {
-                                    setShowAllNotifications(false)
-                                    document.body.classList.remove("overflow-hidden")
-                                }}
-                                className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
-                            >
-                                <X className="h-5 w-5" />
-                                <span className="sr-only">Закрыть</span>
-                            </Button>
-                        </div>
-                        <div className="flex-1 overflow-y-auto p-4 space-y-3 scrollbar-thin scrollbar-thumb-indigo-200 dark:scrollbar-thumb-indigo-800">
-                            {!notifications || notifications.length === 0 ? (
-                                <div className="flex flex-col items-center justify-center h-full text-gray-500 dark:text-gray-400">
-                                    <BellRing className="h-12 w-12 mb-2 text-gray-300 dark:text-gray-700" />
-                                    <p>Нет уведомлений</p>
-                                </div>
-                            ) : (
-                                notifications.map((notification) => (
-                                    <div
-                                        key={notification.id}
-                                        className={cn(
-                                            "flex items-start gap-3 p-4 rounded-lg transition-all duration-200 cursor-pointer text-left relative group",
-                                            notification.isRead
-                                                ? "bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700"
-                                                : "bg-indigo-50 dark:bg-indigo-900/40 border border-indigo-100 dark:border-indigo-800 shadow-sm",
-                                        )}
-                                        onClick={() => !notification.isRead && markAsReadMutation.mutate(notification.id)}
-                                    >
-                                        <div
-                                            className={cn(
-                                                "w-10 h-10 rounded-full flex items-center justify-center font-medium shrink-0",
-                                                notification.isRead
-                                                    ? "bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-300"
-                                                    : "bg-indigo-200 text-indigo-700 dark:bg-indigo-800 dark:text-indigo-300",
-                                            )}
-                                        >
-                                            {getInitials(notification.title)}
-                                        </div>
-                                        <div className="flex-1">
-                                            <div className="flex justify-between items-start">
-                                                <p
-                                                    className={cn(
-                                                        "text-sm font-medium",
-                                                        notification.isRead ? "text-gray-700 dark:text-gray-300" : "text-gray-900 dark:text-white",
-                                                    )}
-                                                >
-                                                    {notification.title}
-                                                </p>
-                                                <div className="flex items-center text-xs text-gray-400 dark:text-gray-500">
-                                                    <Clock className="h-3 w-3 mr-1" />
-                                                    {formatTime(notification.createdAt)}
-                                                </div>
-                                            </div>
-                                            <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">{notification.message}</p>
-
-                                            {notification.isRead && (
-                                                <div className="flex items-center mt-2 text-xs text-indigo-500 dark:text-indigo-400">
-                                                    <Check className="h-3 w-3 mr-1" />
-                                                    Прочитано
-                                                </div>
-                                            )}
-                                        </div>
-                                        <Button
-                                            variant="ghost"
-                                            size="icon"
-                                            className="h-6 w-6 absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity"
-                                            onClick={(e) => {
-                                                e.stopPropagation()
-                                                deleteMutation.mutate(notification.id)
-                                            }}
-                                        >
-                                            <X className="h-3 w-3" />
-                                        </Button>
-                                        {!notification.isRead && (
-                                            <span className="h-2.5 w-2.5 rounded-full bg-indigo-500 dark:bg-indigo-400 shrink-0 mt-2"></span>
-                                        )}
-                                    </div>
-                                ))
-                            )}
-                        </div>
-                        <div className="p-4 border-t border-gray-200 dark:border-gray-800">
-                            <Button
-                                className="w-full bg-indigo-500 hover:bg-indigo-600 dark:bg-indigo-600 dark:hover:bg-indigo-700"
-                                onClick={() => {
-                                    markAllAsReadMutation.mutate()
-                                    setShowAllNotifications(false)
-                                    document.body.classList.remove("overflow-hidden")
-                                }}
-                                disabled={unreadCount === 0}
+                                size="sm"
+                                onClick={() => markAllAsReadMutation.mutate()}
+                                className="text-xs text-primary hover:text-primary/80"
                             >
                                 Прочитать все
                             </Button>
-                        </div>
+                        )}
                     </div>
+                    <AlertDialogDescription>
+                        {unreadCount > 0 
+                            ? `У вас ${unreadCount} ${unreadCount === 1 ? "непрочитанное уведомление" : unreadCount < 5 ? "непрочитанных уведомления" : "непрочитанных уведомлений"}`
+                            : "Нет непрочитанных уведомлений"
+                        }
+                    </AlertDialogDescription>
+                </AlertDialogHeader>
+                <div className="my-3 space-y-2 max-h-[350px] overflow-y-auto">
+                    {!notifications || notifications.length === 0 ? (
+                        <p className="text-center py-4 text-muted-foreground">Нет уведомлений</p>
+                    ) : (
+                        notifications.slice(0, 5).map((notification) => {
+                            const type = getNotificationType(notification.type)
+                            const config = notificationTypeConfig[type]
+                            const Icon = config.icon
+                            const content = formatNotificationContent(notification)
+
+                            return (
+                                <div
+                                    key={notification.id}
+                                    className={cn(
+                                        "flex items-start gap-2.5 p-2.5 rounded-md transition-all duration-200 cursor-pointer",
+                                        notification.isRead 
+                                            ? "bg-muted/30 hover:bg-muted/50" 
+                                            : "bg-primary/10 hover:bg-primary/15",
+                                    )}
+                                    onClick={() => handleNotificationClick(notification)}
+                                >
+                                    <div
+                                        className={cn(
+                                            "w-8 h-8 rounded-full flex items-center justify-center shrink-0",
+                                            notification.isRead ? "bg-muted" : config.bgColor
+                                        )}
+                                    >
+                                        <Icon className={cn("w-4 h-4", notification.isRead ? "text-muted-foreground" : config.color)} />
+                                    </div>
+                                    <div className="flex-1 min-w-0 text-left">
+                                        <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground mb-0.5">
+                                            <Clock className="h-3 w-3" />
+                                            {formatTime(notification.createdAt)}
+                                        </div>
+                                        <div className="flex flex-wrap items-center gap-x-1 gap-y-0.5 text-xs">
+                                            {content.userName && (
+                                                <span className={cn(
+                                                    "font-medium",
+                                                    notification.isRead ? "text-muted-foreground" : "text-foreground"
+                                                )}>
+                                                    {content.userName}
+                                                </span>
+                                            )}
+                                            {content.action && (
+                                                <span className="text-muted-foreground">{content.action}</span>
+                                            )}
+                                            {content.fieldName && (
+                                                <span className={cn(
+                                                    "font-medium",
+                                                    notification.isRead ? "text-muted-foreground" : "text-foreground"
+                                                )}>
+                                                    {content.fieldName}
+                                                </span>
+                                            )}
+                                            {content.oldValue && content.newValue && (
+                                                <span className="text-muted-foreground">
+                                                    с <span className="line-through opacity-60">"{content.oldValue}"</span> на <span className="text-primary font-medium">"{content.newValue}"</span>
+                                                </span>
+                                            )}
+                                            {content.newValue && !content.oldValue && (
+                                                <span className="text-primary font-medium">"{content.newValue}"</span>
+                                            )}
+                                        </div>
+                                        {content.taskTitle && (
+                                            <p className="text-[10px] text-muted-foreground mt-0.5">
+                                                в задаче "{content.taskTitle}"
+                                            </p>
+                                        )}
+                                        {!content.userName && !content.action && (
+                                            <p className="text-xs text-muted-foreground">
+                                                {notification.message}
+                                            </p>
+                                        )}
+                                    </div>
+                                    {!notification.isRead && (
+                                        <span className="w-2 h-2 rounded-full bg-primary shrink-0 mt-1" />
+                                    )}
+                                </div>
+                            )
+                        })
+                    )}
                 </div>
-        </>
+                <AlertDialogFooter>
+                    <AlertDialogCancel>Закрыть</AlertDialogCancel>
+                    <AlertDialogAction onClick={handleShowAll}>
+                        Показать все уведомления
+                    </AlertDialogAction>
+                </AlertDialogFooter>
+            </AlertDialogContent>
+        </AlertDialog>
     )
 }

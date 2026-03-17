@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { MoreHorizontal, Calendar, ArrowUpDown, Filter, Layout as LayoutIcon, Briefcase, Play, Clock, X } from "lucide-react";
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { TaskDetailsModal, Task } from "@/components/kanban/TaskDetailsModal";
 import { toast } from "sonner";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -25,6 +25,7 @@ export default function Tasks() {
     status: [] as string[]
   });
   const [filterOpen, setFilterOpen] = useState(false);
+  const displayStartTimesRef = useRef<Record<string, { initialElapsed: number; firstRenderTime: number }>>({});
   const queryClient = useQueryClient();
 
   const { data: tasks = [], isLoading } = useQuery({
@@ -98,12 +99,28 @@ export default function Tasks() {
     }
   });
 
-  const formatDuration = useCallback((start: number) => {
-    const diff = currentTime - start;
-    const hours = Math.floor(diff / 3600000);
-    const minutes = Math.floor((diff % 3600000) / 60000);
-    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+  // Track initial display time for tasks with acceptedAt
+  const getTaskElapsedTime = useCallback((taskId: string, acceptedAt: string | null): number => {
+    if (!acceptedAt) return 0;
+    
+    const acceptedTimestamp = new Date(acceptedAt).getTime();
+    
+    if (!displayStartTimesRef.current[taskId]) {
+      displayStartTimesRef.current[taskId] = {
+        initialElapsed: currentTime - acceptedTimestamp,
+        firstRenderTime: currentTime
+      };
+    }
+    
+    const { initialElapsed, firstRenderTime } = displayStartTimesRef.current[taskId];
+    return initialElapsed + (currentTime - firstRenderTime);
   }, [currentTime]);
+
+  const formatDuration = useCallback((elapsedMs: number) => {
+    const hours = Math.floor(elapsedMs / 3600000);
+    const minutes = Math.floor((elapsedMs % 3600000) / 60000);
+    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+  }, []);
 
   const formatDate = useCallback((date: any) => {
     if (!date) return "";
@@ -472,11 +489,11 @@ export default function Tasks() {
                          })()}
                        </div>
                     </TableCell>
-                    <TableCell>
+<TableCell>
                       {task.acceptedAt ? (
                         <div className="flex items-center gap-2 text-primary font-mono text-sm font-bold bg-primary/5 px-3 py-1.5 rounded-lg border border-primary/10 w-fit">
                           <div className="w-2 h-2 rounded-full bg-primary animate-pulse" />
-                          {formatDuration(new Date(task.acceptedAt).getTime())}
+                          {formatDuration(getTaskElapsedTime(task.id, task.acceptedAt))}
                         </div>
                       ) : (
                         <Button 

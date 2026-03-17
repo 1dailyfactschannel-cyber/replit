@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Search, Phone, Video, Info, Paperclip, Smile, Send, Check, Camera, X, MessageSquare, MoreVertical, Edit, Trash, Plus, FolderPlus, UserPlus, Folder, Users, Clock, Play, Reply, Copy } from "lucide-react";
+import { Search, Phone, Video, Info, Paperclip, Smile, Send, Check, Camera, X, MessageSquare, MoreVertical, Edit, Trash, Plus, FolderPlus, UserPlus, Folder, Users, Clock, Play, Reply, Copy, Loader2 } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import {
   DropdownMenu,
@@ -37,6 +37,7 @@ import { apiRequest } from "@/lib/queryClient";
 import type { Chat, Message, User as DBUser } from "@shared/schema";
 import { io, Socket } from "socket.io-client";
 import { CallOverlay } from "@/components/call/CallOverlay";
+import { useDebounce } from "@/hooks/useDebounce";
 
 interface Contact extends Chat {
   lastMessage?: Message;
@@ -52,14 +53,32 @@ interface ChatFolder {
   chatIds: string[];
 }
 
+interface PaginatedMessages {
+  messages: Message[];
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+  };
+}
+
 export default function ChatPage() {
-  const [, ] = useLocation();
+  const [location, navigate] = useLocation();
   const queryClient = useQueryClient();
   const { notify, requestPermission } = useNotifications();
   const socketRef = useRef<Socket | null>(null);
+  const activeChatIdRef = useRef<string | null>(null);
+  const autoJoinRoomIdRef = useRef<string | null>(null);
   const [typingUsers, setTypingUsers] = useState<Record<string, string[]>>({});
   const [contextMenuPos, setContextMenuPos] = useState<{x: number, y: number, msg: any} | null>(null);
   const [chatContextMenuPos, setChatContextMenuPos] = useState<{x: number, y: number, chat: any} | null>(null);
+  const [activeTab, setActiveTab] = useState<string>("chats");
+  
+  // Search state
+  const [searchQuery, setSearchQuery] = useState("");
+  const debouncedSearchQuery = useDebounce(searchQuery, 300);
+  const [newChatSearchQuery, setNewChatSearchQuery] = useState("");
   
   // Close context menu on click outside
   useEffect(() => {
@@ -79,6 +98,19 @@ export default function ChatPage() {
 
   const { data: chats = [], isLoading: chatsLoading } = useQuery<Contact[]>({
     queryKey: ["/api/chats"],
+    staleTime: 0,
+    refetchOnMount: true,
+    refetchOnWindowFocus: true,
+  });
+
+  // Search chats query
+  const { data: searchedChats = [], isLoading: searchLoading } = useQuery<Contact[]>({
+    queryKey: ["/api/chats/search", debouncedSearchQuery],
+    queryFn: async () => {
+      const res = await apiRequest("GET", `/api/chats/search?q=${encodeURIComponent(debouncedSearchQuery)}`);
+      return res.json();
+    },
+    enabled: debouncedSearchQuery.length > 0,
   });
 
   const { data: allUsers = [] } = useQuery<DBUser[]>({
@@ -94,13 +126,31 @@ export default function ChatPage() {
   });
 
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
+  const prevChatIdRef = useRef<string | null>(null);
   
-  const activeChat = chats.find(c => c.id === activeChatId) || chats[0];
+  // Update ref when activeChatId changes
+  useEffect(() => {
+    activeChatIdRef.current = activeChatId;
+  }, [activeChatId]);
+  
+  const activeChat = chats?.find(c => c.id === activeChatId) || chats?.[0] || null;
 
-  const { data: messages = [], isLoading: messagesLoading } = useQuery<Message[]>({
+  const { data: messagesData, isLoading: messagesLoading, error: messagesError } = useQuery<PaginatedMessages>({
     queryKey: ["/api/chats", activeChatId, "messages"],
     enabled: !!activeChatId,
+    staleTime: 0,
+    refetchOnMount: true,
   });
+  
+  const messages = messagesData?.messages || [];
+  
+  // Clear old messages cache when switching chats
+  useEffect(() => {
+    if (prevChatIdRef.current && prevChatIdRef.current !== activeChatId) {
+      queryClient.removeQueries({ queryKey: ["/api/chats", prevChatIdRef.current, "messages"] });
+    }
+    prevChatIdRef.current = activeChatId;
+  }, [activeChatId]);
 
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [editContent, setEditContent] = useState("");
@@ -163,8 +213,13 @@ export default function ChatPage() {
         }
       };
       
-      queryClient.setQueryData([ "/api/chats", activeChatId, "messages" ], (old: any[]) => {
-        return old ? [...old, optimisticMessage] : [optimisticMessage];
+      queryClient.setQueryData([ "/api/chats", activeChatId, "messages" ], (old: PaginatedMessages | undefined) => {
+        if (!old) return { messages: [optimisticMessage], pagination: { page: 1, limit: 50, total: 1, totalPages: 1 } };
+        return {
+          ...old,
+          messages: [...old.messages, optimisticMessage],
+          pagination: { ...old.pagination, total: old.pagination.total + 1 }
+        };
       });
       
       return { previousMessages };
@@ -260,29 +315,43 @@ export default function ChatPage() {
       });
 
       socket.on("new-message", (message: Message) => {
+        console.log("[Socket] new-message received:", message.id, "type:", message.type, "chatId:", message.chatId);
+        
         // Skip if this message was just sent by us (already added via optimistic update)
-        queryClient.setQueryData(["/api/chats", message.chatId, "messages"], (old: Message[] = []) => {
+        queryClient.setQueryData(["/api/chats", message.chatId, "messages"], (old: PaginatedMessages | undefined) => {
+          if (!old) {
+            console.log("[Socket] No old data, creating new:", message.id);
+            return { messages: [message], pagination: { page: 1, limit: 50, total: 1, totalPages: 1 } };
+          }
+          
           // Check if message already exists by ID or by content+sender+time (for optimistic updates)
-          if (old.some(m => m.id === message.id)) return old;
+          if (old.messages.some(m => m.id === message.id)) {
+            console.log("[Socket] Message already exists:", message.id);
+            return old;
+          }
           
           // Check for optimistic duplicate (same content, same sender, recent)
-          const isDuplicate = old.some(m => 
+          const isDuplicate = old.messages.some(m => 
             m.id?.startsWith('temp-') && 
             m.content === message.content && 
             m.senderId === message.senderId
           );
           
           if (isDuplicate) return old;
-          return [...old, message];
+          
+          const newData = {
+            ...old,
+            messages: [...old.messages, message],
+            pagination: { ...old.pagination, total: old.pagination.total + 1 }
+          };
+          console.log("[Socket] Added message, total:", newData.messages.length);
+          return newData;
         });
         
         // Update chat list for last message
         queryClient.invalidateQueries({ queryKey: ["/api/chats"] });
         
         // Notify if not active chat
-        // We use a ref-like check for activeChatId to avoid dependency cycle
-        // But since this is inside useEffect, we can't easily get the latest activeChatId without adding it to deps
-        // or using a ref for activeChatId.
       });
 
       socket.on("message-updated", () => {
@@ -291,8 +360,13 @@ export default function ChatPage() {
       });
 
       socket.on("message-deleted", ({ messageId, chatId }: { messageId: string, chatId: string }) => {
-        queryClient.setQueryData(["/api/chats", chatId, "messages"], (old: Message[] = []) => {
-          return old.filter(m => m.id !== messageId);
+        queryClient.setQueryData(["/api/chats", chatId, "messages"], (old: PaginatedMessages | undefined) => {
+          if (!old) return old;
+          return {
+            ...old,
+            messages: old.messages.filter(m => m.id !== messageId),
+            pagination: { ...old.pagination, total: Math.max(0, old.pagination.total - 1) }
+          };
         });
         queryClient.invalidateQueries({ queryKey: ["/api/chats"] });
       });
@@ -308,7 +382,7 @@ export default function ChatPage() {
       socket.on("push-notification", (data: { title: string, body: string, url: string }) => {
         notify(data.title, {
           body: data.body,
-          data: data.url
+          data: { url: data.url }
         });
       });
 
@@ -346,6 +420,37 @@ export default function ChatPage() {
 
       socket.on("call-rejected", () => {
         console.log("CALL REJECTED by recipient");
+      });
+
+      socket.on("calendar:reminder", (data: any) => {
+        console.log("Calendar reminder received:", data);
+        // If the reminder is for the current chat, add it as a system message
+        if (data.data?.roomId && data.data.roomId === activeChatIdRef.current) {
+          const reminderMessage = {
+            id: crypto.randomUUID(),
+            chatId: data.data.roomId,
+            senderId: currentUser?.id,
+            content: data.body,
+            type: 'system_reminder' as const,
+            eventId: data.data.eventId,
+            createdAt: new Date().toISOString(),
+            metadata: JSON.stringify({
+              eventId: data.data.eventId,
+              eventTitle: data.body,
+              eventTime: data.body.match(/\d{2}:\d{2}/)?.[0] || '',
+              timeUntil: data.body.match(/Через \d+/)?.[0] || ''
+            })
+          };
+          
+          // Add message to the chat's message list
+          queryClient.setQueryData(["/api/chats", activeChatIdRef.current, "messages"], (old: PaginatedMessages | undefined) => {
+            if (!old) return { messages: [reminderMessage], pagination: { page: 1, limit: 50, total: 1 } };
+            return {
+              ...old,
+              messages: [...old.messages, reminderMessage]
+            };
+          });
+        }
       });
 
       return () => {
@@ -401,6 +506,33 @@ export default function ChatPage() {
     requestPermission();
   }, [requestPermission]);
 
+  // Handle room query parameter - when navigating from calendar event
+  const [autoJoinRoomId, setAutoJoinRoomId] = useState<string | undefined>();
+  
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const roomParam = params.get('room');
+    const autoJoinParam = params.get('autoJoin');
+    
+    if (roomParam) {
+      // Switch to rooms tab
+      setActiveTab("rooms");
+      // If autoJoin=true, set the room ID for auto-connect
+      if (autoJoinParam === 'true') {
+        setAutoJoinRoomId(roomParam);
+      }
+      // Clear the URL parameters without page reload
+      window.history.replaceState({}, '', '/chat');
+    }
+  }, []);
+
+  // Clear autoJoinRoomId after successful join
+  useEffect(() => {
+    if (autoJoinRoomId && !autoJoinRoomIdRef.current) {
+      autoJoinRoomIdRef.current = autoJoinRoomId;
+    }
+  }, [autoJoinRoomId]);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -435,8 +567,6 @@ export default function ChatPage() {
   
   const [activeCall, setActiveCall] = useState<any>(null);
   const [outboundCall, setOutboundCall] = useState<any>(null);
-  
-  const [searchQuery, setSearchQuery] = useState("");
   const [messageSearchQuery, setMessageSearchQuery] = useState("");
   const [selectedImage, setSelectedImage] = useState<{ url: string; name: string; type: 'image' | 'video' } | null>(null);
   const [replyingTo, setReplyingTo] = useState<{ id: string; content: string; senderName: string } | null>(null);
@@ -445,7 +575,18 @@ export default function ChatPage() {
     if (!chat) return "Чат";
     if (chat.type === "group") return chat.name || "Группа";
     const otherParticipant = chat.participants?.find(p => p && p.id !== currentUser?.id);
+    if (otherParticipant?.firstName && otherParticipant?.lastName) {
+      return `${otherParticipant.firstName} ${otherParticipant.lastName}`;
+    }
     return otherParticipant?.username || "Чат";
+  };
+  
+  const getUserDisplayName = (user: DBUser | undefined | null) => {
+    if (!user) return "Пользователь";
+    if (user.firstName && user.lastName) {
+      return `${user.firstName} ${user.lastName}`;
+    }
+    return user.username || "Пользователь";
   };
 
   const getChatAvatar = (chat: Contact | undefined) => {
@@ -603,44 +744,76 @@ export default function ChatPage() {
   const startCall = (type: 'audio' | 'video') => {
     if (!activeChat || !currentUser) return;
     
+    // For group chats, redirect to Team Rooms
+    if (activeChat.type === 'group') {
+      toast.info("Для групповых звонков используйте раздел 'Комнаты'", {
+        description: "Переключаемся на вкладку комнат..."
+      });
+      // Switch to rooms tab
+      setActiveTab("rooms");
+      return;
+    }
+    
+    const receiver = activeChat.participants.find(p => p.id !== currentUser.id);
+    if (!receiver) {
+      toast.error("Не удалось найти получателя звонка");
+      return;
+    }
+    
     const callData = {
       from: currentUser.id,
-      name: currentUser.username,
+      name: currentUser.firstName && currentUser.lastName 
+        ? `${currentUser.firstName} ${currentUser.lastName}` 
+        : currentUser.username,
       type,
       chatId: activeChat.id,
-      to: activeChat.type === 'direct' 
-        ? activeChat.participants.find(p => p.id !== currentUser.id)?.id 
-        : undefined
+      to: receiver.id
     };
     
     setOutboundCall(callData);
   };
 
   const handleScheduleCall = async (callData: any) => {
+    console.log("[Chat] handleScheduleCall called, activeChatId:", activeChatId);
     try {
-      await apiRequest("POST", "/api/calls/schedule", {
-        ...callData,
-        chatId: activeChatId
+      const result = await apiRequest("POST", "/api/calendar/events", {
+        title: callData.eventTitle || callData.contactName,
+        date: callData.date,
+        time: callData.time,
+        type: callData.type === 'video' ? 'video' : 'audio',
+        roomId: activeChatId,
+        reminder: callData.reminder,
+        reminderMinutes: callData.reminderMinutes,
+        description: callData.description,
+        meetingUrl: callData.roomId ? `/room/${callData.roomId}` : undefined
       });
-      toast.success("Звонок запланирован");
+      console.log("[Chat] Calendar event created:", result);
+      toast.success("Событие создано");
     } catch (err) {
-      toast.error("Ошибка при планировании звонка");
+      console.error("[Chat] Error creating calendar event:", err);
+      toast.error("Ошибка при создании события");
     }
   };
 
-  const filteredContacts = useMemo(() => chats.filter(chat => {
-    const name = getChatName(chat).toLowerCase();
-    const inActiveFolder = !activeFolderId || folders.find(f => f.id === activeFolderId)?.chatIds.includes(chat.id);
-    return name.includes(searchQuery.toLowerCase()) && inActiveFolder;
-  }), [chats, searchQuery, activeFolderId, folders, getChatName]);
+  const filteredContacts = useMemo(() => {
+    // Use server search results when searching
+    const sourceChats = debouncedSearchQuery.length > 0 ? searchedChats : chats;
+    
+    return sourceChats.filter(chat => {
+      const inActiveFolder = !activeFolderId || folders.find(f => f.id === activeFolderId)?.chatIds.includes(chat.id);
+      return inActiveFolder;
+    });
+  }, [chats, searchedChats, debouncedSearchQuery, activeFolderId, folders]);
 
-  const filteredMessages = useMemo(() => messages.filter(msg => 
-    msg.content.toLowerCase().includes(messageSearchQuery.toLowerCase())
-  ), [messages, messageSearchQuery]);
+  const filteredMessages = useMemo(() => {
+    return messages.filter(msg => 
+      msg.content.toLowerCase().includes(messageSearchQuery.toLowerCase())
+    );
+  }, [messages, messageSearchQuery]);
 
   return (
     <Layout>
-      <Tabs defaultValue="chats" className="h-[calc(100vh-8rem)] flex flex-col">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="h-[calc(100vh-8rem)] flex flex-col">
         <div className="px-6 py-2 border-b border-border/50 bg-card/50 backdrop-blur-sm shrink-0">
           <TabsList className="bg-muted/50 p-1 rounded-xl">
             <TabsTrigger value="chats" className="gap-2 px-6 rounded-lg">
@@ -707,17 +880,19 @@ export default function ChatPage() {
                                     onClick={() => handleCreateDirectChat(user.id)}
                                   >
                                     <div className="flex items-center gap-3">
-                                      <Avatar className="h-10 w-10 ring-2 ring-transparent group-hover:ring-primary/20 transition-all">
-                                        <AvatarImage src={user.avatar || undefined} />
-                                        <AvatarFallback className="bg-primary/10 text-primary text-xs font-bold">
-                                          {user.username.substring(0,2).toUpperCase()}
-                                        </AvatarFallback>
-                                      </Avatar>
+                                       <Avatar className="h-10 w-10 ring-2 ring-transparent group-hover:ring-primary/20 transition-all">
+                                         <AvatarImage src={user.avatar || undefined} />
+                                         <AvatarFallback className="bg-primary/10 text-primary text-xs font-bold">
+                                           {user.firstName && user.lastName 
+                                             ? `${user.firstName[0]}${user.lastName[0]}`.toUpperCase()
+                                             : user.username.substring(0,2).toUpperCase()}
+                                         </AvatarFallback>
+                                       </Avatar>
                                       <div className="flex flex-col">
                                         <span className="text-sm font-semibold text-foreground/90">
                                           {user.firstName && user.lastName ? `${user.firstName} ${user.lastName}` : user.username}
                                         </span>
-                                        <span className="text-[10px] text-muted-foreground">{user.email || 'Пользователь TeamSync'}</span>
+                                         <span className="text-[10px] text-muted-foreground">{user.email || 'Пользователь m4portal'}</span>
                                       </div>
                                     </div>
                                     <Button size="sm" variant="ghost" className="opacity-0 group-hover:opacity-100 transition-opacity rounded-full h-8 w-8 p-0">
@@ -746,7 +921,15 @@ export default function ChatPage() {
                       </DialogContent>
                     </Dialog>
 
-                    <Dialog open={isCreateFolderOpen} onOpenChange={setIsCreateFolderOpen}>
+                    <Dialog open={isCreateFolderOpen} onOpenChange={(open) => {
+                      if (!open) {
+                        // Remove focus from any element inside dialog before closing
+                        if (document.activeElement instanceof HTMLElement) {
+                          document.activeElement.blur();
+                        }
+                      }
+                      setIsCreateFolderOpen(open);
+                    }}>
                       <DialogTrigger asChild>
                         <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg hover:bg-primary/10 hover:text-primary transition-colors" title="Создать папку">
                           <FolderPlus className="w-4 h-4 text-foreground" />
@@ -810,7 +993,20 @@ export default function ChatPage() {
                       </DialogContent>
                     </Dialog>
 
-                    <Dialog open={isCreateChatOpen} onOpenChange={setIsCreateChatOpen}>
+                    <Dialog open={isCreateChatOpen} onOpenChange={(open) => {
+                      if (!open) {
+                        // Remove focus from any element inside dialog before closing
+                        if (document.activeElement instanceof HTMLElement) {
+                          document.activeElement.blur();
+                        }
+                      }
+                      setIsCreateChatOpen(open);
+                      if (open) {
+                        // Force refetch users when opening dialog
+                        queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+                        setNewChatSearchQuery("");
+                      }
+                    }}>
                       <DialogTrigger asChild>
                         <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg hover:bg-primary/10 hover:text-primary transition-colors" title="Начать чат">
                           <UserPlus className="w-4 h-4 text-foreground" />
@@ -822,32 +1018,75 @@ export default function ChatPage() {
                           <DialogDescription>Выберите пользователя, чтобы начать диалог.</DialogDescription>
                         </DialogHeader>
                         <div className="space-y-4 py-4">
+                          <div className="relative">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                            <Input
+                              placeholder="Поиск пользователя..."
+                              value={newChatSearchQuery}
+                              onChange={(e) => setNewChatSearchQuery(e.target.value)}
+                              className="pl-9 bg-secondary/30"
+                            />
+                          </div>
                           <ScrollArea className="h-[300px] pr-4">
                             <div className="space-y-2">
-                              {allUsers.filter(u => u.id !== currentUser?.id).map((user) => (
-                                <div 
-                                  key={user.id} 
-                                  className="flex items-center gap-3 p-3 rounded-xl hover:bg-secondary/50 transition-colors cursor-pointer group"
-                                  onClick={() => handleCreateDirectChat(user.id)}
-                                >
-                                  <Avatar className="h-10 w-10">
-                                    <AvatarImage src={user.avatar || undefined} />
-                                    <AvatarFallback>{user.username.substring(0,2).toUpperCase()}</AvatarFallback>
-                                  </Avatar>
-                                  <div className="flex-1 min-w-0">
-                                    <p className="text-sm font-semibold truncate group-hover:text-primary transition-colors">{user.username}</p>
-                                    <p className="text-xs text-muted-foreground truncate">{user.email}</p>
+                              {allUsers
+                                .filter(u => u.id !== currentUser?.id)
+                                .filter(u => {
+                                  if (!newChatSearchQuery) return true;
+                                  const query = newChatSearchQuery.toLowerCase();
+                                  return (
+                                    u.username.toLowerCase().includes(query) ||
+                                    u.email.toLowerCase().includes(query) ||
+                                    (u.firstName && u.firstName.toLowerCase().includes(query)) ||
+                                    (u.lastName && u.lastName.toLowerCase().includes(query))
+                                  );
+                                })
+                                .map((user) => (
+                                  <div 
+                                    key={user.id} 
+                                    className="flex items-center gap-3 p-3 rounded-xl hover:bg-secondary/50 transition-colors cursor-pointer group"
+                                    onClick={() => handleCreateDirectChat(user.id)}
+                                  >
+                                    <Avatar className="h-10 w-10">
+                                      <AvatarImage src={user.avatar || undefined} />
+                                      <AvatarFallback>
+                                        {user.firstName && user.lastName 
+                                          ? `${user.firstName[0]}${user.lastName[0]}`.toUpperCase()
+                                          : user.username.substring(0,2).toUpperCase()}
+                                      </AvatarFallback>
+                                    </Avatar>
+                                    <div className="flex-1 min-w-0">
+                                      <p className="text-sm font-semibold truncate group-hover:text-primary transition-colors">
+                                        {user.firstName && user.lastName 
+                                          ? `${user.firstName} ${user.lastName}` 
+                                          : user.username}
+                                      </p>
+                                      <p className="text-xs text-muted-foreground truncate">{user.email}</p>
+                                    </div>
+                                    <Send className="w-4 h-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
                                   </div>
-                                  <Send className="w-4 h-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                                ))}
+                              {allUsers.filter(u => u.id !== currentUser?.id).length === 0 && (
+                                <div className="text-center py-8 text-muted-foreground">
+                                  <p>Нет доступных пользователей</p>
+                                  <p className="text-xs mt-1">Возможно, нужно обновить страницу</p>
                                 </div>
-                              ))}
+                              )}
                             </div>
                           </ScrollArea>
                         </div>
                       </DialogContent>
                     </Dialog>
 
-                    <Dialog open={isCreateGroupOpen} onOpenChange={setIsCreateGroupOpen}>
+                    <Dialog open={isCreateGroupOpen} onOpenChange={(open) => {
+                      if (!open) {
+                        // Remove focus from any element inside dialog before closing
+                        if (document.activeElement instanceof HTMLElement) {
+                          document.activeElement.blur();
+                        }
+                      }
+                      setIsCreateGroupOpen(open);
+                    }}>
                       <DialogTrigger asChild>
                         <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg hover:bg-primary/10 hover:text-primary transition-colors" title="Создать группу">
                           <Plus className="w-4 h-4 text-foreground" />
@@ -882,10 +1121,18 @@ export default function ChatPage() {
                                     <div className="flex items-center gap-3">
                                       <Avatar className="h-8 w-8">
                                         <AvatarImage src={member.avatar || undefined} />
-                                        <AvatarFallback className="text-[10px]">{member.username.substring(0,2).toUpperCase()}</AvatarFallback>
+                                        <AvatarFallback className="text-[10px]">
+                                          {member.firstName && member.lastName 
+                                            ? `${member.firstName[0]}${member.lastName[0]}`.toUpperCase()
+                                            : member.username.substring(0,2).toUpperCase()}
+                                        </AvatarFallback>
                                       </Avatar>
                                       <div className="flex flex-col">
-                                        <span className="text-sm font-medium">{member.username}</span>
+                                        <span className="text-sm font-medium">
+                                          {member.firstName && member.lastName 
+                                            ? `${member.firstName} ${member.lastName}` 
+                                            : member.username}
+                                        </span>
                                         <span className="text-[10px] text-muted-foreground">{member.email}</span>
                                       </div>
                                     </div>
@@ -918,10 +1165,21 @@ export default function ChatPage() {
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                   <Input 
                     placeholder="Поиск чатов..." 
-                    className="pl-9 h-9 rounded-xl bg-secondary/30 border-none focus-visible:ring-1 focus-visible:ring-primary/20"
+                    className="pl-9 pr-9 h-9 rounded-xl bg-secondary/30 border-none focus-visible:ring-1 focus-visible:ring-primary/20"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                   />
+                  {searchLoading && (
+                    <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground animate-spin" />
+                  )}
+                  {searchQuery && !searchLoading && (
+                    <button
+                      onClick={() => setSearchQuery("")}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  )}
                 </div>
                 
                 {/* Folder Tabs */}
@@ -1038,9 +1296,11 @@ export default function ChatPage() {
                   </div>
                   );
                 })}
-                {!chatsLoading && filteredContacts.length === 0 && (
+                {!chatsLoading && !searchLoading && filteredContacts.length === 0 && (
                   <div className="p-8 text-center">
-                    <p className="text-xs text-muted-foreground italic">Пока нет чатов</p>
+                    <p className="text-xs text-muted-foreground italic">
+                      {debouncedSearchQuery ? "Ничего не найдено" : "Пока нет чатов"}
+                    </p>
                   </div>
                 )}
               </ScrollArea>
@@ -1095,6 +1355,12 @@ export default function ChatPage() {
                         <Separator orientation="vertical" className="h-6 mx-2" />
                         
                         <Dialog open={isInfoOpen} onOpenChange={(open) => {
+                          if (!open) {
+                            // Remove focus from any element inside dialog before closing
+                            if (document.activeElement instanceof HTMLElement) {
+                              document.activeElement.blur();
+                            }
+                          }
                           setIsInfoOpen(open);
                           if (open) {
                             setEditName(getChatName(activeChat));
@@ -1144,11 +1410,19 @@ export default function ChatPage() {
                                               {activeChat.participants.map((member, i) => (
                                                  <div key={i} className="flex items-center justify-between p-2 rounded-lg hover:bg-secondary/20 transition-colors group/member">
                                                     <div className="flex items-center gap-3">
-                                                       <Avatar className="w-6 h-6">
-                                                          <AvatarImage src={member.avatar || undefined} />
-                                                          <AvatarFallback className="text-[8px]">{member.username.substring(0,2).toUpperCase()}</AvatarFallback>
-                                                       </Avatar>
-                                                       <span className="text-xs font-medium">{member.username}</span>
+                                                        <Avatar className="w-6 h-6">
+                                                           <AvatarImage src={member.avatar || undefined} />
+                                                           <AvatarFallback className="text-[8px]">
+                                                             {member.firstName && member.lastName 
+                                                               ? `${member.firstName[0]}${member.lastName[0]}`.toUpperCase()
+                                                               : member.username.substring(0,2).toUpperCase()}
+                                                           </AvatarFallback>
+                                                        </Avatar>
+                                                        <span className="text-xs font-medium">
+                                                          {member.firstName && member.lastName 
+                                                            ? `${member.firstName} ${member.lastName}` 
+                                                            : member.username}
+                                                        </span>
                                                     </div>
                                                  </div>
                                               ))}
@@ -1228,13 +1502,21 @@ export default function ChatPage() {
                                                   );
                                                 }}
                                               >
-                                                <div className="flex items-center gap-2">
-                                                  <Avatar className="w-6 h-6">
-                                                    <AvatarImage src={user.avatar || undefined} />
-                                                    <AvatarFallback>{user.username.substring(0,2).toUpperCase()}</AvatarFallback>
-                                                  </Avatar>
-                                                  <span className="text-xs">{user.username}</span>
-                                                </div>
+                                                 <div className="flex items-center gap-2">
+                                                   <Avatar className="w-6 h-6">
+                                                     <AvatarImage src={user.avatar || undefined} />
+                                                     <AvatarFallback>
+                                                       {user.firstName && user.lastName 
+                                                         ? `${user.firstName[0]}${user.lastName[0]}`.toUpperCase()
+                                                         : user.username.substring(0,2).toUpperCase()}
+                                                     </AvatarFallback>
+                                                   </Avatar>
+                                                   <span className="text-xs">
+                                                     {user.firstName && user.lastName 
+                                                       ? `${user.firstName} ${user.lastName}` 
+                                                       : user.username}
+                                                   </span>
+                                                 </div>
                                                 <div className={cn(
                                                   "w-4 h-4 rounded-full border flex items-center justify-center transition-all",
                                                   selectedGroupParticipants.includes(user.id) ? "bg-primary border-primary text-primary-foreground" : "border-muted-foreground/30"
@@ -1258,7 +1540,15 @@ export default function ChatPage() {
                         </Dialog>
 
                         {/* Add Member Dialog */}
-                        <Dialog open={isAddMemberOpen} onOpenChange={setIsAddMemberOpen}>
+                        <Dialog open={isAddMemberOpen} onOpenChange={(open) => {
+                          if (!open) {
+                            // Remove focus from any element inside dialog before closing
+                            if (document.activeElement instanceof HTMLElement) {
+                              document.activeElement.blur();
+                            }
+                          }
+                          setIsAddMemberOpen(open);
+                        }}>
                           <DialogContent className="sm:max-w-[425px]">
                             <DialogHeader>
                               <DialogTitle>Добавить участника</DialogTitle>
@@ -1279,17 +1569,21 @@ export default function ChatPage() {
                                     }}
                                   >
                                     <Avatar className="h-10 w-10">
-                                      <AvatarImage src={user.avatar || undefined} />
-                                      <AvatarFallback>{user.username?.substring(0,2).toUpperCase()}</AvatarFallback>
-                                    </Avatar>
-                                    <div className="flex-1">
-                                      <p className="font-medium text-sm">
-                                        {user.firstName && user.lastName 
-                                          ? `${user.firstName} ${user.lastName}`
-                                          : user.username}
-                                      </p>
-                                      <p className="text-xs text-muted-foreground">@{user.username}</p>
-                                    </div>
+                                       <AvatarImage src={user.avatar || undefined} />
+                                       <AvatarFallback>
+                                         {user.firstName && user.lastName 
+                                           ? `${user.firstName[0]}${user.lastName[0]}`.toUpperCase()
+                                           : user.username?.substring(0,2).toUpperCase()}
+                                       </AvatarFallback>
+                                     </Avatar>
+                                     <div className="flex-1">
+                                       <p className="font-medium text-sm">
+                                         {user.firstName && user.lastName 
+                                           ? `${user.firstName} ${user.lastName}`
+                                           : user.username}
+                                       </p>
+                                       <p className="text-xs text-muted-foreground">@{user.username}</p>
+                                     </div>
                                     <div className={cn(
                                       "w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all",
                                       selectedGroupParticipants.includes(user.id) 
@@ -1341,8 +1635,46 @@ export default function ChatPage() {
                         initialTopMostItemIndex={Math.max(0, filteredMessages.length - 1)}
                         followOutput="smooth"
                         itemContent={(index, msg) => {
-                          const sender = activeChat.participants.find(p => p.id === msg.senderId);
+                          const sender = (msg as any).sender || activeChat.participants.find(p => p.id === msg.senderId);
                           const isMe = msg.senderId === currentUser?.id;
+                          const isSystemEvent = msg.type === 'system_event' || msg.type === 'system_reminder';
+                          
+                          // If system message, render differently (Telegram-style)
+                          if (isSystemEvent) {
+                            const metadata = typeof msg.metadata === 'string' ? JSON.parse(msg.metadata) : (msg.metadata || {});
+                            console.log("[Chat] Rendering system event, msg.content:", msg.content, "metadata:", metadata);
+                            const eventId = (msg as any).eventId || metadata?.eventId;
+                            const eventTitle = metadata?.eventTitle || msg.content.split('\n')[0].replace('📅 Создано событие: ', '').replace('🔔 Напоминание: ', '');
+                            const eventTime = metadata?.eventTime || (msg.content.match(/\d{1,2}:\d{2}/)?.[0]);
+                            const eventDate = metadata?.eventDate;
+                            const timeUntil = metadata?.timeUntil;
+                            
+                            return (
+                              <div className="px-6 py-2">
+                                <div className="flex justify-center">
+                                  <button
+                                    onClick={() => navigate(`/calendar?eventId=${eventId}`)}
+                                    className="bg-muted/40 hover:bg-muted/60 px-4 py-2.5 rounded-2xl text-center max-w-[85%] transition-colors cursor-pointer"
+                                  >
+                                    {msg.type === 'system_reminder' && (
+                                      <div className="text-xs text-muted-foreground mb-1">🔔 Напоминание</div>
+                                    )}
+                                    {msg.type === 'system_event' && (
+                                      <div className="text-xs text-muted-foreground mb-1">📅 Создано событие</div>
+                                    )}
+                                    <div className="text-sm text-foreground font-medium">
+                                      {eventTitle}
+                                    </div>
+                                    {(eventTime || eventDate) && (
+                                      <div className="text-xs text-muted-foreground mt-1">
+                                        {eventDate && eventTime ? `${eventDate} в ${eventTime}` : eventTime}{timeUntil ? ` • Через ${timeUntil}` : ''}
+                                      </div>
+                                    )}
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          }
                           
                           return (
                             <div className="px-6 py-2">
@@ -1358,7 +1690,11 @@ export default function ChatPage() {
                                 }}
                               >
                                 <div className="flex items-center gap-2 px-1">
-                                  {!isMe && <span className="text-[10px] font-bold text-muted-foreground">{sender?.username}</span>}
+                                  {!isMe && <span className="text-[10px] font-bold text-muted-foreground">
+                                    {sender?.firstName && sender?.lastName 
+                                      ? `${sender.firstName} ${sender.lastName}` 
+                                      : sender?.username || 'Пользователь'}
+                                  </span>}
                                   <span className="text-[10px] text-muted-foreground opacity-50">
                                     {formatTime(msg.createdAt)}
                                   </span>
@@ -1847,7 +2183,7 @@ export default function ChatPage() {
         </TabsContent>
 
         <TabsContent value="rooms" className="flex-1 m-0 focus-visible:outline-none overflow-y-auto">
-          <TeamRooms />
+          <TeamRooms autoJoinRoomId={autoJoinRoomId} />
         </TabsContent>
       </Tabs>
 

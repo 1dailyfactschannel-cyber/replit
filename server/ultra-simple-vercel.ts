@@ -2,9 +2,73 @@
 import { createReadStream } from 'fs';
 import { join } from 'path';
 
+// Security: Get allowed CORS origins
+const getAllowedOrigins = (): string[] => {
+  const origins = process.env.ALLOWED_ORIGINS 
+    ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim()).filter(Boolean)
+    : null;
+  
+  if (process.env.NODE_ENV === 'production' && !origins) {
+    console.warn('⚠️  WARNING: ALLOWED_ORIGINS not set in production');
+    return [];
+  }
+  
+  return origins || ['http://localhost:3005', 'http://localhost:3000'];
+};
+
+// Security: CSP directives for production
+const CSP_DIRECTIVES = [
+  "default-src 'self'",
+  "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+  "img-src 'self' data: blob: https:",
+  "connect-src 'self' ws: wss:",
+  "worker-src 'self' blob:",
+  "font-src 'self' https://fonts.gstatic.com https://fonts.googleapis.com",
+  "object-src 'none'",
+  "frame-src 'self'",
+  "form-action 'self'",
+  "base-uri 'self'",
+].join('; ');
+
+// Security headers to apply to all responses
+function setSecurityHeaders(res: any, req?: any) {
+  // CSP header
+  res.setHeader('Content-Security-Policy', CSP_DIRECTIVES);
+  
+  // HSTS header - only in production
+  if (process.env.NODE_ENV === 'production') {
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains; preload');
+  }
+  
+  // Other security headers
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  
+  // CORS headers for API requests
+  const allowedOrigins = getAllowedOrigins();
+  const origin = req?.headers?.origin || '';
+  
+  if (allowedOrigins.includes(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+  }
+}
+
 export default async function handler(req: any, res: any) {
   try {
+    // Set security headers for all responses
+    setSecurityHeaders(res, req);
+    
     console.log('Request received:', req.method, req.url);
+    
+    // Handle CORS preflight requests
+    if (req.method === 'OPTIONS') {
+      return res.status(200).end();
+    }
     
     // Handle API endpoints first
     if (req.url.startsWith('/api/')) {
@@ -62,7 +126,20 @@ export default async function handler(req: any, res: any) {
       }
       
       // Try to serve requested file
-      const filePath = path.join(distPath, req.url);
+      // Security: Prevent path traversal attacks
+      const requestedPath = req.url.split('?')[0]; // Remove query string
+      if (requestedPath.includes('..')) {
+        return res.status(403).send('Forbidden');
+      }
+      
+      const filePath = path.join(distPath, requestedPath);
+      
+      // Security: Ensure the resolved path is within distPath
+      const resolvedPath = path.resolve(filePath);
+      if (!resolvedPath.startsWith(path.resolve(distPath))) {
+        return res.status(403).send('Forbidden');
+      }
+      
       if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
         // Set appropriate content type
         const ext = path.extname(filePath).toLowerCase();
@@ -104,7 +181,7 @@ export default async function handler(req: any, res: any) {
       <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>TeamSync - Deployed Successfully</title>
+        <title>m4portal - Deployed Successfully</title>
         <style>
           body { 
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -156,7 +233,7 @@ export default async function handler(req: any, res: any) {
       </head>
       <body>
         <div class="container">
-          <h1>🚀 TeamSync</h1>
+          <h1>🚀 m4portal</h1>
           <div class="status">✅ Successfully Deployed to Vercel!</div>
           
           <p>Serverless function is working correctly</p>

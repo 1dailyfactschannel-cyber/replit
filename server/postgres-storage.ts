@@ -3,6 +3,12 @@ import {
   type InsertUser, 
   type SiteSettings, 
   type InsertSiteSettings,
+  type CustomStatus,
+  type InsertCustomStatus,
+  type UserStatusHistory,
+  type InsertUserStatusHistory,
+  type Department,
+  type InsertDepartment,
   type ChatFolder,
   type InsertChatFolder,
   type Call,
@@ -12,10 +18,43 @@ import {
   type Notification,
   type InsertNotification,
   type CommentMention,
-  type InsertCommentMention
+  type InsertCommentMention,
+  type FileAttachment,
+  type InsertFileAttachment,
+  type ShopItem,
+  type InsertShopItem,
+  type ShopPurchase,
+  type InsertShopPurchase,
+  type PointsSetting,
+  type InsertPointsSetting,
+  type UserPointsTransaction,
+  type InsertUserPointsTransaction,
+  type CalendarEvent,
+  type InsertCalendarEvent,
+  type YandexCalendarIntegration,
+  type InsertYandexCalendarIntegration,
+  type YandexCalendarEvent,
+  type InsertYandexCalendarEvent,
+  type TeamRoom,
+  type InsertTeamRoom,
+  type UpdateTeamRoom,
+  type CallSettings,
+  type InsertCallSettings,
+  type CallParticipant,
+  type InsertCallParticipant,
+  type TeamRoomAdmin,
+  type InsertTeamRoomAdmin,
+  yandexCalendarIntegrations,
+  yandexCalendarEvents,
+  yandexCalendarNotifications,
+  teamRooms,
+  callSettings,
+  callParticipants,
+  teamRoomAdmins,
+  users
 } from "@shared/schema";
 import { drizzle } from "drizzle-orm/postgres-js";
-import { eq, and, or, desc, ne, sql, inArray, isNull } from "drizzle-orm";
+import { eq, and, or, desc, ne, sql, inArray, isNull, gte, lte } from "drizzle-orm";
 import postgres from "postgres";
 import * as schema from "@shared/schema";
 import dotenv from "dotenv";
@@ -115,6 +154,176 @@ export class PostgresStorage {
     }
   }
 
+  // Custom statuses methods
+  async getAllCustomStatuses(): Promise<schema.CustomStatus[]> {
+    try {
+      return await this.db.select().from(schema.customStatuses).orderBy(schema.customStatuses.sortOrder);
+    } catch (error) {
+      console.error("Error getting all custom statuses:", error);
+      return [];
+    }
+  }
+
+  async getCustomStatus(id: string): Promise<schema.CustomStatus | null> {
+    try {
+      const result = await this.db.select().from(schema.customStatuses).where(eq(schema.customStatuses.id, id));
+      return result[0] || null;
+    } catch (error) {
+      console.error("Error getting custom status:", error);
+      return null;
+    }
+  }
+
+  async getDefaultCustomStatus(): Promise<schema.CustomStatus | null> {
+    try {
+      const result = await this.db.select().from(schema.customStatuses).where(eq(schema.customStatuses.isDefault, true));
+      return result[0] || null;
+    } catch (error) {
+      console.error("Error getting default custom status:", error);
+      return null;
+    }
+  }
+
+  async createCustomStatus(data: schema.InsertCustomStatus): Promise<schema.CustomStatus | null> {
+    try {
+      const result = await this.db.insert(schema.customStatuses).values(data).returning();
+      return result[0] || null;
+    } catch (error) {
+      console.error("Error creating custom status:", error);
+      return null;
+    }
+  }
+
+  async updateCustomStatus(id: string, data: Partial<schema.InsertCustomStatus>): Promise<schema.CustomStatus | null> {
+    try {
+      const result = await this.db.update(schema.customStatuses)
+        .set({ ...data, updatedAt: new Date() })
+        .where(eq(schema.customStatuses.id, id))
+        .returning();
+      return result[0] || null;
+    } catch (error) {
+      console.error("Error updating custom status:", error);
+      return null;
+    }
+  }
+
+  async deleteCustomStatus(id: string): Promise<boolean> {
+    try {
+      await this.db.delete(schema.customStatuses).where(eq(schema.customStatuses.id, id));
+      return true;
+    } catch (error) {
+      console.error("Error deleting custom status:", error);
+      return false;
+    }
+  }
+
+  async setDefaultCustomStatus(id: string): Promise<boolean> {
+    try {
+      await this.db.update(schema.customStatuses).set({ isDefault: false }).where(eq(schema.customStatuses.isDefault, true));
+      await this.db.update(schema.customStatuses).set({ isDefault: true }).where(eq(schema.customStatuses.id, id));
+      return true;
+    } catch (error) {
+      console.error("Error setting default custom status:", error);
+      return false;
+    }
+  }
+
+  // User status history methods
+  async getUserStatusHistory(userId: string): Promise<(UserStatusHistory & { changedByUser?: { firstName: string | null; lastName: string | null } })[]> {
+    try {
+      const history = await this.db
+        .select()
+        .from(schema.userStatusHistory)
+        .where(eq(schema.userStatusHistory.userId, userId))
+        .orderBy(desc(schema.userStatusHistory.createdAt));
+      
+      // Get changedBy user info
+      const historyWithUsers = await Promise.all(
+        history.map(async (item) => {
+          if (item.changedBy) {
+            const user = await this.db.select({
+              firstName: schema.users.firstName,
+              lastName: schema.users.lastName
+            }).from(schema.users).where(eq(schema.users.id, item.changedBy));
+            return {
+              ...item,
+              changedByUser: user[0] || undefined
+            };
+          }
+          return { ...item, changedByUser: undefined };
+        })
+      );
+      
+      return historyWithUsers;
+    } catch (error) {
+      console.error("Error getting user status history:", error);
+      return [];
+    }
+  }
+
+  async createUserStatusHistory(data: InsertUserStatusHistory): Promise<UserStatusHistory | null> {
+    try {
+      const result = await this.db.insert(schema.userStatusHistory).values(data).returning();
+      return result[0] || null;
+    } catch (error) {
+      console.error("Error creating user status history:", error);
+      return null;
+    }
+  }
+
+  // Department methods
+  async getAllDepartments(): Promise<Department[]> {
+    try {
+      return await this.db.select().from(schema.departments).orderBy(schema.departments.name);
+    } catch (error) {
+      console.error("Error getting all departments:", error);
+      return [];
+    }
+  }
+
+  async getDepartment(id: string): Promise<Department | null> {
+    try {
+      const result = await this.db.select().from(schema.departments).where(eq(schema.departments.id, id));
+      return result[0] || null;
+    } catch (error) {
+      console.error("Error getting department:", error);
+      return null;
+    }
+  }
+
+  async createDepartment(data: InsertDepartment): Promise<Department | null> {
+    try {
+      const result = await this.db.insert(schema.departments).values(data).returning();
+      return result[0] || null;
+    } catch (error) {
+      console.error("Error creating department:", error);
+      return null;
+    }
+  }
+
+  async updateDepartment(id: string, data: Partial<InsertDepartment>): Promise<Department | null> {
+    try {
+      const result = await this.db.update(schema.departments)
+        .set({ ...data, updatedAt: new Date() })
+        .where(eq(schema.departments.id, id))
+        .returning();
+      return result[0] || null;
+    } catch (error) {
+      console.error("Error updating department:", error);
+      return null;
+    }
+  }
+
+  async deleteDepartment(id: string): Promise<boolean> {
+    try {
+      await this.db.delete(schema.departments).where(eq(schema.departments.id, id));
+      return true;
+    } catch (error) {
+      console.error("Error deleting department:", error);
+      return false;
+    }
+  }
+
   async getUsersByIds(ids: string[]): Promise<User[]> {
     try {
       if (ids.length === 0) return [];
@@ -162,6 +371,8 @@ export class PostgresStorage {
           chatId: schema.chatParticipants.chatId,
           id: schema.users.id,
           username: schema.users.username,
+          firstName: schema.users.firstName,
+          lastName: schema.users.lastName,
           avatar: schema.users.avatar,
         })
         .from(schema.users)
@@ -196,6 +407,81 @@ export class PostgresStorage {
       return chatsWithDetails;
     } catch (error) {
       console.error("Error getting chats for user:", error);
+      return [];
+    }
+  }
+
+  async searchChats(userId: string, query: string) {
+    try {
+      const searchTerm = `%${query.toLowerCase()}%`;
+      
+      // Search in chat names and participant names
+      const userChats = await this.db
+        .select({
+          id: schema.chats.id,
+          name: schema.chats.name,
+          type: schema.chats.type,
+          avatar: schema.chats.avatar,
+          description: schema.chats.description,
+          ownerId: schema.chats.ownerId,
+          createdAt: schema.chats.createdAt,
+          updatedAt: schema.chats.updatedAt,
+        })
+        .from(schema.chats)
+        .innerJoin(
+          schema.chatParticipants,
+          eq(schema.chats.id, schema.chatParticipants.chatId)
+        )
+        .where(
+          and(
+            eq(schema.chatParticipants.userId, userId),
+            or(
+              sql`LOWER(${schema.chats.name}) LIKE ${searchTerm}`,
+              sql`LOWER(${schema.chats.description}) LIKE ${searchTerm}`
+            )
+          )
+        )
+        .orderBy(desc(schema.chats.updatedAt));
+
+      if (userChats.length === 0) return [];
+
+      const chatIds = userChats.map(c => c.id);
+
+      // Get participants
+      const allParticipants = await this.db
+        .select({
+          chatId: schema.chatParticipants.chatId,
+          id: schema.users.id,
+          username: schema.users.username,
+          firstName: schema.users.firstName,
+          lastName: schema.users.lastName,
+          avatar: schema.users.avatar,
+        })
+        .from(schema.users)
+        .innerJoin(
+          schema.chatParticipants,
+          eq(schema.users.id, schema.chatParticipants.userId)
+        )
+        .where(sql`${schema.chatParticipants.chatId} IN ${chatIds}`);
+
+      // Get last messages
+      const lastMessages = await this.db
+        .select()
+        .from(schema.messages)
+        .where(sql`${schema.messages.id} IN (
+          SELECT DISTINCT ON (chat_id) id 
+          FROM messages 
+          WHERE chat_id IN ${chatIds} 
+          ORDER BY chat_id, created_at DESC
+        )`);
+
+      return userChats.map(chat => ({
+        ...chat,
+        participants: allParticipants.filter(p => p.chatId === chat.id),
+        lastMessage: lastMessages.find(m => m.chatId === chat.id)
+      }));
+    } catch (error) {
+      console.error("Error searching chats:", error);
       return [];
     }
   }
@@ -258,6 +544,8 @@ export class PostgresStorage {
 
   async getMessages(chatId: string, limit: number = 100, offset: number = 0) {
     try {
+      console.log("getMessages called - chatId:", chatId, "limit:", limit, "offset:", offset);
+      
       // Order by descending to get newest first, then reverse for response
       const messagesData = await this.db
         .select()
@@ -266,6 +554,8 @@ export class PostgresStorage {
         .orderBy(desc(schema.messages.createdAt))
         .limit(limit)
         .offset(offset);
+      
+      console.log("getMessages - raw messagesData count:", messagesData.length);
       
       // Reverse to get oldest first in response (more natural for chat)
       const reversedMessages = [...messagesData].reverse();
@@ -312,11 +602,34 @@ export class PostgresStorage {
         });
       }
       
-      // Add repliedMessage to each message
-      return reversedMessages.map(msg => ({
+      // Get sender info for all messages
+      const allSenderIds = Array.from(new Set(reversedMessages.map(m => m.senderId)));
+      let allSenderMap: Record<string, any> = {};
+      if (allSenderIds.length > 0) {
+        const senders = await this.db
+          .select({
+            id: schema.users.id,
+            username: schema.users.username,
+            firstName: schema.users.firstName,
+            lastName: schema.users.lastName,
+            avatar: schema.users.avatar
+          })
+          .from(schema.users)
+          .where(inArray(schema.users.id, allSenderIds));
+        senders.forEach(s => {
+          allSenderMap[s.id] = s;
+        });
+      }
+      
+      // Add sender and repliedMessage to each message
+      const result = reversedMessages.map(msg => ({
         ...msg,
+        sender: allSenderMap[msg.senderId] || null,
         repliedMessage: msg.replyToId ? repliedMessages[msg.replyToId] : null
       }));
+      
+      console.log("getMessages - returning result count:", result.length);
+      return result;
     } catch (error) {
       console.error("Error getting messages:", error);
       return [];
@@ -374,8 +687,24 @@ export class PostgresStorage {
           });
         }
       }
+      
+      // Get sender info
+      const [sender] = await this.db
+        .select({
+          id: schema.users.id,
+          username: schema.users.username,
+          firstName: schema.users.firstName,
+          lastName: schema.users.lastName,
+          avatar: schema.users.avatar
+        })
+        .from(schema.users)
+        .where(eq(schema.users.id, message.senderId))
+        .limit(1);
         
-      return message;
+      return {
+        ...message,
+        sender: sender || null
+      };
     } catch (error) {
       console.error("Error creating message:", error);
       throw error;
@@ -713,6 +1042,158 @@ export class PostgresStorage {
     }
   }
 
+  async getAllRoles(): Promise<schema.Role[]> {
+    try {
+      return await this.db.select().from(schema.roles).orderBy(schema.roles.name);
+    } catch (error) {
+      console.error("Error getting all roles:", error);
+      return [];
+    }
+  }
+
+  async getRole(id: string): Promise<schema.Role | undefined> {
+    try {
+      const result = await this.db.select().from(schema.roles).where(eq(schema.roles.id, id)).limit(1);
+      return result[0];
+    } catch (error) {
+      console.error("Error getting role:", error);
+      return undefined;
+    }
+  }
+
+  async getRoleByName(name: string): Promise<schema.Role | undefined> {
+    try {
+      const result = await this.db.select().from(schema.roles).where(eq(schema.roles.name, name)).limit(1);
+      return result[0];
+    } catch (error) {
+      console.error("Error getting role by name:", error);
+      return undefined;
+    }
+  }
+
+  async createRole(data: schema.InsertRole): Promise<schema.Role> {
+    const result = await this.db.insert(schema.roles).values(data).returning();
+    return result[0];
+  }
+
+  async updateRole(id: string, data: Partial<schema.InsertRole>): Promise<schema.Role | undefined> {
+    const result = await this.db.update(schema.roles).set({ ...data, updatedAt: new Date() }).where(eq(schema.roles.id, id)).returning();
+    return result[0];
+  }
+
+  async deleteRole(id: string): Promise<void> {
+    await this.db.delete(schema.roles).where(eq(schema.roles.id, id));
+  }
+
+  async updateRolePermissions(id: string, permissions: string[]): Promise<schema.Role | undefined> {
+    const result = await this.db.update(schema.roles)
+      .set({ permissions, updatedAt: new Date() })
+      .where(eq(schema.roles.id, id))
+      .returning();
+    return result[0];
+  }
+
+  async setUserRoles(userId: string, roleIds: string[], assignedBy?: string): Promise<void> {
+    try {
+      await this.db.delete(schema.userRoles).where(eq(schema.userRoles.userId, userId));
+      if (roleIds.length > 0) {
+        const values = roleIds.map(roleId => ({
+          userId,
+          roleId,
+          assignedBy: assignedBy || null
+        }));
+        await this.db.insert(schema.userRoles).values(values);
+      }
+    } catch (error) {
+      console.error("Error setting user roles:", error);
+      throw error;
+    }
+  }
+
+  async getUserPermissions(userId: string): Promise<string[]> {
+    const userRoles = await this.getUserRoles(userId);
+    const permissions = new Set<string>();
+    for (const role of userRoles) {
+      const rolePerms = role.permissions as string[];
+      rolePerms.forEach(p => permissions.add(p));
+    }
+    return Array.from(permissions);
+  }
+
+  async hasPermission(userId: string, permission: string): Promise<boolean> {
+    const permissions = await this.getUserPermissions(userId);
+    return permissions.includes(permission);
+  }
+
+  // Permissions CRUD
+  async getAllPermissions(): Promise<schema.Permission[]> {
+    try {
+      return await this.db.select().from(schema.permissions).orderBy(schema.permissions.category, schema.permissions.name);
+    } catch (error) {
+      console.error("Error getting all permissions:", error);
+      return [];
+    }
+  }
+
+  async getPermission(key: string): Promise<schema.Permission | undefined> {
+    try {
+      const result = await this.db.select().from(schema.permissions).where(eq(schema.permissions.key, key)).limit(1);
+      return result[0];
+    } catch (error) {
+      console.error("Error getting permission:", error);
+      return undefined;
+    }
+  }
+
+  async createPermission(data: schema.InsertPermission): Promise<schema.Permission> {
+    const result = await this.db.insert(schema.permissions).values(data).returning();
+    return result[0];
+  }
+
+  async deletePermission(id: string): Promise<void> {
+    await this.db.delete(schema.permissions).where(eq(schema.permissions.id, id));
+  }
+
+  // Hidden objects
+  async getHiddenObjects(userId: string): Promise<schema.UserHiddenObject[]> {
+    try {
+      return await this.db.select().from(schema.userHiddenObjects).where(eq(schema.userHiddenObjects.userId, userId));
+    } catch (error) {
+      console.error("Error getting hidden objects:", error);
+      return [];
+    }
+  }
+
+  async hideObject(userId: string, objectType: string, objectId: string): Promise<schema.UserHiddenObject> {
+    const result = await this.db.insert(schema.userHiddenObjects).values({
+      userId,
+      objectType,
+      objectId
+    }).returning();
+    return result[0];
+  }
+
+  async unhideObject(userId: string, objectType: string, objectId: string): Promise<void> {
+    await this.db.delete(schema.userHiddenObjects).where(
+      and(
+        eq(schema.userHiddenObjects.userId, userId),
+        eq(schema.userHiddenObjects.objectType, objectType),
+        eq(schema.userHiddenObjects.objectId, objectId)
+      )
+    );
+  }
+
+  async isObjectHidden(userId: string, objectType: string, objectId: string): Promise<boolean> {
+    const result = await this.db.select().from(schema.userHiddenObjects).where(
+      and(
+        eq(schema.userHiddenObjects.userId, userId),
+        eq(schema.userHiddenObjects.objectType, objectType),
+        eq(schema.userHiddenObjects.objectId, objectId)
+      )
+    ).limit(1);
+    return result.length > 0;
+  }
+
   // Project methods
   async getProject(id: string): Promise<schema.Project | undefined> {
     try {
@@ -804,29 +1285,29 @@ export class PostgresStorage {
       let taskStats: Map<string, { taskCount: number; completedTaskCount: number }> = new Map();
       
       if (boardIds.length > 0) {
-        // Fetch boards and task stats in parallel for better performance
-        const [boardsForProjects, taskCounts] = await Promise.all([
-          this.db
-            .select({
-              projectId: schema.boards.projectId,
-              boardId: schema.boards.id,
-            })
-            .from(schema.boards)
-            .where(inArray(schema.boards.projectId, boardIds)),
-          this.db
+        // Fetch boards for these projects
+        const boardsForProjects = await this.db
+          .select({
+            projectId: schema.boards.projectId,
+            boardId: schema.boards.id,
+          })
+          .from(schema.boards)
+          .where(inArray(schema.boards.projectId, boardIds));
+
+        const allBoardIds = boardsForProjects.map(b => b.boardId);
+        
+        if (allBoardIds.length > 0) {
+          // Fetch task stats for these boards
+          const taskCounts = await this.db
             .select({
               boardId: schema.tasks.boardId,
               taskCount: sql<number>`count(*)`,
               completedCount: sql<number>`count(*) filter (where ${schema.tasks.status} in ('done', 'completed', 'Готово'))`,
             })
             .from(schema.tasks)
-            .where(inArray(schema.tasks.boardId, boardIds))
-            .groupBy(schema.tasks.boardId)
-        ]);
+            .where(inArray(schema.tasks.boardId, allBoardIds))
+            .groupBy(schema.tasks.boardId);
 
-        const allBoardIds = boardsForProjects.map(b => b.boardId);
-        
-        if (allBoardIds.length > 0) {
           // Aggregate stats by project
           const boardToProject = new Map(boardsForProjects.map(b => [b.boardId, b.projectId]));
           
@@ -871,6 +1352,11 @@ export class PostgresStorage {
     try {
       const [project] = await this.db.update(schema.projects).set(update).where(eq(schema.projects.id, id)).returning();
       if (!project) throw new Error("Project not found");
+      
+      // Invalidate project stats cache
+      const { invalidatePattern } = await import("./redis");
+      await invalidatePattern("projects:stats:*");
+      
       return project;
     } catch (error) {
       console.error("Error updating project:", error);
@@ -951,7 +1437,7 @@ export class PostgresStorage {
     }
   }
 
-  async createNotification(notification: InsertNotification): Promise<Notification> {
+  async createNotification(notification: any): Promise<Notification> {
     try {
       const [newNotification] = await this.db
         .insert(schema.notifications)
@@ -1342,6 +1828,18 @@ export class PostgresStorage {
   }
 
   // Comment methods
+  async getComment(id: string): Promise<schema.Comment | undefined> {
+    try {
+      const [comment] = await this.db.select()
+        .from(schema.comments)
+        .where(eq(schema.comments.id, id));
+      return comment;
+    } catch (error) {
+      console.error("Error getting comment:", error);
+      return undefined;
+    }
+  }
+
   async getCommentsByTask(taskId: string): Promise<schema.Comment[]> {
     try {
       return await this.db.select()
@@ -1356,7 +1854,9 @@ export class PostgresStorage {
 
   async createComment(comment: schema.InsertComment): Promise<schema.Comment> {
     try {
+      console.log(`[DB] Creating comment for task ${comment.taskId}:`, { authorId: comment.authorId, contentLength: comment.content?.length });
       const [newComment] = await this.db.insert(schema.comments).values(comment).returning();
+      console.log(`[DB] Comment created with ID: ${newComment.id}`);
       return newComment;
     } catch (error) {
       console.error("Error creating comment:", error);
@@ -1658,6 +2158,117 @@ export class PostgresStorage {
     }
   }
 
+  // Task User Time Tracking methods
+  async startUserTimeTracking(taskId: string, userId: string, status: string): Promise<schema.TaskUserTimeTracking> {
+    try {
+      console.log("[STORAGE] Starting time tracking:", { taskId, userId, status });
+      // First, close any existing open tracking for this user and task
+      await this.closeUserTimeTracking(taskId, userId);
+      
+      // Start new tracking
+      const [tracking] = await this.db.insert(schema.taskUserTimeTracking)
+        .values({
+          taskId,
+          userId,
+          status,
+          startedAt: new Date(),
+        })
+        .returning();
+      console.log("[STORAGE] Time tracking started:", tracking);
+      return tracking;
+    } catch (error) {
+      console.error("[STORAGE] Error starting user time tracking:", error);
+      throw error;
+    }
+  }
+
+  async closeUserTimeTracking(taskId: string, userId: string): Promise<void> {
+    try {
+      const now = new Date();
+      const openTrackings = await this.db
+        .select()
+        .from(schema.taskUserTimeTracking)
+        .where(
+          and(
+            eq(schema.taskUserTimeTracking.taskId, taskId),
+            eq(schema.taskUserTimeTracking.userId, userId),
+            isNull(schema.taskUserTimeTracking.endedAt)
+          )
+        );
+      
+      for (const tracking of openTrackings) {
+        const duration = Math.floor((now.getTime() - new Date(tracking.startedAt).getTime()) / 1000);
+        await this.db
+          .update(schema.taskUserTimeTracking)
+          .set({
+            endedAt: now,
+            durationSeconds: duration,
+          })
+          .where(eq(schema.taskUserTimeTracking.id, tracking.id));
+      }
+    } catch (error) {
+      console.error("Error closing user time tracking:", error);
+      throw error;
+    }
+  }
+
+  async getTaskUserTimeSummary(taskId: string): Promise<{
+    status: string;
+    userId: string;
+    userName: string;
+    userAvatar: string | null;
+    totalSeconds: number;
+    count: number;
+  }[]> {
+    try {
+      const trackings = await this.db
+        .select({
+          tracking: schema.taskUserTimeTracking,
+          user: schema.users,
+        })
+        .from(schema.taskUserTimeTracking)
+        .leftJoin(schema.users, eq(schema.taskUserTimeTracking.userId, schema.users.id))
+        .where(eq(schema.taskUserTimeTracking.taskId, taskId));
+      
+      const now = new Date();
+      const summary = new Map<string, { userId: string; userName: string; userAvatar: string | null; totalSeconds: number; count: number }>();
+      
+      for (const { tracking, user } of trackings) {
+        let duration = tracking.durationSeconds || 0;
+        
+        // If still tracking (no endedAt), calculate current duration
+        if (!tracking.endedAt && tracking.startedAt) {
+          duration = Math.floor((now.getTime() - new Date(tracking.startedAt).getTime()) / 1000);
+        }
+        
+        const key = `${tracking.status}-${tracking.userId}`;
+        const existing = summary.get(key);
+        
+        if (existing) {
+          existing.totalSeconds += duration;
+          existing.count += 1;
+        } else {
+          summary.set(key, {
+            userId: tracking.userId,
+            userName: user ? `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.username : 'Unknown',
+            userAvatar: user?.avatar || null,
+            totalSeconds: duration,
+            count: 1,
+          });
+        }
+      }
+      
+      // Convert to array and add status
+      return Array.from(summary.entries()).map(([key, data]) => ({
+        status: key.split('-')[0],
+        ...data,
+      }));
+    } catch (error) {
+      console.error("Error getting task user time summary:", error);
+      return [];
+    }
+  }
+
   // Task History methods
   async addTaskHistory(entry: {
     taskId: string;
@@ -1751,6 +2362,815 @@ export class PostgresStorage {
   async close(): Promise<void> {
     // Drizzle doesn't expose the underlying client directly
     // In production, you might want to manage the postgres client separately
+  }
+
+  // File attachment methods
+  async createFileAttachment(insertAttachment: InsertFileAttachment): Promise<FileAttachment> {
+    try {
+      const [attachment] = await this.db.insert(schema.fileAttachments).values(insertAttachment).returning();
+      return attachment;
+    } catch (error) {
+      console.error("Error creating file attachment:", error);
+      throw error;
+    }
+  }
+
+  async getFileAttachment(id: string): Promise<FileAttachment | undefined> {
+    try {
+      const result = await this.db.select().from(schema.fileAttachments).where(eq(schema.fileAttachments.id, id)).limit(1);
+      return result[0];
+    } catch (error) {
+      console.error("Error getting file attachment:", error);
+      return undefined;
+    }
+  }
+
+  async deleteFileAttachment(id: string): Promise<void> {
+    try {
+      await this.db.delete(schema.fileAttachments).where(eq(schema.fileAttachments.id, id));
+    } catch (error) {
+      console.error("Error deleting file attachment:", error);
+      throw error;
+    }
+  }
+// ==================== POINTS SYSTEM METHODS ====================
+
+  // Points Settings
+  async getPointsSettings(): Promise<PointsSetting[]> {
+    try {
+      return await this.db.select().from(schema.pointsSettings).where(eq(schema.pointsSettings.isActive, true));
+    } catch (error) {
+      console.error("Error getting points settings:", error);
+      return [];
+    }
+  }
+
+  async getPointsSetting(statusName: string): Promise<PointsSetting | undefined> {
+    try {
+      const result = await this.db.select().from(schema.pointsSettings).where(eq(schema.pointsSettings.statusName, statusName)).limit(1);
+      return result[0];
+    } catch (error) {
+      console.error("Error getting points setting:", error);
+      return undefined;
+    }
+  }
+
+  async createPointsSetting(setting: InsertPointsSetting): Promise<PointsSetting> {
+    try {
+      const [created] = await this.db.insert(schema.pointsSettings).values(setting).returning();
+      return created;
+    } catch (error) {
+      console.error("Error creating points setting:", error);
+      throw error;
+    }
+  }
+
+  async updatePointsSetting(id: string, setting: Partial<InsertPointsSetting>): Promise<PointsSetting> {
+    try {
+      const [updated] = await this.db.update(schema.pointsSettings).set(setting).where(eq(schema.pointsSettings.id, id)).returning();
+      return updated;
+    } catch (error) {
+      console.error("Error updating points setting:", error);
+      throw error;
+    }
+  }
+
+  async deletePointsSetting(id: string): Promise<void> {
+    try {
+      await this.db.delete(schema.pointsSettings).where(eq(schema.pointsSettings.id, id));
+    } catch (error) {
+      console.error("Error deleting points setting:", error);
+      throw error;
+    }
+  }
+
+  // User Points and Transactions
+  async getUserPoints(userId: string): Promise<{ balance: number; totalEarned: number; totalSpent: number; level: number }> {
+    try {
+      const user = await this.db.select({
+        balance: schema.users.pointsBalance,
+        totalEarned: schema.users.totalPointsEarned,
+        totalSpent: schema.users.totalPointsSpent,
+        level: schema.users.level
+      }).from(schema.users).where(eq(schema.users.id, userId)).limit(1);
+      
+      if (!user[0]) {
+        return { balance: 0, totalEarned: 0, totalSpent: 0, level: 0 };
+      }
+      
+      return {
+        balance: user[0].balance || 0,
+        totalEarned: user[0].totalEarned || 0,
+        totalSpent: user[0].totalSpent || 0,
+        level: user[0].level || 0
+      };
+    } catch (error) {
+      console.error("Error getting user points:", error);
+      return { balance: 0, totalEarned: 0, totalSpent: 0, level: 0 };
+    }
+  }
+
+  async getTransaction(taskId: string, statusName: string, type: string): Promise<UserPointsTransaction | undefined> {
+    try {
+      const result = await this.db.select()
+        .from(schema.userPointsTransactions)
+        .where(and(
+          eq(schema.userPointsTransactions.taskId, taskId),
+          eq(schema.userPointsTransactions.statusName, statusName),
+          sql`${schema.userPointsTransactions.type} = ${type}`
+        ))
+        .limit(1);
+      return result[0];
+    } catch (error) {
+      console.error("Error getting transaction:", error);
+      return undefined;
+    }
+  }
+
+  async createTransaction(transaction: InsertUserPointsTransaction): Promise<UserPointsTransaction> {
+    try {
+      const [created] = await this.db.insert(schema.userPointsTransactions).values(transaction as any).returning();
+      return created;
+    } catch (error) {
+      console.error("Error creating transaction:", error);
+      throw error;
+    }
+  }
+
+  async getUserTransactions(userId: string, options?: { type?: string; limit?: number; offset?: number }): Promise<(UserPointsTransaction & { changedByUser?: { firstName: string | null; lastName: string | null }; task?: { id: string; title: string } | null })[]> {
+    try {
+      // Build conditions array
+      const conditions: any[] = [eq(schema.userPointsTransactions.userId, userId)];
+      
+      if (options?.type) {
+        conditions.push(sql`${schema.userPointsTransactions.type} ${sql`=`} ${options.type}`);
+      }
+      
+      const results = await this.db
+        .select()
+        .from(schema.userPointsTransactions)
+        .where(and(...conditions))
+        .orderBy(desc(schema.userPointsTransactions.createdAt))
+        .limit(options?.limit || 100)
+        .offset(options?.offset || 0);
+      
+      // Get changedBy user info and task info
+      const resultsWithUsers = await Promise.all(
+        results.map(async (item) => {
+          let changedByUser = undefined;
+          let task = null;
+          
+          if (item.changedBy) {
+            const user = await this.db.select({
+              firstName: schema.users.firstName,
+              lastName: schema.users.lastName
+            }).from(schema.users).where(eq(schema.users.id, item.changedBy));
+            changedByUser = user[0] || undefined;
+          }
+          
+          if (item.taskId) {
+            const taskData = await this.db.select({
+              id: schema.tasks.id,
+              title: schema.tasks.title
+            }).from(schema.tasks).where(eq(schema.tasks.id, item.taskId));
+            task = taskData[0] || null;
+          }
+          
+          return {
+            ...item,
+            changedByUser,
+            task
+          };
+        })
+      );
+      
+      return resultsWithUsers;
+    } catch (error) {
+      console.error("Error getting user transactions:", error);
+      return [];
+    }
+  }
+
+  async updateUserPoints(userId: string, delta: number): Promise<void> {
+    try {
+      const user = await this.getUser(userId);
+      if (!user) throw new Error("User not found");
+      
+      const newBalance = (user.pointsBalance || 0) + delta;
+      const newTotalEarned = delta > 0 ? (user.totalPointsEarned || 0) + delta : (user.totalPointsEarned || 0);
+      const newTotalSpent = delta < 0 ? (user.totalPointsSpent || 0) + Math.abs(delta) : (user.totalPointsSpent || 0);
+      const newLevel = Math.floor(newTotalEarned / 1000);
+      
+      await this.db.update(schema.users)
+        .set({
+          pointsBalance: Math.max(0, newBalance),
+          totalPointsEarned: newTotalEarned,
+          totalPointsSpent: newTotalSpent,
+          level: newLevel
+        })
+        .where(eq(schema.users.id, userId));
+    } catch (error) {
+      console.error("Error updating user points:", error);
+      throw error;
+    }
+  }
+
+  // Shop Methods
+  async getShopItems(): Promise<ShopItem[]> {
+    try {
+      return await this.db.select().from(schema.shopItems).where(eq(schema.shopItems.isActive, true));
+    } catch (error) {
+      console.error("Error getting shop items:", error);
+      return [];
+    }
+  }
+
+  async getShopItem(id: string): Promise<ShopItem | undefined> {
+    try {
+      const result = await this.db.select().from(schema.shopItems).where(eq(schema.shopItems.id, id)).limit(1);
+      return result[0];
+    } catch (error) {
+      console.error("Error getting shop item:", error);
+      return undefined;
+    }
+  }
+
+  async createShopItem(item: InsertShopItem): Promise<ShopItem> {
+    try {
+      const [created] = await this.db.insert(schema.shopItems).values(item).returning();
+      return created;
+    } catch (error) {
+      console.error("Error creating shop item:", error);
+      throw error;
+    }
+  }
+
+  async createPurchase(purchase: InsertShopPurchase): Promise<ShopPurchase> {
+    try {
+      const [created] = await this.db.insert(schema.shopPurchases).values(purchase).returning();
+      return created;
+    } catch (error) {
+      console.error("Error creating purchase:", error);
+      throw error;
+    }
+  }
+
+  async getUserPurchases(userId: string): Promise<ShopPurchase[]> {
+    try {
+      return await this.db.select()
+        .from(schema.shopPurchases)
+        .where(eq(schema.shopPurchases.userId, userId))
+        .orderBy(desc(schema.shopPurchases.purchasedAt));
+    } catch (error) {
+      console.error("Error getting user purchases:", error);
+      return [];
+    }
+  }
+
+  // Calendar Events Methods
+  async getCalendarEvents(userId: string, startDate?: Date, endDate?: Date): Promise<CalendarEvent[]> {
+    try {
+      const conditions = [eq(schema.calendarEvents.userId, userId)];
+      
+      if (startDate && endDate) {
+        conditions.push(sql`${schema.calendarEvents.date} >= ${startDate.toISOString()}`);
+        conditions.push(sql`${schema.calendarEvents.date} <= ${endDate.toISOString()}`);
+      }
+      
+      return await this.db.select().from(schema.calendarEvents).where(and(...conditions)).orderBy(schema.calendarEvents.date);
+    } catch (error) {
+      console.error("Error getting calendar events:", error);
+      return [];
+    }
+  }
+
+  async getCalendarEvent(id: string): Promise<CalendarEvent | undefined> {
+    try {
+      const result = await this.db.select().from(schema.calendarEvents).where(eq(schema.calendarEvents.id, id)).limit(1);
+      return result[0];
+    } catch (error) {
+      console.error("Error getting calendar event:", error);
+      return undefined;
+    }
+  }
+
+  async getCalendarEventsByRoom(roomId: string): Promise<CalendarEvent[]> {
+    try {
+      return await this.db.select().from(schema.calendarEvents)
+        .where(eq(schema.calendarEvents.roomId, roomId))
+        .orderBy(schema.calendarEvents.date, schema.calendarEvents.time);
+    } catch (error) {
+      console.error("Error getting calendar events by room:", error);
+      return [];
+    }
+  }
+
+  async createCalendarEvent(event: InsertCalendarEvent): Promise<CalendarEvent> {
+    try {
+      console.log("[Storage] Creating calendar event with data:", event);
+      const [created] = await this.db.insert(schema.calendarEvents).values(event as any).returning();
+      console.log("[Storage] Calendar event created successfully:", created.id);
+      return created;
+    } catch (error) {
+      console.error("[Storage] Error creating calendar event:", error);
+      throw error;
+    }
+  }
+
+  async updateCalendarEvent(id: string, event: Partial<InsertCalendarEvent>): Promise<CalendarEvent> {
+    try {
+      const [updated] = await this.db.update(schema.calendarEvents)
+        .set({ ...event, updatedAt: new Date() } as any)
+        .where(eq(schema.calendarEvents.id, id))
+        .returning();
+      return updated;
+    } catch (error) {
+      console.error("Error updating calendar event:", error);
+      throw error;
+    }
+  }
+
+  async deleteCalendarEvent(id: string): Promise<void> {
+    try {
+      await this.db.delete(schema.calendarEvents).where(eq(schema.calendarEvents.id, id));
+    } catch (error) {
+      console.error("Error deleting calendar event:", error);
+      throw error;
+    }
+  }
+
+  // ==========================================
+  // Yandex Calendar Methods
+  // ==========================================
+
+  async getYandexCalendarIntegration(id: string): Promise<any | null> {
+    try {
+      const result = await this.db.select().from(yandexCalendarIntegrations).where(eq(yandexCalendarIntegrations.id, id));
+      return result[0] || null;
+    } catch (error) {
+      console.error("Error getting Yandex calendar integration:", error);
+      return null;
+    }
+  }
+
+  async getYandexCalendarIntegrationByUser(userId: string): Promise<any | null> {
+    try {
+      const result = await this.db.select().from(yandexCalendarIntegrations).where(eq(yandexCalendarIntegrations.userId, userId));
+      return result[0] || null;
+    } catch (error) {
+      console.error("Error getting Yandex calendar integration by user:", error);
+      return null;
+    }
+  }
+
+  async createYandexCalendarIntegration(data: any): Promise<any> {
+    try {
+      const result = await this.db.insert(yandexCalendarIntegrations).values(data).returning();
+      return result[0];
+    } catch (error) {
+      console.error("Error creating Yandex calendar integration:", error);
+      throw error;
+    }
+  }
+
+  async updateYandexCalendarIntegration(id: string, data: any): Promise<any> {
+    try {
+      const result = await this.db.update(yandexCalendarIntegrations).set({ ...data, updatedAt: new Date() }).where(eq(yandexCalendarIntegrations.id, id)).returning();
+      return result[0];
+    } catch (error) {
+      console.error("Error updating Yandex calendar integration:", error);
+      throw error;
+    }
+  }
+
+  async deleteYandexCalendarIntegration(id: string): Promise<void> {
+    try {
+      await this.db.delete(yandexCalendarIntegrations).where(eq(yandexCalendarIntegrations.id, id));
+    } catch (error) {
+      console.error("Error deleting Yandex calendar integration:", error);
+      throw error;
+    }
+  }
+
+  async getActiveYandexIntegrations(): Promise<any[]> {
+    try {
+      return await this.db.select().from(yandexCalendarIntegrations).where(eq(yandexCalendarIntegrations.syncEnabled, true));
+    } catch (error) {
+      console.error("Error getting active Yandex integrations:", error);
+      return [];
+    }
+  }
+
+  async updateYandexCalendarLastSync(id: string): Promise<void> {
+    try {
+      await this.db.update(yandexCalendarIntegrations).set({ lastSyncAt: new Date() }).where(eq(yandexCalendarIntegrations.id, id));
+    } catch (error) {
+      console.error("Error updating Yandex calendar last sync:", error);
+    }
+  }
+
+  // Yandex Calendar Events
+  async getYandexEventByYandexId(yandexEventId: string): Promise<any | null> {
+    try {
+      const result = await this.db.select().from(yandexCalendarEvents).where(eq(yandexCalendarEvents.yandexEventId, yandexEventId));
+      return result[0] || null;
+    } catch (error) {
+      console.error("Error getting Yandex event by Yandex ID:", error);
+      return null;
+    }
+  }
+
+  async createYandexCalendarEvent(data: any): Promise<any> {
+    try {
+      const result = await this.db.insert(yandexCalendarEvents).values(data).returning();
+      return result[0];
+    } catch (error) {
+      console.error("Error creating Yandex calendar event:", error);
+      throw error;
+    }
+  }
+
+  async updateYandexCalendarEvent(id: string, data: any): Promise<any> {
+    try {
+      const result = await this.db.update(yandexCalendarEvents).set({ ...data, updatedAt: new Date() }).where(eq(yandexCalendarEvents.id, id)).returning();
+      return result[0];
+    } catch (error) {
+      console.error("Error updating Yandex calendar event:", error);
+      throw error;
+    }
+  }
+
+  async markYandexEventDeleted(id: string): Promise<void> {
+    try {
+      await this.db.update(yandexCalendarEvents).set({ deleted: true, updatedAt: new Date() }).where(eq(yandexCalendarEvents.id, id));
+    } catch (error) {
+      console.error("Error marking Yandex event as deleted:", error);
+    }
+  }
+
+  async getYandexEventsByDateRange(integrationId: string, from: Date, to: Date): Promise<any[]> {
+    try {
+      return await this.db
+        .select()
+        .from(yandexCalendarEvents)
+        .where(
+          and(
+            eq(yandexCalendarEvents.integrationId, integrationId),
+            eq(yandexCalendarEvents.deleted, false),
+            gte(yandexCalendarEvents.startDate, from),
+            lte(yandexCalendarEvents.startDate, to)
+          )
+        )
+        .orderBy(yandexCalendarEvents.startDate);
+    } catch (error) {
+      console.error("Error getting Yandex events by date range:", error);
+      return [];
+    }
+  }
+
+  // Internal Calendar Notifications
+  async isInternalNotificationSent(eventId: string, userId: string, type: string, reminderMinutes?: number): Promise<boolean> {
+    try {
+      // For internal events, we store notifications in a different table or use a different approach
+      // For now, we'll use a simple cache-based approach or a new table
+      // Check if we have a calendar event notifications table
+      const result = await this.db.select().from(yandexCalendarNotifications)
+        .where(and(
+          eq(yandexCalendarNotifications.eventId, eventId),
+          eq(yandexCalendarNotifications.userId, userId),
+          type ? eq(yandexCalendarNotifications.notificationType, type) : undefined,
+          reminderMinutes !== undefined ? eq(yandexCalendarNotifications.reminderMinutes, reminderMinutes) : undefined
+        ));
+      return result.length > 0;
+    } catch (error) {
+      console.error("Error checking if internal notification sent:", error);
+      return false;
+    }
+  }
+
+  // Yandex Calendar Notifications
+  async isNotificationSent(eventId: string, reminderMinutes?: number): Promise<boolean> {
+    try {
+      const conditions = [eq(yandexCalendarNotifications.eventId, eventId)];
+      if (reminderMinutes !== undefined) {
+        conditions.push(eq(yandexCalendarNotifications.reminderMinutes, reminderMinutes));
+      }
+      
+      const result = await this.db.select().from(yandexCalendarNotifications).where(and(...conditions));
+      return result.length > 0;
+    } catch (error) {
+      console.error("Error checking if notification sent:", error);
+      return false;
+    }
+  }
+
+  async markNotificationSent(eventId: string, userId: string, type: string, reminderMinutes?: number): Promise<void> {
+    try {
+      await this.db.insert(yandexCalendarNotifications).values({
+        eventId,
+        userId,
+        notificationType: type,
+        reminderMinutes,
+      });
+    } catch (error) {
+      console.error("Error marking notification as sent:", error);
+    }
+  }
+
+  // Team Rooms Methods
+  async getTeamRooms(): Promise<TeamRoom[]> {
+    try {
+      const result = await this.db.select().from(teamRooms).where(eq(teamRooms.isActive, true)).orderBy(desc(teamRooms.createdAt));
+      return result;
+    } catch (error) {
+      console.error("Error getting team rooms:", error);
+      throw error;
+    }
+  }
+
+  async getTeamRoomById(id: string): Promise<TeamRoom | null> {
+    try {
+      const result = await this.db.select().from(teamRooms).where(eq(teamRooms.id, id)).limit(1);
+      return result[0] || null;
+    } catch (error) {
+      console.error("Error getting team room by id:", error);
+      throw error;
+    }
+  }
+
+  async getTeamRoomBySlug(slug: string): Promise<TeamRoom | null> {
+    try {
+      const result = await this.db.select().from(teamRooms).where(eq(teamRooms.slug, slug)).limit(1);
+      return result[0] || null;
+    } catch (error) {
+      console.error("Error getting team room by slug:", error);
+      throw error;
+    }
+  }
+
+  async getTeamRoomByInviteCode(inviteCode: string): Promise<TeamRoom | null> {
+    try {
+      const result = await this.db.select().from(teamRooms).where(eq(teamRooms.inviteCode, inviteCode)).limit(1);
+      return result[0] || null;
+    } catch (error) {
+      console.error("Error getting team room by invite code:", error);
+      throw error;
+    }
+  }
+
+  async createTeamRoom(data: InsertTeamRoom): Promise<TeamRoom> {
+    try {
+      const result = await this.db.insert(teamRooms).values(data).returning();
+      return result[0];
+    } catch (error) {
+      console.error("Error creating team room:", error);
+      throw error;
+    }
+  }
+
+  async updateTeamRoom(id: string, data: UpdateTeamRoom): Promise<TeamRoom | null> {
+    try {
+      const result = await this.db.update(teamRooms).set(data).where(eq(teamRooms.id, id)).returning();
+      return result[0] || null;
+    } catch (error) {
+      console.error("Error updating team room:", error);
+      throw error;
+    }
+  }
+
+  async deleteTeamRoom(id: string): Promise<boolean> {
+    try {
+      const result = await this.db.update(teamRooms).set({ isActive: false }).where(eq(teamRooms.id, id)).returning();
+      return result.length > 0;
+    } catch (error) {
+      console.error("Error deleting team room:", error);
+      throw error;
+    }
+  }
+
+  async regenerateTeamRoomInviteCode(id: string): Promise<TeamRoom | null> {
+    try {
+      const newCode = this.generateInviteCode();
+      const result = await this.db.update(teamRooms).set({ inviteCode: newCode }).where(eq(teamRooms.id, id)).returning();
+      return result[0] || null;
+    } catch (error) {
+      console.error("Error regenerating team room invite code:", error);
+      throw error;
+    }
+  }
+
+  generateInviteCode(): string {
+    const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+    let code = '';
+    for (let i = 0; i < 8; i++) {
+      code += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return code;
+  }
+
+  // Call Settings Methods
+  async getCallSettings(userId: string): Promise<CallSettings | null> {
+    try {
+      const result = await this.db.select().from(callSettings).where(eq(callSettings.userId, userId)).limit(1);
+      return result[0] || null;
+    } catch (error) {
+      console.error("Error getting call settings:", error);
+      throw error;
+    }
+  }
+
+  async upsertCallSettings(data: InsertCallSettings): Promise<CallSettings> {
+    try {
+      const existing = await this.getCallSettings(data.userId);
+      if (existing) {
+        const result = await this.db.update(callSettings).set(data).where(eq(callSettings.userId, data.userId)).returning();
+        return result[0];
+      } else {
+        const result = await this.db.insert(callSettings).values(data).returning();
+        return result[0];
+      }
+    } catch (error) {
+      console.error("Error upserting call settings:", error);
+      throw error;
+    }
+  }
+
+  // Call Participants Methods
+  async getCallParticipants(roomId: string): Promise<CallParticipant[]> {
+    try {
+      const result = await this.db
+        .select()
+        .from(callParticipants)
+        .where(and(eq(callParticipants.roomId, roomId), eq(callParticipants.isActive, true)))
+        .orderBy(desc(callParticipants.joinedAt));
+      return result;
+    } catch (error) {
+      console.error("Error getting call participants:", error);
+      throw error;
+    }
+  }
+
+  async getCallParticipantsWithUsers(roomId: string): Promise<any[]> {
+    try {
+      const result = await this.db
+        .select({
+          participant: callParticipants,
+          user: {
+            id: users.id,
+            username: users.username,
+            firstName: users.firstName,
+            lastName: users.lastName,
+            avatar: users.avatar,
+          }
+        })
+        .from(callParticipants)
+        .where(and(eq(callParticipants.roomId, roomId), eq(callParticipants.isActive, true)))
+        .leftJoin(users, eq(callParticipants.userId, users.id))
+        .orderBy(desc(callParticipants.joinedAt));
+      return result.map(r => ({ ...r.participant, user: r.user }));
+    } catch (error) {
+      console.error("Error getting call participants with users:", error);
+      throw error;
+    }
+  }
+
+  async joinCall(data: InsertCallParticipant): Promise<CallParticipant> {
+    try {
+      // Check if already in call
+      const existing = await this.db
+        .select()
+        .from(callParticipants)
+        .where(and(eq(callParticipants.roomId, data.roomId), eq(callParticipants.userId, data.userId)))
+        .limit(1);
+      
+      if (existing[0]) {
+        // Rejoin
+        const result = await this.db
+          .update(callParticipants)
+          .set({ isActive: true, leftAt: null, joinedAt: new Date() })
+          .where(eq(callParticipants.id, existing[0].id))
+          .returning();
+        return result[0];
+      }
+      
+      const result = await this.db.insert(callParticipants).values(data).returning();
+      return result[0];
+    } catch (error) {
+      console.error("Error joining call:", error);
+      throw error;
+    }
+  }
+
+  async leaveCall(roomId: string, userId: string): Promise<void> {
+    try {
+      await this.db
+        .update(callParticipants)
+        .set({ isActive: false, leftAt: new Date() })
+        .where(and(eq(callParticipants.roomId, roomId), eq(callParticipants.userId, userId)));
+    } catch (error) {
+      console.error("Error leaving call:", error);
+      throw error;
+    }
+  }
+
+  async updateCallParticipantStatus(
+    roomId: string, 
+    userId: string, 
+    updates: Partial<Pick<CallParticipant, 'isMicOn' | 'isVideoOn' | 'isSpeaking'>>
+  ): Promise<void> {
+    try {
+      await this.db
+        .update(callParticipants)
+        .set(updates)
+        .where(and(eq(callParticipants.roomId, roomId), eq(callParticipants.userId, userId)));
+    } catch (error) {
+      console.error("Error updating call participant status:", error);
+      throw error;
+    }
+  }
+
+  async kickCallParticipant(roomId: string, userId: string): Promise<void> {
+    try {
+      await this.db
+        .update(callParticipants)
+        .set({ isActive: false, leftAt: new Date() })
+        .where(and(eq(callParticipants.roomId, roomId), eq(callParticipants.userId, userId)));
+    } catch (error) {
+      console.error("Error kicking call participant:", error);
+      throw error;
+    }
+  }
+
+  // Team Room Admins Methods
+  async getTeamRoomAdmins(roomId: string): Promise<TeamRoomAdmin[]> {
+    try {
+      const result = await this.db
+        .select()
+        .from(teamRoomAdmins)
+        .where(eq(teamRoomAdmins.roomId, roomId));
+      return result;
+    } catch (error) {
+      console.error("Error getting team room admins:", error);
+      throw error;
+    }
+  }
+
+  async getTeamRoomAdminsWithUsers(roomId: string): Promise<any[]> {
+    try {
+      const result = await this.db
+        .select({
+          admin: teamRoomAdmins,
+          user: {
+            id: users.id,
+            username: users.username,
+            firstName: users.firstName,
+            lastName: users.lastName,
+            avatar: users.avatar,
+          }
+        })
+        .from(teamRoomAdmins)
+        .where(eq(teamRoomAdmins.roomId, roomId))
+        .leftJoin(users, eq(teamRoomAdmins.userId, users.id));
+      return result.map(r => ({ ...r.admin, user: r.user }));
+    } catch (error) {
+      console.error("Error getting team room admins with users:", error);
+      throw error;
+    }
+  }
+
+  async addTeamRoomAdmin(data: InsertTeamRoomAdmin): Promise<TeamRoomAdmin> {
+    try {
+      const result = await this.db.insert(teamRoomAdmins).values(data).returning();
+      return result[0];
+    } catch (error) {
+      console.error("Error adding team room admin:", error);
+      throw error;
+    }
+  }
+
+  async removeTeamRoomAdmin(roomId: string, userId: string): Promise<void> {
+    try {
+      await this.db
+        .delete(teamRoomAdmins)
+        .where(and(eq(teamRoomAdmins.roomId, roomId), eq(teamRoomAdmins.userId, userId)));
+    } catch (error) {
+      console.error("Error removing team room admin:", error);
+      throw error;
+    }
+  }
+
+  async isTeamRoomAdmin(roomId: string, userId: string): Promise<boolean> {
+    try {
+      const result = await this.db
+        .select()
+        .from(teamRoomAdmins)
+        .where(and(eq(teamRoomAdmins.roomId, roomId), eq(teamRoomAdmins.userId, userId)))
+        .limit(1);
+      return result.length > 0;
+    } catch (error) {
+      console.error("Error checking team room admin:", error);
+      throw error;
+    }
   }
 }
 

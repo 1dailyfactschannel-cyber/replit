@@ -10,8 +10,6 @@ dist
 docker-compose.yml
 Dockerfile
 Dockerfile.client
-nginx.conf
 migrations
-scripts
 *.log
 .DS_Store
