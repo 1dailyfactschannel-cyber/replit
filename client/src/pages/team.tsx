@@ -15,7 +15,9 @@ import {
   DropdownMenuContent, 
   DropdownMenuItem, 
   DropdownMenuTrigger,
-  DropdownMenuCheckboxItem 
+  DropdownMenuCheckboxItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator
 } from "@/components/ui/dropdown-menu";
 import { 
   Dialog, 
@@ -44,6 +46,7 @@ import {
   Coins, 
   UserCog,
   Search,
+  Filter,
   Calendar as CalendarIcon,
   Users,
   Plus,
@@ -402,87 +405,150 @@ export default function EmployeesPage() {
               </div>
               
               {/* Filters */}
-              <div className="flex items-center gap-2">
-                <Select 
-                  value={filters.status} 
-                  onValueChange={(value) => setFilters(f => ({ ...f, status: value }))}
-                >
-                  <SelectTrigger className="w-[140px] h-9 !bg-background">
-                    <SelectValue placeholder="Статус" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Все статусы</SelectItem>
-                    {customStatuses.map((s) => (
-                      <SelectItem key={s.id} value={s.name}>
-                        <div className="flex items-center gap-2">
-                          <span className="w-2 h-2 rounded-full" style={{ backgroundColor: s.color }} />
-                          {s.name}
-                        </div>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-
-                <Select 
-                  value={filters.department} 
-                  onValueChange={(value) => setFilters(f => ({ ...f, department: value }))}
-                >
-                  <SelectTrigger className="w-[140px] h-9 !bg-background">
-                    <SelectValue placeholder="Отдел" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Все отделы</SelectItem>
-                    {departments.map((d) => (
-                      <SelectItem key={d.id} value={d.name}>
-                        <div className="flex items-center gap-2">
-                          <span className="w-2 h-2 rounded-full" style={{ backgroundColor: d.color }} />
-                          {d.name}
-                        </div>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-
-                <Select 
-                  value={String(filters.isRemote)} 
-                  onValueChange={(value) => setFilters(f => ({ ...f, isRemote: value === "all" ? "all" : value === "true" }))}
-                >
-                  <SelectTrigger className="w-[120px] h-9 !bg-background">
-                    <SelectValue placeholder="Удаленка" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Все</SelectItem>
-                    <SelectItem value="true">Да</SelectItem>
-                    <SelectItem value="false">Нет</SelectItem>
-                  </SelectContent>
-                </Select>
-
-                <Select 
-                  value={filters.position} 
-                  onValueChange={(value) => setFilters(f => ({ ...f, position: value }))}
-                >
-                  <SelectTrigger className="w-[140px] h-9 !bg-background">
-                    <SelectValue placeholder="Должность" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Все должности</SelectItem>
-                    {uniquePositions.map((pos) => (
-                      <SelectItem key={pos} value={pos!}>{pos}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-
-                {(filters.status !== "all" || filters.department !== "all" || filters.isRemote !== "all" || filters.position !== "all") && (
-                  <Button 
-                    variant="ghost" 
-                    size="sm"
-                    onClick={() => setFilters({ status: "all", department: "all", isRemote: "all", position: "all" })}
-                    className="text-muted-foreground"
-                  >
-                    Сбросить
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" className="gap-2 !bg-background">
+                    <Filter className="w-4 h-4" />
+                    Фильтры
+                    {(filters.status !== "all" || filters.department !== "all" || filters.isRemote !== "all" || filters.position !== "all") && (
+                      <span className="ml-1 px-1.5 py-0.5 text-xs bg-primary text-primary-foreground rounded-full">
+                        {[
+                          filters.status !== "all",
+                          filters.department !== "all",
+                          filters.isRemote !== "all",
+                          filters.position !== "all"
+                        ].filter(Boolean).length}
+                      </span>
+                    )}
                   </Button>
-                )}
-              </div>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="w-72 max-h-[80vh] overflow-y-auto">
+                  <DropdownMenuLabel>Фильтры</DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  
+                  <div className="px-2 py-1.5">
+                    <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Статус</label>
+                    <div className="flex flex-wrap gap-1">
+                      <Button
+                        variant={filters.status === "all" ? "default" : "outline"}
+                        size="sm"
+                        className="h-7 text-xs"
+                        onClick={() => setFilters(f => ({ ...f, status: "all" }))}
+                      >
+                        Все
+                      </Button>
+                      {customStatuses.map((s) => (
+                        <Button
+                          key={s.id}
+                          variant={filters.status === s.name ? "default" : "outline"}
+                          size="sm"
+                          className="h-7 text-xs"
+                          onClick={() => setFilters(f => ({ ...f, status: s.name }))}
+                        >
+                          <span className="w-2 h-2 rounded-full mr-1" style={{ backgroundColor: s.color }} />
+                          {s.name}
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+                  
+                  <DropdownMenuSeparator />
+                  
+                  <div className="px-2 py-1.5">
+                    <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Отдел</label>
+                    <div className="flex flex-wrap gap-1">
+                      <Button
+                        variant={filters.department === "all" ? "default" : "outline"}
+                        size="sm"
+                        className="h-7 text-xs"
+                        onClick={() => setFilters(f => ({ ...f, department: "all" }))}
+                      >
+                        Все
+                      </Button>
+                      {departments.map((d) => (
+                        <Button
+                          key={d.id}
+                          variant={filters.department === d.name ? "default" : "outline"}
+                          size="sm"
+                          className="h-7 text-xs"
+                          onClick={() => setFilters(f => ({ ...f, department: d.name }))}
+                        >
+                          <span className="w-2 h-2 rounded-full mr-1" style={{ backgroundColor: d.color }} />
+                          {d.name}
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+                  
+                  <DropdownMenuSeparator />
+                  
+                  <div className="px-2 py-1.5">
+                    <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Удаленка</label>
+                    <div className="flex flex-wrap gap-1">
+                      <Button
+                        variant={filters.isRemote === "all" ? "default" : "outline"}
+                        size="sm"
+                        className="h-7 text-xs"
+                        onClick={() => setFilters(f => ({ ...f, isRemote: "all" }))}
+                      >
+                        Все
+                      </Button>
+                      <Button
+                        variant={filters.isRemote === true ? "default" : "outline"}
+                        size="sm"
+                        className="h-7 text-xs"
+                        onClick={() => setFilters(f => ({ ...f, isRemote: true }))}
+                      >
+                        Да
+                      </Button>
+                      <Button
+                        variant={filters.isRemote === false ? "default" : "outline"}
+                        size="sm"
+                        className="h-7 text-xs"
+                        onClick={() => setFilters(f => ({ ...f, isRemote: false }))}
+                      >
+                        Нет
+                      </Button>
+                    </div>
+                  </div>
+                  
+                  <DropdownMenuSeparator />
+                  
+                  <div className="px-2 py-1.5">
+                    <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Должность</label>
+                    <Select 
+                      value={filters.position} 
+                      onValueChange={(value) => setFilters(f => ({ ...f, position: value }))}
+                    >
+                      <SelectTrigger className="h-8 text-xs">
+                        <SelectValue placeholder="Выберите должность" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Все должности</SelectItem>
+                        {uniquePositions.map((pos) => (
+                          <SelectItem key={pos} value={pos!}>{pos}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  
+                  {(filters.status !== "all" || filters.department !== "all" || filters.isRemote !== "all" || filters.position !== "all") && (
+                    <>
+                      <DropdownMenuSeparator />
+                      <div className="px-2 py-2">
+                        <Button 
+                          variant="outline" 
+                          size="sm"
+                          className="w-full"
+                          onClick={() => setFilters({ status: "all", department: "all", isRemote: "all", position: "all" })}
+                        >
+                          Сбросить все фильтры
+                        </Button>
+                      </div>
+                    </>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
 
               <Button className="gap-2">
                 <UserCog className="w-4 h-4" />
