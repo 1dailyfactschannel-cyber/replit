@@ -6,6 +6,20 @@ import { metaImagesPlugin } from "./vite-plugin-meta-images";
 import gzipPlugin from "rollup-plugin-gzip";
 import { nodePolyfills } from "vite-plugin-node-polyfills";
 
+import { defineConfig, type UserConfig } from "vite";
+import react from "@vitejs/plugin-react";
+import path from "path";
+import runtimeErrorOverlay from "@replit/vite-plugin-runtime-error-modal";
+import { metaImagesPlugin } from "./vite-plugin-meta-images";
+import gzipPlugin from "rollup-plugin-gzip";
+import { nodePolyfills } from "vite-plugin-node-polyfills";
+
+// Fix for __dirname in ES modules
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
 export default defineConfig(async ({ mode }): Promise<UserConfig> => ({
   root: 'client',
   define: {
@@ -13,19 +27,16 @@ export default defineConfig(async ({ mode }): Promise<UserConfig> => ({
   },
   plugins: [
     nodePolyfills({
-      // Whether to polyfill Node.js globals (e.g. Buffer, process, etc.)
       globals: true,
-      // Whether to polyfill Node.js built-in modules (e.g. fs, path, etc.)
       protocolImports: true,
     }),
     react({
-      // Enable React Compiler for better performance
       babel: {
         plugins: [],
       },
     }),
     runtimeErrorOverlay(),
-    // Enable gzip compression for production
+    metaImagesPlugin(),
     ...(mode === "production" ? [
       gzipPlugin({
         filter: /\.(js|mjs|json|css|html)$/,
@@ -46,22 +57,19 @@ export default defineConfig(async ({ mode }): Promise<UserConfig> => ({
   ],
   resolve: {
     alias: {
-      "@": path.resolve(import.meta.dirname, "client", "src"),
-      "@shared": path.resolve(import.meta.dirname, "shared"),
-      "@assets": path.resolve(import.meta.dirname, "attached_assets"),
+      "@": path.resolve(__dirname, "client", "src"),
+      "@shared": path.resolve(__dirname, "shared"),
+      "@assets": path.resolve(__dirname, "attached_assets"),
     },
   },
   build: {
-    outDir: path.resolve(import.meta.dirname, "dist/public"),
+    outDir: path.resolve(__dirname, "dist/public"),
     emptyOutDir: true,
-    // Optimization: Enable minification and chunking
     minify: 'esbuild',
     target: 'es2020',
-    // esbuild minification is faster and sufficient for most cases
     rollupOptions: {
       treeshake: true,
       output: {
-        // Split vendor chunks for better caching
         manualChunks: {
           'vendor-react': ['react', 'react-dom'],
           'vendor-query': ['@tanstack/react-query'],
@@ -72,7 +80,6 @@ export default defineConfig(async ({ mode }): Promise<UserConfig> => ({
           'vendor-motion': ['framer-motion'],
           'vendor-icons': ['lucide-react'],
         },
-        // Optimize chunk file naming for caching
         entryFileNames: 'assets/[name]-[hash].js',
         chunkFileNames: 'assets/[name]-[hash].js',
         assetFileNames: (assetInfo: any) => {
@@ -89,11 +96,8 @@ export default defineConfig(async ({ mode }): Promise<UserConfig> => ({
         },
       },
     },
-    // Enable source maps for production debugging (optional)
     sourcemap: false,
-    // Optimize chunk size - warn if chunks are larger
     chunkSizeWarningLimit: 500,
-    // Reduce CSS size
     cssMinify: true,
   },
   server: {
