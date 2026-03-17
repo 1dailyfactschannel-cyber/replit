@@ -208,7 +208,8 @@ export default function EmployeesPage() {
   // Mutations
   const updateEmployeeMutation = useMutation({
     mutationFn: async (data: any) => {
-      const res = await apiRequest("PUT", `/api/users/${selectedEmployee?.id}`, data);
+      const userId = data.id || selectedEmployee?.id;
+      const res = await apiRequest("PUT", `/api/users/${userId}`, data);
       return res.json();
     },
     onSuccess: () => {
