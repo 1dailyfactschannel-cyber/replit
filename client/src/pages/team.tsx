@@ -1098,12 +1098,12 @@ export default function EmployeesPage() {
 
               {/* Blocked Employees Section */}
               {console.log("[DEBUG] blockedEmployees.length:", blockedEmployees.length) || blockedEmployees.length > 0 && (
-                <Collapsible>
+                <Collapsible defaultOpen>
                   <CollapsibleTrigger asChild>
                     <div className="flex items-center gap-2 px-4 py-3 bg-rose-50 dark:bg-rose-950/30 border-t border-rose-200 dark:border-rose-800 cursor-pointer hover:bg-rose-100 dark:hover:bg-rose-950/50 transition-colors">
                       <ChevronDown className="w-4 h-4 text-rose-600 dark:text-rose-400" />
                       <span className="text-sm font-medium text-rose-700 dark:text-rose-300">
-                        Заблокированные ({blockedEmployees.length})
+                        Заблокированные пользователи ({blockedEmployees.length})
                       </span>
                     </div>
                   </CollapsibleTrigger>
