@@ -6,14 +6,6 @@ import { metaImagesPlugin } from "./vite-plugin-meta-images";
 import gzipPlugin from "rollup-plugin-gzip";
 import { nodePolyfills } from "vite-plugin-node-polyfills";
 
-import { defineConfig, type UserConfig } from "vite";
-import react from "@vitejs/plugin-react";
-import path from "path";
-import runtimeErrorOverlay from "@replit/vite-plugin-runtime-error-modal";
-import { metaImagesPlugin } from "./vite-plugin-meta-images";
-import gzipPlugin from "rollup-plugin-gzip";
-import { nodePolyfills } from "vite-plugin-node-polyfills";
-
 // Fix for __dirname in ES modules
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
