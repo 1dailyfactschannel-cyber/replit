@@ -1,11 +1,11 @@
-FROM node:20-alpine3.21 AS builder
+FROM node:20-slim AS builder
 WORKDIR /app
 COPY package.json package-lock.json* ./
 RUN npm ci
 COPY . .
 RUN npm run build
 
-FROM nginx:alpine
+FROM nginx:stable-slim
 # Copy built files
 COPY --from=builder /app/dist/public /usr/share/nginx/html
 # Copy custom nginx config
