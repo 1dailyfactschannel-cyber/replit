@@ -407,7 +407,7 @@ export default function EmployeesPage() {
               {/* Filters */}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="outline" className="gap-2 !bg-background">
+                  <Button variant="outline" className="gap-2 !bg-background text-foreground">
                     <Filter className="w-4 h-4" />
                     Фильтры
                     {(filters.status !== "all" || filters.department !== "all" || filters.isRemote !== "all" || filters.position !== "all") && (
