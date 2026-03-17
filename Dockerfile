@@ -1,5 +1,8 @@
 FROM node:22-slim AS base
 
+# Install Python for mediasoup worker build
+RUN apt-get update && apt-get install -y python3 python3-pip && rm -rf /var/lib/apt/lists/*
+
 # Установка зависимостей (включая devDependencies для сборки)
 FROM base AS deps
 WORKDIR /app
