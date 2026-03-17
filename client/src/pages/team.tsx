@@ -140,6 +140,10 @@ export default function EmployeesPage() {
     queryKey: ["/api/departments"],
   });
 
+  const { data: apiRoles = [] } = useQuery<{id: string; name: string; description: string | null; color: string; permissions: string[]}[]>({
+    queryKey: ["/api/roles"],
+  });
+
   const [employees, setEmployees] = useState<Employee[]>(mockEmployees);
   const [departments, setDepartments] = useState<Department[]>(mockDepartments);
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
@@ -158,7 +162,8 @@ export default function EmployeesPage() {
     position: "",
     department: "",
     telegram: "",
-    password: ""
+    password: "",
+    roleIds: [] as string[]
   });
 
   // Generate random password
@@ -275,7 +280,8 @@ export default function EmployeesPage() {
         position: "",
         department: "",
         telegram: "",
-        password: ""
+        password: "",
+        roleIds: []
       });
     },
     onError: (error: any) => {
@@ -612,7 +618,8 @@ export default function EmployeesPage() {
                     position: "",
                     department: "",
                     telegram: "",
-                    password: ""
+                    password: "",
+                    roleIds: []
                   });
                   setShowPassword(false);
                 }
@@ -737,6 +744,31 @@ export default function EmployeesPage() {
                           <RefreshCw className="w-4 h-4" />
                         </Button>
                       </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="new-role">Роль</Label>
+                      <Select 
+                        value={newEmployee.roleIds[0] || "__empty__"} 
+                        onValueChange={(value) => setNewEmployee(prev => ({ 
+                          ...prev, 
+                          roleIds: value === "__empty__" ? [] : [value] 
+                        }))}
+                      >
+                        <SelectTrigger id="new-role">
+                          <SelectValue placeholder="Выберите роль" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__empty__">Без роли</SelectItem>
+                          {apiRoles.map((role) => (
+                            <SelectItem key={role.id} value={role.id}>
+                              <div className="flex items-center gap-2">
+                                <span className="w-2 h-2 rounded-full" style={{ backgroundColor: role.color || '#6b7280' }} />
+                                {role.name}
+                              </div>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </div>
                   </div>
                   <DialogFooter>

@@ -272,7 +272,7 @@ export async function registerRoutes(
     }
 
     try {
-      const { firstName, lastName, email, phone, position, department, telegram, password } = req.body;
+      const { firstName, lastName, email, phone, position, department, telegram, password, roleIds } = req.body;
 
       if (!email) {
         return res.status(400).json({ message: "Email is required" });
@@ -286,6 +286,15 @@ export async function registerRoutes(
       const existingUser = await storage.getUserByEmail(email);
       if (existingUser) {
         return res.status(400).json({ message: "Пользователь с таким email уже существует" });
+      }
+
+      // Determine role name for the role column (legacy)
+      let roleName = "user"; // default
+      if (roleIds && Array.isArray(roleIds) && roleIds.length > 0) {
+        const role = await storage.getRoleById(roleIds[0]);
+        if (role) {
+          roleName = role.name;
+        }
       }
 
       // Use provided password or generate random one
@@ -304,8 +313,13 @@ export async function registerRoutes(
         department: department || "",
         telegram: telegram || "",
         isActive: true,
-        role: "user",
+        role: roleName,
       });
+
+      // Assign roles if provided (many-to-many)
+      if (roleIds && Array.isArray(roleIds) && roleIds.length > 0) {
+        await storage.setUserRoles(newUser.id, roleIds, req.user.id);
+      }
 
       // Invalidate cache
       await delCache("users:all");
@@ -318,6 +332,18 @@ export async function registerRoutes(
     } catch (error: any) {
       console.error("POST /api/users error:", error);
       res.status(500).json({ message: "Failed to create user", error: error.message });
+    }
+  });
+
+  // Get all roles
+  app.get("/api/roles", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+    try {
+      const roles = await storage.getAllRoles();
+      res.json(roles);
+    } catch (error: any) {
+      console.error("GET /api/roles error:", error);
+      res.status(500).json({ message: "Failed to fetch roles", error: error.message });
     }
   });
 
