@@ -116,12 +116,6 @@ export default function EmployeesPage() {
     position: "all"
   });
   
-  // Get unique positions for filter
-  const uniquePositions = useMemo(() => {
-    const positions = new Set(employees.map(e => e.position).filter(Boolean));
-    return Array.from(positions) as string[];
-  }, [employees]);
-  
   const { data: apiEmployees = [], isLoading } = useQuery<Employee[]>({
     queryKey: ["/api/users"],
     queryFn: async () => {
@@ -145,6 +139,12 @@ export default function EmployeesPage() {
   const [isCreateDeptOpen, setIsCreateDeptOpen] = useState(false);
   const [newDeptName, setNewDeptName] = useState("");
   const [activeTab, setActiveTab] = useState(initialTab);
+
+  // Get unique positions for filter
+  const uniquePositions = useMemo(() => {
+    const positions = new Set(employees.map(e => e.position).filter(Boolean));
+    return Array.from(positions) as string[];
+  }, [employees]);
 
   // Status history - fetch when modal is open and employee is selected
   const userIdForHistory = selectedEmployee?.id;
