@@ -44,7 +44,6 @@ import {
   Coins, 
   UserCog,
   Search,
-  Filter,
   Calendar as CalendarIcon,
   Users,
   Plus,
@@ -109,6 +108,19 @@ export default function EmployeesPage() {
   
   const [searchQuery, setSearchQuery] = useState("");
   const deferredSearchQuery = useDeferredValue(searchQuery);
+  
+  const [filters, setFilters] = useState({
+    status: "all",
+    department: "all",
+    isRemote: "all" as "all" | boolean,
+    position: "all"
+  });
+  
+  // Get unique positions for filter
+  const uniquePositions = useMemo(() => {
+    const positions = new Set(employees.map(e => e.position).filter(Boolean));
+    return Array.from(positions) as string[];
+  }, [employees]);
   
   const { data: apiEmployees = [], isLoading } = useQuery<Employee[]>({
     queryKey: ["/api/users"],
@@ -212,13 +224,10 @@ export default function EmployeesPage() {
 
   const updateStatusMutation = useMutation({
     mutationFn: async ({ status }: { status: string }) => {
-      console.log("[DEBUG] updateStatusMutation called:", { employeeId: selectedEmployee?.id, status });
       const res = await apiRequest("PUT", `/api/users/${selectedEmployee?.id}`, { status });
-      console.log("[DEBUG] updateStatusMutation response:", res.status);
       return res.json();
     },
     onSuccess: () => {
-      console.log("[DEBUG] updateStatusMutation success");
       queryClient.invalidateQueries({ queryKey: ["/api/users"] });
       queryClient.invalidateQueries({ queryKey: ["user-status-history", selectedEmployee?.id] });
     },
@@ -291,10 +300,33 @@ export default function EmployeesPage() {
     // Remove duplicates by id
     const uniqueUsers = Array.from(new Map(filtered.map(u => [u.id, u])).values());
     
+    // Apply filters
+    let result = uniqueUsers;
+    
+    // Status filter
+    if (filters.status !== "all") {
+      result = result.filter(emp => emp.status === filters.status);
+    }
+    
+    // Department filter
+    if (filters.department !== "all") {
+      result = result.filter(emp => emp.department === filters.department);
+    }
+    
+    // Remote filter
+    if (filters.isRemote !== "all") {
+      result = result.filter(emp => emp.isRemote === filters.isRemote);
+    }
+    
+    // Position filter
+    if (filters.position !== "all") {
+      result = result.filter(emp => emp.position === filters.position);
+    }
+    
     // Search filter
     if (deferredSearchQuery.trim()) {
       const query = deferredSearchQuery.toLowerCase();
-      const searched = uniqueUsers.filter((emp) => {
+      result = result.filter((emp) => {
         const fullName = `${emp.firstName || ""} ${emp.lastName || ""}`.toLowerCase();
         const position = (emp.position || "").toLowerCase();
         const email = (emp.email || "").toLowerCase();
@@ -302,20 +334,6 @@ export default function EmployeesPage() {
         const status = (emp.status || "").toLowerCase();
         const comment = (emp.statusComment || "").toLowerCase();
         return fullName.includes(query) || position.includes(query) || email.includes(query) || telegram.includes(query) || status.includes(query) || comment.includes(query);
-      });
-      
-      // Sort searched results
-      const statusRank = (status?: Status) => {
-        if (status === "online") return 0;
-        if (status === "busy") return 1;
-        return 2;
-      };
-      
-      return searched.sort((a, b) => {
-        const rankA = statusRank(a.status);
-        const rankB = statusRank(b.status);
-        if (rankA !== rankB) return rankA - rankB;
-        return (a.lastName || "").localeCompare(b.lastName || "");
       });
     }
     
@@ -326,13 +344,13 @@ export default function EmployeesPage() {
       return 2;
     };
     
-    return uniqueUsers.sort((a, b) => {
+    return result.sort((a, b) => {
       const rankA = statusRank(a.status);
       const rankB = statusRank(b.status);
       if (rankA !== rankB) return rankA - rankB;
       return (a.lastName || "").localeCompare(b.lastName || "");
     });
-  }, [employees, searchQuery]);
+  }, [employees, searchQuery, filters]);
 
   useEffect(() => {
     const tab = new URLSearchParams(window.location.search).get('tab') || 'list';
@@ -382,10 +400,90 @@ export default function EmployeesPage() {
                   onChange={(e) => setSearchQuery(e.target.value)}
                 />
               </div>
-              <Button variant="outline" className="gap-2 border-border/50">
-                <Filter className="w-4 h-4" />
-                Фильтры
-              </Button>
+              
+              {/* Filters */}
+              <div className="flex items-center gap-2">
+                <Select 
+                  value={filters.status} 
+                  onValueChange={(value) => setFilters(f => ({ ...f, status: value }))}
+                >
+                  <SelectTrigger className="w-[140px] h-9">
+                    <SelectValue placeholder="Статус" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Все статусы</SelectItem>
+                    {customStatuses.map((s) => (
+                      <SelectItem key={s.id} value={s.name}>
+                        <div className="flex items-center gap-2">
+                          <span className="w-2 h-2 rounded-full" style={{ backgroundColor: s.color }} />
+                          {s.name}
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                <Select 
+                  value={filters.department} 
+                  onValueChange={(value) => setFilters(f => ({ ...f, department: value }))}
+                >
+                  <SelectTrigger className="w-[140px] h-9">
+                    <SelectValue placeholder="Отдел" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Все отделы</SelectItem>
+                    {departments.map((d) => (
+                      <SelectItem key={d.id} value={d.name}>
+                        <div className="flex items-center gap-2">
+                          <span className="w-2 h-2 rounded-full" style={{ backgroundColor: d.color }} />
+                          {d.name}
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                <Select 
+                  value={String(filters.isRemote)} 
+                  onValueChange={(value) => setFilters(f => ({ ...f, isRemote: value === "all" ? "all" : value === "true" }))}
+                >
+                  <SelectTrigger className="w-[120px] h-9">
+                    <SelectValue placeholder="Удаленка" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Все</SelectItem>
+                    <SelectItem value="true">Да</SelectItem>
+                    <SelectItem value="false">Нет</SelectItem>
+                  </SelectContent>
+                </Select>
+
+                <Select 
+                  value={filters.position} 
+                  onValueChange={(value) => setFilters(f => ({ ...f, position: value }))}
+                >
+                  <SelectTrigger className="w-[140px] h-9">
+                    <SelectValue placeholder="Должность" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Все должности</SelectItem>
+                    {uniquePositions.map((pos) => (
+                      <SelectItem key={pos} value={pos!}>{pos}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                {(filters.status !== "all" || filters.department !== "all" || filters.isRemote !== "all" || filters.position !== "all") && (
+                  <Button 
+                    variant="ghost" 
+                    size="sm"
+                    onClick={() => setFilters({ status: "all", department: "all", isRemote: "all", position: "all" })}
+                    className="text-muted-foreground"
+                  >
+                    Сбросить
+                  </Button>
+                )}
+              </div>
+
               <Button className="gap-2">
                 <UserCog className="w-4 h-4" />
                 Добавить сотрудника

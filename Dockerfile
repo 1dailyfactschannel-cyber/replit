@@ -1,4 +1,4 @@
-FROM node:20-slim AS base
+FROM node:22-slim AS base
 
 # Установка зависимостей (включая devDependencies для сборки)
 FROM base AS deps

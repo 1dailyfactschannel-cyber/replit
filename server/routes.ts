@@ -405,63 +405,33 @@ export async function registerRoutes(
   });
 
   app.put("/api/users/:id", async (req, res) => {
-    console.log("========== PUT /api/users/:id CALLED ==========");
-    console.log("Params:", req.params);
-    console.log("Body:", req.body);
-    if (!req.isAuthenticated()) {
-      console.log("NOT AUTHENTICATED!");
-      return res.status(401).json({ message: "Unauthorized" });
-    }
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
     try {
-      console.log("[UPDATE USER] Request received:", req.params.id);
-      console.log("[UPDATE USER] Body:", JSON.stringify(req.body));
-      
       // Get current user to check if status is being changed
       const currentUser = await storage.getUser(req.params.id);
-      console.log("[UPDATE USER] Current user:", currentUser?.id);
       
       const newStatus = req.body.status;
       const newStatusComment = req.body.statusComment;
-      
-      console.log("[UPDATE USER] newStatus from body:", newStatus);
-      console.log("[UPDATE USER] currentUser.status:", currentUser?.status);
-      console.log("[UPDATE USER] newStatus !== currentUser.status:", newStatus && currentUser ? newStatus !== currentUser.status : "N/A");
-      
       const { isRemote, ...updateData } = req.body;
-      
-      console.log("[UPDATE USER] isRemote:", isRemote);
-      console.log("[UPDATE USER] updateData:", JSON.stringify(updateData));
       
       // Handle isRemote separately using raw SQL to avoid ORM issues
       if (isRemote !== undefined) {
-        console.log("[UPDATE USER] Updating isRemote via raw SQL...");
         const isRemoteValue = Boolean(isRemote);
-        console.log("[UPDATE USER] isRemote value (boolean):", isRemoteValue);
         await storage.db.execute(sql`
           UPDATE users SET is_remote = ${isRemoteValue} WHERE id = ${req.params.id}
         `);
-        console.log("[UPDATE USER] isRemote updated successfully");
       }
       
       // Update user
-      console.log("[UPDATE USER] Calling storage.updateUser...");
       let user;
       if (Object.keys(updateData).length > 0) {
         user = await storage.updateUser(req.params.id, updateData);
       } else {
-        // If no fields to update, just fetch the user
         user = await storage.getUser(req.params.id);
       }
-      console.log("[UPDATE USER] User updated/fetched successfully:", user?.id);
       
       // If status is being changed, save to history
       if (currentUser && newStatus && newStatus !== currentUser.status) {
-        console.log("[UPDATE USER] Creating status history:", {
-          userId: req.params.id,
-          oldStatus: currentUser.status,
-          newStatus: newStatus,
-          changedBy: req.user?.id
-        });
         await storage.createUserStatusHistory({
           userId: req.params.id,
           oldStatus: currentUser.status || null,
@@ -469,12 +439,6 @@ export async function registerRoutes(
           comment: newStatusComment || null,
           changedBy: req.user!.id
         });
-        console.log("[UPDATE USER] Status history created successfully");
-      } else {
-        console.log("[UPDATE USER] NOT creating status history. Reason:");
-        if (!currentUser) console.log("  - currentUser is null");
-        if (!newStatus) console.log("  - newStatus is null/undefined");
-        if (currentUser && newStatus && newStatus === currentUser.status) console.log("  - newStatus === currentUser.status (no change)");
       }
       
       // Invalidate cache
