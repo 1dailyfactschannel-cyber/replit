@@ -407,7 +407,7 @@ export default function EmployeesPage() {
                   value={filters.status} 
                   onValueChange={(value) => setFilters(f => ({ ...f, status: value }))}
                 >
-                  <SelectTrigger className="w-[140px] h-9 bg-background border-border/50">
+                  <SelectTrigger className="w-[140px] h-9 !bg-background">
                     <SelectValue placeholder="Статус" />
                   </SelectTrigger>
                   <SelectContent>
@@ -427,7 +427,7 @@ export default function EmployeesPage() {
                   value={filters.department} 
                   onValueChange={(value) => setFilters(f => ({ ...f, department: value }))}
                 >
-                  <SelectTrigger className="w-[140px] h-9 bg-background border-border/50">
+                  <SelectTrigger className="w-[140px] h-9 !bg-background">
                     <SelectValue placeholder="Отдел" />
                   </SelectTrigger>
                   <SelectContent>
@@ -447,7 +447,7 @@ export default function EmployeesPage() {
                   value={String(filters.isRemote)} 
                   onValueChange={(value) => setFilters(f => ({ ...f, isRemote: value === "all" ? "all" : value === "true" }))}
                 >
-                  <SelectTrigger className="w-[120px] h-9 bg-background border-border/50">
+                  <SelectTrigger className="w-[120px] h-9 !bg-background">
                     <SelectValue placeholder="Удаленка" />
                   </SelectTrigger>
                   <SelectContent>
@@ -461,7 +461,7 @@ export default function EmployeesPage() {
                   value={filters.position} 
                   onValueChange={(value) => setFilters(f => ({ ...f, position: value }))}
                 >
-                  <SelectTrigger className="w-[140px] h-9 bg-background border-border/50">
+                  <SelectTrigger className="w-[140px] h-9 !bg-background">
                     <SelectValue placeholder="Должность" />
                   </SelectTrigger>
                   <SelectContent>
