@@ -37,6 +37,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { StatusBadge, type Status } from "@/components/ui/status-badge";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { 
   MoreVertical, 
   UserMinus, 
@@ -54,7 +55,8 @@ import {
   Trash2,
   Monitor,
   Loader2,
-  Send as SendIcon
+  Send as SendIcon,
+  ChevronDown
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useLocation } from "wouter";
@@ -115,7 +117,6 @@ export default function EmployeesPage() {
   const [filters, setFilters] = useState({
     status: "all",
     department: "all",
-    isRemote: "all" as "all" | boolean,
     position: "all"
   });
   
@@ -298,6 +299,7 @@ export default function EmployeesPage() {
 
   // Filter and sort employees
   const processedEmployees = useMemo(() => {
+    // Only show active employees
     let filtered = employees.filter((emp) => emp && emp.isActive !== false);
     
     // Remove duplicates by id
@@ -314,11 +316,6 @@ export default function EmployeesPage() {
     // Department filter
     if (filters.department !== "all") {
       result = result.filter(emp => emp.department === filters.department);
-    }
-    
-    // Remote filter
-    if (filters.isRemote !== "all") {
-      result = result.filter(emp => emp.isRemote === filters.isRemote);
     }
     
     // Position filter
@@ -341,7 +338,7 @@ export default function EmployeesPage() {
     }
     
     // Sort: online -> busy -> offline, then by lastName
-    const statusRank = (status?: Status) => {
+    const statusRank = (status?: string) => {
       if (status === "online") return 0;
       if (status === "busy") return 1;
       return 2;
@@ -354,6 +351,12 @@ export default function EmployeesPage() {
       return (a.lastName || "").localeCompare(b.lastName || "");
     });
   }, [employees, searchQuery, filters]);
+
+  // Get blocked employees
+  const blockedEmployees = useMemo(() => {
+    const blocked = employees.filter((emp) => emp && emp.isActive === false);
+    return Array.from(new Map(blocked.map(u => [u.id, u])).values());
+  }, [employees]);
 
   useEffect(() => {
     const tab = new URLSearchParams(window.location.search).get('tab') || 'list';
@@ -410,12 +413,11 @@ export default function EmployeesPage() {
                   <Button variant="outline" className="gap-2 !bg-background text-foreground">
                     <Filter className="w-4 h-4" />
                     Фильтры
-                    {(filters.status !== "all" || filters.department !== "all" || filters.isRemote !== "all" || filters.position !== "all") && (
+                    {(filters.status !== "all" || filters.department !== "all" || filters.position !== "all") && (
                       <span className="ml-1 px-1.5 py-0.5 text-xs bg-primary text-primary-foreground rounded-full">
                         {[
                           filters.status !== "all",
                           filters.department !== "all",
-                          filters.isRemote !== "all",
                           filters.position !== "all"
                         ].filter(Boolean).length}
                       </span>
@@ -483,38 +485,6 @@ export default function EmployeesPage() {
                   <DropdownMenuSeparator />
                   
                   <div className="px-2 py-1.5">
-                    <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Удаленка</label>
-                    <div className="flex flex-wrap gap-1">
-                      <Button
-                        variant={filters.isRemote === "all" ? "default" : "outline"}
-                        size="sm"
-                        className="h-7 text-xs"
-                        onClick={() => setFilters(f => ({ ...f, isRemote: "all" }))}
-                      >
-                        Все
-                      </Button>
-                      <Button
-                        variant={filters.isRemote === true ? "default" : "outline"}
-                        size="sm"
-                        className="h-7 text-xs"
-                        onClick={() => setFilters(f => ({ ...f, isRemote: true }))}
-                      >
-                        Да
-                      </Button>
-                      <Button
-                        variant={filters.isRemote === false ? "default" : "outline"}
-                        size="sm"
-                        className="h-7 text-xs"
-                        onClick={() => setFilters(f => ({ ...f, isRemote: false }))}
-                      >
-                        Нет
-                      </Button>
-                    </div>
-                  </div>
-                  
-                  <DropdownMenuSeparator />
-                  
-                  <div className="px-2 py-1.5">
                     <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Должность</label>
                     <Select 
                       value={filters.position} 
@@ -532,7 +502,7 @@ export default function EmployeesPage() {
                     </Select>
                   </div>
                   
-                  {(filters.status !== "all" || filters.department !== "all" || filters.isRemote !== "all" || filters.position !== "all") && (
+                  {(filters.status !== "all" || filters.department !== "all" || filters.position !== "all") && (
                     <>
                       <DropdownMenuSeparator />
                       <div className="px-2 py-2">
@@ -565,7 +535,6 @@ export default function EmployeesPage() {
                     <TableHead>Статус</TableHead>
                     <TableHead>Комментарий</TableHead>
                     <TableHead>Баллы</TableHead>
-                    <TableHead className="w-[80px] text-center">Удаленка</TableHead>
                     <TableHead className="text-right">Действия</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -616,9 +585,6 @@ export default function EmployeesPage() {
                           {employee.pointsBalance}
                         </div>
                       </TableCell>
-                      <TableCell className="text-center">
-                        {employee.isRemote ? <Monitor className="w-4 h-4 text-muted-foreground" /> : null}
-                      </TableCell>
                       <TableCell className="text-right">
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
@@ -630,21 +596,22 @@ export default function EmployeesPage() {
                             <DropdownMenuItem className="gap-2">
                               <UserCog className="w-4 h-4" /> Редактировать
                             </DropdownMenuItem>
-                            <DropdownMenuCheckboxItem
-                              checked={employee.isRemote}
-                              onCheckedChange={(checked) => {
-                                updateEmployeeMutation.mutate({ id: employee.id, isRemote: checked });
-                              }}
-                              className="gap-2"
-                            >
-                              <Monitor className="w-4 h-4" /> Удаленка
-                            </DropdownMenuCheckboxItem>
                             {employee.isActive ? (
-                              <DropdownMenuItem className="gap-2 text-rose-500">
+                              <DropdownMenuItem 
+                                className="gap-2 text-rose-500 cursor-pointer"
+                                onClick={() => {
+                                  updateEmployeeMutation.mutate({ id: employee.id, isActive: false });
+                                }}
+                              >
                                 <UserMinus className="w-4 h-4" /> Заблокировать
                               </DropdownMenuItem>
                             ) : (
-                              <DropdownMenuItem className="gap-2 text-emerald-500">
+                              <DropdownMenuItem 
+                                className="gap-2 text-emerald-500 cursor-pointer"
+                                onClick={() => {
+                                  updateEmployeeMutation.mutate({ id: employee.id, isActive: true });
+                                }}
+                              >
                                 <UserCheck className="w-4 h-4" /> Разблокировать
                               </DropdownMenuItem>
                             )}
@@ -1125,9 +1092,91 @@ export default function EmployeesPage() {
                               </TableCell>
                             </TableRow>
                           ))}
-                        </TableBody>
-                      </Table>
+                </TableBody>
+              </Table>
+
+              {/* Blocked Employees Section */}
+              {blockedEmployees.length > 0 && (
+                <Collapsible>
+                  <CollapsibleTrigger asChild>
+                    <div className="flex items-center gap-2 px-4 py-3 bg-rose-50 dark:bg-rose-950/30 border-t border-rose-200 dark:border-rose-800 cursor-pointer hover:bg-rose-100 dark:hover:bg-rose-950/50 transition-colors">
+                      <ChevronDown className="w-4 h-4 text-rose-600 dark:text-rose-400" />
+                      <span className="text-sm font-medium text-rose-700 dark:text-rose-300">
+                        Заблокированные ({blockedEmployees.length})
+                      </span>
                     </div>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent>
+                    <Table>
+                      <TableBody>
+                        {blockedEmployees.map((employee) => {
+                          const fullName = `${employee.firstName || ""} ${employee.lastName || ""}`.trim();
+                          return (
+                            <TableRow 
+                              key={employee.id} 
+                              className="cursor-pointer bg-rose-50/50 dark:bg-rose-950/20 hover:bg-rose-100 dark:hover:bg-rose-950/40 transition-colors"
+                              onClick={() => {
+                                setSelectedEmployee(employee);
+                                setIsDetailsOpen(true);
+                              }}
+                            >
+                              <TableCell className="font-medium">
+                                <div className="flex items-center gap-3">
+                                  <Avatar className="h-9 w-9 border border-rose-200 dark:border-rose-800">
+                                    <AvatarImage src={employee.avatar || undefined} />
+                                    <AvatarFallback className="bg-rose-100 text-rose-600 dark:bg-rose-900 dark:text-rose-300">
+                                      {fullName.split(" ").map(n => n[0]).join("")}
+                                    </AvatarFallback>
+                                  </Avatar>
+                                  <div className="flex flex-col">
+                                    <span className="text-sm font-semibold text-rose-700 dark:text-rose-300">{fullName}</span>
+                                    <span className="text-xs text-rose-500 dark:text-rose-400">{employee.email}</span>
+                                  </div>
+                                </div>
+                              </TableCell>
+                              <TableCell className="text-rose-600 dark:text-rose-400">{employee.position}</TableCell>
+                              <TableCell>
+                                <span className="text-xs text-rose-500 dark:text-rose-400">Заблокирован</span>
+                              </TableCell>
+                              <TableCell>-</TableCell>
+                              <TableCell>
+                                <div className="flex items-center gap-1.5 font-medium text-rose-600 dark:text-rose-400">
+                                  <Coins className="w-4 h-4 text-amber-500" />
+                                  {employee.pointsBalance}
+                                </div>
+                              </TableCell>
+                              <TableCell className="text-right">
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                                    <Button variant="ghost" size="icon" className="h-8 w-8">
+                                      <MoreVertical className="w-4 h-4" />
+                                    </Button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end" className="w-48">
+                                    <DropdownMenuItem className="gap-2">
+                                      <UserCog className="w-4 h-4" /> Редактировать
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem 
+                                      className="gap-2 text-emerald-500 cursor-pointer"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        updateEmployeeMutation.mutate({ id: employee.id, isActive: true });
+                                      }}
+                                    >
+                                      <UserCheck className="w-4 h-4" /> Разблокировать
+                                    </DropdownMenuItem>
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  </CollapsibleContent>
+                </Collapsible>
+              )}
+            </div>
                   )}
                 </TabsContent>
               </div>
