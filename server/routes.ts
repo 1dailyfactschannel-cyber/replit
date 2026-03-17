@@ -407,18 +407,32 @@ export async function registerRoutes(
   app.put("/api/users/:id", async (req, res) => {
     if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
     try {
+      console.log("[UPDATE USER] Request received:", req.params.id);
+      console.log("[UPDATE USER] Body:", JSON.stringify(req.body));
+      
       // Get current user to check if status is being changed
       const currentUser = await storage.getUser(req.params.id);
       
       const newStatus = req.body.status;
       const newStatusComment = req.body.statusComment;
-      const { isRemote, ...updateData } = req.body;
+      const { isRemote, isActive, ...updateData } = req.body;
+      
+      console.log("[UPDATE USER] isActive:", isActive);
+      console.log("[UPDATE USER] updateData:", JSON.stringify(updateData));
       
       // Handle isRemote separately using raw SQL to avoid ORM issues
       if (isRemote !== undefined) {
         const isRemoteValue = Boolean(isRemote);
         await storage.db.execute(sql`
           UPDATE users SET is_remote = ${isRemoteValue} WHERE id = ${req.params.id}
+        `);
+      }
+      
+      // Handle isActive separately
+      if (isActive !== undefined) {
+        console.log("[UPDATE USER] Updating isActive via raw SQL:", isActive);
+        await storage.db.execute(sql`
+          UPDATE users SET is_active = ${isActive} WHERE id = ${req.params.id}
         `);
       }
       
