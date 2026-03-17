@@ -56,7 +56,9 @@ import {
   Monitor,
   Loader2,
   Send as SendIcon,
-  ChevronDown
+  ChevronDown,
+  Key,
+  RefreshCw
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useLocation } from "wouter";
@@ -153,8 +155,19 @@ export default function EmployeesPage() {
     phone: "",
     position: "",
     department: "",
-    telegram: ""
+    telegram: "",
+    password: ""
   });
+
+  // Generate random password
+  const generatePassword = () => {
+    const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    let password = "";
+    for (let i = 0; i < 10; i++) {
+      password += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    setNewEmployee(prev => ({ ...prev, password }));
+  };
 
   // Get unique positions for filter
   const uniquePositions = useMemo(() => {
@@ -223,9 +236,16 @@ export default function EmployeesPage() {
       const res = await apiRequest("POST", "/api/users", data);
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/users"] });
-      toast({ title: "Успешно", description: "Сотрудник добавлен" });
+      if (data.generatedPassword) {
+        toast({ 
+          title: "Успешно", 
+          description: `Сотрудник добавлен. Пароль: ${data.generatedPassword}` 
+        });
+      } else {
+        toast({ title: "Успешно", description: "Сотрудник добавлен" });
+      }
       setIsCreateEmployeeOpen(false);
       setNewEmployee({
         firstName: "",
@@ -234,7 +254,8 @@ export default function EmployeesPage() {
         phone: "",
         position: "",
         department: "",
-        telegram: ""
+        telegram: "",
+        password: ""
       });
     },
     onError: (error: any) => {
@@ -650,6 +671,28 @@ export default function EmployeesPage() {
                         value={newEmployee.telegram}
                         onChange={(e) => setNewEmployee(prev => ({ ...prev, telegram: e.target.value }))}
                       />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="new-password">Пароль</Label>
+                      <div className="flex gap-2">
+                        <Input 
+                          id="new-password" 
+                          type="password"
+                          placeholder="Пароль"
+                          value={newEmployee.password}
+                          onChange={(e) => setNewEmployee(prev => ({ ...prev, password: e.target.value }))}
+                          className="flex-1"
+                        />
+                        <Button 
+                          type="button"
+                          variant="outline" 
+                          size="icon"
+                          onClick={generatePassword}
+                          title="Сгенерировать пароль"
+                        >
+                          <RefreshCw className="w-4 h-4" />
+                        </Button>
+                      </div>
                     </div>
                   </div>
                   <DialogFooter>

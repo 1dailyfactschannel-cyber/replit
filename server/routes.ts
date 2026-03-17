@@ -272,7 +272,7 @@ export async function registerRoutes(
     }
 
     try {
-      const { firstName, lastName, email, phone, position, department, telegram } = req.body;
+      const { firstName, lastName, email, phone, position, department, telegram, password } = req.body;
 
       if (!email) {
         return res.status(400).json({ message: "Email is required" });
@@ -288,9 +288,9 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Пользователь с таким email уже существует" });
       }
 
-      // Generate random password
-      const randomPassword = Math.random().toString(36).slice(-8);
-      const hashedPassword = await hashPassword(randomPassword);
+      // Use provided password or generate random one
+      const passwordToUse = password || Math.random().toString(36).slice(-10);
+      const hashedPassword = await hashPassword(passwordToUse);
 
       // Create user
       const newUser = await storage.createUser({
@@ -310,8 +310,11 @@ export async function registerRoutes(
       // Invalidate cache
       await delCache("users:all");
 
-      const { password, ...userWithoutPassword } = newUser;
-      res.status(201).json(userWithoutPassword);
+      const { password: _, ...userWithoutPassword } = newUser;
+      res.status(201).json({
+        ...userWithoutPassword,
+        generatedPassword: password ? null : passwordToUse
+      });
     } catch (error: any) {
       console.error("POST /api/users error:", error);
       res.status(500).json({ message: "Failed to create user", error: error.message });
