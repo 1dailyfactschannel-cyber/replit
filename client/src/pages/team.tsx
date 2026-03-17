@@ -163,11 +163,27 @@ export default function EmployeesPage() {
 
   // Generate random password
   const generatePassword = () => {
-    const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    const lowercase = "abcdefghijklmnopqrstuvwxyz";
+    const uppercase = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    const digits = "0123456789";
+    const symbols = "!@#$%^&*()_+-=[]{}|;:,.<>?";
+    
     let password = "";
-    for (let i = 0; i < 10; i++) {
-      password += chars.charAt(Math.floor(Math.random() * chars.length));
+    // Ensure at least one of each type
+    password += lowercase[Math.floor(Math.random() * lowercase.length)];
+    password += uppercase[Math.floor(Math.random() * uppercase.length)];
+    password += digits[Math.floor(Math.random() * digits.length)];
+    password += symbols[Math.floor(Math.random() * symbols.length)];
+    
+    const allChars = lowercase + uppercase + digits + symbols;
+    // Fill remaining characters
+    for (let i = 4; i < 10; i++) {
+      password += allChars[Math.floor(Math.random() * allChars.length)];
     }
+    
+    // Shuffle the password
+    password = password.split('').sort(() => Math.random() - 0.5).join('');
+    
     setNewEmployee(prev => ({ ...prev, password }));
   };
 
