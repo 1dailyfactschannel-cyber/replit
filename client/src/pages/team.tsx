@@ -1097,7 +1097,7 @@ export default function EmployeesPage() {
               </Table>
 
               {/* Blocked Employees Section */}
-              {blockedEmployees.length > 0 && (
+              {console.log("[DEBUG] blockedEmployees.length:", blockedEmployees.length) || blockedEmployees.length > 0 && (
                 <Collapsible>
                   <CollapsibleTrigger asChild>
                     <div className="flex items-center gap-2 px-4 py-3 bg-rose-50 dark:bg-rose-950/30 border-t border-rose-200 dark:border-rose-800 cursor-pointer hover:bg-rose-100 dark:hover:bg-rose-950/50 transition-colors">
