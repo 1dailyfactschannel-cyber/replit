@@ -5,6 +5,7 @@ import { insertSiteSettingsSchema, insertUserSchema, insertNotificationSchema, i
 import * as schema from "@shared/schema";
 import { getStatusByColumnName } from "../shared/column-status-mapping";
 import { setupWebSockets, getIO } from "./socket";
+import { mediasoupServer } from "./mediasoup";
 import { Server as SocketIOServer } from "socket.io";
 import multer from "multer";
 import path from "path";
@@ -162,8 +163,43 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
+  // Initialize mediasoup
+  await mediasoupServer.init();
+  
   io = setupWebSockets(httpServer);
   console.log("Registering API routes...");
+
+  // TEST ROUTES - проверка доступности API (без авторизации для отладки)
+  app.get("/api/test", (req, res) => {
+    console.log("[TEST] API TEST ROUTE HIT!");
+    res.json({ status: "ok", timestamp: new Date().toISOString() });
+  });
+
+  app.put("/api/test/update/:id", async (req, res) => {
+    console.log("[TEST] UPDATE TEST ROUTE HIT!");
+    console.log("[TEST] ID:", req.params.id);
+    console.log("[TEST] Body:", JSON.stringify(req.body));
+    
+    try {
+      const { isRemote, ...updateData } = req.body;
+      console.log("[TEST] isRemote:", isRemote);
+      console.log("[TEST] updateData:", JSON.stringify(updateData));
+      
+      // Only test the database update part
+      if (isRemote !== undefined) {
+        console.log("[TEST] Updating is_remote column...");
+        await storage.db.execute(sql`
+          UPDATE users SET is_remote = ${Boolean(isRemote)} WHERE id = ${req.params.id}
+        `);
+        console.log("[TEST] Update successful!");
+      }
+      
+      res.json({ status: "ok", message: "Test update completed" });
+    } catch (error) {
+      console.error("[TEST] Error:", error);
+      res.status(500).json({ message: (error as Error).message });
+    }
+  });
 
   // Apply global rate limiter to all /api routes
   app.use("/api", globalLimiter);
@@ -371,11 +407,58 @@ export async function registerRoutes(
   app.put("/api/users/:id", async (req, res) => {
     if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
     try {
-      const user = await storage.updateUser(req.params.id, req.body);
+      console.log("[UPDATE USER] Request received:", req.params.id);
+      console.log("[UPDATE USER] Body:", JSON.stringify(req.body));
+      
+      // Get current user to check if status is being changed
+      const currentUser = await storage.getUser(req.params.id);
+      console.log("[UPDATE USER] Current user:", currentUser?.id);
+      
+      const newStatus = req.body.status;
+      const newStatusComment = req.body.statusComment;
+      const { isRemote, ...updateData } = req.body;
+      
+      console.log("[UPDATE USER] isRemote:", isRemote);
+      console.log("[UPDATE USER] updateData:", JSON.stringify(updateData));
+      
+      // Handle isRemote separately using raw SQL to avoid ORM issues
+      if (isRemote !== undefined) {
+        console.log("[UPDATE USER] Updating isRemote via raw SQL...");
+        const isRemoteValue = Boolean(isRemote);
+        console.log("[UPDATE USER] isRemote value (boolean):", isRemoteValue);
+        await storage.db.execute(sql`
+          UPDATE users SET is_remote = ${isRemoteValue} WHERE id = ${req.params.id}
+        `);
+        console.log("[UPDATE USER] isRemote updated successfully");
+      }
+      
+      // Update user
+      console.log("[UPDATE USER] Calling storage.updateUser...");
+      let user;
+      if (Object.keys(updateData).length > 0) {
+        user = await storage.updateUser(req.params.id, updateData);
+      } else {
+        // If no fields to update, just fetch the user
+        user = await storage.getUser(req.params.id);
+      }
+      console.log("[UPDATE USER] User updated/fetched successfully:", user?.id);
+      
+      // If status is being changed, save to history
+      if (currentUser && newStatus && newStatus !== currentUser.status) {
+        await storage.createUserStatusHistory({
+          userId: req.params.id,
+          oldStatus: currentUser.status || null,
+          newStatus: newStatus,
+          comment: newStatusComment || null,
+          changedBy: req.user!.id
+        });
+      }
+      
       // Invalidate cache
       await delCache("users:all");
       res.json(user);
     } catch (error) {
+      console.error("[UPDATE USER] Error:", error);
       res.status(500).json({ message: "Failed to update user" });
     }
   });
@@ -3350,6 +3433,68 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error getting points history:", error);
       res.status(500).json({ message: "Failed to get points history" });
+    }
+  });
+
+  // Update user points (add/subtract)
+  app.post("/api/users/:id/points", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+    
+    try {
+      const { amount, operation, comment } = req.body;
+      const userId = req.params.id;
+      
+      if (!amount || amount <= 0) {
+        return res.status(400).json({ message: "Invalid amount" });
+      }
+      
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      
+      const currentBalance = user.pointsBalance || 0;
+      const pointsChange = operation === "subtract" ? -Math.abs(amount) : Math.abs(amount);
+      const newBalance = currentBalance + pointsChange;
+      
+      // Update user points
+      await storage.updateUser(userId, { pointsBalance: Math.max(0, newBalance) });
+      
+      // Create transaction record with changedBy
+      await storage.createTransaction({
+        userId,
+        amount: pointsChange,
+        type: operation === "subtract" ? "spent" : "earned",
+        description: comment || (operation === "subtract" ? "Списание баллов" : "Начисление баллов"),
+        changedBy: req.user!.id,
+      });
+      
+      res.json({ success: true, newBalance: Math.max(0, newBalance) });
+    } catch (error) {
+      console.error("Error updating user points:", error);
+      res.status(500).json({ message: "Failed to update user points" });
+    }
+  });
+
+  // Get user status history
+  app.get("/api/users/:id/status-history", async (req, res) => {
+    try {
+      const history = await storage.getUserStatusHistory(req.params.id);
+      res.json(history);
+    } catch (error) {
+      console.error("Error getting user status history:", error);
+      res.status(500).json({ message: "Failed to get user status history" });
+    }
+  });
+
+  // Get user points history
+  app.get("/api/users/:id/points-history", async (req, res) => {
+    try {
+      const history = await storage.getUserTransactions(req.params.id);
+      res.json(history);
+    } catch (error) {
+      console.error("Error getting user points history:", error);
+      res.status(500).json({ message: "Failed to get user points history" });
     }
   });
 

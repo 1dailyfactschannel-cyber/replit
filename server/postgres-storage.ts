@@ -5,6 +5,8 @@ import {
   type InsertSiteSettings,
   type CustomStatus,
   type InsertCustomStatus,
+  type UserStatusHistory,
+  type InsertUserStatusHistory,
   type Department,
   type InsertDepartment,
   type ChatFolder,
@@ -223,6 +225,49 @@ export class PostgresStorage {
     } catch (error) {
       console.error("Error setting default custom status:", error);
       return false;
+    }
+  }
+
+  // User status history methods
+  async getUserStatusHistory(userId: string): Promise<(UserStatusHistory & { changedByUser?: { firstName: string | null; lastName: string | null } })[]> {
+    try {
+      const history = await this.db
+        .select()
+        .from(schema.userStatusHistory)
+        .where(eq(schema.userStatusHistory.userId, userId))
+        .orderBy(desc(schema.userStatusHistory.createdAt));
+      
+      // Get changedBy user info
+      const historyWithUsers = await Promise.all(
+        history.map(async (item) => {
+          if (item.changedBy) {
+            const user = await this.db.select({
+              firstName: schema.users.firstName,
+              lastName: schema.users.lastName
+            }).from(schema.users).where(eq(schema.users.id, item.changedBy));
+            return {
+              ...item,
+              changedByUser: user[0] || undefined
+            };
+          }
+          return { ...item, changedByUser: undefined };
+        })
+      );
+      
+      return historyWithUsers;
+    } catch (error) {
+      console.error("Error getting user status history:", error);
+      return [];
+    }
+  }
+
+  async createUserStatusHistory(data: InsertUserStatusHistory): Promise<UserStatusHistory | null> {
+    try {
+      const result = await this.db.insert(schema.userStatusHistory).values(data).returning();
+      return result[0] || null;
+    } catch (error) {
+      console.error("Error creating user status history:", error);
+      return null;
     }
   }
 
@@ -2452,13 +2497,13 @@ export class PostgresStorage {
     }
   }
 
-  async getUserTransactions(userId: string, options?: { type?: string; limit?: number; offset?: number }): Promise<UserPointsTransaction[]> {
+  async getUserTransactions(userId: string, options?: { type?: string; limit?: number; offset?: number }): Promise<(UserPointsTransaction & { changedByUser?: { firstName: string | null; lastName: string | null }; task?: { id: string; title: string } | null })[]> {
     try {
       // Build conditions array
       const conditions: any[] = [eq(schema.userPointsTransactions.userId, userId)];
       
       if (options?.type) {
-        conditions.push(sql`${schema.userPointsTransactions.type} = ${options.type}`);
+        conditions.push(sql`${schema.userPointsTransactions.type} ${sql`=`} ${options.type}`);
       }
       
       const results = await this.db
@@ -2469,7 +2514,37 @@ export class PostgresStorage {
         .limit(options?.limit || 100)
         .offset(options?.offset || 0);
       
-      return results;
+      // Get changedBy user info and task info
+      const resultsWithUsers = await Promise.all(
+        results.map(async (item) => {
+          let changedByUser = undefined;
+          let task = null;
+          
+          if (item.changedBy) {
+            const user = await this.db.select({
+              firstName: schema.users.firstName,
+              lastName: schema.users.lastName
+            }).from(schema.users).where(eq(schema.users.id, item.changedBy));
+            changedByUser = user[0] || undefined;
+          }
+          
+          if (item.taskId) {
+            const taskData = await this.db.select({
+              id: schema.tasks.id,
+              title: schema.tasks.title
+            }).from(schema.tasks).where(eq(schema.tasks.id, item.taskId));
+            task = taskData[0] || null;
+          }
+          
+          return {
+            ...item,
+            changedByUser,
+            task
+          };
+        })
+      );
+      
+      return resultsWithUsers;
     } catch (error) {
       console.error("Error getting user transactions:", error);
       return [];

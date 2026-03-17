@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Dialog,
   DialogContent,
@@ -12,8 +12,18 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Calendar, Clock, Video, Mic, Bell, Info } from "lucide-react";
+import { Calendar, Clock, Video, Mic, Bell, Info, AlertTriangle } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { apiRequest } from "@/lib/queryClient";
+
+interface TeamRoomWithAdmin {
+  id: string;
+  name: string;
+  slug: string;
+  isAdmin: boolean;
+}
 
 interface ScheduleCallDialogProps {
   open: boolean;
@@ -23,6 +33,7 @@ interface ScheduleCallDialogProps {
 }
 
 export interface ScheduledCall {
+  eventTitle?: string;
   contactName: string;
   date: string;
   time: string;
@@ -30,7 +41,7 @@ export interface ScheduledCall {
   reminder: boolean;
   reminderMinutes: number;
   description?: string;
-  roomUrl?: string;
+  roomId?: string;
 }
 
 export function ScheduleCallDialog({
@@ -39,6 +50,7 @@ export function ScheduleCallDialog({
   contactName,
   onSchedule,
 }: ScheduleCallDialogProps) {
+  const [eventTitle, setEventTitle] = useState(contactName);
   const [date, setDate] = useState(
     new Date().toISOString().split("T")[0]
   );
@@ -47,10 +59,27 @@ export function ScheduleCallDialog({
   const [reminder, setReminder] = useState(true);
   const [reminderMinutes, setReminderMinutes] = useState(15);
   const [description, setDescription] = useState("");
-  const [roomUrl, setRoomUrl] = useState("https://teamsync.ru/room/juli-dar");
+  const [selectedRoomId, setSelectedRoomId] = useState<string>("");
+  const queryClient = useQueryClient();
+
+  const { data: rooms = [], isLoading, error } = useQuery<TeamRoomWithAdmin[]>({
+    queryKey: ["/api/team-rooms/with-admin-status"],
+    staleTime: 30000,
+    enabled: true,
+  });
+
+  // Refetch rooms when dialog opens
+  useEffect(() => {
+    if (open) {
+      queryClient.invalidateQueries({ queryKey: ["/api/team-rooms/with-admin-status"] });
+    }
+  }, [open, queryClient]);
+
+  const selectedRoom = rooms?.find(r => r.id === selectedRoomId);
 
   const handleSchedule = () => {
     onSchedule?.({
+      eventTitle,
       contactName,
       date,
       time,
@@ -58,8 +87,10 @@ export function ScheduleCallDialog({
       reminder,
       reminderMinutes,
       description,
-      roomUrl,
+      roomId: selectedRoomId
     });
+    // Reset form
+    setSelectedRoomId("");
     onOpenChange(false);
   };
 
@@ -101,6 +132,17 @@ export function ScheduleCallDialog({
               onChange={(e) => setTime(e.target.value)}
               className="bg-secondary/50"
               data-testid="input-call-time"
+            />
+          </div>
+
+          {/* Event Title Input */}
+          <div className="space-y-2">
+            <Label className="font-medium">Название</Label>
+            <Input
+              value={eventTitle}
+              onChange={(e) => setEventTitle(e.target.value)}
+              placeholder="Название события"
+              className="bg-secondary/50"
             />
           </div>
 
@@ -168,27 +210,47 @@ export function ScheduleCallDialog({
             />
           </div>
 
-          {/* Personal Room URL */}
+          {/* Team Room Selection */}
           <div className="space-y-2 border-t border-border pt-4">
-            <div className="flex items-center justify-between">
-              <Label className="font-medium">Ссылка на звонок</Label>
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Info className="w-4 h-4 text-muted-foreground cursor-help" />
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>Используется ваша персональная комната по умолчанию</p>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            </div>
-            <Input
-              value={roomUrl}
-              onChange={(e) => setRoomUrl(e.target.value)}
-              className="bg-secondary/50 font-mono text-xs"
-              data-testid="input-call-room-url"
-            />
+            <Label className="font-medium">Комнатный зал</Label>
+            {isLoading ? (
+              <p className="text-sm text-muted-foreground">Загрузка...</p>
+            ) : !rooms || rooms.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Нет доступных комнат</p>
+            ) : (
+              <Select value={selectedRoomId} onValueChange={setSelectedRoomId}>
+                <SelectTrigger className="bg-secondary/50">
+                  <SelectValue placeholder="Выберите комнатный зал" />
+                </SelectTrigger>
+                <SelectContent className="max-h-60 overflow-y-auto">
+                  {rooms.map((room) => (
+                    <SelectItem key={room.id} value={room.id}>
+                      <div className="flex items-center gap-2">
+                        <span>{room.name}</span>
+                        {!room.isAdmin && (
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <AlertTriangle className="w-4 h-4 text-amber-500" />
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p>У вас нет прав администратора для этой комнаты</p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        )}
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+            {selectedRoom && !selectedRoom.isAdmin && (
+              <p className="text-xs text-amber-500 flex items-center gap-1">
+                <AlertTriangle className="w-3 h-3" />
+                Вы не являетесь администратором этой комнаты. Вы можете создать событие, но не сможете управлять звонком.
+              </p>
+            )}
           </div>
         </div>
 

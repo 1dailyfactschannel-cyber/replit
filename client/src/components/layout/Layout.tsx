@@ -27,7 +27,8 @@ import {
   Trash2,
   BarChart2,
   Coins,
-  User
+  User,
+  Monitor
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -42,6 +43,7 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
+  DropdownMenuCheckboxItem,
 } from "@/components/ui/dropdown-menu";
 import {
   Collapsible,
@@ -161,7 +163,8 @@ const SidebarContentComponent = React.memo(({
   statusLabels,
   user,
   customStatuses,
-  statusColor
+  statusColor,
+  isRemote
 }: any) => {
   const displayName = user ? `${user.firstName || ""} ${user.lastName || ""}`.trim() || user.username : "Пользователь";
   const initials = user ? (user.firstName && user.lastName ? `${user.firstName[0]}${user.lastName[0]}` : user.username.substring(0, 2).toUpperCase()) : "П";
@@ -313,7 +316,7 @@ const SidebarContentComponent = React.memo(({
               <div 
                 className="w-9 h-9 rounded-full shrink-0"
                 style={{ 
-                  background: `linear-gradient(#000, #000) padding-box, linear-gradient(to bottom, ${statusColor || customStatuses.find((s: { name: string; color: string }) => s.name === status)?.color || '#6b7280'}, ${statusColor || customStatuses.find((s: { name: string; color: string }) => s.name === status)?.color || '#6b7280'}) border-box`,
+                  background: `linear-gradient(#000, #000) padding-box, linear-gradient(to bottom, ${(statusColor && statusColor.trim()) || customStatuses.find((s: { name: string; color: string }) => s.name === status)?.color || '#6b7280'}, ${(statusColor && statusColor.trim()) || customStatuses.find((s: { name: string; color: string }) => s.name === status)?.color || '#6b7280'}) border-box`,
                   border: '2px solid transparent'
                 }}
               >
@@ -341,7 +344,7 @@ const SidebarContentComponent = React.memo(({
                 <>
                   <span 
                     className="w-2 h-2 rounded-full" 
-                    style={{ backgroundColor: statusColor || customStatuses.find((s: { name: string; color: string }) => s.name === status)?.color || "#6b7280" }} 
+                    style={{ backgroundColor: (statusColor && statusColor.trim()) || customStatuses.find((s: { name: string; color: string }) => s.name === status)?.color || "#6b7280" }} 
                   />
                   Статус: {status}
                 </>
@@ -352,6 +355,21 @@ const SidebarContentComponent = React.memo(({
                 </>
               )}
             </DropdownMenuItem>
+            <DropdownMenuCheckboxItem
+              checked={isRemote}
+              onCheckedChange={async (checked) => {
+                try {
+                  await apiRequest("PUT", `/api/users/${user?.id}`, { isRemote: checked });
+                  queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+                } catch (error) {
+                  console.error("Failed to update remote status:", error);
+                }
+              }}
+              className="gap-2 cursor-pointer"
+            >
+              <Monitor className="w-4 h-4" />
+              Удаленка
+            </DropdownMenuCheckboxItem>
             <DropdownMenuItem 
               className="gap-2 cursor-pointer" 
               onClick={() => setLocation("/profile")}
@@ -396,6 +414,8 @@ export function Layout({ children, className }: { children: React.ReactNode, cla
     retry: false,
   });
   
+  const { toast } = useToast();
+  
   // Show loading while checking auth
   if (isLoading) {
     return (
@@ -416,6 +436,15 @@ export function Layout({ children, className }: { children: React.ReactNode, cla
   const [status, setStatus] = useState(() => user?.status || "online");
   const [statusComment, setStatusComment] = useState(() => user?.statusComment || "");
   const [statusColor, setStatusColor] = useState(() => user?.statusColor || "");
+
+  // Синхронизация локального состояния статуса с данными пользователя
+  useEffect(() => {
+    if (user) {
+      setStatus(user.status || "online");
+      setStatusColor(user.statusColor || "");
+      setStatusComment(user.statusComment || "");
+    }
+  }, [user]);
 
   const { data: customStatuses = [] } = useQuery<{id: string; name: string; color: string; isDefault: boolean}[]>({
     queryKey: ["/api/custom-statuses"],
@@ -442,19 +471,15 @@ export function Layout({ children, className }: { children: React.ReactNode, cla
     localStorage.setItem("sidebar-collapsed", isCollapsed.toString());
   }, [isCollapsed]);
 
-  const statusColors = {
-    online: "bg-emerald-500",
-    offline: "bg-slate-500",
-    vacation: "bg-blue-500",
-    sick: "bg-rose-500",
-  };
-
-  const statusLabels = {
-    online: "В сети",
-    offline: "Не в сети",
-    vacation: "В отпуске",
-    sick: "Больничный",
-  };
+  const statusColors = customStatuses.reduce((acc, s) => {
+    acc[s.name] = `bg-[${s.color}]`;
+    return acc;
+  }, {} as Record<string, string>);
+  
+  const statusLabels = customStatuses.reduce((acc, s) => {
+    acc[s.name] = s.name;
+    return acc;
+  }, {} as Record<string, string>);
 
   // Убираем авто-сворачивание, чтобы пользователь сам решал, в каком состоянии должно быть меню
   /*
@@ -475,6 +500,7 @@ export function Layout({ children, className }: { children: React.ReactNode, cla
         isCollapsed ? "w-20" : "w-64"
       )}>
         <SidebarContentComponent 
+          key={`${status}-${customStatuses.length}`}
           isCollapsed={isCollapsed}
           location={location}
           status={status}
@@ -488,6 +514,7 @@ export function Layout({ children, className }: { children: React.ReactNode, cla
           user={user}
           customStatuses={customStatuses}
           statusColor={statusColor}
+          isRemote={(user as any)?.isRemote || false}
         />
       </div>
 
@@ -505,6 +532,7 @@ export function Layout({ children, className }: { children: React.ReactNode, cla
               </SheetTrigger>
               <SheetContent side="left" className="p-0 w-72 border-r-sidebar-border bg-sidebar text-sidebar-foreground">
                 <SidebarContentComponent 
+                  key={`${status}-${customStatuses.length}-mobile`}
                   isCollapsed={false}
                   location={location}
                   status={status}
@@ -516,6 +544,9 @@ export function Layout({ children, className }: { children: React.ReactNode, cla
                   statusColors={statusColors}
                   statusLabels={statusLabels}
                   user={user}
+                  customStatuses={customStatuses}
+                  statusColor={statusColor}
+                  isRemote={(user as any)?.isRemote || false}
                 />
               </SheetContent>
             </Sheet>
@@ -621,9 +652,12 @@ export function Layout({ children, className }: { children: React.ReactNode, cla
                       statusComment
                     });
                     queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+                    queryClient.invalidateQueries({ queryKey: ["/api/user"] });
                     refetchUser();
+                    toast({ title: "Успешно", description: "Ваш статус обновлён" });
                   } catch (error) {
                     console.error("Failed to update status:", error);
+                    toast({ title: "Ошибка", description: "Не удалось обновить статус", variant: "destructive" });
                   }
                   setIsStatusDialogOpen(false);
                 }}
