@@ -141,8 +141,20 @@ export default function EmployeesPage() {
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
   const [isCreateDeptOpen, setIsCreateDeptOpen] = useState(false);
+  const [isCreateEmployeeOpen, setIsCreateEmployeeOpen] = useState(false);
   const [newDeptName, setNewDeptName] = useState("");
   const [activeTab, setActiveTab] = useState(initialTab);
+
+  // New employee form state
+  const [newEmployee, setNewEmployee] = useState({
+    firstName: "",
+    lastName: "",
+    email: "",
+    phone: "",
+    position: "",
+    department: "",
+    telegram: ""
+  });
 
   // Get unique positions for filter
   const uniquePositions = useMemo(() => {
@@ -206,6 +218,34 @@ export default function EmployeesPage() {
   const [pointsComment, setPointsComment] = useState("");
 
   // Mutations
+  const createEmployeeMutation = useMutation({
+    mutationFn: async (data: any) => {
+      const res = await apiRequest("POST", "/api/users", data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+      toast({ title: "Успешно", description: "Сотрудник добавлен" });
+      setIsCreateEmployeeOpen(false);
+      setNewEmployee({
+        firstName: "",
+        lastName: "",
+        email: "",
+        phone: "",
+        position: "",
+        department: "",
+        telegram: ""
+      });
+    },
+    onError: (error: any) => {
+      toast({ 
+        title: "Ошибка", 
+        description: error.message || "Не удалось добавить сотрудника", 
+        variant: "destructive" 
+      });
+    }
+  });
+
   const updateEmployeeMutation = useMutation({
     mutationFn: async (data: any) => {
       const userId = data.id || selectedEmployee?.id;
@@ -511,7 +551,7 @@ export default function EmployeesPage() {
                           variant="outline" 
                           size="sm"
                           className="w-full"
-                          onClick={() => setFilters({ status: "all", department: "all", isRemote: "all", position: "all" })}
+                          onClick={() => setFilters({ status: "all", department: "all", position: "all" })}
                         >
                           Сбросить все фильтры
                         </Button>
@@ -521,10 +561,108 @@ export default function EmployeesPage() {
                 </DropdownMenuContent>
               </DropdownMenu>
 
-              <Button className="gap-2">
-                <UserCog className="w-4 h-4" />
-                Добавить сотрудника
-              </Button>
+              <Dialog open={isCreateEmployeeOpen} onOpenChange={setIsCreateEmployeeOpen}>
+                <DialogTrigger asChild>
+                  <Button className="gap-2">
+                    <UserCog className="w-4 h-4" />
+                    Добавить сотрудника
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="max-w-lg">
+                  <DialogHeader>
+                    <DialogTitle>Добавить сотрудника</DialogTitle>
+                    <DialogDescription>Заполните данные нового сотрудника.</DialogDescription>
+                  </DialogHeader>
+                  <div className="grid grid-cols-2 gap-4 py-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="new-firstName">Имя *</Label>
+                      <Input 
+                        id="new-firstName" 
+                        placeholder="Иван"
+                        value={newEmployee.firstName}
+                        onChange={(e) => setNewEmployee(prev => ({ ...prev, firstName: e.target.value }))}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="new-lastName">Фамилия</Label>
+                      <Input 
+                        id="new-lastName" 
+                        placeholder="Петров"
+                        value={newEmployee.lastName}
+                        onChange={(e) => setNewEmployee(prev => ({ ...prev, lastName: e.target.value }))}
+                      />
+                    </div>
+                    <div className="space-y-2 col-span-2">
+                      <Label htmlFor="new-email">Email *</Label>
+                      <Input 
+                        id="new-email" 
+                        type="email"
+                        placeholder="ivan@example.com"
+                        value={newEmployee.email}
+                        onChange={(e) => setNewEmployee(prev => ({ ...prev, email: e.target.value }))}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="new-phone">Телефон</Label>
+                      <Input 
+                        id="new-phone" 
+                        placeholder="+7 999 123-45-67"
+                        value={newEmployee.phone}
+                        onChange={(e) => setNewEmployee(prev => ({ ...prev, phone: e.target.value }))}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="new-position">Должность</Label>
+                      <Input 
+                        id="new-position" 
+                        placeholder="Frontend Developer"
+                        value={newEmployee.position}
+                        onChange={(e) => setNewEmployee(prev => ({ ...prev, position: e.target.value }))}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="new-department">Отдел</Label>
+                      <Select 
+                        value={newEmployee.department || "__empty__"} 
+                        onValueChange={(value) => setNewEmployee(prev => ({ ...prev, department: value === "__empty__" ? "" : value }))}
+                      >
+                        <SelectTrigger id="new-department">
+                          <SelectValue placeholder="Выберите отдел" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__empty__">Без отдела</SelectItem>
+                          {departments.map((dept) => (
+                            <SelectItem key={dept.id} value={dept.name}>
+                              <div className="flex items-center gap-2">
+                                <span className="w-2 h-2 rounded-full" style={{ backgroundColor: dept.color }} />
+                                {dept.name}
+                              </div>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="new-telegram">Telegram</Label>
+                      <Input 
+                        id="new-telegram" 
+                        placeholder="@ivan_petrov"
+                        value={newEmployee.telegram}
+                        onChange={(e) => setNewEmployee(prev => ({ ...prev, telegram: e.target.value }))}
+                      />
+                    </div>
+                  </div>
+                  <DialogFooter>
+                    <Button variant="outline" onClick={() => setIsCreateEmployeeOpen(false)}>Отмена</Button>
+                    <Button 
+                      onClick={() => createEmployeeMutation.mutate(newEmployee)} 
+                      disabled={!newEmployee.firstName.trim() || !newEmployee.email.trim() || createEmployeeMutation.isPending}
+                    >
+                      {createEmployeeMutation.isPending ? "Создание..." : "Создать"}
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
             </div>
 
             <div className="border border-border/50 rounded-xl bg-card/50 backdrop-blur-sm overflow-hidden shadow-sm">

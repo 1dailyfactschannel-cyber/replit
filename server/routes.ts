@@ -260,6 +260,64 @@ export async function registerRoutes(
     }
   });
 
+  // Create new user (admin only)
+  app.post("/api/users", async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+    
+    // Check if user is admin
+    if (req.user.role !== "admin") {
+      return res.status(403).json({ message: "Forbidden - Admin access required" });
+    }
+
+    try {
+      const { firstName, lastName, email, phone, position, department, telegram } = req.body;
+
+      if (!email) {
+        return res.status(400).json({ message: "Email is required" });
+      }
+
+      if (!firstName) {
+        return res.status(400).json({ message: "First name is required" });
+      }
+
+      // Check if user already exists
+      const existingUser = await storage.getUserByEmail(email);
+      if (existingUser) {
+        return res.status(400).json({ message: "Пользователь с таким email уже существует" });
+      }
+
+      // Generate random password
+      const randomPassword = Math.random().toString(36).slice(-8);
+      const hashedPassword = await hashPassword(randomPassword);
+
+      // Create user
+      const newUser = await storage.createUser({
+        email,
+        password: hashedPassword,
+        username: email.split("@")[0],
+        firstName: firstName || "",
+        lastName: lastName || "",
+        phone: phone || "",
+        position: position || "",
+        department: department || "",
+        telegram: telegram || "",
+        isActive: true,
+        role: "user",
+      });
+
+      // Invalidate cache
+      await delCache("users:all");
+
+      const { password, ...userWithoutPassword } = newUser;
+      res.status(201).json(userWithoutPassword);
+    } catch (error: any) {
+      console.error("POST /api/users error:", error);
+      res.status(500).json({ message: "Failed to create user", error: error.message });
+    }
+  });
+
   // Search users endpoint
   app.get("/api/users/search", async (req, res) => {
     if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
