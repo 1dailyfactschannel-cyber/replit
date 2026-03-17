@@ -624,8 +624,92 @@ export default function EmployeesPage() {
                 </TableBody>
               </Table>
             </div>
-          </>
-        ) : activeTab === "departments" ? (
+
+            {/* Blocked Employees Section - after main list */}
+            {blockedEmployees.length > 0 && (
+              <div className="mt-4 border-t border-rose-200 dark:border-rose-800">
+                  <Collapsible defaultOpen>
+                    <CollapsibleTrigger asChild>
+                      <div className="flex items-center gap-2 px-4 py-3 bg-rose-50 dark:bg-rose-950/30 cursor-pointer hover:bg-rose-100 dark:hover:bg-rose-950/50 transition-colors">
+                        <ChevronDown className="w-4 h-4 text-rose-600 dark:text-rose-400" />
+                        <span className="text-sm font-medium text-rose-700 dark:text-rose-300">
+                          Заблокированные пользователи ({blockedEmployees.length})
+                        </span>
+                      </div>
+                    </CollapsibleTrigger>
+                    <CollapsibleContent>
+                      <Table>
+                        <TableBody>
+                          {blockedEmployees.map((employee) => {
+                            const fullName = `${employee.firstName || ""} ${employee.lastName || ""}`.trim();
+                            return (
+                              <TableRow 
+                                key={employee.id} 
+                                className="cursor-pointer bg-rose-50/50 dark:bg-rose-950/20 hover:bg-rose-100 dark:hover:bg-rose-950/40 transition-colors"
+                                onClick={() => {
+                                  setSelectedEmployee(employee);
+                                  setIsDetailsOpen(true);
+                                }}
+                              >
+                                <TableCell className="font-medium">
+                                  <div className="flex items-center gap-3">
+                                    <Avatar className="h-9 w-9 border border-rose-200 dark:border-rose-800">
+                                      <AvatarImage src={employee.avatar || undefined} />
+                                      <AvatarFallback className="bg-rose-100 text-rose-600 dark:bg-rose-900 dark:text-rose-300">
+                                        {fullName.split(" ").map(n => n[0]).join("")}
+                                      </AvatarFallback>
+                                    </Avatar>
+                                    <div className="flex flex-col">
+                                      <span className="text-sm font-semibold text-rose-700 dark:text-rose-300">{fullName}</span>
+                                      <span className="text-xs text-rose-500 dark:text-rose-400">{employee.email}</span>
+                                    </div>
+                                  </div>
+                                </TableCell>
+                                <TableCell className="text-rose-600 dark:text-rose-400">{employee.position}</TableCell>
+                                <TableCell>
+                                  <span className="text-xs text-rose-500 dark:text-rose-400">Заблокирован</span>
+                                </TableCell>
+                                <TableCell>-</TableCell>
+                                <TableCell>
+                                  <div className="flex items-center gap-1.5 font-medium text-rose-600 dark:text-rose-400">
+                                    <Coins className="w-4 h-4 text-amber-500" />
+                                    {employee.pointsBalance}
+                                  </div>
+                                </TableCell>
+                                <TableCell className="text-right">
+                                  <DropdownMenu>
+                                    <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                                      <Button variant="ghost" size="icon" className="h-8 w-8">
+                                        <MoreVertical className="w-4 h-4" />
+                                      </Button>
+                                    </DropdownMenuTrigger>
+                                    <DropdownMenuContent align="end" className="w-48">
+                                      <DropdownMenuItem className="gap-2">
+                                        <UserCog className="w-4 h-4" /> Редактировать
+                                      </DropdownMenuItem>
+                                      <DropdownMenuItem 
+                                        className="gap-2 text-emerald-500 cursor-pointer"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          updateEmployeeMutation.mutate({ id: employee.id, isActive: true });
+                                        }}
+                                      >
+                                        <UserCheck className="w-4 h-4" /> Разблокировать
+                                      </DropdownMenuItem>
+                                    </DropdownMenuContent>
+                                  </DropdownMenu>
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })}
+                        </TableBody>
+                      </Table>
+                    </CollapsibleContent>
+                  </Collapsible>
+                </div>
+              )}
+            </>
+          ) : activeTab === "departments" ? (
           <div className="space-y-6">
             <div className="flex items-center justify-between">
               <div className="relative flex-1 max-w-sm">
@@ -865,15 +949,12 @@ export default function EmployeesPage() {
               </div>
             </DialogHeader>
             <Tabs defaultValue="edit" className="w-full">
-              <div className="px-6 bg-secondary/5 border-b border-border/50">
-                <TabsList className="bg-transparent h-12 w-full justify-start gap-6 rounded-none p-0">
-                  <TabsTrigger value="edit" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-0 h-12">Данные</TabsTrigger>
-                  <TabsTrigger value="audit_status" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-0 h-12">Аудит статусов</TabsTrigger>
-                  <TabsTrigger value="audit_points" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-0 h-12">Аудит баллов</TabsTrigger>
-                </TabsList>
-              </div>
-              <div className="p-6">
-                <TabsContent value="edit" className="mt-0 space-y-6">
+              <TabsList className="bg-transparent h-12 w-full justify-start gap-6 rounded-none p-0 px-6 border-b border-border/50">
+                <TabsTrigger value="edit" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-0 h-12">Данные</TabsTrigger>
+                <TabsTrigger value="audit_status" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-0 h-12">Аудит статусов</TabsTrigger>
+                <TabsTrigger value="audit_points" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-0 h-12">Аудит баллов</TabsTrigger>
+              </TabsList>
+              <TabsContent value="edit" className="mt-0 p-6 space-y-6">
                   <div className="grid grid-cols-2 gap-6">
                     <div className="space-y-2">
                       <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Имя</Label>
@@ -1033,158 +1114,10 @@ export default function EmployeesPage() {
                     </div>
                   )}
                 </TabsContent>
-
-                <TabsContent value="audit_points" className="mt-0">
-                  {pointsHistory.length === 0 ? (
-                    <div className="text-center py-8 text-muted-foreground">
-                      <Coins className="w-8 h-8 mx-auto mb-2 opacity-20" />
-                      <p className="text-sm">История баллов пуста</p>
-                    </div>
-                  ) : (
-                    <div className="max-h-[400px] overflow-y-auto">
-                      <Table>
-                        <TableHeader className="bg-secondary/20 sticky top-0">
-                          <TableRow>
-                            <TableHead className="w-[80px]">Тип операции</TableHead>
-                            <TableHead className="w-[80px]">Баллы</TableHead>
-                            <TableHead>Комментарий</TableHead>
-                            <TableHead className="w-[140px]">Кем выполнено</TableHead>
-                            <TableHead className="w-[120px]">Дата и время</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {pointsHistory.map((entry) => (
-                            <TableRow key={entry.id}>
-                              <TableCell className="font-medium">
-                                {entry.type === "earned" ? "Начисление" : entry.type === "spent" ? "Списание" : "Возврат"}
-                              </TableCell>
-                              <TableCell>
-                                <span className={cn("font-bold", entry.amount > 0 ? "text-emerald-500" : "text-rose-500")}>
-                                  {entry.amount > 0 ? "+" : ""}{entry.amount}
-                                </span>
-                              </TableCell>
-                              <TableCell className="text-sm">
-                                {entry.task ? (
-                                  <button
-                                    onClick={() => navigate(`/projects?taskId=${entry.task!.id}`)}
-                                    className="text-blue-600 hover:underline cursor-pointer text-left"
-                                  >
-                                    {entry.task.title}
-                                  </button>
-                                ) : entry.description ? (
-                                  entry.description
-                                ) : (
-                                  '—'
-                                )}
-                              </TableCell>
-                              <TableCell className="text-sm text-muted-foreground">
-                                {entry.changedByUser 
-                                  ? `${entry.changedByUser.firstName || ''} ${entry.changedByUser.lastName || ''}`.trim() || 'Система'
-                                  : 'Система'}
-                              </TableCell>
-                              <TableCell className="text-sm text-muted-foreground">
-                                {entry.createdAt ? new Date(entry.createdAt).toLocaleString('ru-RU', { 
-                                  day: '2-digit', 
-                                  month: '2-digit', 
-                                  year: 'numeric', 
-                                  hour: '2-digit', 
-                                  minute: '2-digit'
-                                }) : '—'}
-                              </TableCell>
-                            </TableRow>
-                          ))}
-                </TableBody>
-              </Table>
-
-              {/* Blocked Employees Section */}
-              {console.log("[DEBUG] blockedEmployees.length:", blockedEmployees.length) || blockedEmployees.length > 0 && (
-                <Collapsible defaultOpen>
-                  <CollapsibleTrigger asChild>
-                    <div className="flex items-center gap-2 px-4 py-3 bg-rose-50 dark:bg-rose-950/30 border-t border-rose-200 dark:border-rose-800 cursor-pointer hover:bg-rose-100 dark:hover:bg-rose-950/50 transition-colors">
-                      <ChevronDown className="w-4 h-4 text-rose-600 dark:text-rose-400" />
-                      <span className="text-sm font-medium text-rose-700 dark:text-rose-300">
-                        Заблокированные пользователи ({blockedEmployees.length})
-                      </span>
-                    </div>
-                  </CollapsibleTrigger>
-                  <CollapsibleContent>
-                    <Table>
-                      <TableBody>
-                        {blockedEmployees.map((employee) => {
-                          const fullName = `${employee.firstName || ""} ${employee.lastName || ""}`.trim();
-                          return (
-                            <TableRow 
-                              key={employee.id} 
-                              className="cursor-pointer bg-rose-50/50 dark:bg-rose-950/20 hover:bg-rose-100 dark:hover:bg-rose-950/40 transition-colors"
-                              onClick={() => {
-                                setSelectedEmployee(employee);
-                                setIsDetailsOpen(true);
-                              }}
-                            >
-                              <TableCell className="font-medium">
-                                <div className="flex items-center gap-3">
-                                  <Avatar className="h-9 w-9 border border-rose-200 dark:border-rose-800">
-                                    <AvatarImage src={employee.avatar || undefined} />
-                                    <AvatarFallback className="bg-rose-100 text-rose-600 dark:bg-rose-900 dark:text-rose-300">
-                                      {fullName.split(" ").map(n => n[0]).join("")}
-                                    </AvatarFallback>
-                                  </Avatar>
-                                  <div className="flex flex-col">
-                                    <span className="text-sm font-semibold text-rose-700 dark:text-rose-300">{fullName}</span>
-                                    <span className="text-xs text-rose-500 dark:text-rose-400">{employee.email}</span>
-                                  </div>
-                                </div>
-                              </TableCell>
-                              <TableCell className="text-rose-600 dark:text-rose-400">{employee.position}</TableCell>
-                              <TableCell>
-                                <span className="text-xs text-rose-500 dark:text-rose-400">Заблокирован</span>
-                              </TableCell>
-                              <TableCell>-</TableCell>
-                              <TableCell>
-                                <div className="flex items-center gap-1.5 font-medium text-rose-600 dark:text-rose-400">
-                                  <Coins className="w-4 h-4 text-amber-500" />
-                                  {employee.pointsBalance}
-                                </div>
-                              </TableCell>
-                              <TableCell className="text-right">
-                                <DropdownMenu>
-                                  <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-                                    <Button variant="ghost" size="icon" className="h-8 w-8">
-                                      <MoreVertical className="w-4 h-4" />
-                                    </Button>
-                                  </DropdownMenuTrigger>
-                                  <DropdownMenuContent align="end" className="w-48">
-                                    <DropdownMenuItem className="gap-2">
-                                      <UserCog className="w-4 h-4" /> Редактировать
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem 
-                                      className="gap-2 text-emerald-500 cursor-pointer"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        updateEmployeeMutation.mutate({ id: employee.id, isActive: true });
-                                      }}
-                                    >
-                                      <UserCheck className="w-4 h-4" /> Разблокировать
-                                    </DropdownMenuItem>
-                                  </DropdownMenuContent>
-                                </DropdownMenu>
-                              </TableCell>
-                            </TableRow>
-                          );
-                        })}
-                      </TableBody>
-                    </Table>
-                  </CollapsibleContent>
-                </Collapsible>
-              )}
-            </div>
-                  )}
-                </TabsContent>
-              </div>
-            </Tabs>
-          </DialogContent>
-        </Dialog>
-      </div>
-    </Layout>
+              </Tabs>
+            </DialogContent>
+          </Dialog>
+        </div>
+      </Layout>
   );
 }
