@@ -602,7 +602,22 @@ export default function EmployeesPage() {
                 </DropdownMenuContent>
               </DropdownMenu>
 
-              <Dialog open={isCreateEmployeeOpen} onOpenChange={setIsCreateEmployeeOpen}>
+              <Dialog open={isCreateEmployeeOpen} onOpenChange={(open) => {
+                if (!open) {
+                  setNewEmployee({
+                    firstName: "",
+                    lastName: "",
+                    email: "",
+                    phone: "",
+                    position: "",
+                    department: "",
+                    telegram: "",
+                    password: ""
+                  });
+                  setShowPassword(false);
+                }
+                setIsCreateEmployeeOpen(open);
+              }}>
                 <DialogTrigger asChild>
                   <Button className="gap-2">
                     <UserCog className="w-4 h-4" />
