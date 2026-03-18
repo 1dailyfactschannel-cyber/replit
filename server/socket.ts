@@ -16,10 +16,13 @@ export function getIO(): SocketIOServer {
 }
 
 export function setupWebSockets(httpServer: HttpServer) {
-  // Security: Restrict CORS to specific origins
-  const allowedOrigins = process.env.ALLOWED_ORIGINS 
-    ? process.env.ALLOWED_ORIGINS.split(',') 
-    : ['http://localhost:3005', 'http://localhost:3000'];
+  const isDev = process.env.NODE_ENV === 'development';
+  
+  const allowedOrigins = isDev 
+    ? ['http://localhost:3005', 'http://localhost:3006', 'http://localhost:3000', 'http://127.0.0.1:3005', 'http://127.0.0.1:3006']
+    : (process.env.ALLOWED_ORIGINS 
+        ? process.env.ALLOWED_ORIGINS.split(',') 
+        : ['http://localhost:3005', 'http://localhost:3000']);
   
   const io = new SocketIOServer(httpServer, {
     cors: {
@@ -28,11 +31,17 @@ export function setupWebSockets(httpServer: HttpServer) {
       credentials: true
     },
     pingInterval: 25000,
-    pingTimeout: 10000,
+    pingTimeout: 20000,
+    allowEIO3: true,
+    transports: ['websocket', 'polling'],
   });
 
   ioInstance = io;
   log("WebSockets setup complete", "socket.io");
+
+  io.on("connect_error", (error) => {
+    log(`Socket connection error: ${error.message}`, "socket.io");
+  });
 
   io.on("connection", (socket) => {
     const userId = socket.handshake.query.userId as string;

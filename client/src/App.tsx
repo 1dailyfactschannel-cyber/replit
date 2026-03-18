@@ -6,6 +6,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as SonnerToaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { PageLoadingAnimation } from "@/components/PageLoadingAnimation";
+import { ProtectedProjectsRoute } from "@/components/ProtectedProjectsRoute";
 
 // Eager load critical pages for better initial load
 import Dashboard from "@/pages/dashboard";
@@ -118,7 +119,7 @@ function Router() {
         <ProtectedRoute path="/settings" component={SettingsPage} />
         <ProtectedRoute path="/management" component={ManagementPage} />
         <ProtectedRoute path="/reports" component={ReportsPage} />
-        <ProtectedRoute path="/projects" component={Projects} />
+        <ProtectedProjectsRoute path="/projects" />
         <ProtectedRoute path="/tasks" component={Tasks} />
         <ProtectedRoute path="/calendar" component={CalendarPage} />
         <ProtectedRoute path="/chat" component={Chat} />

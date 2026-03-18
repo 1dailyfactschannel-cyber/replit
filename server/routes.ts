@@ -243,6 +243,39 @@ export async function registerRoutes(
     }
   });
 
+  // User settings endpoints
+  app.get("/api/user/settings", async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+    try {
+      const settings = await storage.getAllUserSettings(req.user.id);
+      res.json(settings);
+    } catch (error) {
+      console.error("GET /api/user/settings error:", error);
+      res.status(500).json({ message: "Failed to fetch user settings" });
+    }
+  });
+
+  app.put("/api/user/settings", async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+    try {
+      const { key, value } = req.body;
+      if (!key) {
+        return res.status(400).json({ message: "Key is required" });
+      }
+      console.log(`[User Settings] Saving setting for user ${req.user.id}: key=${key}, value=`, value);
+      const setting = await storage.setUserSetting(req.user.id, key, value);
+      console.log(`[User Settings] Saved setting:`, setting);
+      res.json(setting);
+    } catch (error) {
+      console.error("PUT /api/user/settings error:", error);
+      res.status(500).json({ message: "Failed to update user setting" });
+    }
+  });
+
   app.get("/api/users", async (_req, res) => {
     console.log("=== USERS ROUTE HIT ===");
     try {

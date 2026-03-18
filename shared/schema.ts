@@ -851,7 +851,7 @@ export const notifications = pgTable("notifications", {
   createdAt: timestamp("created_at").defaultNow(),
 }, (table) => ({
   userIdIdx: index("notifications_user_id_idx").on(table.userId),
-  userIdIsReadIdx: index("notifications_user_id_idx").on(table.userId, table.isRead),
+  userIdIsReadIdx: index("notifications_user_id_is_read_idx").on(table.userId, table.isRead),
 }));
 
 export const insertNotificationSchema = createInsertSchema(notifications).pick({
@@ -966,6 +966,26 @@ export const insertUserPointsTransactionSchema = createInsertSchema(userPointsTr
 
 export type UserPointsTransaction = typeof userPointsTransactions.$inferSelect;
 export type InsertUserPointsTransaction = z.infer<typeof insertUserPointsTransactionSchema>;
+
+// User settings table - for storing user preferences (UI state, collapsed projects, etc.)
+export const userSettings = pgTable("user_settings", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  key: varchar("key", { length: 255 }).notNull(),
+  value: jsonb("value"),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  userKeyIdx: uniqueIndex("user_settings_user_key_idx").on(table.userId, table.key),
+}));
+
+export const insertUserSettingsSchema = createInsertSchema(userSettings).pick({
+  userId: true,
+  key: true,
+  value: true,
+});
+
+export type UserSetting = typeof userSettings.$inferSelect;
+export type InsertUserSetting = z.infer<typeof insertUserSettingsSchema>;
 
 // Calendar events table
 export const calendarEvents = pgTable("calendar_events", {

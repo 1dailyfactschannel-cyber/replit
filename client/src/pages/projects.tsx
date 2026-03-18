@@ -99,6 +99,7 @@ import { toast } from "sonner";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useDebounce } from "@/hooks/useDebounce";
+import { useProjectsContext } from "@/context/ProjectsContext";
 
 // Loading animation components - replaced skeletons with smooth animations
 const KanbanLoading = () => (
@@ -718,32 +719,43 @@ ProjectItem.displayName = 'ProjectItem';
 
 export default function Projects() {
   const { data: user } = useQuery<any>({ queryKey: ["/api/user"] });
-  const [activeProjectId, setActiveProjectId] = useState<any>(null);
-  const [activeBoardId, setActiveBoardId] = useState<string | null>(null);
+  
+  // Get state and handlers from context
+  const {
+    selectedWorkspaceId,
+    activeProjectId,
+    activeBoardId,
+    collapsedProjects,
+    isLoading,
+    handleWorkspaceChange,
+    handleProjectChange,
+    handleBoardChange,
+    handleCollapsedProjectsChange,
+  } = useProjectsContext();
+
+  // UI state
   const [modalOpen, setModalOpen] = useState(false);
   const [isCreateProjectOpen, setIsCreateProjectOpen] = useState(false);
   const [isCreateBoardOpen, setIsCreateBoardOpen] = useState(false);
   const [isCreateWorkspaceOpen, setIsCreateWorkspaceOpen] = useState(false);
-  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(null);
   const [isWorkspaceDropdownOpen, setIsWorkspaceDropdownOpen] = useState(false);
   const [newProject, setNewProject] = useState({ name: "", color: "bg-blue-500", priority: "Средний" });
   const [newBoardName, setNewBoardName] = useState("");
   const [newWorkspaceName, setNewWorkspaceName] = useState("");
   const [editingColumn, setEditingColumn] = useState<{ originalName: string, currentName: string } | null>(null);
-  const [collapsedProjects, setCollapsedProjects] = useState<Record<string, boolean>>({});
   const [showAllTasks, setShowAllTasks] = useState(false);
   const [editingProject, setEditingProject] = useState<any>(null);
   const [isEditProjectOpen, setIsEditProjectOpen] = useState(false);
   const [deletingProjectId, setDeletingProjectId] = useState<string | null>(null);
   const [deletingBoardId, setDeletingBoardId] = useState<string | null>(null);
-
+  
   // Column sorting state
   const [columnSortBy, setColumnSortBy] = useState<Record<string, string>>({});
-
+  
   // Search with debounce for better performance
   const [projectSearchQuery, setProjectSearchQuery] = useState("");
   const debouncedProjectSearch = useDebounce(projectSearchQuery, 300);
-
+  
   // Task filters state
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [taskFilters, setTaskFilters] = useState({
@@ -760,12 +772,13 @@ export default function Projects() {
   
   // Filter dropdown states
   const [projectFilterOpen, setProjectFilterOpen] = useState(false);
+  const [workspaceFilterOpen, setWorkspaceFilterOpen] = useState(false);
   const [statusFilterOpen, setStatusFilterOpen] = useState(false);
   const [assigneeFilterOpen, setAssigneeFilterOpen] = useState(false);
   const [priorityFilterOpen, setPriorityFilterOpen] = useState(false);
   const [labelsFilterOpen, setLabelsFilterOpen] = useState(false);
-
-  // Queries with optimized caching
+  
+  // QUERIES - must be called before any condition
   const { data: projects = [], isLoading: isLoadingProjects } = useQuery<any[]>({
     queryKey: ["/api/projects", selectedWorkspaceId],
     queryFn: async () => {
@@ -775,30 +788,41 @@ export default function Projects() {
       const res = await apiRequest("GET", url);
       return res.json();
     },
-    staleTime: 1000 * 60 * 10, // 10 minutes - projects change rarely
-    gcTime: 1000 * 60 * 30, // Keep in cache for 30 minutes
-    placeholderData: [], // Use empty array while loading to prevent flicker
+    staleTime: 1000 * 60 * 10,
+    gcTime: 1000 * 60 * 30,
+    placeholderData: [],
   });
 
   const { data: workspaces = [] } = useQuery<any[]>({
     queryKey: ["/api/workspaces"],
     staleTime: 1000 * 60 * 10,
+    enabled: !!user?.id,
   });
 
   const { data: availableLabels = [] } = useQuery<any[]>({
     queryKey: ["/api/labels"],
-    staleTime: 1000 * 60 * 60, // 1 hour
+    staleTime: 1000 * 60 * 60,
   });
 
   const { data: availablePriorities = [] } = useQuery<any[]>({
     queryKey: ["/api/priorities"],
-    staleTime: 1000 * 60 * 60, // 1 hour
+    staleTime: 1000 * 60 * 60,
   });
 
   const { data: availableTaskTypes = [] } = useQuery<any[]>({
     queryKey: ["/api/task-types"],
-    staleTime: 1000 * 60 * 60, // 1 hour
+    staleTime: 1000 * 60 * 60,
   });
+
+  const { data: availableStatuses = [] } = useQuery<any[]>({
+    queryKey: ["/api/custom-statuses"],
+    staleTime: 1000 * 60 * 60,
+  });
+
+  // Show skeleton while loading
+  if (isLoading) {
+    return <PageLoadingAnimation />;
+  }
 
   const { data: users = [] } = useQuery<any[]>({
     queryKey: ["/api/users"],
@@ -836,6 +860,16 @@ export default function Projects() {
     [projects, activeProjectId]
   );
 
+  // Auto-select first project if activeProjectId is invalid
+  useEffect(() => {
+    if (activeProjectId && projects.length > 0) {
+      const project = projects.find(p => p.id === activeProjectId);
+      if (!project && projects[0]) {
+        handleProjectChange(projects[0].id);
+      }
+    }
+  }, [activeProjectId, projects, handleProjectChange]);
+
   const { data: boards = [], isLoading: isLoadingBoards } = useQuery<any[]>({
     queryKey: ["/api/projects", activeProject?.id, "boards"],
     enabled: !!activeProject?.id,
@@ -858,7 +892,7 @@ export default function Projects() {
   // Auto-select first board when activeProject changes
   useEffect(() => {
     if (boards.length > 0 && !activeBoardId) {
-      setActiveBoardId(boards[0].id);
+      handleBoardChange(boards[0].id);
     }
   }, [boards, activeBoardId]);
 
@@ -907,7 +941,7 @@ export default function Projects() {
       );
       setIsCreateProjectOpen(false);
       setNewProject({ name: "", color: "bg-blue-500", priority: "Средний" });
-      setActiveProjectId(data.id);
+      handleProjectChange(data.id);
       toast.success("Проект успешно создан");
     },
     onError: (error: any, variables: any, context: any) => {
@@ -937,7 +971,7 @@ export default function Projects() {
       queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
       setIsCreateWorkspaceOpen(false);
       setNewWorkspaceName("");
-      setSelectedWorkspaceId(data.id);
+      handleWorkspaceChange(data.id);
       toast.success("Пространство создано");
     }
   });
@@ -1001,7 +1035,7 @@ export default function Projects() {
       toast.error("Не удалось удалить проект");
     },
     onSuccess: () => {
-      setActiveProjectId(null);
+      handleProjectChange(null);
       toast.success("Проект удален");
     },
     onSettled: () => {
@@ -1051,7 +1085,7 @@ export default function Projects() {
       toast.error("Не удалось создать доску");
     },
     onSuccess: (data) => {
-      setActiveBoardId(data.id);
+      handleBoardChange(data.id);
       toast.success("Доска успешно создана");
     },
     onSettled: () => {
@@ -1678,8 +1712,9 @@ export default function Projects() {
 
   const toggleProjectCollapse = useCallback((projectId: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    setCollapsedProjects(prev => ({ ...prev, [projectId]: !prev[projectId] }));
-  }, []);
+    const newCollapsed = { ...collapsedProjects, [projectId]: !collapsedProjects[projectId] };
+    handleCollapsedProjectsChange(newCollapsed);
+  }, [collapsedProjects]);
 
   const onDragEnd = (result: DropResult) => {
     const { destination, source, draggableId, type } = result;
@@ -1777,7 +1812,7 @@ export default function Projects() {
               <DropdownMenuContent align="start" className="w-56">
                 <DropdownMenuItem 
                   onClick={() => {
-                    setSelectedWorkspaceId(null);
+                    handleWorkspaceChange(null);
                     setIsWorkspaceDropdownOpen(false);
                   }}
                   className={cn(!selectedWorkspaceId && "bg-accent")}
@@ -1790,7 +1825,7 @@ export default function Projects() {
                   <DropdownMenuItem 
                     key={workspace.id}
                     onClick={() => {
-                      setSelectedWorkspaceId(workspace.id);
+                      handleWorkspaceChange(workspace.id);
                       setIsWorkspaceDropdownOpen(false);
                     }}
                     className={cn(selectedWorkspaceId === workspace.id && "bg-accent")}
@@ -1811,8 +1846,8 @@ export default function Projects() {
               className="w-full justify-start gap-2 font-medium"
               onClick={() => {
                 if (!showAllTasks) {
-                  setActiveProjectId(null);
-                  setActiveBoardId(null);
+                  handleProjectChange(null);
+                  handleBoardChange(null);
                 }
                 setShowAllTasks(!showAllTasks);
               }}
@@ -1848,8 +1883,8 @@ export default function Projects() {
                     isCollapsed={!!collapsedProjects[project.id]}
                     onSelect={(projectId) => {
                       setShowAllTasks(false);
-                      setActiveProjectId(projectId);
-                      setActiveBoardId(null);
+                      handleProjectChange(projectId);
+                      handleBoardChange(null);
                     }}
                     onToggleCollapse={toggleProjectCollapse}
                     onEdit={handleEditProject}
@@ -1866,7 +1901,7 @@ export default function Projects() {
                         boards.map((board: any) => (
                           <div key={board.id} className="group/board relative">
                             <div
-                              onClick={() => setActiveBoardId(board.id)}
+                              onClick={() => handleBoardChange(board.id)}
                               onMouseEnter={() => {
                                 // Предзагрузка данных доски при наведении
                                 queryClient.prefetchQuery({

@@ -3,22 +3,54 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { io, Socket } from "socket.io-client";
 
+function getCurrentUserId(): string | null {
+  try {
+    const userStr = localStorage.getItem("user");
+    if (userStr) {
+      const user = JSON.parse(userStr);
+      return user?.id?.toString() || null;
+    }
+  } catch {}
+  return null;
+}
+
 export function useYandexCalendar() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const socketRef = useRef<Socket | null>(null);
 
   useEffect(() => {
-    // Initialize socket
+    const userId = getCurrentUserId();
+    
     const socket = io({
       transports: ["websocket", "polling"],
       reconnection: true,
+      reconnectionAttempts: 10,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
+      query: userId ? { userId } : undefined,
     });
     
     socketRef.current = socket;
 
     socket.on("connect", () => {
-      console.log("Yandex Calendar socket connected");
+      console.log("Yandex Calendar socket connected", socket.id);
+    });
+
+    socket.on("disconnect", (reason) => {
+      console.log("Socket disconnected:", reason);
+    });
+
+    socket.on("reconnect", (attemptNumber) => {
+      console.log("Socket reconnected after", attemptNumber, "attempts");
+    });
+
+    socket.on("reconnect_error", (error) => {
+      console.error("Socket reconnection error:", error);
+    });
+
+    socket.on("connect_error", (error) => {
+      console.error("Socket connection error:", error.message);
     });
 
     // Listen for sync updates

@@ -51,7 +51,10 @@ import {
   callSettings,
   callParticipants,
   teamRoomAdmins,
-  users
+  users,
+  userSettings,
+  type UserSetting,
+  type InsertUserSetting
 } from "@shared/schema";
 import { drizzle } from "drizzle-orm/postgres-js";
 import { eq, and, or, desc, ne, sql, inArray, isNull, gte, lte } from "drizzle-orm";
@@ -151,6 +154,116 @@ export class PostgresStorage {
     } catch (error) {
       console.error("Error getting all users:", error);
       return [];
+    }
+  }
+
+  // User settings methods
+  async getUserSetting(userId: string, key: string): Promise<UserSetting | null> {
+    try {
+      const result = await this.db
+        .select()
+        .from(schema.userSettings)
+        .where(and(
+          eq(schema.userSettings.userId, userId),
+          eq(schema.userSettings.key, key)
+        ))
+        .limit(1);
+      return result[0] || null;
+    } catch (error) {
+      console.error("Error getting user setting:", error);
+      return null;
+    }
+  }
+
+  async getAllUserSettings(userId: string): Promise<UserSetting[]> {
+    try {
+      return await this.db
+        .select()
+        .from(schema.userSettings)
+        .where(eq(schema.userSettings.userId, userId));
+    } catch (error) {
+      console.error("Error getting all user settings:", error);
+      return [];
+    }
+  }
+
+  async setUserSetting(userId: string, key: string, value: any): Promise<UserSetting> {
+    try {
+      console.log(`[DB] setUserSetting: userId=${userId}, key=${key}, value=`, value);
+      
+      // First check if setting exists
+      const existing = await this.db
+        .select()
+        .from(schema.userSettings)
+        .where(
+          and(
+            eq(schema.userSettings.userId, userId),
+            eq(schema.userSettings.key, key)
+          )
+        )
+        .limit(1);
+      
+      let result: UserSetting | null = null;
+
+      if (existing.length > 0) {
+        // Update existing
+        const updated = await this.db
+          .update(schema.userSettings)
+          .set({
+            value,
+            updatedAt: new Date(),
+          })
+          .where(
+            and(
+              eq(schema.userSettings.userId, userId),
+              eq(schema.userSettings.key, key)
+            )
+          )
+          .returning();
+        
+        if (updated && updated.length > 0) {
+          result = updated[0];
+          console.log(`[DB] Updated existing setting:`, result);
+        }
+      } else {
+        // Insert new
+        const inserted = await this.db
+          .insert(schema.userSettings)
+          .values({
+            userId,
+            key,
+            value,
+          })
+          .returning();
+        
+        if (inserted && inserted.length > 0) {
+          result = inserted[0];
+          console.log(`[DB] Inserted new setting:`, result);
+        }
+      }
+
+      if (!result) {
+        throw new Error("Failed to save setting - no result returned");
+      }
+
+      return result;
+    } catch (error) {
+      console.error("Error setting user setting:", error);
+      throw error;
+    }
+  }
+
+  async deleteUserSetting(userId: string, key: string): Promise<void> {
+    try {
+      await this.db
+        .delete(schema.userSettings)
+        .where(and(
+          eq(schema.userSettings.userId, userId),
+          eq(schema.userSettings.key, key)
+        ));
+    } catch (error) {
+      console.error("Error deleting user setting:", error);
+      throw error;
     }
   }
 
