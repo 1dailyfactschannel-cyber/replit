@@ -168,48 +168,13 @@ export const SidebarContentComponent = React.memo(({
       <div className={cn("p-6", isCollapsed && "px-4 flex flex-col items-center")}>
         <div className={cn("flex items-center gap-2 mb-8 w-full", isCollapsed ? "justify-center" : "justify-between")}>
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center text-primary-foreground font-bold text-xl shrink-0">
-              T
+            <div className="w-10 h-10 rounded-lg bg-primary flex items-center justify-center text-primary-foreground font-bold text-lg shrink-0 logo-animated">
+              m4
             </div>
             {!isCollapsed && <span className="font-sans font-bold text-lg animate-in fade-in duration-300">m4portal</span>}
           </div>
-          {!isCollapsed && (
-            <Button 
-              variant="ghost" 
-              size="icon" 
-              className="h-8 w-8 rounded-lg text-muted-foreground hover:bg-sidebar-accent hover:text-foreground"
-              onClick={() => setIsCollapsed(true)}
-            >
-              <ChevronLeft className="h-5 w-5" />
-            </Button>
-          )}
-          {isCollapsed && (
-            <Button 
-              variant="ghost" 
-              size="icon" 
-              className="h-8 w-8 rounded-lg text-muted-foreground hover:bg-sidebar-accent hover:text-foreground md:hidden"
-              onClick={() => setIsCollapsed(false)}
-            >
-              <ChevronRight className="h-5 w-5" />
-            </Button>
-          )}
         </div>
 
-        <div className="mb-4">
-          <Button 
-            variant="outline" 
-            onClick={() => {
-              if (location !== "/projects") setLocation("/projects");
-            }}
-            className={cn(
-              "w-full justify-start gap-2 bg-sidebar-accent/50 border-sidebar-border text-sidebar-foreground/70 hover:text-sidebar-foreground shadow-sm overflow-hidden whitespace-nowrap",
-              isCollapsed && "px-2 justify-center"
-            )}
-          >
-            <Plus className="w-4 h-4 shrink-0" />
-            {!isCollapsed && <span className="animate-in fade-in duration-300">Новый проект</span>}
-          </Button>
-        </div>
       </div>
 
       <ScrollArea className="flex-1 px-4">

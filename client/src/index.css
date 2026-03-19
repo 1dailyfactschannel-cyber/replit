@@ -441,3 +441,17 @@
   background-size: 200% 200%;
   animation: gradient-shift 3s ease infinite;
 }
+
+/* Logo Glow Animation */
+@keyframes logo-glow {
+  0%, 100% {
+    box-shadow: 0 0 8px 2px rgba(59, 130, 246, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 20px 6px rgba(59, 130, 246, 0.7), 0 0 30px 4px rgba(59, 130, 246, 0.3);
+  }
+}
+
+.logo-animated {
+  animation: logo-glow 3s ease-in-out infinite;
+}

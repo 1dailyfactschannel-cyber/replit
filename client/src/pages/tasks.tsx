@@ -116,10 +116,35 @@ export default function Tasks() {
     return initialElapsed + (currentTime - firstRenderTime);
   }, [currentTime]);
 
-  const formatDuration = useCallback((elapsedMs: number) => {
+  // Склонение слова "час"
+  const getHoursWord = (n: number): string => {
+    if (n % 10 === 1 && n % 100 !== 11) return 'час';
+    if (n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20)) return 'часа';
+    return 'часов';
+  };
+
+  // Склонение слова "минута"
+  const getMinutesWord = (n: number): string => {
+    if (n % 10 === 1 && n % 100 !== 11) return 'минута';
+    if (n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20)) return 'минуты';
+    return 'минут';
+  };
+
+  const formatDuration = useCallback((elapsedMs: number, isMobile: boolean = false) => {
     const hours = Math.floor(elapsedMs / 3600000);
     const minutes = Math.floor((elapsedMs % 3600000) / 60000);
-    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+    
+    if (isMobile) {
+      // Мобильный формат: "2ч 30м"
+      if (hours === 0) return `${minutes}м`;
+      if (minutes === 0) return `${hours}ч`;
+      return `${hours}ч ${minutes}м`;
+    }
+    
+    // Десктоп формат: "2 часов, 30 минут"
+    if (hours === 0) return `${minutes} ${getMinutesWord(minutes)}`;
+    if (minutes === 0) return `${hours} ${getHoursWord(hours)}`;
+    return `${hours} ${getHoursWord(hours)}, ${minutes} ${getMinutesWord(minutes)}`;
   }, []);
 
   const formatDate = useCallback((date: any) => {
@@ -488,13 +513,24 @@ export default function Tasks() {
                            return null;
                          })()}
                        </div>
-                    </TableCell>
+                      </TableCell>
 <TableCell>
                       {task.acceptedAt ? (
-                        <div className="flex items-center gap-2 text-primary font-mono text-sm font-bold bg-primary/5 px-3 py-1.5 rounded-lg border border-primary/10 w-fit">
-                          <div className="w-2 h-2 rounded-full bg-primary animate-pulse" />
-                          {formatDuration(getTaskElapsedTime(task.id, task.acceptedAt))}
-                        </div>
+                        (() => {
+                          const isOverdue = task.dueDate && new Date(task.dueDate) < new Date();
+                          return (
+                            <div className={cn(
+                              "flex items-center gap-2 font-bold bg-primary/5 px-3 py-1.5 rounded-lg border w-fit",
+                              isOverdue 
+                                ? "text-destructive border-destructive/20" 
+                                : "text-primary border-primary/10"
+                            )}>
+                              <div className={cn("w-2 h-2 rounded-full animate-pulse", isOverdue ? "bg-destructive" : "bg-primary")} />
+                              <span className="text-sm hidden sm:inline">{formatDuration(getTaskElapsedTime(task.id, task.acceptedAt), false)}</span>
+                              <span className="text-sm sm:hidden">{formatDuration(getTaskElapsedTime(task.id, task.acceptedAt), true)}</span>
+                            </div>
+                          );
+                        })()
                       ) : (
                         <Button 
                           size="sm" 
