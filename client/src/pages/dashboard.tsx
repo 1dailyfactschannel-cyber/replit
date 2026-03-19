@@ -443,7 +443,7 @@ export default function Dashboard() {
                   <p>Нет проектов</p>
                   <Link href="/projects">
                     <Button variant="link" size="sm" className="mt-2">
-                      Создать проект
+                      Перейти к проектам
                     </Button>
                   </Link>
                 </div>
