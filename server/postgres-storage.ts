@@ -57,7 +57,7 @@ import {
   type InsertUserSetting
 } from "@shared/schema";
 import { drizzle } from "drizzle-orm/postgres-js";
-import { eq, and, or, desc, ne, sql, inArray, isNull, gte, lte } from "drizzle-orm";
+import { eq, and, or, desc, ne, sql, inArray, isNull, gte, lte, lt } from "drizzle-orm";
 import postgres from "postgres";
 import * as schema from "@shared/schema";
 import dotenv from "dotenv";
@@ -3285,6 +3285,164 @@ export class PostgresStorage {
       throw error;
     }
   }
+
+  async createGuestInvitation(roomId: string, createdBy: string | null, expiresInHours: number = 24): Promise<GuestInvitation> {
+    try {
+      const token = generateSecureToken();
+      const expiresAt = new Date(Date.now() + expiresInHours * 60 * 60 * 1000);
+      
+      const [invitation] = await this.db.insert(schema.guestInvitations).values({
+        roomId,
+        token,
+        createdBy,
+        expiresAt,
+      }).returning();
+      
+      return invitation;
+    } catch (error) {
+      console.error("Error creating guest invitation:", error);
+      throw error;
+    }
+  }
+
+  async getGuestInvitationByToken(token: string): Promise<GuestInvitation | null> {
+    try {
+      const [invitation] = await this.db.select().from(schema.guestInvitations).where(eq(schema.guestInvitations.token, token)).limit(1);
+      return invitation || null;
+    } catch (error) {
+      console.error("Error getting guest invitation:", error);
+      return null;
+    }
+  }
+
+  async getGuestInvitationById(id: string): Promise<GuestInvitation | null> {
+    try {
+      const [invitation] = await this.db.select().from(schema.guestInvitations).where(eq(schema.guestInvitations.id, id)).limit(1);
+      return invitation || null;
+    } catch (error) {
+      console.error("Error getting guest invitation by ID:", error);
+      return null;
+    }
+  }
+
+  async getGuestInvitationsByRoom(roomId: string): Promise<GuestInvitation[]> {
+    try {
+      return await this.db.select().from(schema.guestInvitations).where(eq(schema.guestInvitations.roomId, roomId)).orderBy(desc(schema.guestInvitations.createdAt));
+    } catch (error) {
+      console.error("Error getting guest invitations:", error);
+      return [];
+    }
+  }
+
+  async bindDeviceToInvitation(token: string, deviceFingerprint: string): Promise<GuestInvitation | null> {
+    try {
+      const [invitation] = await this.db.update(schema.guestInvitations)
+        .set({
+          deviceFingerprint,
+          boundAt: new Date(),
+          usedAt: new Date()
+        })
+        .where(eq(schema.guestInvitations.token, token))
+        .returning();
+      return invitation || null;
+    } catch (error) {
+      console.error("Error binding device to invitation:", error);
+      return null;
+    }
+  }
+
+  async createGuestSession(invitationId: string, deviceFingerprint: string, ipAddress: string, expiresInHours: number = 24): Promise<GuestSession> {
+    try {
+      const expiresAt = new Date(Date.now() + expiresInHours * 60 * 60 * 1000);
+      
+      const [session] = await this.db.insert(schema.guestSessions).values({
+        invitationId,
+        deviceFingerprint,
+        ipAddress,
+        expiresAt,
+      }).returning();
+      
+      return session;
+    } catch (error) {
+      console.error("Error creating guest session:", error);
+      throw error;
+    }
+  }
+
+  async getGuestSessionById(id: string): Promise<GuestSession | null> {
+    try {
+      const [session] = await this.db.select().from(schema.guestSessions).where(eq(schema.guestSessions.id, id)).limit(1);
+      return session || null;
+    } catch (error) {
+      console.error("Error getting guest session:", error);
+      return null;
+    }
+  }
+
+  async getGuestSessionWithInvitation(sessionId: string): Promise<{ session: GuestSession; invitation: GuestInvitation } | null> {
+    try {
+      const result = await this.db.select()
+        .from(schema.guestSessions)
+        .innerJoin(schema.guestInvitations, eq(schema.guestSessions.invitationId, schema.guestInvitations.id))
+        .where(eq(schema.guestSessions.id, sessionId))
+        .limit(1);
+      
+      if (result.length === 0) return null;
+      
+      return {
+        session: result[0].guest_sessions,
+        invitation: result[0].guest_invitations
+      };
+    } catch (error) {
+      console.error("Error getting guest session with invitation:", error);
+      return null;
+    }
+  }
+
+  async deleteGuestSession(id: string): Promise<boolean> {
+    try {
+      await this.db.delete(schema.guestSessions).where(eq(schema.guestSessions.id, id));
+      return true;
+    } catch (error) {
+      console.error("Error deleting guest session:", error);
+      return false;
+    }
+  }
+
+  async deleteGuestInvitation(id: string): Promise<boolean> {
+    try {
+      await this.db.delete(schema.guestInvitations).where(eq(schema.guestInvitations.id, id));
+      return true;
+    } catch (error) {
+      console.error("Error deleting guest invitation:", error);
+      return false;
+    }
+  }
+
+  async cleanupExpiredGuestInvitations(): Promise<number> {
+    try {
+      const result = await this.db.delete(schema.guestInvitations).where(
+        and(
+          lt(schema.guestInvitations.expiresAt, new Date()),
+          isNull(schema.guestInvitations.usedAt)
+        )
+      );
+      return result.rowCount || 0;
+    } catch (error) {
+      console.error("Error cleaning up expired guest invitations:", error);
+      return 0;
+    }
+  }
+
+  async cleanupExpiredGuestSessions(): Promise<number> {
+    try {
+      const result = await this.db.delete(schema.guestSessions).where(lt(schema.guestSessions.expiresAt, new Date()));
+      return result.rowCount || 0;
+    } catch (error) {
+      console.error("Error cleaning up expired guest sessions:", error);
+      return 0;
+    }
+  }
 }
 
 // ==================== REPORT FUNCTIONS ====================
@@ -3585,3 +3743,13 @@ export function getStorage(): PostgresStorage {
 
 // For backward compatibility
 export const storage = getStorage();
+
+// Helper function to generate secure token
+function generateSecureToken(): string {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  let token = '';
+  for (let i = 0; i < 32; i++) {
+    token += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return token;
+}

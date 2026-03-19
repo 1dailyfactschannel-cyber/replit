@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { 
+import {
   Users, 
   Video, 
   Clock, 
@@ -25,7 +25,8 @@ import {
   X,
   ChevronRight,
   ChevronLeft,
-  MonitorSpeaker
+  MonitorSpeaker,
+  UserPlus
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { toast } from "sonner";
@@ -111,6 +112,180 @@ export function TeamRooms({ autoJoinRoomId }: { autoJoinRoomId?: string }) {
   const [showSettingsDialog, setShowSettingsDialog] = useState(false);
   const [mediaDevices, setMediaDevices] = useState<MediaDevice[]>([]);
   const [currentUser, setCurrentUser] = useState<any>(null);
+
+  // Guest invitation state
+  const [guestInvitation, setGuestInvitation] = useState<{
+    token: string;
+    roomId: string;
+    roomName: string;
+    valid: boolean;
+    message?: string;
+  } | null>(null);
+  const [guestSession, setGuestSession] = useState<{
+    id: string;
+    roomId: string;
+    expiresAt: string;
+  } | null>(null);
+  const [showGuestInviteDialog, setShowGuestInviteDialog] = useState(false);
+  const [isAcceptingInvite, setIsAcceptingInvite] = useState(false);
+
+  // Device fingerprint helper
+  const getDeviceFingerprint = (): string => {
+    const fingerprint = localStorage.getItem('deviceFingerprint');
+    if (fingerprint) return fingerprint;
+    
+    const newFingerprint = `${navigator.userAgent}-${navigator.language}-${screen.width}x${screen.height}-${new Date().getTimezoneOffset()}`;
+    localStorage.setItem('deviceFingerprint', newFingerprint);
+    return newFingerprint;
+  };
+
+  // Check for guest invitation in URL
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const inviteToken = urlParams.get('invite');
+    
+    if (inviteToken && !currentUser) {
+      verifyGuestInvitation(inviteToken);
+    }
+  }, [currentUser]);
+
+  // Verify guest invitation
+  const verifyGuestInvitation = async (token: string) => {
+    try {
+      const res = await fetch(`/api/guest-invitations/${token}/verify`);
+      const data = await res.json();
+      
+      if (data.valid) {
+        // Get room name
+        const roomRes = await fetch(`/api/team-rooms/${data.invitation.roomId}`);
+        const room = await roomRes.json();
+        
+        setGuestInvitation({
+          token,
+          roomId: data.invitation.roomId,
+          roomName: room.name || 'Team Room',
+          valid: true
+        });
+        setShowGuestInviteDialog(true);
+      } else {
+        setGuestInvitation({
+          token,
+          roomId: '',
+          roomName: '',
+          valid: false,
+          message: data.message
+        });
+        toast.error(data.message || 'Invalid invitation');
+      }
+    } catch (error) {
+      console.error('Error verifying invitation:', error);
+      toast.error('Failed to verify invitation');
+    }
+  };
+
+  // Accept guest invitation
+  const acceptGuestInvitation = async () => {
+    if (!guestInvitation) return;
+    
+    setIsAcceptingInvite(true);
+    try {
+      const deviceFingerprint = getDeviceFingerprint();
+      const res = await fetch(`/api/guest-invitations/${guestInvitation.token}/use`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ deviceFingerprint })
+      });
+      
+      const data = await res.json();
+      
+      if (data.success) {
+        // Store session in localStorage
+        localStorage.setItem('guestSession', JSON.stringify({
+          id: data.sessionId,
+          roomId: data.roomId,
+          expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+        }));
+        
+        setGuestSession({
+          id: data.sessionId,
+          roomId: data.roomId,
+          expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+        });
+        
+        setShowGuestInviteDialog(false);
+        toast.success(`You are now a guest in ${data.roomName}`);
+        
+        // Clear URL parameter
+        const url = new URL(window.location.href);
+        url.searchParams.delete('invite');
+        window.history.replaceState({}, '', url);
+        
+        // Redirect to room
+        window.location.href = `/team?room=${data.roomId}`;
+      } else {
+        toast.error(data.message || 'Failed to accept invitation');
+      }
+    } catch (error) {
+      console.error('Error accepting invitation:', error);
+      toast.error('Failed to accept invitation');
+    } finally {
+      setIsAcceptingInvite(false);
+    }
+  };
+
+  // Check for existing guest session on mount
+  useEffect(() => {
+    const storedSession = localStorage.getItem('guestSession');
+    if (storedSession) {
+      try {
+        const session = JSON.parse(storedSession);
+        if (new Date(session.expiresAt) > new Date()) {
+          verifyGuestSession(session);
+        } else {
+          localStorage.removeItem('guestSession');
+        }
+      } catch {
+        localStorage.removeItem('guestSession');
+      }
+    }
+  }, []);
+
+  // Verify guest session
+  const verifyGuestSession = async (session: { id: string; roomId: string; expiresAt: string }) => {
+    try {
+      const deviceFingerprint = getDeviceFingerprint();
+      const res = await fetch(`/api/guest-sessions/${session.id}/verify`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ deviceFingerprint })
+      });
+      
+      const data = await res.json();
+      
+      if (data.valid) {
+        setGuestSession(session);
+      } else {
+        localStorage.removeItem('guestSession');
+      }
+    } catch (error) {
+      console.error('Error verifying session:', error);
+      localStorage.removeItem('guestSession');
+    }
+  };
+
+  // Leave guest session
+  const leaveGuestSession = async () => {
+    if (!guestSession) return;
+    
+    try {
+      await fetch(`/api/guest-sessions/${guestSession.id}`, { method: 'DELETE' });
+      localStorage.removeItem('guestSession');
+      setGuestSession(null);
+      toast.success('You have left the room');
+    } catch (error) {
+      console.error('Error leaving session:', error);
+    }
+  };
 
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
@@ -1596,6 +1771,96 @@ export function TeamRooms({ autoJoinRoomId }: { autoJoinRoomId?: string }) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Guest Invite Dialog */}
+      <Dialog open={showGuestInviteDialog} onOpenChange={setShowGuestInviteDialog}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-primary/10 rounded-lg">
+                <UserPlus className="h-6 w-6 text-primary" />
+              </div>
+              <div>
+                <DialogTitle>Guest Invitation</DialogTitle>
+                <DialogDescription>
+                  You've been invited to join a team room
+                </DialogDescription>
+              </div>
+            </div>
+          </DialogHeader>
+          
+          <div className="py-4">
+            <div className="bg-muted/50 rounded-lg p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-muted-foreground">Room:</span>
+                <span className="font-medium">{guestInvitation?.roomName}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-muted-foreground">Access:</span>
+                <Badge variant="secondary">Guest (View only)</Badge>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-muted-foreground">Duration:</span>
+                <span className="text-sm">Until you leave</span>
+              </div>
+            </div>
+            
+            <p className="text-sm text-muted-foreground mt-4">
+              As a guest, you can view the room and its participants, but you cannot post messages or control shared content.
+            </p>
+          </div>
+          
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                setShowGuestInviteDialog(false);
+                const url = new URL(window.location.href);
+                url.searchParams.delete('invite');
+                window.history.replaceState({}, '', url);
+              }}
+            >
+              Decline
+            </Button>
+            <Button 
+              onClick={acceptGuestInvitation}
+              disabled={isAcceptingInvite}
+            >
+              {isAcceptingInvite ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Accepting...
+                </>
+              ) : (
+                <>
+                  <UserPlus className="mr-2 h-4 w-4" />
+                  Accept Invitation
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Guest Banner */}
+      {guestSession && !showGuestInviteDialog && (
+        <div className="fixed bottom-4 right-4 z-50 bg-card border shadow-lg rounded-lg p-3 flex items-center gap-3 max-w-sm">
+          <div className="flex items-center gap-2">
+            <Badge variant="secondary" className="bg-primary/10 text-primary">
+              Guest
+            </Badge>
+            <span className="text-sm font-medium">Viewing as guest</span>
+          </div>
+          <Button 
+            variant="ghost" 
+            size="sm"
+            onClick={leaveGuestSession}
+            className="text-muted-foreground hover:text-destructive"
+          >
+            Leave
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

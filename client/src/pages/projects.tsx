@@ -718,20 +718,20 @@ const ProjectItem = React.memo(({
 ProjectItem.displayName = 'ProjectItem';
 
 export default function Projects() {
-  const { data: user } = useQuery<any>({ queryKey: ["/api/user"] });
-  
-  // Get state and handlers from context
+  // Get state and handlers from context FIRST (before any other hooks)
   const {
     selectedWorkspaceId,
     activeProjectId,
     activeBoardId,
     collapsedProjects,
-    isLoading,
     handleWorkspaceChange,
     handleProjectChange,
     handleBoardChange,
     handleCollapsedProjectsChange,
   } = useProjectsContext();
+
+  // Call all hooks unconditionally - never use early return with hooks!
+  const { data: user } = useQuery<any>({ queryKey: ["/api/user"] });
 
   // UI state
   const [modalOpen, setModalOpen] = useState(false);
@@ -818,11 +818,6 @@ export default function Projects() {
     queryKey: ["/api/custom-statuses"],
     staleTime: 1000 * 60 * 60,
   });
-
-  // Show skeleton while loading
-  if (isLoading) {
-    return <PageLoadingAnimation />;
-  }
 
   const { data: users = [] } = useQuery<any[]>({
     queryKey: ["/api/users"],

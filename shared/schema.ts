@@ -1262,10 +1262,43 @@ export const insertTeamRoomAdminSchema = createInsertSchema(teamRoomAdmins).pick
   grantedBy: true,
 });
 
+// Guest Invitations table
+export const guestInvitations = pgTable("guest_invitations", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  roomId: uuid("room_id").notNull().references(() => teamRooms.id, { onDelete: "cascade" }),
+  token: varchar("token", { length: 64 }).notNull().unique(),
+  deviceFingerprint: varchar("device_fingerprint", { length: 255 }),
+  boundAt: timestamp("bound_at"),
+  expiresAt: timestamp("expires_at").notNull(),
+  usedAt: timestamp("used_at"),
+  createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  tokenIdx: index("idx_guest_invitations_token").on(table.token),
+  roomIdIdx: index("idx_guest_invitations_room_id").on(table.roomId),
+}));
+
+// Guest Sessions table
+export const guestSessions = pgTable("guest_sessions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  invitationId: uuid("invitation_id").notNull().references(() => guestInvitations.id, { onDelete: "cascade" }),
+  deviceFingerprint: varchar("device_fingerprint", { length: 255 }),
+  ipAddress: varchar("ip_address", { length: 45 }),
+  createdAt: timestamp("created_at").defaultNow(),
+  expiresAt: timestamp("expires_at").notNull(),
+}, (table) => ({
+  invitationIdx: index("idx_guest_sessions_invitation").on(table.invitationId),
+  expiresIdx: index("idx_guest_sessions_expires").on(table.expiresAt),
+}));
+
 export type CallSettings = typeof callSettings.$inferSelect;
 export type InsertCallSettings = z.infer<typeof insertCallSettingsSchema>;
 export type CallParticipant = typeof callParticipants.$inferSelect;
 export type InsertCallParticipant = z.infer<typeof insertCallParticipantSchema>;
 export type TeamRoomAdmin = typeof teamRoomAdmins.$inferSelect;
 export type InsertTeamRoomAdmin = z.infer<typeof insertTeamRoomAdminSchema>;
+export type GuestInvitation = typeof guestInvitations.$inferSelect;
+export type InsertGuestInvitation = typeof guestInvitations.$inferInsert;
+export type GuestSession = typeof guestSessions.$inferSelect;
+export type InsertGuestSession = typeof guestSessions.$inferInsert;
 

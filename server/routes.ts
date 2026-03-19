@@ -368,9 +368,8 @@ export async function registerRoutes(
     }
   });
 
-  // Get all roles
+  // Get all roles (public endpoint)
   app.get("/api/roles", async (req, res) => {
-    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
     try {
       const roles = await storage.getAllRoles();
       res.json(roles);
@@ -4325,6 +4324,293 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error removing team room admin:", error);
       res.status(500).json({ message: "Failed to remove admin" });
+    }
+  });
+
+  // ==================== GUEST INVITATION ROUTES ====================
+
+  // Create guest invitation (requires auth)
+  app.post("/api/guest-invitations", async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+    
+    try {
+      const { roomId } = req.body;
+      if (!roomId) {
+        return res.status(400).json({ message: "roomId is required" });
+      }
+      
+      const room = await storage.getTeamRoomById(roomId);
+      if (!room) {
+        return res.status(404).json({ message: "Team room not found" });
+      }
+      
+      // Check if user is admin of the room
+      const isAdmin = await storage.isTeamRoomAdmin(roomId, req.user!.id);
+      if (!isAdmin) {
+        return res.status(403).json({ message: "Only room admins can create invitations" });
+      }
+      
+      const invitation = await storage.createGuestInvitation(roomId, req.user!.id, 24);
+      
+      const inviteUrl = `${req.protocol}://${req.get('host')}/team/${roomId}?invite=${invitation.token}`;
+      
+      res.json({
+        ...invitation,
+        inviteUrl
+      });
+    } catch (error) {
+      console.error("Error creating guest invitation:", error);
+      res.status(500).json({ message: "Failed to create invitation" });
+    }
+  });
+
+  // Get guest invitations for a room (requires auth)
+  app.get("/api/guest-invitations/room/:roomId", async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+    
+    try {
+      const isAdmin = await storage.isTeamRoomAdmin(req.params.roomId, req.user!.id);
+      if (!isAdmin) {
+        return res.status(403).json({ message: "Only room admins can view invitations" });
+      }
+      
+      const invitations = await storage.getGuestInvitationsByRoom(req.params.roomId);
+      res.json(invitations);
+    } catch (error) {
+      console.error("Error fetching guest invitations:", error);
+      res.status(500).json({ message: "Failed to fetch invitations" });
+    }
+  });
+
+  // Verify guest invitation (public)
+  app.get("/api/guest-invitations/:token/verify", async (req, res) => {
+    try {
+      const invitation = await storage.getGuestInvitationByToken(req.params.token);
+      
+      if (!invitation) {
+        return res.status(404).json({ 
+          valid: false, 
+          message: "Invitation not found" 
+        });
+      }
+      
+      // Check if expired
+      if (new Date(invitation.expiresAt) < new Date()) {
+        return res.json({ 
+          valid: false, 
+          message: "Invitation has expired" 
+        });
+      }
+      
+      // Check if already used
+      if (invitation.usedAt) {
+        return res.json({ 
+          valid: false, 
+          message: "Invitation has already been used" 
+        });
+      }
+      
+      res.json({
+        valid: true,
+        invitation: {
+          id: invitation.id,
+          roomId: invitation.roomId,
+          expiresAt: invitation.expiresAt
+        }
+      });
+    } catch (error) {
+      console.error("Error verifying guest invitation:", error);
+      res.status(500).json({ message: "Failed to verify invitation" });
+    }
+  });
+
+  // Use guest invitation (public with device fingerprint)
+  app.post("/api/guest-invitations/:token/use", async (req, res) => {
+    try {
+      const { deviceFingerprint } = req.body;
+      
+      if (!deviceFingerprint) {
+        return res.status(400).json({ message: "deviceFingerprint is required" });
+      }
+      
+      const invitation = await storage.getGuestInvitationByToken(req.params.token);
+      
+      if (!invitation) {
+        return res.status(404).json({ 
+          success: false,
+          message: "Invitation not found" 
+        });
+      }
+      
+      // Check if expired
+      if (new Date(invitation.expiresAt) < new Date()) {
+        return res.json({ 
+          success: false,
+          message: "Invitation has expired" 
+        });
+      }
+      
+      // Check if already used
+      if (invitation.usedAt) {
+        return res.json({ 
+          success: false,
+          message: "Invitation has already been used" 
+        });
+      }
+      
+      // Bind device fingerprint
+      await storage.bindDeviceToInvitation(req.params.token, deviceFingerprint);
+      
+      // Get room info
+      const room = await storage.getTeamRoomById(invitation.roomId);
+      
+      // Get IP address
+      const ipAddress = req.ip || req.socket.remoteAddress || 'unknown';
+      
+      // Create guest session
+      const session = await storage.createGuestSession(
+        invitation.id,
+        deviceFingerprint,
+        ipAddress,
+        24
+      );
+      
+      res.json({
+        success: true,
+        sessionId: session.id,
+        roomId: invitation.roomId,
+        roomName: room?.name || 'Team Room'
+      });
+    } catch (error) {
+      console.error("Error using guest invitation:", error);
+      res.status(500).json({ message: "Failed to use invitation" });
+    }
+  });
+
+  // Get guest session (public)
+  app.get("/api/guest-sessions/:id", async (req, res) => {
+    try {
+      const session = await storage.getGuestSessionById(req.params.id);
+      
+      if (!session) {
+        return res.status(404).json({ 
+          valid: false,
+          message: "Session not found" 
+        });
+      }
+      
+      // Check if expired
+      if (new Date(session.expiresAt) < new Date()) {
+        return res.json({ 
+          valid: false,
+          message: "Session has expired" 
+        });
+      }
+      
+      // Get invitation to check device fingerprint
+      const sessionWithInvitation = await storage.getGuestSessionWithInvitation(req.params.id);
+      
+      if (!sessionWithInvitation) {
+        return res.status(404).json({ 
+          valid: false,
+          message: "Session not found" 
+        });
+      }
+      
+      res.json({
+        valid: true,
+        session: {
+          id: session.id,
+          roomId: session.invitationId,
+          expiresAt: session.expiresAt
+        },
+        roomId: sessionWithInvitation.invitation.roomId
+      });
+    } catch (error) {
+      console.error("Error fetching guest session:", error);
+      res.status(500).json({ message: "Failed to fetch session" });
+    }
+  });
+
+  // Verify guest session with device fingerprint (public)
+  app.post("/api/guest-sessions/:id/verify", async (req, res) => {
+    try {
+      const { deviceFingerprint } = req.body;
+      
+      if (!deviceFingerprint) {
+        return res.status(400).json({ 
+          valid: false,
+          message: "deviceFingerprint is required" 
+        });
+      }
+      
+      const session = await storage.getGuestSessionById(req.params.id);
+      
+      if (!session) {
+        return res.status(404).json({ 
+          valid: false,
+          message: "Session not found" 
+        });
+      }
+      
+      // Check if expired
+      if (new Date(session.expiresAt) < new Date()) {
+        return res.json({ 
+          valid: false,
+          message: "Session has expired" 
+        });
+      }
+      
+      // Check device fingerprint
+      if (session.deviceFingerprint !== deviceFingerprint) {
+        return res.json({ 
+          valid: false,
+          message: "Device mismatch" 
+        });
+      }
+      
+      // Get invitation
+      const sessionWithInvitation = await storage.getGuestSessionWithInvitation(req.params.id);
+      
+      if (!sessionWithInvitation) {
+        return res.status(404).json({ 
+          valid: false,
+          message: "Session not found" 
+        });
+      }
+      
+      res.json({
+        valid: true,
+        session: {
+          id: session.id,
+          roomId: sessionWithInvitation.invitation.roomId,
+          expiresAt: session.expiresAt
+        }
+      });
+    } catch (error) {
+      console.error("Error verifying guest session:", error);
+      res.status(500).json({ message: "Failed to verify session" });
+    }
+  });
+
+  // End guest session (public)
+  app.delete("/api/guest-sessions/:id", async (req, res) => {
+    try {
+      const session = await storage.getGuestSessionById(req.params.id);
+      
+      if (!session) {
+        return res.status(404).json({ message: "Session not found" });
+      }
+      
+      await storage.deleteGuestSession(req.params.id);
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting guest session:", error);
+      res.status(500).json({ message: "Failed to delete session" });
     }
   });
 

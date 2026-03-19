@@ -93,6 +93,12 @@ export function setupAuth(app: Express) {
     throw new Error("SESSION_SECRET environment variable is required for security");
   }
   
+  // Determine if we're in production
+  const isProduction = process.env.NODE_ENV === "production";
+  const isSecure = isProduction && !process.env.ALLOW_HTTP;
+  
+  console.log(`[AUTH] Environment: NODE_ENV=${process.env.NODE_ENV}, isSecure=${isSecure}`);
+  
   const sessionSettings: session.SessionOptions = {
     secret: process.env.SESSION_SECRET,
     resave: false,
@@ -100,8 +106,8 @@ export function setupAuth(app: Express) {
     store: sessionStore,
     cookie: {
       maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
+      secure: isSecure, // Only secure in production (unless ALLOW_HTTP is set)
+      sameSite: isProduction ? "lax" : false, // No sameSite restriction in dev
       httpOnly: true, // Security: Prevent client-side JavaScript access
       path: "/", // Security: Restrict cookie to application path
     },
@@ -114,6 +120,19 @@ export function setupAuth(app: Express) {
   app.use(session(sessionSettings));
   app.use(passport.initialize());
   app.use(passport.session());
+
+  // Session debugging middleware (AFTER session and passport)
+  app.use((req, res, next) => {
+    if (req.path.startsWith('/api/')) {
+      console.log(`[SESSION DEBUG] ${req.method} ${req.path}`);
+      console.log(`[SESSION DEBUG] SessionID: ${req.sessionID}`);
+      console.log(`[SESSION DEBUG] Authenticated: ${req.isAuthenticated()}`);
+      if (req.user) {
+        console.log(`[SESSION DEBUG] User ID: ${(req.user as any).id}`);
+      }
+    }
+    next();
+  });
 
   passport.use(
     new LocalStrategy(
@@ -223,7 +242,15 @@ export function setupAuth(app: Express) {
   });
 
   app.get("/api/user", (req, res) => {
+    console.log("=== /api/user called ===");
+    console.log("SessionID:", req.sessionID);
+    console.log("Cookies:", req.headers.cookie);
+    console.log("Session:", req.session);
+    console.log("User:", req.user);
+    console.log("isAuthenticated():", req.isAuthenticated());
+    
     if (!req.isAuthenticated()) {
+      console.log(">>> NOT AUTHENTICATED - returning 401");
       return res.status(401).json({ message: "Не авторизован" });
     }
     const { password, ...userWithoutPassword } = req.user as any;
