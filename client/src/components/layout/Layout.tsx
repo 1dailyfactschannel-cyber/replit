@@ -171,65 +171,16 @@ const SidebarContentComponent = React.memo(({
       "flex flex-col h-full bg-sidebar text-sidebar-foreground border-r border-sidebar-border transition-all duration-300 ease-in-out relative group/sidebar",
       isCollapsed ? "w-20" : "w-64"
     )}>
-      {/* Collapse Toggle Button */}
-      <Button
-        variant="ghost"
-        size="icon"
-        onClick={() => setIsCollapsed(!isCollapsed)}
-        className={cn(
-          "absolute -right-4 top-10 z-50 h-8 w-8 rounded-full border border-sidebar-border bg-sidebar shadow-xl hover:bg-sidebar-accent hover:scale-110 transition-all hidden md:flex items-center justify-center group/collapse",
-          isCollapsed && "rotate-180"
-        )}
-        title={isCollapsed ? "Развернуть меню" : "Свернуть меню"}
-      >
-        <ChevronLeft className="h-5 w-5 text-sidebar-foreground group-hover/collapse:text-primary transition-colors" />
-      </Button>
-
       <div className={cn("p-6", isCollapsed && "px-4 flex flex-col items-center")}>
         <div className={cn("flex items-center gap-2 mb-8 w-full", isCollapsed ? "justify-center" : "justify-between")}>
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center text-primary-foreground font-bold text-xl shrink-0">
-              T
+            <div className="w-10 h-10 rounded-lg bg-primary flex items-center justify-center text-primary-foreground font-bold text-lg shrink-0 logo-animated">
+              m4
             </div>
             {!isCollapsed && <span className="font-sans font-bold text-lg animate-in fade-in duration-300">m4portal</span>}
           </div>
-          {!isCollapsed && (
-            <Button 
-              variant="ghost" 
-              size="icon" 
-              className="h-8 w-8 rounded-lg text-muted-foreground hover:bg-sidebar-accent hover:text-foreground"
-              onClick={() => setIsCollapsed(true)}
-            >
-              <ChevronLeft className="h-5 w-5" />
-            </Button>
-          )}
-          {isCollapsed && (
-            <Button 
-              variant="ghost" 
-              size="icon" 
-              className="h-8 w-8 rounded-lg text-muted-foreground hover:bg-sidebar-accent hover:text-foreground md:hidden"
-              onClick={() => setIsCollapsed(false)}
-            >
-              <ChevronRight className="h-5 w-5" />
-            </Button>
-          )}
         </div>
 
-        <div className="mb-4">
-          <Button 
-            variant="outline" 
-            onClick={() => {
-              if (location !== "/projects") setLocation("/projects");
-            }}
-            className={cn(
-              "w-full justify-start gap-2 bg-sidebar-accent/50 border-sidebar-border text-sidebar-foreground/70 hover:text-sidebar-foreground shadow-sm overflow-hidden whitespace-nowrap",
-              isCollapsed && "px-2 justify-center"
-            )}
-          >
-            <Plus className="w-4 h-4 shrink-0" />
-            {!isCollapsed && <span className="animate-in fade-in duration-300">Новый проект</span>}
-          </Button>
-        </div>
       </div>
 
       <ScrollArea className="flex-1 px-4">
@@ -542,14 +493,6 @@ export function Layout({ children, className }: { children: React.ReactNode, cla
               <Menu className="w-5 h-5" />
             </Button>
 
-            {/* Search bar */}
-            <div className="relative hidden sm:block w-96">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <Input
-                placeholder="Поиск задач, проектов или сообщений..."
-                className="pl-9 bg-secondary/50 border-transparent hover:bg-secondary focus:bg-background transition-colors rounded-xl"
-              />
-            </div>
           </div>
 
           {/* Right side - Balance, Theme toggle and notifications */}
