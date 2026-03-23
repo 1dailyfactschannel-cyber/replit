@@ -1,14 +1,16 @@
 FROM node:22-slim AS builder
 WORKDIR /app
-COPY client/package.json ./
-COPY client/package-lock.json ./
+COPY package.json package-lock.json ./
 RUN npm install
 COPY client/ ./client/
-COPY shared ./shared
+COPY shared ./shared/
+COPY server/ ./server/
+COPY script/ ./script/
 COPY vite.config.ts ./
 COPY vite-plugin-meta-images.ts ./
 COPY postcss.config.mjs ./
-RUN npm run build > /app/build.log 2>&1 || (echo "BUILD FAILED" && cat /app/build.log && exit 1)
+COPY tsconfig.json ./
+RUN npm run build
 
 FROM nginx:stable
 COPY --from=builder /app/dist/public /usr/share/nginx/html
