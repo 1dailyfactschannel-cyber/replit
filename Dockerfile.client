@@ -6,7 +6,8 @@ COPY client/ ./client/
 COPY shared ./shared
 COPY vite.config.ts ./
 COPY vite-plugin-meta-images.ts ./
-RUN npm run build
+ARG CACHEBUST=1
+RUN echo "Cache bust: $CACHEBUST" && npm run build
 
 FROM nginx:stable
 # Copy built files
