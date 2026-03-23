@@ -28,8 +28,6 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.client
-      args:
-        CACHEBUST: ${CACHEBUST:-1}
     container_name: teamsync-client
     restart: unless-stopped
     ports:
