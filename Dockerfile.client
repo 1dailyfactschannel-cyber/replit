@@ -9,7 +9,7 @@ COPY server/ ./server/
 COPY script/ ./script/
 COPY vite.config.ts ./
 COPY vite-plugin-meta-images.ts ./
-COPY postcss.config.mjs ./
+
 COPY tsconfig.json ./
 RUN npm run build
 
