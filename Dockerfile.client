@@ -9,10 +9,8 @@ COPY server/ ./server/
 COPY script/ ./script/
 COPY vite.config.ts ./
 COPY vite-plugin-meta-images.ts ./
-COPY postcss.config.mjs ./
 COPY tsconfig.json ./
 RUN npm run build
-RUN cat dist/public/assets/index-*.css | head -c 1000 > /dev/stderr
 
 FROM nginx:stable
 COPY --from=builder /app/dist/public /usr/share/nginx/html
