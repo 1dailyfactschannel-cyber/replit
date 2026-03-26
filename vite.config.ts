@@ -5,7 +5,7 @@ import runtimeErrorOverlay from "@replit/vite-plugin-runtime-error-modal";
 import { metaImagesPlugin } from "./vite-plugin-meta-images";
 import gzipPlugin from "rollup-plugin-gzip";
 import { nodePolyfills } from "vite-plugin-node-polyfills";
-import tailwindcss from "@tailwindcss/vite";
+
 
 // Fix for __dirname in ES modules
 import { fileURLToPath } from 'url';
@@ -19,7 +19,6 @@ export default defineConfig(async ({ mode }): Promise<UserConfig> => ({
     global: 'globalThis',
   },
   plugins: [
-    tailwindcss(),
     nodePolyfills({
       globals: true,
       protocolImports: true,

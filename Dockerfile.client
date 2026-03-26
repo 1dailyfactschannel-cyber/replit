@@ -9,14 +9,9 @@ COPY server/ ./server/
 COPY script/ ./script/
 COPY vite.config.ts ./
 COPY vite-plugin-meta-images.ts ./
+COPY postcss.config.mjs ./
 COPY tsconfig.json ./
 RUN npm run build
-# Find CSS file and embed it into index.html as inline styles
-RUN CSS_FILE=$(ls dist/public/assets/index-*.css | head -1) && \
-    if [ -f "$CSS_FILE" ]; then \
-        CSS_CONTENT=$(cat "$CSS_FILE"); \
-        sed -i "s|</head>|<style>${CSS_CONTENT}</style></head>|" dist/public/index.html; \
-    fi
 
 FROM nginx:stable
 COPY --from=builder /app/dist/public /usr/share/nginx/html
