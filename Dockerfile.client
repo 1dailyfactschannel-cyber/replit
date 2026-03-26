@@ -11,8 +11,8 @@ COPY vite.config.ts ./
 COPY vite-plugin-meta-images.ts ./
 COPY tsconfig.json ./
 RUN npm run build
-RUN ls -la dist/public/assets/*.css > /app/dist/public/css-files.txt || true
-RUN cat dist/public/assets/index-*.css | head -c 5000 > /app/dist/public/css-sample.txt || true
+RUN echo "=== CSS Files ===" > /app/dist/public/debug.txt && ls -la dist/public/assets/*.css >> /app/dist/public/debug.txt || true
+RUN echo "=== CSS Sample (first 5KB) ===" >> /app/dist/public/debug.txt && head -c 5000 dist/public/assets/index-*.css >> /app/dist/public/debug.txt 2>/dev/null || true
 
 FROM nginx:stable
 COPY --from=builder /app/dist/public /usr/share/nginx/html
