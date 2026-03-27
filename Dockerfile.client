@@ -12,7 +12,7 @@ COPY vite-plugin-meta-images.ts ./
 COPY tsconfig.json ./
 RUN npm run build
 
-FROM nginx:stable
+FROM nginx:alpine
 COPY --from=builder /app/dist/public /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 EXPOSE 80

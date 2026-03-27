@@ -17,16 +17,16 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npm run build
 
-# Production stage - минимальный образ без python
-FROM node:22-slim AS runner
+# Production stage - минимальный alpine образ без Python
+FROM node:22-alpine AS runner
 WORKDIR /app
 
 ENV NODE_ENV=production
 ENV PORT=3000
 
-# Создание непривилегированного пользователя
-RUN addgroup --system --gid 1001 nodejs && \
-    adduser --system --uid 1001 nodejs
+# Создание непривилегированного пользователя (alpine syntax)
+RUN addgroup -g 1001 -S nodejs && \
+    adduser -S nodejs -u 1001 -G nodejs
 
 # Копирование собранного проекта
 COPY --from=builder --chown=nodejs:nodejs /app/dist ./dist
