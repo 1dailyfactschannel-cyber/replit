@@ -583,7 +583,7 @@ const KanbanColumn = React.memo(({
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-40">
-                  <DropdownMenuItem onClick={() => onOpenEditColumnDialog({ id: columnId, name: column, color: undefined })}>
+                  <DropdownMenuItem onClick={() => onOpenEditColumnDialog({ id: columnId, name: column, color: undefined, description: columnDescription })}>
                     <Pencil className="w-4 h-4 mr-2" />
                     Редактировать
                   </DropdownMenuItem>
