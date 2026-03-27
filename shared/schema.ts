@@ -218,6 +218,7 @@ export const boardColumns = pgTable("board_columns", {
   name: text("name").notNull(),
   order: integer("order").notNull(),
   color: text("color"),
+  description: text("description").$type<string().max(500)>(),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -527,6 +528,7 @@ export const insertBoardColumnSchema = createInsertSchema(boardColumns).pick({
   name: true,
   order: true,
   color: true,
+  description: true,
 });
 
 // Priorities table

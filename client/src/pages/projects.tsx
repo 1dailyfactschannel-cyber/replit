@@ -44,7 +44,8 @@ import {
   RotateCcw,
   Layers,
   Clock,
-  GripVertical
+  GripVertical,
+  Info
 } from "lucide-react";
 import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd";
 import { Button } from "@/components/ui/button";
@@ -83,6 +84,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Textarea } from "@/components/ui/textarea";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { CalendarIcon } from "lucide-react";
@@ -95,6 +97,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { toast } from "sonner";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -353,13 +356,14 @@ interface KanbanColumnProps {
   columnId: string;
   columnIndex: number;
   tasks: any[];
-  allColumns: { id: string; name: string; color?: string | null }[];
+  allColumns: { id: string; name: string; color?: string | null; description?: string | null }[];
   onCreateTask: (column: string) => void;
   onTaskClick: (task: any) => void;
   onEditColumn: (columnId: string, newName: string) => void;
   onDeleteColumn: (columnId: string, targetColumnId: string) => void;
   onOpenEditColumnDialog: (column: any) => void;
   columnColor?: string | null;
+  columnDescription?: string | null;
   availableLabels?: any[];
   availablePriorities?: any[];
   availableTaskTypes?: any[];
@@ -380,6 +384,7 @@ const KanbanColumn = React.memo(({
   onDeleteColumn,
   onOpenEditColumnDialog,
   columnColor: customColumnColor,
+  columnDescription,
   dragHandleProps,
   availableLabels = [], 
   availablePriorities = [],
@@ -474,6 +479,25 @@ const KanbanColumn = React.memo(({
             <Badge className={cn("rounded-full px-2 py-0 h-5 text-[10px] font-bold shrink-0 border-0", columnColor.badge)}>
               {tasks.length}
             </Badge>
+            
+            {columnDescription && (
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button 
+                      variant="ghost" 
+                      size="icon" 
+                      className="w-5 h-5 text-muted-foreground/50 hover:text-primary hover:bg-primary/10 transition-colors"
+                    >
+                      <Info className="w-3.5 h-3.5" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p className="max-w-xs">{columnDescription}</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            )}
             
             <div className="flex items-center ml-auto">
               <Button 
@@ -1112,16 +1136,16 @@ export default function Projects() {
 
   // Column mutations
   const updateColumnMutation = useMutation({
-    mutationFn: async ({ id, name, color }: { id: string; name: string; color?: string }) => {
-      await apiRequest("PATCH", `/api/board-columns/${id}`, { name, color });
+    mutationFn: async ({ id, name, color, description }: { id: string; name: string; color?: string; description?: string | null }) => {
+      await apiRequest("PATCH", `/api/board-columns/${id}`, { name, color, description });
     },
-    onSuccess: (_, { id, name, color }) => {
+    onSuccess: (_, { id, name, color, description }) => {
       queryClient.setQueryData(["/api/boards", activeBoard?.id, "full"], (oldData: any) => {
         if (!oldData) return oldData;
         return {
           ...oldData,
           columns: oldData.columns.map((col: any) => 
-            col.id === id ? { ...col, name, color: color || col.color } : col
+            col.id === id ? { ...col, name, color: color || col.color, description: description ?? col.description } : col
           )
         };
       });
@@ -1150,24 +1174,26 @@ export default function Projects() {
     }
   });
 
-  const handleEditColumn = (columnId: string, newName: string, newColor?: string) => {
-    updateColumnMutation.mutate({ id: columnId, name: newName, color: newColor });
+  const handleEditColumn = (columnId: string, newName: string, newColor?: string, newDescription?: string) => {
+    updateColumnMutation.mutate({ id: columnId, name: newName, color: newColor, description: newDescription });
   };
 
   const handleOpenEditColumnDialog = (column: any) => {
     setEditingKanbanColumn(column);
     setEditColumnName(column.name);
     setEditColumnColor(column.color || "");
+    setEditColumnDescription(column.description || "");
     setIsEditColumnOpen(true);
   };
 
   const handleSaveEditColumn = () => {
     if (editingKanbanColumn && editColumnName.trim()) {
-      handleEditColumn(editingKanbanColumn.id, editColumnName.trim(), editColumnColor);
+      handleEditColumn(editingKanbanColumn.id, editColumnName.trim(), editColumnColor, editColumnDescription || null);
       setIsEditColumnOpen(false);
       setEditingKanbanColumn(null);
       setEditColumnName("");
       setEditColumnColor("");
+      setEditColumnDescription("");
     }
   };
 
@@ -1177,9 +1203,9 @@ export default function Projects() {
 
   // Create column mutation
   const createColumnMutation = useMutation({
-    mutationFn: async ({ boardId, name }: { boardId: string; name: string }) => {
-      console.log("[Frontend] Creating column:", { boardId, name });
-      const res = await apiRequest("POST", `/api/boards/${boardId}/columns`, { name });
+    mutationFn: async ({ boardId, name, description }: { boardId: string; name: string; description?: string }) => {
+      console.log("[Frontend] Creating column:", { boardId, name, description });
+      const res = await apiRequest("POST", `/api/boards/${boardId}/columns`, { name, description });
       console.log("[Frontend] Column created response:", res);
       return res.json();
     },
@@ -1194,6 +1220,7 @@ export default function Projects() {
       });
       toast.success("Колонка создана");
       setNewColumnName("");
+      setNewColumnDescription("");
       setIsCreateColumnOpen(false);
     },
     onError: (error) => {
@@ -1210,11 +1237,13 @@ export default function Projects() {
     }
     console.log("[Frontend] Calling mutation with:", {
       boardId: activeBoard.id,
-      name: newColumnName.trim()
+      name: newColumnName.trim(),
+      description: newColumnDescription.trim()
     });
     createColumnMutation.mutate({
       boardId: activeBoard.id,
-      name: newColumnName.trim()
+      name: newColumnName.trim(),
+      description: newColumnDescription.trim()
     });
   };
 
@@ -1310,12 +1339,14 @@ export default function Projects() {
   // Column creation state
   const [isCreateColumnOpen, setIsCreateColumnOpen] = useState(false);
   const [newColumnName, setNewColumnName] = useState("");
+  const [newColumnDescription, setNewColumnDescription] = useState("");
   
   // Column editing state
   const [isEditColumnOpen, setIsEditColumnOpen] = useState(false);
-  const [editingKanbanColumn, setEditingKanbanColumn] = useState<{ id: string; name: string; color?: string } | null>(null);
+  const [editingKanbanColumn, setEditingKanbanColumn] = useState<{ id: string; name: string; color?: string; description?: string | null } | null>(null);
   const [editColumnName, setEditColumnName] = useState("");
   const [editColumnColor, setEditColumnColor] = useState("");
+  const [editColumnDescription, setEditColumnDescription] = useState("");
 
   const { data: boardData, isLoading: isLoadingBoard } = useQuery<{ columns: any[], tasks: any[] }>({
     queryKey: ["/api/boards", activeBoard?.id, "full"],
@@ -2538,13 +2569,14 @@ export default function Projects() {
                                   columnId={columnData.id}
                                   columnIndex={index}
                                   tasks={columnTasks}
-                                  allColumns={columns.map((c: any) => ({ id: c.id, name: c.name, color: c.color }))}
+                                  allColumns={columns.map((c: any) => ({ id: c.id, name: c.name, color: c.color, description: c.description }))}
                                   onCreateTask={handleCreateTask}
                                   onTaskClick={handleTaskClick}
                                   onEditColumn={handleEditColumn}
                                   onDeleteColumn={handleDeleteColumn}
                                   onOpenEditColumnDialog={handleOpenEditColumnDialog}
                                   columnColor={columnData.color}
+                                  columnDescription={columnData.description}
                                   availableLabels={availableLabels}
                                   availablePriorities={availablePriorities}
                                   availableTaskTypes={availableTaskTypes}
@@ -2604,6 +2636,17 @@ export default function Projects() {
                                     ))}
                                   </div>
                                 </div>
+                                <div className="space-y-2">
+                                  <Label htmlFor="edit-column-description">Описание</Label>
+                                  <Textarea
+                                    id="edit-column-description"
+                                    placeholder="Краткое описание колонки..."
+                                    value={editColumnDescription}
+                                    onChange={(e) => setEditColumnDescription(e.target.value)}
+                                    maxLength={500}
+                                  />
+                                  <p className="text-xs text-muted-foreground">{editColumnDescription.length}/500</p>
+                                </div>
                               </div>
                               <DialogFooter>
                                 <Button variant="outline" onClick={() => setIsEditColumnOpen(false)}>Отмена</Button>
@@ -2640,6 +2683,17 @@ export default function Projects() {
                                       }
                                     }}
                                   />
+                                </div>
+                                <div className="space-y-2">
+                                  <Label htmlFor="column-description">Описание</Label>
+                                  <Textarea
+                                    id="column-description"
+                                    placeholder="Краткое описание колонки..."
+                                    value={newColumnDescription}
+                                    onChange={(e) => setNewColumnDescription(e.target.value)}
+                                    maxLength={500}
+                                  />
+                                  <p className="text-xs text-muted-foreground">{newColumnDescription.length}/500</p>
                                 </div>
                               </div>
                               <DialogFooter>
