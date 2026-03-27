@@ -218,7 +218,7 @@ export const boardColumns = pgTable("board_columns", {
   name: text("name").notNull(),
   order: integer("order").notNull(),
   color: text("color"),
-  description: text("description").$type<string().max(500)>(),
+  description: text("description"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
