@@ -1,6 +1,7 @@
 FROM node:22-slim AS base
 
-# Install Python for mediasoup worker build
+# Install Python for mediasoup worker build (only needed in builder stage)
+FROM base AS builder-deps
 RUN apt-get update && apt-get install -y python3 python3-pip && rm -rf /var/lib/apt/lists/*
 
 # Установка зависимостей (включая devDependencies для сборки)
@@ -10,14 +11,14 @@ COPY package.json package-lock.json* ./
 RUN npm ci
 
 # Сборка проекта
-FROM base AS builder
+FROM builder-deps AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npm run build
 
-# Production stage
-FROM base AS runner
+# Production stage - минимальный образ без python
+FROM node:22-slim AS runner
 WORKDIR /app
 
 ENV NODE_ENV=production
