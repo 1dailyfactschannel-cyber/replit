@@ -101,6 +101,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { toast } from "sonner";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { usePermission } from "@/hooks/use-permission";
 import { useDebounce } from "@/hooks/useDebounce";
 import { useProjectsContext } from "@/context/ProjectsContext";
 
@@ -756,6 +757,7 @@ export default function Projects() {
 
   // Call all hooks unconditionally - never use early return with hooks!
   const { data: user } = useQuery<any>({ queryKey: ["/api/user"] });
+  const { canCreate, canEdit, canDelete, canManage } = usePermission();
 
   // UI state
   const [modalOpen, setModalOpen] = useState(false);
@@ -1961,6 +1963,7 @@ export default function Projects() {
                                       e.stopPropagation();
                                       setEditingBoard({ id: board.id, currentName: board.name });
                                     }}
+                                    disabled={!canEdit("boards")}
                                   >
                                     <Pencil className="w-3 h-3" />
                                   </Button>
@@ -1995,7 +1998,7 @@ export default function Projects() {
                                   e.stopPropagation();
                                   handleDeleteBoard(board.id);
                                 }}
-                                disabled={deleteBoardMutation.isPending}
+                                disabled={deleteBoardMutation.isPending || !canDelete("boards")}
                               >
                                 <Trash2 className="w-3 h-3" />
                               </Button>
@@ -2054,7 +2057,15 @@ export default function Projects() {
                       
                       <Dialog open={isCreateBoardOpen} onOpenChange={setIsCreateBoardOpen}>
                         <DialogTrigger asChild>
-                          <button className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-[13px] text-primary/70 hover:text-primary hover:bg-primary/5 transition-colors text-left mt-1">
+                          <button 
+                            className={cn(
+                              "w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-[13px] text-primary/70 hover:text-primary hover:bg-primary/5 transition-colors text-left mt-1",
+                              (!canCreate("boards")) && "opacity-50 pointer-events-none"
+                            )}
+                            onClick={() => {
+                              if (canCreate("boards")) setIsCreateBoardOpen(true);
+                            }}
+                          >
                             <Plus className="w-3.5 h-3.5 shrink-0" />
                             <span>Добавить доску</span>
                           </button>
@@ -2391,11 +2402,11 @@ export default function Projects() {
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-48">
-                  <DropdownMenuItem onClick={() => handleCreateTask()}>
+                  <DropdownMenuItem onClick={() => handleCreateTask()} disabled={!canCreate("tasks")}>
                     <Plus className="w-4 h-4 mr-2" />
                     Создать задачу
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setIsCreateColumnOpen(true)}>
+                  <DropdownMenuItem onClick={() => setIsCreateColumnOpen(true)} disabled={!canCreate("columns")}>
                     <Columns className="w-4 h-4 mr-2" />
                     Создать колонку
                   </DropdownMenuItem>

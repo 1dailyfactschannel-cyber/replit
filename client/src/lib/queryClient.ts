@@ -2,6 +2,24 @@ import { QueryClient, QueryFunction } from "@tanstack/react-query";
 import { persistQueryClient } from "@tanstack/react-query-persist-client";
 import { createSyncStoragePersister } from "@tanstack/query-sync-storage-persister";
 
+// CSRF token cache
+let csrfToken: string | null = null;
+
+async function getCsrfToken(): Promise<string | null> {
+  if (csrfToken) return csrfToken;
+  try {
+    const res = await fetch("/api/csrf-token", { credentials: "include" });
+    if (res.ok) {
+      const data = await res.json();
+      csrfToken = data.csrfToken || null;
+      return csrfToken;
+    }
+  } catch (e) {
+    console.warn("Failed to fetch CSRF token:", e);
+  }
+  return null;
+}
+
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
     const text = (await res.text()) || res.statusText;
@@ -14,12 +32,45 @@ export async function apiRequest(
   url: string,
   data?: unknown | undefined,
 ): Promise<Response> {
+  const headers: Record<string, string> = {};
+  if (data) {
+    headers["Content-Type"] = "application/json";
+  }
+  
+  // Add CSRF token for state-changing methods
+  if (["POST", "PUT", "PATCH", "DELETE"].includes(method.toUpperCase())) {
+    const token = await getCsrfToken();
+    if (token) {
+      headers["x-csrf-token"] = token;
+    }
+  }
+  
   const res = await fetch(url, {
     method,
-    headers: data ? { "Content-Type": "application/json" } : {},
+    headers,
     body: data ? JSON.stringify(data) : undefined,
     credentials: "include",
   });
+
+  // If CSRF failed, clear token and retry once
+  if (res.status === 403) {
+    const text = await res.text();
+    if (text.toLowerCase().includes("csrf") || text.includes("Недостаточно прав")) {
+      csrfToken = null;
+      const newToken = await getCsrfToken();
+      if (newToken) {
+        headers["x-csrf-token"] = newToken;
+        const retryRes = await fetch(url, {
+          method,
+          headers,
+          body: data ? JSON.stringify(data) : undefined,
+          credentials: "include",
+        });
+        await throwIfResNotOk(retryRes);
+        return retryRes;
+      }
+    }
+  }
 
   await throwIfResNotOk(res);
   return res;

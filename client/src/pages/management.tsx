@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
+import { useLocation } from "wouter";
 import { Layout } from "@/components/layout/Layout";
 import { cn } from "@/lib/utils";
 import { 
@@ -55,6 +56,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { User } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
+import { usePermission } from "@/hooks/use-permission";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -89,19 +91,45 @@ import {
 } from "@/components/ui/select";
 
 export default function ManagementPage() {
-  const [activeSection, setActiveSection] = useState("team");
+  const { canManage, isAdmin, isLoading } = usePermission();
+  const [activeSection, setActiveSection] = useState<string>("");
 
   const sections = [
-    { id: "team", label: "Команда", icon: Users, description: "Участники и приглашения" },
-    { id: "statuses", label: "Статусы", icon: Activity, description: "Управление статусами пользователей" },
-    { id: "projects", label: "Проекты", icon: LayoutGrid, description: "Настройка проектов и приоритетов" },
-    { id: "archive", label: "Архив задач", icon: Archive, description: "Архивированные задачи" },
-    { id: "security", label: "Безопасность", icon: Shield, description: "Настройки безопасности аккаунта" },
-    { id: "roles", label: "Роли", icon: Shield, description: "Права доступа и разрешения" },
-    { id: "calls", label: "Звонки", icon: Phone, description: "Управление звонками и командными залами" },
-    { id: "integrations", label: "Интеграции", icon: Puzzle, description: "Внешние сервисы и API" },
-    { id: "balance", label: "Баланс", icon: Coins, description: "Настройка баллов за статусы задач" },
-  ];
+    { id: "team", label: "Команда", icon: Users, description: "Участники и приглашения", permission: "management:team" },
+    { id: "statuses", label: "Статусы", icon: Activity, description: "Управление статусами пользователей", permission: "management:statuses" },
+    { id: "projects", label: "Проекты", icon: LayoutGrid, description: "Настройка проектов и приоритетов", permission: "management:projects" },
+    { id: "archive", label: "Архив задач", icon: Archive, description: "Архивированные задачи", permission: "tasks:archive_view" },
+    { id: "security", label: "Безопасность", icon: Shield, description: "Настройки безопасности аккаунта", permission: "management:security" },
+    { id: "roles", label: "Роли", icon: Shield, description: "Права доступа и разрешения", permission: "management:roles" },
+    { id: "calls", label: "Звонки", icon: Phone, description: "Управление звонками и командными залами", permission: "management:calls" },
+    { id: "integrations", label: "Интеграции", icon: Puzzle, description: "Внешние сервисы и API", permission: "management:integrations" },
+    { id: "balance", label: "Баланс", icon: Coins, description: "Настройка баллов за статусы задач", permission: "management:balance" },
+  ].filter(section => isAdmin || canManage(section.id));
+
+  // Set initial active section or redirect if no permissions
+  useEffect(() => {
+    if (!isLoading && sections.length > 0) {
+      const currentSectionExists = sections.some(s => s.id === activeSection);
+      if (!activeSection || !currentSectionExists) {
+        setActiveSection(sections[0].id);
+      }
+    }
+  }, [isLoading, sections, activeSection]);
+
+  // Show access denied if user has no management permissions
+  if (!isLoading && sections.length === 0) {
+    return (
+      <Layout>
+        <div className="flex h-[calc(100vh-64px)] items-center justify-center bg-background">
+          <div className="text-center space-y-4">
+            <Shield className="w-16 h-16 text-muted-foreground mx-auto" />
+            <h2 className="text-2xl font-bold">Доступ запрещен</h2>
+            <p className="text-muted-foreground">У вас нет прав для доступа к разделу управления</p>
+          </div>
+        </div>
+      </Layout>
+    );
+  }
 
   return (
     <Layout>
@@ -203,8 +231,10 @@ export default function ManagementPage() {
                 <CallsManagement />
               ) : activeSection === "balance" ? (
                 <BalanceManagement />
+              ) : sections.length > 0 ? (
+                <DefaultSection section={sections.find(s => s.id === activeSection) || sections[0]} />
               ) : (
-                <DefaultSection section={sections.find(s => s.id === activeSection)!} />
+                <div>Нет доступных разделов</div>
               )}
             </div>
           </ScrollArea>
@@ -3970,18 +4000,18 @@ function CallsManagement() {
   );
 }
 
-function DefaultSection({ section }: { section: { label: string, icon: any, description: string } }) {
+function DefaultSection({ section: sectionData }: { section: { label: string, icon: any, description: string } }) {
   return (
     <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
       <Card className="border-border/50 shadow-sm border-dashed">
         <CardContent className="p-12 flex flex-col items-center justify-center text-center space-y-6">
           <div className="w-20 h-20 rounded-full bg-muted/50 flex items-center justify-center text-muted-foreground border-2 border-dashed border-border/50">
-            <section.icon className="w-10 h-10 opacity-20" />
+            <sectionData.icon className="w-10 h-10 opacity-20" />
           </div>
           <div className="max-w-xs space-y-2">
             <h4 className="font-bold text-lg">Раздел в разработке</h4>
             <p className="text-sm text-muted-foreground leading-relaxed">
-              Мы работаем над тем, чтобы добавить настройки для раздела <strong>{section.label}</strong>. Совсем скоро здесь появятся новые возможности.
+              Мы работаем над тем, чтобы добавить настройки для раздела <strong>{sectionData.label}</strong>. Совсем скоро здесь появятся новые возможности.
             </p>
           </div>
           <Button variant="outline" className="border-border/60">

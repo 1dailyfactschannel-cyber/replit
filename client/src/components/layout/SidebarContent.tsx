@@ -16,21 +16,21 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useLocation } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { User, Settings, LogOut } from "lucide-react";
+import { User, Settings, LogOut, Bell } from "lucide-react";
+import { usePermission } from "@/hooks/use-permission";
 
-const sidebarItems = [
-  { icon: lazy(() => import("lucide-react").then(m => ({ default: m.LayoutDashboard }))), label: "Главная", href: "/" },
-  { icon: lazy(() => import("lucide-react").then(m => ({ default: m.Kanban }))), label: "Проекты", href: "/projects" },
-  { icon: lazy(() => import("lucide-react").then(m => ({ default: m.CheckSquare }))), label: "Мои задачи", href: "/tasks" },
-  { icon: lazy(() => import("lucide-react").then(m => ({ default: m.Calendar }))), label: "Календарь", href: "/calendar" },
-  { icon: lazy(() => import("lucide-react").then(m => ({ default: m.MessageSquare }))), label: "Общение", href: "/chat" },
-  { icon: lazy(() => import("lucide-react").then(m => ({ default: m.Users }))), label: "Команда", href: "/team" },
-  { icon: lazy(() => import("lucide-react").then(m => ({ default: m.BarChart2 }))), label: "Отчеты", href: "/reports" },
-  { icon: lazy(() => import("lucide-react").then(m => ({ default: m.ShoppingBag }))), label: "Магазин", href: "/shop" },
-  { icon: lazy(() => import("lucide-react").then(m => ({ default: m.Shield }))), label: "Управление", href: "/management" },
+const sidebarItemsBase = [
+  { icon: lazy(() => import("lucide-react").then(m => ({ default: m.LayoutDashboard }))), label: "Главная", href: "/", permission: "dashboard:view" },
+  { icon: lazy(() => import("lucide-react").then(m => ({ default: m.Kanban }))), label: "Проекты", href: "/projects", permission: "projects:view" },
+  { icon: lazy(() => import("lucide-react").then(m => ({ default: m.CheckSquare }))), label: "Мои задачи", href: "/tasks", permission: "tasks:view" },
+  { icon: lazy(() => import("lucide-react").then(m => ({ default: m.Calendar }))), label: "Календарь", href: "/calendar", permission: "calendar:view" },
+  { icon: lazy(() => import("lucide-react").then(m => ({ default: m.MessageSquare }))), label: "Общение", href: "/chat", permission: "chat:view" },
+  { icon: lazy(() => import("lucide-react").then(m => ({ default: m.Users }))), label: "Команда", href: "/team", permission: "team:view" },
+  { icon: lazy(() => import("lucide-react").then(m => ({ default: m.BarChart2 }))), label: "Отчеты", href: "/reports", permission: "reports:view" },
+  { icon: lazy(() => import("lucide-react").then(m => ({ default: m.ShoppingBag }))), label: "Магазин", href: "/shop", permission: "shop:view" },
+  { icon: lazy(() => import("lucide-react").then(m => ({ default: m.Shield }))), label: "Управление", href: "/management", permission: "management:view" },
 ];
 
-// Memoized sidebar item to prevent unnecessary re-renders
 const SidebarItem = React.memo(({ 
   item, 
   isActive, 
@@ -38,7 +38,7 @@ const SidebarItem = React.memo(({
   setLocation, 
   setIsMobileOpen 
 }: { 
-  item: typeof sidebarItems[0]; 
+  item: typeof sidebarItemsBase[0]; 
   isActive: boolean; 
   isCollapsed: boolean;
   setLocation: (href: string) => void;
@@ -87,7 +87,6 @@ interface SidebarContentProps {
   user: any;
 }
 
-// Memoized sidebar content component
 export const SidebarContentComponent = React.memo(({ 
   isCollapsed, 
   location, 
@@ -103,12 +102,11 @@ export const SidebarContentComponent = React.memo(({
 }: SidebarContentProps) => {
   const [, navigate] = useLocation();
   const { toast } = useToast();
+  const { hasPermission, canAccess } = usePermission();
   
-  // Get color from customStatuses based on status name
   const getStatusColor = () => {
     const customStatus = customStatuses.find(s => s.name === status);
     if (customStatus) return customStatus.color;
-    // Fallback to statusColor prop if customStatus not found
     if (statusColor && statusColor.trim()) return statusColor;
     return "#6b7280";
   };
@@ -146,12 +144,14 @@ export const SidebarContentComponent = React.memo(({
     return acc;
   }, {} as Record<string, string>);
 
+  // Filter sidebar items based on permissions
+  const sidebarItems = sidebarItemsBase.filter(item => hasPermission(item.permission));
+
   return (
     <div className={cn(
       "flex flex-col h-full bg-sidebar text-sidebar-foreground border-r border-sidebar-border transition-all duration-300 ease-in-out relative group/sidebar",
       isCollapsed ? "w-20" : "w-64"
     )}>
-      {/* Collapse Toggle Button */}
       <Button
         variant="ghost"
         size="icon"
@@ -174,7 +174,6 @@ export const SidebarContentComponent = React.memo(({
             {!isCollapsed && <span className="font-sans font-bold text-lg animate-in fade-in duration-300">m4portal</span>}
           </div>
         </div>
-
       </div>
 
       <ScrollArea className="flex-1 px-4">
@@ -193,6 +192,26 @@ export const SidebarContentComponent = React.memo(({
               />
             );
           })}
+          {/* Notifications - always visible if user is authenticated */}
+          <div
+            onClick={() => {
+              setLocation("/notifications");
+              if (window.innerWidth < 768) {
+                setIsMobileOpen(false);
+              }
+            }}
+            className={cn(
+              "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 group overflow-hidden whitespace-nowrap cursor-pointer",
+              location.startsWith("/notifications")
+                ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-sm"
+                : "text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+              isCollapsed && "px-0 justify-center w-10 h-10 mx-auto rounded-xl hover:scale-105"
+            )}
+            title={isCollapsed ? "Уведомления" : ""}
+          >
+            <Bell className={cn("w-5 h-5 shrink-0", location.startsWith("/notifications") ? "text-sidebar-primary-foreground" : "text-muted-foreground group-hover:text-sidebar-accent-foreground")} />
+            {!isCollapsed && <span className="animate-in fade-in duration-300">Уведомления</span>}
+          </div>
         </div>
       </ScrollArea>
 
@@ -250,20 +269,24 @@ export const SidebarContentComponent = React.memo(({
               <Monitor className="w-4 h-4" />
               Удаленка
             </DropdownMenuCheckboxItem>
-            <DropdownMenuItem 
-              className="gap-2 cursor-pointer" 
-              onClick={() => setLocation("/profile")}
-            >
-              <User className="w-4 h-4" />
-              Профиль
-            </DropdownMenuItem>
-            <DropdownMenuItem 
-              className="gap-2 cursor-pointer" 
-              onClick={() => setLocation("/settings")}
-            >
-              <Settings className="w-4 h-4" />
-              Настройки
-            </DropdownMenuItem>
+            {hasPermission("profile:view") && (
+              <DropdownMenuItem 
+                className="gap-2 cursor-pointer" 
+                onClick={() => setLocation("/profile")}
+              >
+                <User className="w-4 h-4" />
+                Профиль
+              </DropdownMenuItem>
+            )}
+            {hasPermission("settings:view") && (
+              <DropdownMenuItem 
+                className="gap-2 cursor-pointer" 
+                onClick={() => setLocation("/settings")}
+              >
+                <Settings className="w-4 h-4" />
+                Настройки
+              </DropdownMenuItem>
+            )}
             <DropdownMenuSeparator />
             <DropdownMenuItem 
               className="gap-2 cursor-pointer text-rose-500 focus:text-rose-500"

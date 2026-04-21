@@ -34,6 +34,8 @@ export const users = pgTable("users", {
   totalPointsSpent: integer("total_points_spent").default(0),
   level: integer("level").default(0),
   isRemote: boolean("is_remote").default(false),
+  workStartTime: text("work_start_time"), // e.g. "09:00"
+  workEndTime: text("work_end_time"), // e.g. "18:00"
 }, (table) => ({
   usernameIdx: index("users_username_idx").on(table.username),
   emailIdx: index("users_email_idx").on(table.email),

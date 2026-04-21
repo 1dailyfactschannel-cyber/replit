@@ -1,11 +1,11 @@
-import { useState } from "react";
-import { 
-  Table, 
-  TableBody, 
-  TableCell, 
-  TableHead, 
-  TableHeader, 
-  TableRow 
+import React, { useState, useMemo } from "react";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow
 } from "@/components/ui/table";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
@@ -15,23 +15,26 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
-import { 
-  Shield, 
-  Plus, 
-  Save, 
-  LayoutDashboard, 
-  Kanban, 
-  CheckSquare, 
-  Calendar, 
-  MessageSquare, 
-  Users, 
+import {
+  Shield,
+  Plus,
+  Save,
+  LayoutDashboard,
+  Kanban,
+  CheckSquare,
+  Calendar,
+  MessageSquare,
+  Users,
   ShoppingBag,
   Settings,
   Trash2,
   AlertCircle,
   Copy,
   Search,
-  MoreVertical
+  MoreVertical,
+  Loader2,
+  Activity,
+  Puzzle
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -49,124 +52,186 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { apiRequest } from "@/lib/queryClient";
 
-interface Permission {
-  id: string;
-  name: string;
-  description: string;
-  icon: any;
-  category: "base" | "admin" | "social";
-}
+const categoryIcons: Record<string, any> = {
+  pages: LayoutDashboard,
+  management: Settings,
+  projects: Kanban,
+  tasks: CheckSquare,
+  team: Users,
+  chat: MessageSquare,
+  calendar: Calendar,
+  reports: LayoutDashboard,
+  shop: ShoppingBag,
+  boards: Kanban,
+  roles: Shield,
+  departments: Users,
+  statuses: Activity,
+  integrations: Puzzle,
+};
 
-const permissions: Permission[] = [
-  { id: "dashboard", name: "Главная", description: "Доступ к дашборду и аналитике", icon: LayoutDashboard, category: "base" },
-  { id: "projects", name: "Проекты", description: "Управление досками и проектами", icon: Kanban, category: "base" },
-  { id: "tasks", name: "Задачи", description: "Создание и редактирование задач", icon: CheckSquare, category: "base" },
-  { id: "calendar", name: "Календарь", description: "Доступ к календарю событий", icon: Calendar, category: "base" },
-  { id: "chat", name: "Чат", description: "Общение в командных чатах", icon: MessageSquare, category: "social" },
-  { id: "team", name: "Сотрудники", description: "Просмотр и управление командой", icon: Users, category: "admin" },
-  { id: "shop", name: "Магазин", description: "Доступ к покупке мерча", icon: ShoppingBag, category: "social" },
-  { id: "admin", name: "Администрирование", description: "Доступ к системным настройкам", icon: Settings, category: "admin" },
-];
+const categoryLabels: Record<string, string> = {
+  pages: "Страницы",
+  management: "Управление",
+  projects: "Проекты",
+  tasks: "Задачи",
+  team: "Команда",
+  chat: "Общение",
+  calendar: "Календарь",
+  reports: "Отчёты",
+  shop: "Магазин",
+  boards: "Доски",
+  roles: "Роли",
+  departments: "Отделы",
+  statuses: "Статусы",
+  integrations: "Интеграции",
+};
 
 interface Role {
   id: string;
   name: string;
-  description: string;
+  description: string | null;
   color: string;
   permissions: string[];
-  isSystem?: boolean;
-  memberCount: number;
+  isSystem: boolean;
+  memberCount?: number;
 }
 
-const initialRoles: Role[] = [
-  { 
-    id: "1", 
-    name: "Администратор", 
-    description: "Полный доступ ко всем функциям системы",
-    color: "bg-rose-500", 
-    permissions: permissions.map(p => p.id),
-    isSystem: true,
-    memberCount: 2
-  },
-  { 
-    id: "2", 
-    name: "Менеджер", 
-    description: "Управление проектами и командой",
-    color: "bg-blue-500", 
-    permissions: ["dashboard", "projects", "tasks", "calendar", "chat", "team", "shop"],
-    isSystem: true,
-    memberCount: 5
-  },
-  { 
-    id: "3", 
-    name: "Сотрудник", 
-    description: "Базовый доступ к рабочим инструментам",
-    color: "bg-emerald-500", 
-    permissions: ["dashboard", "projects", "tasks", "calendar", "chat", "shop"],
-    isSystem: true,
-    memberCount: 24
-  },
-  { 
-    id: "4", 
-    name: "Гость", 
-    description: "Только просмотр и общение",
-    color: "bg-slate-500", 
-    permissions: ["dashboard", "chat"],
-    isSystem: true,
-    memberCount: 3
-  },
-];
+interface Permission {
+  id: string;
+  key: string;
+  name: string;
+  description: string | null;
+  category: string;
+}
 
 export function RolesManagement() {
   const { toast } = useToast();
-  const [roles, setRoles] = useState<Role[]>(initialRoles);
-  const [selectedRoleId, setSelectedRoleId] = useState<string>(initialRoles[0].id);
+  const queryClient = useQueryClient();
+  const [selectedRoleId, setSelectedRoleId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [permissionSearchQuery, setPermissionSearchQuery] = useState("");
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [newRoleName, setNewRoleName] = useState("");
   const [newRoleDesc, setNewRoleDesc] = useState("");
 
-  const selectedRole = roles.find(r => r.id === selectedRoleId) || roles[0];
+  const { data: apiRoles = [], isLoading: rolesLoading } = useQuery<Role[]>({
+    queryKey: ["/api/roles"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/roles");
+      return res.json();
+    },
+  });
 
-  const togglePermission = (roleId: string, permissionId: string) => {
-    if (selectedRole.isSystem && selectedRole.id === "1") return; // Admin lock
-    
-    setRoles(prevRoles => prevRoles.map(role => {
-      if (role.id === roleId) {
-        const hasPermission = role.permissions.includes(permissionId);
-        return {
-          ...role,
-          permissions: hasPermission 
-            ? role.permissions.filter(p => p !== permissionId)
-            : [...role.permissions, permissionId]
-        };
+  const { data: apiPermissions = [] } = useQuery<Permission[]>({
+    queryKey: ["/api/permissions"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/permissions");
+      return res.json();
+    },
+  });
+
+  const createRoleMutation = useMutation({
+    mutationFn: async (data: { name: string; description: string }) => {
+      const res = await apiRequest("POST", "/api/roles", data);
+      return res.json();
+    },
+    onSuccess: (newRole: Role) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/roles"] });
+      setIsCreateDialogOpen(false);
+      setNewRoleName("");
+      setNewRoleDesc("");
+      setSelectedRoleId(newRole.id);
+      toast({
+        title: "Роль создана",
+        description: `Роль "${newRole.name}" успешно добавлена.`,
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Ошибка",
+        description: "Не удалось создать роль.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const updateRoleMutation = useMutation({
+    mutationFn: async ({ id, ...data }: { id: string; name?: string; description?: string; permissions?: string[]; color?: string }) => {
+      const res = await apiRequest("PUT", `/api/roles/${id}`, data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/roles"] });
+      toast({
+        title: "Изменения сохранены",
+        description: "Настройки роли обновлены.",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Ошибка",
+        description: "Не удалось сохранить изменения.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const deleteRoleMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await apiRequest("DELETE", `/api/roles/${id}`);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/roles"] });
+      if (selectedRoleId) {
+        setSelectedRoleId(apiRoles.find(r => r.id !== selectedRoleId)?.id || null);
       }
-      return role;
-    }));
+      toast({
+        title: "Роль удалена",
+        description: "Роль была успешно удалена из системы.",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Ошибка",
+        description: "Не удалось удалить роль.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const roles = apiRoles;
+  const permissions = apiPermissions;
+
+  const selectedRole = useMemo(() => {
+    if (!selectedRoleId && roles.length > 0) {
+      return roles[0];
+    }
+    return roles.find(r => r.id === selectedRoleId) || roles[0] || null;
+  }, [selectedRoleId, roles]);
+
+  const togglePermission = (permissionKey: string) => {
+    if (!selectedRole) return;
+
+    const hasPermission = selectedRole.permissions?.includes(permissionKey);
+    const newPermissions = hasPermission
+      ? selectedRole.permissions.filter(p => p !== permissionKey)
+      : [...(selectedRole.permissions || []), permissionKey];
+
+    updateRoleMutation.mutate({
+      id: selectedRole.id,
+      permissions: newPermissions,
+    });
   };
 
   const handleCreateRole = () => {
-    if (!newRoleName) return;
-    
-    const newRole: Role = {
-      id: Math.random().toString(36).substr(2, 9),
-      name: newRoleName,
-      description: newRoleDesc,
-      color: "bg-primary",
-      permissions: ["dashboard"],
-      memberCount: 0
-    };
-    
-    setRoles([...roles, newRole]);
-    setNewRoleName("");
-    setNewRoleDesc("");
-    setIsCreateDialogOpen(false);
-    setSelectedRoleId(newRole.id);
-    
-    toast({
-      title: "Роль создана",
-      description: `Роль "${newRoleName}" успешно добавлена.`
+    if (!newRoleName.trim()) return;
+    createRoleMutation.mutate({
+      name: newRoleName.trim(),
+      description: newRoleDesc.trim() || "",
     });
   };
 
@@ -180,26 +245,51 @@ export function RolesManagement() {
       });
       return;
     }
-    
-    setRoles(roles.filter(r => r.id !== id));
-    if (selectedRoleId === id) {
-      setSelectedRoleId(roles[0].id);
-    }
-    
+    deleteRoleMutation.mutate(id);
+  };
+
+  const handleSave = () => {
+    if (!selectedRole) return;
     toast({
-      title: "Роль удалена",
-      description: "Роль была успешно удалена из системы."
+      title: "Изменения сохранены",
+      description: `Настройки для роли "${selectedRole.name}" обновлены.`,
     });
   };
 
-  const filteredRoles = roles.filter(role => 
+  const filteredRoles = roles.filter(role =>
     role.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
+
+  const permissionsByCategory = useMemo(() => {
+    const query = permissionSearchQuery.toLowerCase().trim();
+    const filtered = query
+      ? permissions.filter(p =>
+          p.name.toLowerCase().includes(query) ||
+          p.key.toLowerCase().includes(query) ||
+          (p.description && p.description.toLowerCase().includes(query))
+        )
+      : permissions;
+    const grouped: Record<string, Permission[]> = {};
+    filtered.forEach(p => {
+      if (!grouped[p.category]) {
+        grouped[p.category] = [];
+      }
+      grouped[p.category].push(p);
+    });
+    return grouped;
+  }, [permissions, permissionSearchQuery]);
+
+  if (rolesLoading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-500">
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-        {/* Roles List */}
         <div className="lg:col-span-4 space-y-6">
           <div className="space-y-4">
             <div className="flex items-center justify-between px-1">
@@ -223,16 +313,16 @@ export function RolesManagement() {
                   <div className="space-y-4 py-4">
                     <div className="space-y-2">
                       <Label>Название роли</Label>
-                      <Input 
-                        placeholder="Например: Редактор контента" 
+                      <Input
+                        placeholder="Например: Редактор контента"
                         value={newRoleName}
                         onChange={(e) => setNewRoleName(e.target.value)}
                       />
                     </div>
                     <div className="space-y-2">
                       <Label>Описание</Label>
-                      <Input 
-                        placeholder="Краткое описание обязанностей..." 
+                      <Input
+                        placeholder="Краткое описание обязанностей..."
                         value={newRoleDesc}
                         onChange={(e) => setNewRoleDesc(e.target.value)}
                       />
@@ -240,7 +330,10 @@ export function RolesManagement() {
                   </div>
                   <DialogFooter>
                     <Button variant="outline" onClick={() => setIsCreateDialogOpen(false)}>Отмена</Button>
-                    <Button onClick={handleCreateRole}>Создать роль</Button>
+                    <Button onClick={handleCreateRole} disabled={!newRoleName.trim() || createRoleMutation.isPending}>
+                      {createRoleMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                      Создать роль
+                    </Button>
                   </DialogFooter>
                 </DialogContent>
               </Dialog>
@@ -248,8 +341,8 @@ export function RolesManagement() {
 
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <Input 
-                placeholder="Поиск ролей..." 
+              <Input
+                placeholder="Поиск ролей..."
                 className="pl-9 h-9 bg-muted/20 border-border/50 text-xs"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
@@ -263,14 +356,17 @@ export function RolesManagement() {
                   onClick={() => setSelectedRoleId(role.id)}
                   className={cn(
                     "group flex flex-col p-4 rounded-xl cursor-pointer transition-all border relative overflow-hidden",
-                    selectedRoleId === role.id 
-                      ? "bg-primary/5 border-primary shadow-sm ring-1 ring-primary/20" 
+                    (selectedRoleId === role.id || (!selectedRoleId && role === selectedRole))
+                      ? "bg-primary/5 border-primary shadow-sm ring-1 ring-primary/20"
                       : "bg-card/50 border-border/50 hover:border-primary/30 hover:bg-muted/30"
                   )}
                 >
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-3">
-                      <div className={cn("w-2.5 h-2.5 rounded-full shadow-sm", role.color)} />
+                      <div
+                        className="w-2.5 h-2.5 rounded-full shadow-sm"
+                        style={{ backgroundColor: role.color || "#6366f1" }}
+                      />
                       <span className="font-bold text-sm tracking-tight">{role.name}</span>
                     </div>
                     {role.isSystem && (
@@ -280,16 +376,16 @@ export function RolesManagement() {
                     )}
                   </div>
                   <p className="text-[11px] text-muted-foreground line-clamp-1 mb-3 font-medium">
-                    {role.description}
+                    {role.description || ""}
                   </p>
                   <div className="flex items-center justify-between mt-auto">
                     <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-tighter">
-                      {role.memberCount} участников
+                      {role.memberCount !== undefined ? `${role.memberCount} участников` : ""}
                     </span>
                     {!role.isSystem && (
-                      <Button 
-                        variant="ghost" 
-                        size="icon" 
+                      <Button
+                        variant="ghost"
+                        size="icon"
                         className="h-6 w-6 opacity-0 group-hover:opacity-100 text-rose-500 hover:text-rose-600 hover:bg-rose-50 transition-all"
                         onClick={(e) => {
                           e.stopPropagation();
@@ -318,94 +414,114 @@ export function RolesManagement() {
           </Card>
         </div>
 
-        {/* Permissions Matrix */}
         <div className="lg:col-span-8 space-y-6">
-          <Card className="border-border/50 bg-card/50 backdrop-blur-sm shadow-sm flex flex-col overflow-hidden border-none ring-1 ring-border/50">
-            <CardHeader className="flex flex-row items-start justify-between bg-muted/20 border-b border-border/50 py-6">
-              <div className="space-y-1">
-                <div className="flex items-center gap-3">
-                  <div className={cn("w-3 h-3 rounded-full", selectedRole.color)} />
-                  <CardTitle className="text-xl font-bold tracking-tight">
-                    Права доступа: {selectedRole.name}
-                  </CardTitle>
+          {selectedRole ? (
+            <Card className="border-border/50 bg-card/50 backdrop-blur-sm shadow-sm flex flex-col overflow-hidden border-none ring-1 ring-border/50">
+              <CardHeader className="flex flex-row items-start justify-between bg-muted/20 border-b border-border/50 py-6">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-3">
+                    <div
+                      className="w-3 h-3 rounded-full"
+                      style={{ backgroundColor: selectedRole.color || "#6366f1" }}
+                    />
+                    <CardTitle className="text-xl font-bold tracking-tight">
+                      Права доступа: {selectedRole.name}
+                    </CardTitle>
+                  </div>
+                  <CardDescription className="text-sm font-medium">
+                    {selectedRole.description || ""}
+                  </CardDescription>
                 </div>
-                <CardDescription className="text-sm font-medium">
-                  {selectedRole.description}
-                </CardDescription>
-              </div>
-              <div className="flex items-center gap-2">
-                <Button variant="outline" size="sm" className="h-9 gap-2 text-xs font-bold border-border/50 bg-background/50">
-                  <Copy className="w-3.5 h-3.5" /> Копировать
-                </Button>
-                <Button 
-                  size="sm" 
-                  className="h-9 gap-2 text-xs font-bold shadow-lg shadow-primary/20"
-                  disabled={selectedRole.isSystem && selectedRole.id === "1"}
-                  onClick={() => {
-                    toast({
-                      title: "Изменения сохранены",
-                      description: `Настройки для роли "${selectedRole.name}" обновлены.`
-                    });
-                  }}
-                >
-                  <Save className="w-3.5 h-3.5" /> Сохранить
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent className="p-0">
-              <div className="divide-y divide-border/50">
-                {["base", "social", "admin"].map((category) => (
-                  <div key={category} className="space-y-0">
-                    <div className="bg-muted/10 px-6 py-2">
-                      <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">
-                        {category === "base" ? "Базовые функции" : category === "social" ? "Коммуникации" : "Администрирование"}
-                      </span>
-                    </div>
-                    {permissions
-                      .filter(p => p.category === category)
-                      .map((permission) => (
-                        <div key={permission.id} className="flex items-center justify-between px-6 py-4 hover:bg-muted/10 transition-colors">
-                          <div className="flex items-center gap-4">
-                            <div className="w-10 h-10 rounded-xl bg-background border border-border/50 flex items-center justify-center shadow-sm">
-                              <permission.icon className="w-5 h-5 text-primary/70" />
+                <div className="flex items-center gap-2">
+                  <Button variant="outline" size="sm" className="h-9 gap-2 text-xs font-bold border-border/50 bg-background/50">
+                    <Copy className="w-3.5 h-3.5" /> Копировать
+                  </Button>
+                  <Button
+                    size="sm"
+                    className="h-9 gap-2 text-xs font-bold shadow-lg shadow-primary/20"
+                    disabled={updateRoleMutation.isPending}
+                    onClick={handleSave}
+                  >
+                    {updateRoleMutation.isPending ? (
+                      <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" />
+                    ) : (
+                      <Save className="w-3.5 h-3.5" />
+                    )}
+                    Сохранить
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent className="p-0">
+                <div className="px-6 py-3 border-b border-border/50 bg-muted/10">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+                    <Input
+                      placeholder="Поиск параметров..."
+                      className="pl-8 h-8 bg-background/50 border-border/50 text-xs"
+                      value={permissionSearchQuery}
+                      onChange={(e) => setPermissionSearchQuery(e.target.value)}
+                    />
+                  </div>
+                </div>
+                <div className="divide-y divide-border/50">
+                  {Object.entries(permissionsByCategory).map(([category, perms]) => (
+                    <div key={category} className="space-y-0">
+                      <div className="bg-muted/10 px-6 py-1.5">
+                        <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">
+                          {categoryLabels[category] || category}
+                        </span>
+                      </div>
+                      {perms.map((permission) => (
+                        <div key={permission.key} className="flex items-center justify-between px-6 py-2.5 hover:bg-muted/10 transition-colors">
+                          <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-lg bg-background border border-border/50 flex items-center justify-center shadow-sm">
+                              {categoryIcons[category] ? (
+                                React.createElement(categoryIcons[category], { className: "w-4 h-4 text-primary/70" })
+                              ) : (
+                                <Shield className="w-4 h-4 text-primary/70" />
+                              )}
                             </div>
-                            <div className="space-y-0.5">
-                              <h5 className="text-sm font-bold tracking-tight">{permission.name}</h5>
-                              <p className="text-xs text-muted-foreground font-medium">{permission.description}</p>
+                            <div className="space-y-0">
+                              <h5 className="text-xs font-bold tracking-tight">{permission.name}</h5>
+                              <p className="text-[10px] text-muted-foreground font-medium">{permission.description || permission.key}</p>
                             </div>
                           </div>
-                          <div className="flex items-center gap-8">
+                          <div className="flex items-center gap-6">
                             <div className="flex items-center gap-2">
                               <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
-                                {selectedRole.permissions.includes(permission.id) ? "Разрешено" : "Запрещено"}
+                                {selectedRole.permissions?.includes(permission.key) ? "Разрешено" : "Запрещено"}
                               </span>
-                              <Switch 
-                                checked={selectedRole.permissions.includes(permission.id)}
-                                onCheckedChange={() => togglePermission(selectedRole.id, permission.id)}
-                                disabled={selectedRole.isSystem && selectedRole.id === "1"}
+                              <Switch
+                                checked={selectedRole.permissions?.includes(permission.key) || false}
+                                onCheckedChange={() => togglePermission(permission.key)}
                                 className="data-[state=checked]:bg-emerald-500 shadow-sm"
                               />
                             </div>
                           </div>
                         </div>
                       ))}
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-            <CardFooter className="bg-muted/20 border-t border-border/50 p-6 flex items-center justify-between">
-              <div className="flex items-center gap-2 text-muted-foreground">
-                <Shield className="w-4 h-4 opacity-50" />
-                <span className="text-xs font-medium">Безопасность системы</span>
-              </div>
-              {selectedRole.isSystem && selectedRole.id === "1" && (
-                <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-rose-500/10 text-rose-600 border border-rose-500/20">
-                  <AlertCircle className="w-3.5 h-3.5" />
-                  <span className="text-[10px] font-bold uppercase tracking-tight">Системный доступ заблокирован</span>
+                    </div>
+                  ))}
                 </div>
-              )}
-            </CardFooter>
-          </Card>
+              </CardContent>
+              <CardFooter className="bg-muted/20 border-t border-border/50 p-6 flex items-center justify-between">
+                <div className="flex items-center gap-2 text-muted-foreground">
+                  <Shield className="w-4 h-4 opacity-50" />
+                  <span className="text-xs font-medium">Безопасность системы</span>
+                </div>
+                {selectedRole.isSystem && selectedRole.name === "Администратор" && (
+                  <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-rose-500/10 text-rose-600 border border-rose-500/20">
+                    <AlertCircle className="w-3.5 h-3.5" />
+                    <span className="text-[10px] font-bold uppercase tracking-tight">Системный доступ заблокирован</span>
+                  </div>
+                )}
+              </CardFooter>
+            </Card>
+          ) : (
+            <div className="flex items-center justify-center h-64 text-muted-foreground">
+              Выберите роль для редактирования
+            </div>
+          )}
         </div>
       </div>
     </div>

@@ -24,6 +24,11 @@ export const csrfProtect = (req: Request, res: Response, next: NextFunction) => 
   const path = req.path;
   const method = req.method;
   
+  // Skip CSRF in development for API endpoints
+  if (process.env.NODE_ENV === 'development' && path.startsWith('/api/')) {
+    return next();
+  }
+  
   // Define protected endpoints
   const protectedEndpoints = [
     { path: '/api/auth/login', methods: ['POST'] },

@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { usePermission } from "@/hooks/use-permission";
 import type { User as UserType } from "@shared/schema";
 import {
   LayoutDashboard,
@@ -64,26 +65,17 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ThemeToggle } from "./ThemeToggle";
 import { NotificationAlertDialog } from "@/components/ui/notification-alert-dialog";
 
-const sidebarItems = [
-  { icon: LayoutDashboard, label: "Главная", href: "/" },
-  { icon: Kanban, label: "Проекты", href: "/projects" },
-  { icon: CheckSquare, label: "Мои задачи", href: "/tasks" },
-  { icon: Calendar, label: "Календарь", href: "/calendar" },
-  { icon: MessageSquare, label: "Общение", href: "/chat" },
-  { icon: Bell, label: "Уведомления", href: "/notifications" },
-  { 
-    icon: Users, 
-    label: "Команда", 
-    href: "/team",
-    subItems: [
-      { label: "Список", href: "/team" },
-      { label: "Отделы", href: "/team?tab=departments" },
-      { label: "Аналитика", href: "/team?tab=analytics" }
-    ]
-  },
-  { icon: BarChart2, label: "Отчеты", href: "/reports" },
-  { icon: ShoppingBag, label: "Магазин", href: "/shop" },
-  { icon: Shield, label: "Управление", href: "/management" },
+const sidebarItemsBase = [
+  { icon: LayoutDashboard, label: "Главная", href: "/", permission: "dashboard:view" },
+  { icon: Kanban, label: "Проекты", href: "/projects", permission: "projects:view" },
+  { icon: CheckSquare, label: "Мои задачи", href: "/tasks", permission: "tasks:view" },
+  { icon: Calendar, label: "Календарь", href: "/calendar", permission: "calendar:view" },
+  { icon: MessageSquare, label: "Общение", href: "/chat", permission: "chat:view" },
+  { icon: Bell, label: "Уведомления", href: "/notifications", permission: "notifications:view" },
+  { icon: Users, label: "Команда", href: "/team", permission: "team:view" },
+  { icon: BarChart2, label: "Отчеты", href: "/reports", permission: "reports:view" },
+  { icon: ShoppingBag, label: "Магазин", href: "/shop", permission: "shop:view" },
+  { icon: Shield, label: "Управление", href: "/management", permission: "management:view" },
 ];
 
 function SidebarCollapsibleItem({ item, isActive, setLocation, setIsMobileOpen, location }: any) {
@@ -165,6 +157,8 @@ const SidebarContentComponent = React.memo(({
 }: any) => {
   const displayName = user ? `${user.firstName || ""} ${user.lastName || ""}`.trim() || user.username : "Пользователь";
   const initials = user ? (user.firstName && user.lastName ? `${user.firstName[0]}${user.lastName[0]}` : user.username.substring(0, 2).toUpperCase()) : "П";
+  const { hasPermission } = usePermission();
+  const sidebarItems = sidebarItemsBase.filter(item => !item.permission || hasPermission(item.permission));
 
   return (
     <div className={cn(

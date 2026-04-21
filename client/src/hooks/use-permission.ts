@@ -1,15 +1,12 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { apiRequest } from "@/lib/queryClient";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 interface UserPermissions {
-  rolePermissions: string[];
-  hiddenObjects: { type: string; id: string }[];
+  permissions: string[];
+  roles: { id: string; name: string; color: string; isSystem: boolean }[];
 }
 
 export function usePermission() {
-  const queryClient = useQueryClient();
-
-  const { data: user } = useQuery({
+  const { data: user, isLoading: userLoading } = useQuery({
     queryKey: ["/api/user"],
     queryFn: async () => {
       const res = await fetch('/api/user', { credentials: 'include' });
@@ -18,33 +15,25 @@ export function usePermission() {
     }
   });
 
-  const { data: permissions, isLoading: permissionsLoading } = useQuery<UserPermissions>({
+  const { data: permissionsData, isLoading: permissionsLoading } = useQuery<UserPermissions>({
     queryKey: ["/api/users/me/permissions"],
     queryFn: async () => {
       const res = await fetch('/api/users/me/permissions', { credentials: 'include' });
-      if (!res.ok) return { rolePermissions: [], hiddenObjects: [] };
+      if (!res.ok) return { permissions: [], roles: [] };
       return res.json();
     },
     enabled: !!user
   });
 
-  const hasPermission = (permission: string, objectId?: string): boolean => {
-    if (!permissions) return false;
-    
-    // Check if user has the system permission
-    if (!permissions.rolePermissions.includes(permission)) {
-      return false;
-    }
-    
-    // Check if object is hidden for user
-    if (objectId) {
-      const isHidden = permissions.hiddenObjects.some(
-        h => h.id === objectId
-      );
-      if (isHidden) return false;
-    }
-    
-    return true;
+  const userRoles = permissionsData?.roles || [];
+  const isAdmin = userRoles.some(r => r.name === "Администратор") || (user as any)?.role === 'admin';
+
+  const hasPermission = (permission: string): boolean => {
+    if (!user) return false;
+    // Admin always has all permissions (check even before permissionsData loads)
+    if (isAdmin) return true;
+    if (!permissionsData) return false;
+    return permissionsData.permissions.includes(permission);
   };
 
   const canAccess = (page: string): boolean => {
@@ -55,16 +44,16 @@ export function usePermission() {
     return hasPermission(`${resource}:create`);
   };
 
-  const canEdit = (resource: string, objectId?: string): boolean => {
-    return hasPermission(`${resource}:edit`, objectId);
+  const canEdit = (resource: string): boolean => {
+    return hasPermission(`${resource}:edit`);
   };
 
-  const canDelete = (resource: string, objectId?: string): boolean => {
-    return hasPermission(`${resource}:delete`, objectId);
+  const canDelete = (resource: string): boolean => {
+    return hasPermission(`${resource}:delete`);
   };
 
   const canManage = (section: string): boolean => {
-    return hasPermission(`management:${section}`) || hasPermission('management:view');
+    return hasPermission(`management:${section}`);
   };
 
   return {
@@ -74,84 +63,10 @@ export function usePermission() {
     canEdit,
     canDelete,
     canManage,
-    permissions: permissions?.rolePermissions || [],
-    hiddenObjects: permissions?.hiddenObjects || [],
-    isLoading: permissionsLoading,
+    permissions: permissionsData?.permissions || [],
+    roles: userRoles,
+    isAdmin,
+    isLoading: permissionsLoading || userLoading,
     isAuthenticated: !!user
-  };
-}
-
-export function useHiddenObjects() {
-  const queryClient = useQueryClient();
-
-  const { data: user } = useQuery({
-    queryKey: ["/api/user"],
-    queryFn: async () => {
-      const res = await fetch('/api/user', { credentials: 'include' });
-      if (!res.ok) return null;
-      return res.json();
-    }
-  });
-
-  const { data: hiddenObjects = [], isLoading } = useQuery<{ objectId: string; objectType: string }[]>({
-    queryKey: ["/api/users", user?.id, "hidden"],
-    queryFn: async () => {
-      if (!user?.id) return [];
-      const res = await fetch(`/api/users/${user.id}/hidden`, { credentials: 'include' });
-      if (!res.ok) return [];
-      return res.json();
-    },
-    enabled: !!user?.id
-  });
-
-  const hideMutation = useMutation({
-    mutationFn: async ({ userId, objectType, objectId }: { userId: string; objectType: string; objectId: string }) => {
-      const res = await apiRequest('POST', '/api/hidden', { userId, objectType, objectId });
-      return res.json();
-    },
-    onSuccess: () => {
-      if (user?.id) {
-        queryClient.invalidateQueries({ queryKey: ["/api/users", user.id, "hidden"] });
-        queryClient.invalidateQueries({ queryKey: ["/api/users/me/permissions"] });
-      }
-    }
-  });
-
-  const unhideMutation = useMutation({
-    mutationFn: async ({ userId, objectType, objectId }: { userId: string; objectType: string; objectId: string }) => {
-      await apiRequest('DELETE', '/api/hidden', { userId, objectType, objectId });
-    },
-    onSuccess: () => {
-      if (user?.id) {
-        queryClient.invalidateQueries({ queryKey: ["/api/users", user.id, "hidden"] });
-        queryClient.invalidateQueries({ queryKey: ["/api/users/me/permissions"] });
-      }
-    }
-  });
-
-  const isHidden = (objectId: string): boolean => {
-    return hiddenObjects.some(h => h.objectId === objectId);
-  };
-
-  const hide = (objectType: string, objectId: string) => {
-    if (user?.id) {
-      hideMutation.mutate({ userId: user.id, objectType, objectId });
-    }
-  };
-
-  const unhide = (objectType: string, objectId: string) => {
-    if (user?.id) {
-      unhideMutation.mutate({ userId: user.id, objectType, objectId });
-    }
-  };
-
-  return {
-    hiddenObjects,
-    isLoading,
-    isHidden,
-    hide,
-    unhide,
-    hideMutation,
-    unhideMutation
   };
 }

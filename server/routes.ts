@@ -18,6 +18,46 @@ import rateLimit from "express-rate-limit";
 import bcrypt from "bcrypt";
 import yandexCalendarRoutes from "./routes/yandex-calendar";
 
+// Permission middleware
+function requirePermission(...permissions: string[]) {
+  return async (req: any, res: any, next: any) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ message: "Не авторизован" });
+    }
+    try {
+      const storage = getStorage();
+      for (const perm of permissions) {
+        const has = await storage.hasPermission(req.user!.id, perm);
+        if (!has) {
+          return res.status(403).json({ message: "Недостаточно прав. Требуется: " + perm });
+        }
+      }
+      next();
+    } catch (error) {
+      res.status(500).json({ message: "Ошибка проверки прав" });
+    }
+  };
+}
+
+function requireAnyPermission(...permissions: string[]) {
+  return async (req: any, res: any, next: any) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ message: "Не авторизован" });
+    }
+    try {
+      const storage = getStorage();
+      const userPerms = await storage.getUserPermissions(req.user!.id);
+      const hasAny = permissions.some(p => userPerms.includes(p));
+      if (!hasAny) {
+        return res.status(403).json({ message: "Недостаточно прав" });
+      }
+      next();
+    } catch (error) {
+      res.status(500).json({ message: "Ошибка проверки прав" });
+    }
+  };
+}
+
 const storage = getStorage();
 let io: SocketIOServer;
 
@@ -379,6 +419,174 @@ export async function registerRoutes(
     }
   });
 
+  // Get all permissions
+  app.get("/api/permissions", async (req, res) => {
+    try {
+      const permissions = await storage.getAllPermissions();
+      res.json(permissions);
+    } catch (error: any) {
+      console.error("GET /api/permissions error:", error);
+      res.status(500).json({ message: "Failed to fetch permissions", error: error.message });
+    }
+  });
+
+  // Get user's permissions
+  app.get("/api/users/me/permissions", async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    try {
+      const userId = req.user!.id;
+      const permissions = await storage.getUserPermissions(userId);
+      const roles = await storage.getUserRoles(userId);
+
+      res.json({
+        permissions,
+        roles: roles.map(r => ({
+          id: r.id,
+          name: r.name,
+          color: (r as any).color || "#6366f1",
+          isSystem: r.isSystem,
+        })),
+      });
+    } catch (error: any) {
+      console.error("GET /api/users/me/permissions error:", error);
+      res.status(500).json({ message: "Failed to fetch permissions", error: error.message });
+    }
+  });
+
+  // Create role
+  app.post("/api/roles", async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    try {
+      const { name, description, permissions, color } = req.body;
+      if (!name) {
+        return res.status(400).json({ message: "Role name is required" });
+      }
+
+      const role = await storage.createRole({
+        name,
+        description: description || null,
+        permissions: permissions || [],
+        color: color || "#6366f1",
+        isSystem: false,
+      } as any);
+
+      res.status(201).json(role);
+    } catch (error: any) {
+      console.error("POST /api/roles error:", error);
+      if (error.code === "23505") {
+        return res.status(409).json({ message: "Role with this name already exists" });
+      }
+      res.status(500).json({ message: "Failed to create role", error: error.message });
+    }
+  });
+
+  // Update role
+  app.put("/api/roles/:id", async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    try {
+      const { name, description, permissions, color } = req.body;
+      const existing = await storage.getRole(req.params.id);
+      if (!existing) {
+        return res.status(404).json({ message: "Role not found" });
+      }
+      if (existing.isSystem && name && name !== existing.name) {
+        return res.status(403).json({ message: "Cannot rename system role" });
+      }
+
+      const role = await storage.updateRole(req.params.id, {
+        name,
+        description,
+        permissions,
+        color,
+      } as any);
+
+      res.json(role);
+    } catch (error: any) {
+      console.error("PUT /api/roles/:id error:", error);
+      res.status(500).json({ message: "Failed to update role", error: error.message });
+    }
+  });
+
+  // Delete role
+  app.delete("/api/roles/:id", async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    try {
+      const existing = await storage.getRole(req.params.id);
+      if (!existing) {
+        return res.status(404).json({ message: "Role not found" });
+      }
+      if (existing.isSystem) {
+        return res.status(403).json({ message: "Cannot delete system role" });
+      }
+
+      await storage.deleteRole(req.params.id);
+      res.json({ message: "Role deleted successfully" });
+    } catch (error: any) {
+      console.error("DELETE /api/roles/:id error:", error);
+      res.status(500).json({ message: "Failed to delete role", error: error.message });
+    }
+  });
+
+  // Get user roles
+  app.get("/api/users/:id/roles", async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    try {
+      const roles = await storage.getUserRoles(req.params.id);
+      res.json(roles.map(r => ({
+        id: r.id,
+        name: r.name,
+        color: (r as any).color || "#6366f1",
+        isSystem: r.isSystem,
+        description: r.description,
+      })));
+    } catch (error: any) {
+      console.error("GET /api/users/:id/roles error:", error);
+      res.status(500).json({ message: "Failed to fetch user roles", error: error.message });
+    }
+  });
+
+  // Set user roles
+  app.put("/api/users/:id/roles", async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    try {
+      const { roleIds } = req.body;
+      if (!Array.isArray(roleIds)) {
+        return res.status(400).json({ message: "roleIds must be an array" });
+      }
+
+      await storage.setUserRoles(req.params.id, roleIds, req.user!.id);
+      const roles = await storage.getUserRoles(req.params.id);
+      res.json(roles.map(r => ({
+        id: r.id,
+        name: r.name,
+        color: (r as any).color || "#6366f1",
+        isSystem: r.isSystem,
+        description: r.description,
+      })));
+    } catch (error: any) {
+      console.error("PUT /api/users/:id/roles error:", error);
+      res.status(500).json({ message: "Failed to update user roles", error: error.message });
+    }
+  });
+
   // Search users endpoint
   app.get("/api/users/search", async (req, res) => {
     if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
@@ -634,8 +842,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/custom-statuses", async (req, res) => {
-    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+  app.post("/api/custom-statuses", requirePermission("statuses:create"), async (req, res) => {
     try {
       const parsed = insertCustomStatusSchema.safeParse(req.body);
       if (!parsed.success) {
@@ -649,8 +856,7 @@ export async function registerRoutes(
     }
   });
 
-  app.put("/api/custom-statuses/:id", async (req, res) => {
-    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+  app.put("/api/custom-statuses/:id", requirePermission("statuses:edit"), async (req, res) => {
     try {
       const status = await storage.updateCustomStatus(req.params.id, req.body);
       if (!status) {
@@ -663,8 +869,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/custom-statuses/:id", async (req, res) => {
-    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+  app.delete("/api/custom-statuses/:id", requirePermission("statuses:delete"), async (req, res) => {
     try {
       const deleted = await storage.deleteCustomStatus(req.params.id);
       if (!deleted) {
@@ -677,8 +882,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/custom-statuses/:id/set-default", async (req, res) => {
-    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+  app.post("/api/custom-statuses/:id/set-default", requirePermission("statuses:edit"), async (req, res) => {
     try {
       const set = await storage.setDefaultCustomStatus(req.params.id);
       if (!set) {
@@ -715,8 +919,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/departments", async (req, res) => {
-    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+  app.post("/api/departments", requirePermission("departments:create"), async (req, res) => {
     try {
       const parsed = insertDepartmentSchema.safeParse(req.body);
       if (!parsed.success) {
@@ -730,8 +933,7 @@ export async function registerRoutes(
     }
   });
 
-  app.put("/api/departments/:id", async (req, res) => {
-    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+  app.put("/api/departments/:id", requirePermission("departments:edit"), async (req, res) => {
     try {
       const department = await storage.updateDepartment(req.params.id, req.body);
       if (!department) {
@@ -744,8 +946,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/departments/:id", async (req, res) => {
-    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+  app.delete("/api/departments/:id", requirePermission("departments:delete"), async (req, res) => {
     try {
       const deleted = await storage.deleteDepartment(req.params.id);
       if (!deleted) {
@@ -955,8 +1156,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/projects", async (req, res) => {
-    if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
+  app.post("/api/projects", requirePermission("projects:create"), async (req, res) => {
     // console.log("POST /api/projects hit with body:", req.body);
     try {
       const user = req.user;
@@ -1030,8 +1230,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/projects/:id", async (req, res) => {
-    if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
+  app.delete("/api/projects/:id", requirePermission("projects:delete"), async (req, res) => {
     
     console.log("[API] Delete project request body:", req.body);
     
@@ -1146,7 +1345,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/boards/:id", async (req, res) => {
+  app.delete("/api/boards/:id", requirePermission("boards:delete"), async (req, res) => {
     try {
       await storage.deleteBoard(req.params.id);
       // Инвалидируем кэш статистики проектов при удалении доски
@@ -1969,8 +2168,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/boards/:boardId/tasks", async (req, res) => {
-    if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
+  app.post("/api/boards/:boardId/tasks", requirePermission("tasks:create"), async (req, res) => {
     try {
       const user = req.user;
       console.log("[API] Creating task with data:", req.body);

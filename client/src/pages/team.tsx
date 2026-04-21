@@ -1,5 +1,5 @@
 import { Layout } from "@/components/layout/Layout";
-import { useState, useEffect, useMemo, useDeferredValue } from "react";
+import { useState, useEffect, useMemo, useDeferredValue, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { 
@@ -86,12 +86,22 @@ interface Employee {
   statusColor?: string | null;
   statusComment?: string;
   isRemote?: boolean;
+  workStartTime?: string | null;
+  workEndTime?: string | null;
 }
 
 interface Department {
   id: string;
   name: string;
   color: string;
+}
+
+interface Role {
+  id: string;
+  name: string;
+  description: string | null;
+  color: string;
+  isSystem: boolean;
 }
 
 const mockDepartments: Department[] = [
@@ -200,6 +210,17 @@ export default function EmployeesPage() {
     return Array.from(positions) as string[];
   }, [employees]);
 
+  // User roles - fetch when modal is open and employee is selected
+  const { data: userRoles = [] } = useQuery<Role[]>({
+    queryKey: ["/api/users", selectedEmployee?.id, "roles"],
+    queryFn: async () => {
+      if (!selectedEmployee?.id) return [];
+      const res = await apiRequest("GET", `/api/users/${selectedEmployee.id}/roles`);
+      return res.json();
+    },
+    enabled: !!selectedEmployee?.id,
+  });
+
   // Status history - fetch when modal is open and employee is selected
   const userIdForHistory = selectedEmployee?.id;
   const { data: statusHistory = [] } = useQuery<{
@@ -248,6 +269,7 @@ export default function EmployeesPage() {
     telegram: string;
     notes: string;
     status: string;
+    roleIds: string[];
   } | null>(null);
 
   // Points operation state
@@ -296,13 +318,21 @@ export default function EmployeesPage() {
   const updateEmployeeMutation = useMutation({
     mutationFn: async (data: any) => {
       const userId = data.id || selectedEmployee?.id;
-      const res = await apiRequest("PUT", `/api/users/${userId}`, data);
-      return res.json();
+      // Update user data
+      const { roleIds, ...userData } = data;
+      const res = await apiRequest("PUT", `/api/users/${userId}`, userData);
+      const user = await res.json();
+      // Update roles if provided
+      if (roleIds !== undefined) {
+        await apiRequest("PUT", `/api/users/${userId}/roles`, { roleIds });
+      }
+      return user;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/users"] });
       queryClient.invalidateQueries({ queryKey: ["/api/user"] });
-      toast({ title: "Успешно", description: "Статус сотрудника обновлён" });
+      queryClient.invalidateQueries({ queryKey: ["/api/users", selectedEmployee?.id, "roles"] });
+      toast({ title: "Успешно", description: "Данные сотрудника обновлены" });
       setIsDetailsOpen(false);
     },
     onError: (error: any) => {
@@ -352,8 +382,10 @@ export default function EmployeesPage() {
   });
 
   // Initialize editing employee when modal opens
+  const prevSelectedIdRef = useRef<string | null>(null);
   useEffect(() => {
-    if (selectedEmployee) {
+    if (selectedEmployee && selectedEmployee.id !== prevSelectedIdRef.current) {
+      prevSelectedIdRef.current = selectedEmployee.id;
       setEditingEmployee({
         firstName: selectedEmployee.firstName || "",
         lastName: selectedEmployee.lastName || "",
@@ -363,9 +395,10 @@ export default function EmployeesPage() {
         telegram: selectedEmployee.telegram || "",
         notes: selectedEmployee.notes || "",
         status: selectedEmployee.status || "",
+        roleIds: userRoles.map(r => r.id),
       });
     }
-  }, [selectedEmployee]);
+  }, [selectedEmployee, userRoles]);
 
   // Sync API employees when loaded
   useEffect(() => {
@@ -715,6 +748,28 @@ export default function EmployeesPage() {
                       />
                     </div>
                     <div className="space-y-2">
+                      <Label htmlFor="new-role">Роль</Label>
+                      <Select 
+                        value={newEmployee.roleIds?.[0] || "__empty__"}
+                        onValueChange={(value) => setNewEmployee(prev => ({ ...prev, roleIds: value === "__empty__" ? [] : [value] }))}
+                      >
+                        <SelectTrigger id="new-role">
+                          <SelectValue placeholder="Выберите роль" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__empty__">Без роли</SelectItem>
+                          {apiRoles.map((role) => (
+                            <SelectItem key={role.id} value={role.id}>
+                              <div className="flex items-center gap-2">
+                                <span className="w-2 h-2 rounded-full" style={{ backgroundColor: role.color || "#6366f1" }} />
+                                {role.name}
+                              </div>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
                       <Label htmlFor="new-password">Пароль</Label>
                       <div className="flex gap-2">
                         <Input 
@@ -790,6 +845,8 @@ export default function EmployeesPage() {
                   <TableRow>
                     <TableHead className="w-[300px]">Сотрудник</TableHead>
                     <TableHead>Должность</TableHead>
+                    <TableHead>Начало</TableHead>
+                    <TableHead>Окончание</TableHead>
                     <TableHead>Статус</TableHead>
                     <TableHead>Комментарий</TableHead>
                     <TableHead>Баллы</TableHead>
@@ -821,6 +878,38 @@ export default function EmployeesPage() {
                         </div>
                       </TableCell>
                       <TableCell className="text-sm text-foreground">{employee.position}</TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-1">
+                          <Input
+                            type="time"
+                            value={employee.workStartTime || ""}
+                            onChange={(e) => {
+                              e.stopPropagation();
+                              const newTime = e.target.value;
+                              apiRequest("PUT", `/api/users/${employee.id}`, { workStartTime: newTime });
+                              queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+                            }}
+                            onClick={(e) => e.stopPropagation()}
+                            className="h-7 w-28 text-xs"
+                          />
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-1">
+                          <Input
+                            type="time"
+                            value={employee.workEndTime || ""}
+                            onChange={(e) => {
+                              e.stopPropagation();
+                              const newTime = e.target.value;
+                              apiRequest("PUT", `/api/users/${employee.id}`, { workEndTime: newTime });
+                              queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+                            }}
+                            onClick={(e) => e.stopPropagation()}
+                            className="h-7 w-28 text-xs"
+                          />
+                        </div>
+                      </TableCell>
                       <TableCell>
                         {customStatuses.length > 0 && employee.status ? (
                           <StatusBadge status={employee.status} color={customStatuses.find(s => s.name === employee.status)?.color} />
@@ -1282,6 +1371,31 @@ export default function EmployeesPage() {
                         onChange={(e) => setEditingEmployee(prev => prev ? { ...prev, telegram: e.target.value } : null)}
                         className="bg-secondary/30" 
                       />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Роли</Label>
+                      <Select 
+                        value={editingEmployee?.roleIds?.[0] || "__empty__"}
+                        onValueChange={(value) => {
+                          const newRoleIds = value === "__empty__" ? [] : [value];
+                          setEditingEmployee(prev => prev ? { ...prev, roleIds: newRoleIds } : null);
+                        }}
+                      >
+                        <SelectTrigger className="bg-secondary/30">
+                          <SelectValue placeholder="Выберите роль" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__empty__">Без роли</SelectItem>
+                          {apiRoles.map((role) => (
+                            <SelectItem key={role.id} value={role.id}>
+                              <div className="flex items-center gap-2">
+                                <span className="w-2 h-2 rounded-full" style={{ backgroundColor: role.color || "#6366f1" }} />
+                                {role.name}
+                              </div>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </div>
                     <div className="space-y-2">
                       <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Статус</Label>

@@ -176,6 +176,21 @@ export function setupAuth(app: Express) {
         console.log(`[auth] User with id ${id} not found during deserialization`);
         return done(null, false);
       }
+      // Load user roles and permissions
+      try {
+        const roles = await storage.getUserRoles(id);
+        const permissions = await storage.getUserPermissions(id);
+        (user as any).roles = roles;
+        (user as any).permissions = permissions;
+        // Set role field for quick admin check
+        const hasAdminRole = roles.some((r: any) => r.name === "Администратор");
+        (user as any).role = hasAdminRole ? 'admin' : 'user';
+      } catch (e) {
+        // If roles/permissions fail, continue without them
+        (user as any).roles = [];
+        (user as any).permissions = [];
+        (user as any).role = 'user';
+      }
       done(null, user);
     } catch (err) {
       console.error(`[auth] Error deserializing user ${id}:`, err);
@@ -255,5 +270,25 @@ export function setupAuth(app: Express) {
     }
     const { password, ...userWithoutPassword } = req.user as any;
     res.json(userWithoutPassword);
+  });
+
+  // Get current user's roles
+  app.get("/api/user/roles", async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ message: "Не авторизован" });
+    }
+    try {
+      const roles = await storage.getUserRoles((req.user as any).id);
+      res.json(roles.map((r: any) => ({
+        id: r.id,
+        name: r.name,
+        color: r.color || "#6366f1",
+        isSystem: r.isSystem,
+        description: r.description,
+      })));
+    } catch (error: any) {
+      console.error("GET /api/user/roles error:", error);
+      res.status(500).json({ message: "Failed to fetch roles", error: error.message });
+    }
   });
 }

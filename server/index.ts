@@ -43,6 +43,7 @@ import { createServer } from "http";
 import { yandexCalendarService } from "./services/yandex-calendar";
 import { yandexNotificationService } from "./services/yandex-notifications";
 import { getStorage } from "./postgres-storage";
+import { initializeRolesAndPermissions } from "./init/roles";
 
 const app = express();
 const httpServer = createServer(app);
@@ -216,6 +217,13 @@ app.use((req, res, next) => {
   });
   
   await registerRoutes(httpServer, app);
+  
+  // Initialize system roles and permissions
+  try {
+    await initializeRolesAndPermissions();
+  } catch (error) {
+    console.error("Failed to initialize roles and permissions:", error);
+  }
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
