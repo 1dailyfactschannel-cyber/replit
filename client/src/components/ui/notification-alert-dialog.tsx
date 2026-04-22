@@ -9,6 +9,7 @@ import { formatDistanceToNow } from "date-fns"
 import { ru } from "date-fns/locale"
 import { io, Socket } from "socket.io-client"
 import { useLocation } from "wouter"
+import { useNotifications } from "@/hooks/use-notifications"
 
 import {
     AlertDialog,
@@ -97,6 +98,7 @@ export function NotificationAlertDialog() {
     const [isDialogOpen, setIsDialogOpen] = useState(false)
     const [, setLocation] = useLocation()
     const queryClient = useQueryClient()
+    const { notify } = useNotifications()
 
     const { data: notifications = [] } = useQuery<Notification[]>({
         queryKey: ["/api/notifications"],
@@ -129,14 +131,23 @@ export function NotificationAlertDialog() {
             console.log("Notification socket connected")
         })
 
-        socket.on("new-notification", () => {
+        socket.on("new-notification", (notification: Notification) => {
             queryClient.invalidateQueries({ queryKey: ["/api/notifications"] })
+            // Show browser notification
+            const content = formatNotificationContent(notification)
+            notify(notification.title, {
+                body: content.userName 
+                    ? `${content.userName} ${content.action || ''} ${content.fieldName || ''} ${content.taskTitle ? `в "${content.taskTitle}"` : ''}`
+                    : notification.message,
+                tag: notification.id,
+                data: { url: notification.link || '/notifications' },
+            })
         })
 
         return () => {
             socket.disconnect()
         }
-    }, [queryClient])
+    }, [queryClient, notify])
 
     const unreadCount = notifications?.filter((n) => !n.isRead).length ?? 0
 
@@ -247,52 +258,33 @@ export function NotificationAlertDialog() {
                                         <Icon className={cn("w-4 h-4", notification.isRead ? "text-muted-foreground" : config.color)} />
                                     </div>
                                     <div className="flex-1 min-w-0 text-left">
-                                        <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground mb-0.5">
-                                            <Clock className="h-3 w-3" />
-                                            {formatTime(notification.createdAt)}
-                                        </div>
-                                        <div className="flex flex-wrap items-center gap-x-1 gap-y-0.5 text-xs">
+                                        <p className={cn(
+                                            "text-xs truncate",
+                                            notification.isRead ? "text-muted-foreground" : "text-foreground font-medium"
+                                        )}>
                                             {content.userName && (
-                                                <span className={cn(
-                                                    "font-medium",
-                                                    notification.isRead ? "text-muted-foreground" : "text-foreground"
-                                                )}>
-                                                    {content.userName}
-                                                </span>
+                                                <span className={notification.isRead ? "" : "font-medium"}>{content.userName}</span>
                                             )}
                                             {content.action && (
-                                                <span className="text-muted-foreground">{content.action}</span>
+                                                <span className="text-muted-foreground"> {content.action}</span>
                                             )}
                                             {content.fieldName && (
-                                                <span className={cn(
-                                                    "font-medium",
-                                                    notification.isRead ? "text-muted-foreground" : "text-foreground"
-                                                )}>
-                                                    {content.fieldName}
-                                                </span>
-                                            )}
-                                            {content.oldValue && content.newValue && (
-                                                <span className="text-muted-foreground">
-                                                    с <span className="line-through opacity-60">"{content.oldValue}"</span> на <span className="text-primary font-medium">"{content.newValue}"</span>
-                                                </span>
+                                                <span> {content.fieldName}</span>
                                             )}
                                             {content.newValue && !content.oldValue && (
-                                                <span className="text-primary font-medium">"{content.newValue}"</span>
+                                                <span className="text-primary"> "{content.newValue}"</span>
                                             )}
-                                        </div>
-                                        {content.taskTitle && (
-                                            <p className="text-[10px] text-muted-foreground mt-0.5">
-                                                в задаче "{content.taskTitle}"
-                                            </p>
-                                        )}
-                                        {!content.userName && !content.action && (
-                                            <p className="text-xs text-muted-foreground">
-                                                {notification.message}
-                                            </p>
-                                        )}
+                                            {content.taskTitle && (
+                                                <span className="text-muted-foreground"> в "{content.taskTitle}"</span>
+                                            )}
+                                            {!content.userName && !content.action && notification.message}
+                                        </p>
+                                        <p className="text-[10px] text-muted-foreground mt-0.5">
+                                            {formatTime(notification.createdAt)}
+                                        </p>
                                     </div>
                                     {!notification.isRead && (
-                                        <span className="w-2 h-2 rounded-full bg-primary shrink-0 mt-1" />
+                                        <span className="w-2 h-2 rounded-full bg-primary shrink-0" />
                                     )}
                                 </div>
                             )

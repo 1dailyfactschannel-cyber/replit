@@ -13,6 +13,7 @@ import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { io, Socket } from "socket.io-client";
 import { toast } from "sonner";
+import { useNotifications } from "@/hooks/use-notifications";
 import {
   Bell,
   BellRing,
@@ -24,10 +25,12 @@ import {
   Search,
   Check,
   Trash2,
-  ChevronRight,
   Filter,
   CheckCheck,
   X,
+  Clock,
+  ArrowRight,
+  User,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -36,6 +39,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 
 const notificationTypeConfig = {
   task: {
@@ -92,8 +97,6 @@ function groupNotificationsByDate(notifications: Notification[]) {
     earlier: [],
   };
 
-  const now = new Date();
-
   notifications.forEach((notification) => {
     const date = notification.createdAt ? parseISO(notification.createdAt.toString()) : new Date();
 
@@ -137,9 +140,8 @@ function parseNotificationMessage(message: string): ParsedNotificationData | nul
 // Format notification content for display
 function formatNotificationContent(notification: Notification) {
   const data = parseNotificationMessage(notification.message);
-  
+
   if (!data) {
-    // Fallback for old format (plain text)
     return {
       userName: null,
       action: null,
@@ -155,6 +157,10 @@ function formatNotificationContent(notification: Notification) {
     changed: "изменил(-а)",
     comment_added: "прокомментировал(-а)",
     completed: "завершил(-а)",
+    mentioned: "упомянул(-а)",
+    status_changed: "изменил(-а) статус",
+    due_soon: "истекает срок",
+    invited: "пригласил(-а)",
   };
 
   const verb = actionVerbs[data.action] || data.action;
@@ -171,7 +177,7 @@ function formatNotificationContent(notification: Notification) {
   };
 }
 
-function NotificationItem({
+function CompactNotificationItem({
   notification,
   onMarkAsRead,
   onDelete,
@@ -195,110 +201,67 @@ function NotificationItem({
   const content = formatNotificationContent(notification);
   const isClickable = notification.link || type === "task" || type === "chat" || type === "calendar" || type === "call";
 
-  const handleTitleClick = (e: React.MouseEvent) => {
-    e.stopPropagation();
+  const handleClick = () => {
     if (!notification.isRead) {
       onMarkAsRead(notification.id);
     }
     onNavigate(notification);
   };
 
+  // Build compact text line
+  const buildCompactText = () => {
+    const parts: string[] = [];
+    if (content.userName) parts.push(content.userName);
+    if (content.action) parts.push(content.action);
+    if (content.fieldName) parts.push(content.fieldName);
+    if (content.newValue && !content.oldValue) parts.push(`"${content.newValue}"`);
+    if (content.taskTitle) parts.push(`в "${content.taskTitle}"`);
+    if (content.commentPreview) parts.push(`: "${content.commentPreview.substring(0, 50)}${content.commentPreview.length > 50 ? '...' : ''}"`);
+    return parts.join(" ");
+  };
+
   return (
     <div
       className={cn(
-        "group relative flex items-start gap-2.5 px-3 py-2.5 rounded-md transition-all duration-200",
+        "group relative flex items-center gap-2.5 px-3 py-1.5 rounded-md transition-all duration-200 cursor-pointer",
         notification.isRead
-          ? "bg-background hover:bg-accent/50"
-          : "bg-primary/5 hover:bg-primary/10"
+          ? "bg-background hover:bg-accent/40"
+          : "bg-primary/[0.04] hover:bg-primary/[0.08]"
       )}
+      onClick={handleClick}
     >
+      {/* Unread dot */}
+      <div className="w-1.5 h-1.5 shrink-0">
+        {!notification.isRead && (
+          <span className="block w-1.5 h-1.5 rounded-full bg-primary" />
+        )}
+      </div>
+
+      {/* Icon */}
       <div
         className={cn(
-          "w-8 h-8 rounded-full flex items-center justify-center shrink-0 mt-0.5",
-          notification.isRead ? config.bgColor : "bg-primary/20"
+          "w-7 h-7 rounded-md flex items-center justify-center shrink-0",
+          config.bgColor
         )}
       >
-        <Icon className={cn("w-4 h-4", notification.isRead ? config.color : "text-primary")} />
+        <Icon className={cn("w-3.5 h-3.5", config.color)} />
       </div>
 
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2 mb-0.5">
-          <span className="text-[10px] text-muted-foreground font-medium shrink-0">
-            {formatTime(notification.createdAt)}
-          </span>
-          {content.userName && (
-            <span className={cn(
-              "font-medium text-sm",
-              notification.isRead ? "text-muted-foreground" : "text-foreground"
-            )}>
-              {content.userName}
-            </span>
-          )}
-        </div>
-
-        <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-sm">
-          {content.action && (
-            <span className="text-muted-foreground">{content.action}</span>
-          )}
-          {content.fieldName && (
-            <span className={cn(
-              "font-medium",
-              notification.isRead ? "text-muted-foreground" : "text-foreground"
-            )}>
-              {content.fieldName}
-            </span>
-          )}
-          {content.oldValue && content.newValue && (
-            <span className="text-muted-foreground">
-              с <span className="line-through text-muted-foreground/60">"{content.oldValue}"</span> на <span className="font-medium text-primary">"{content.newValue}"</span>
-            </span>
-          )}
-          {content.newValue && !content.oldValue && !content.fieldName?.includes("Комментарий") && (
-            <span className="text-muted-foreground">
-              <span className="font-medium text-primary">"{content.newValue}"</span>
-            </span>
-          )}
-        </div>
-
-        {content.taskTitle && (
-          <p className={cn(
-            "text-xs mt-1",
-            notification.isRead ? "text-muted-foreground" : "text-foreground/70"
-          )}>
-            в задаче{" "}
-            <span
-              className={cn(
-                "cursor-pointer",
-                isClickable && "hover:text-primary hover:underline"
-              )}
-              onClick={isClickable ? handleTitleClick : undefined}
-            >
-              "{content.taskTitle}"
-            </span>
-            {content.boardName && ` (${content.boardName})`}
-          </p>
-        )}
-
-        {content.commentPreview && (
-          <p className={cn(
-            "text-xs mt-1 italic",
-            notification.isRead ? "text-muted-foreground" : "text-foreground/70"
-          )}>
-            "{content.commentPreview}"
-          </p>
-        )}
-
-        {!content.userName && !content.action && (
-          <p className={cn(
-            "text-xs",
-            notification.isRead ? "text-muted-foreground" : "text-foreground/70"
-          )}>
-            {notification.message}
-          </p>
-        )}
+      {/* Content */}
+      <div className="flex-1 min-w-0 flex items-center gap-2">
+        <p className={cn(
+          "text-sm truncate flex-1",
+          notification.isRead ? "text-muted-foreground" : "text-foreground font-medium"
+        )}>
+          {content.userName || content.action ? buildCompactText() : notification.message}
+        </p>
+        <span className="text-[11px] text-muted-foreground shrink-0 whitespace-nowrap">
+          {formatTime(notification.createdAt)}
+        </span>
       </div>
 
-      <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity mt-0.5">
+      {/* Actions - visible on hover */}
+      <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
         {!notification.isRead && (
           <Button
             variant="ghost"
@@ -324,7 +287,7 @@ function NotificationItem({
             }}
             title="Перейти"
           >
-            <ChevronRight className="h-3.5 w-3.5" />
+            <ArrowRight className="h-3.5 w-3.5" />
           </Button>
         )}
         <Button
@@ -340,10 +303,6 @@ function NotificationItem({
           <Trash2 className="h-3.5 w-3.5" />
         </Button>
       </div>
-
-      {!notification.isRead && (
-        <span className="w-2 h-2 rounded-full bg-primary shrink-0 mt-1" />
-      )}
     </div>
   );
 }
@@ -353,7 +312,9 @@ export default function NotificationsPage() {
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState<NotificationType | "all">("all");
   const [statusFilter, setStatusFilter] = useState<"all" | "unread" | "read">("all");
+  const [showSettings, setShowSettings] = useState(false);
   const queryClient = useQueryClient();
+  const { notify } = useNotifications();
 
   const { data: notifications = [], isLoading } = useQuery<Notification[]>({
     queryKey: ["/api/notifications"],
@@ -408,14 +369,25 @@ export default function NotificationsPage() {
       console.log("Notifications page socket connected");
     });
 
-    socket.on("new-notification", () => {
+    socket.on("new-notification", (notification: Notification) => {
       queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
+      // Show browser notification if page is not visible
+      if (document.hidden) {
+        const content = formatNotificationContent(notification);
+        notify(notification.title, {
+          body: content.userName
+            ? `${content.userName} ${content.action || ''} ${content.fieldName || ''} ${content.taskTitle ? `в "${content.taskTitle}"` : ''}`
+            : notification.message,
+          tag: notification.id,
+          data: { url: notification.link || '/notifications' },
+        });
+      }
     });
 
     return () => {
       socket.disconnect();
     };
-  }, [queryClient]);
+  }, [queryClient, notify]);
 
   const filteredNotifications = notifications.filter((n) => {
     const matchesSearch =
@@ -480,34 +452,45 @@ export default function NotificationsPage() {
 
   return (
     <Layout>
-      <div className="container max-w-4xl mx-auto py-6 px-4">
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-3">
-            <BellRing className="h-6 w-6 text-primary" />
-            <h1 className="text-2xl font-bold">Уведомления</h1>
+      <div className="container max-w-4xl mx-auto py-4 px-4">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2.5">
+            <BellRing className="h-5 w-5 text-primary" />
+            <h1 className="text-xl font-bold">Уведомления</h1>
             {unreadCount > 0 && (
-              <Badge variant="secondary" className="ml-2">
+              <Badge variant="secondary" className="text-xs">
                 {unreadCount} непрочитанных
               </Badge>
             )}
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
             {unreadCount > 0 && (
               <Button
                 variant="outline"
                 size="sm"
+                className="h-8 text-xs"
                 onClick={() => markAllAsReadMutation.mutate()}
                 disabled={markAllAsReadMutation.isPending}
               >
-                <CheckCheck className="h-4 w-4 mr-2" />
-                Отметить все прочитанными
+                <CheckCheck className="h-3.5 w-3.5 mr-1.5" />
+                Прочитать все
               </Button>
             )}
+            <Button
+              variant="ghost"
+              size="icon"
+              className={cn("h-8 w-8", showSettings && "bg-accent")}
+              onClick={() => setShowSettings(!showSettings)}
+              title="Настройки уведомлений"
+            >
+              <Settings className="h-4 w-4" />
+            </Button>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm">
-                  <Filter className="h-4 w-4 mr-2" />
+                <Button variant="outline" size="sm" className="h-8 text-xs">
+                  <Filter className="h-3.5 w-3.5 mr-1.5" />
                   Фильтры
                 </Button>
               </DropdownMenuTrigger>
@@ -547,54 +530,81 @@ export default function NotificationsPage() {
           </div>
         </div>
 
-        <div className="flex flex-col sm:flex-row gap-4 mb-6">
+        {/* Settings Panel */}
+        {showSettings && (
+          <div className="mb-4 p-3 rounded-lg border bg-muted/30 space-y-3">
+            <h3 className="text-sm font-medium">Настройки уведомлений</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {Object.entries(notificationTypeConfig).map(([key, config]) => (
+                <div key={key} className="flex items-center justify-between p-2 rounded-md bg-background">
+                  <div className="flex items-center gap-2">
+                    <config.icon className={cn("w-4 h-4", config.color)} />
+                    <Label htmlFor={`notif-${key}`} className="text-sm cursor-pointer">{config.label}</Label>
+                  </div>
+                  <Switch id={`notif-${key}`} defaultChecked />
+                </div>
+              ))}
+            </div>
+            <div className="flex items-center justify-between p-2 rounded-md bg-background">
+              <div className="flex items-center gap-2">
+                <Bell className="w-4 h-4 text-primary" />
+                <Label htmlFor="notif-browser" className="text-sm cursor-pointer">Браузерные уведомления</Label>
+              </div>
+              <Switch id="notif-browser" />
+            </div>
+          </div>
+        )}
+
+        {/* Search and Type Filter */}
+        <div className="flex flex-col sm:flex-row gap-3 mb-4">
           <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
               placeholder="Поиск уведомлений..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="pl-9"
+              className="pl-9 h-9 text-sm"
             />
           </div>
 
           <Tabs value={typeFilter} onValueChange={(v) => setTypeFilter(v as NotificationType | "all")}>
-            <TabsList>
-              <TabsTrigger value="all">Все</TabsTrigger>
+            <TabsList className="h-9">
+              <TabsTrigger value="all" className="text-xs">Все</TabsTrigger>
               {Object.entries(notificationTypeConfig).map(([key, config]) => (
-                <TabsTrigger key={key} value={key}>
-                  <config.icon className="h-4 w-4 mr-1" />
-                  {config.label}
+                <TabsTrigger key={key} value={key} className="text-xs px-2.5">
+                  <config.icon className="h-3.5 w-3.5 mr-1" />
+                  <span className="hidden sm:inline">{config.label}</span>
                 </TabsTrigger>
               ))}
             </TabsList>
           </Tabs>
         </div>
 
+        {/* Notifications List */}
         {isLoading ? (
           <div className="flex items-center justify-center py-12">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
           </div>
         ) : filteredNotifications.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
-            <Bell className="h-12 w-12 mb-4 opacity-50" />
-            <p className="text-lg font-medium">Нет уведомлений</p>
+          <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
+            <Bell className="h-10 w-10 mb-3 opacity-40" />
+            <p className="text-base font-medium">Нет уведомлений</p>
             <p className="text-sm">Уведомления будут отображаться здесь</p>
           </div>
         ) : (
-          <ScrollArea className="h-[calc(100vh-280px)]">
-            <div className="space-y-6">
+          <ScrollArea className="h-[calc(100vh-240px)]">
+            <div className="space-y-1">
               {Object.entries(groupedNotifications).map(([group, items]) => {
                 if (items.length === 0) return null;
 
                 return (
-                  <div key={group}>
-                    <h3 className="text-sm font-medium text-muted-foreground mb-3">
+                  <div key={group} className="mb-3">
+                    <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-3 py-1.5 sticky top-0 bg-background/95 backdrop-blur-sm z-10">
                       {dateGroupLabels[group]} ({items.length})
                     </h3>
-                    <div className="space-y-2">
+                    <div className="space-y-0.5">
                       {items.map((notification) => (
-                        <NotificationItem
+                        <CompactNotificationItem
                           key={notification.id}
                           notification={notification}
                           onMarkAsRead={handleMarkAsRead}

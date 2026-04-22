@@ -1949,8 +1949,29 @@ export async function registerRoutes(
         }
       }
 
-      // Send notification to reporter about task updates (except for assignee changes)
-      if (task.reporterId && task.reporterId !== userId && !updateData.assigneeId) {
+      // Send notification to assignee about status change (if not made by assignee)
+      if (updateData.status && currentTask?.status !== updateData.status && task.assigneeId && task.assigneeId !== userId) {
+        const board = await storage.getBoard(task.boardId);
+        await sendNotification(
+          task.assigneeId,
+          userId!,
+          'task',
+          'Статус задачи изменен',
+          {
+            action: 'status_changed',
+            userName: formatUserName(currentUser!),
+            fieldName: 'Статус',
+            oldValue: currentTask?.status || undefined,
+            newValue: updateData.status,
+            taskTitle: task.title,
+            boardName: board?.name,
+          },
+          `/boards/${task.boardId}`
+        );
+      }
+
+      // Send notification to reporter about task updates (except for assignee changes and status changes already notified)
+      if (task.reporterId && task.reporterId !== userId && !updateData.assigneeId && !(updateData.status && currentTask?.status !== updateData.status)) {
         const changedFields = Object.keys(updateData);
         if (changedFields.length > 0) {
           const board = await storage.getBoard(task.boardId);
@@ -2807,6 +2828,34 @@ export async function registerRoutes(
       
       // Also notify each participant individually (for chat list updates)
       const participants = await storage.getChatParticipants(req.params.chatId);
+      const participantUserIds = participants.map(p => p.userId);
+      
+      // Check for @mentions in message content
+      const mentionRegex = /@([a-zA-Z0-9_\-\.]+)/g;
+      const mentions = message.content.match(mentionRegex);
+      if (mentions && mentions.length > 0) {
+        const allUsers = await storage.getAllUsers();
+        for (const mention of mentions) {
+          const username = mention.substring(1); // Remove @
+          const mentionedUser = allUsers.find(u => u.username === username || u.email === username);
+          if (mentionedUser && mentionedUser.id !== user.id && participantUserIds.includes(mentionedUser.id)) {
+            await sendNotification(
+              mentionedUser.id,
+              user.id,
+              'chat',
+              'Вас упомянули в чате',
+              {
+                action: 'mentioned',
+                userName: formatUserName(user as any),
+                fieldName: 'Сообщение',
+                commentPreview: message.content.substring(0, 100),
+              },
+              `/chat?id=${req.params.chatId}`
+            );
+          }
+        }
+      }
+      
       participants.forEach(p => {
         io.to(`user:${p.userId}`).emit("chat-update", {
           chatId: req.params.chatId,
@@ -3386,6 +3435,37 @@ export async function registerRoutes(
             },
             `/boards/${task.boardId}`
           );
+        }
+
+        // Check for @mentions in comment content
+        const mentionRegex = /@([a-zA-Z0-9_\-\.]+)/g;
+        const mentions = req.body.content?.match(mentionRegex);
+        if (mentions && mentions.length > 0) {
+          const allUsers = await storage.getAllUsers();
+          const notifiedUserIds = new Set([task.assigneeId, task.reporterId, req.user.id].filter(Boolean));
+          
+          for (const mention of mentions) {
+            const username = mention.substring(1); // Remove @
+            const mentionedUser = allUsers.find(u => u.username === username || u.email === username);
+            if (mentionedUser && !notifiedUserIds.has(mentionedUser.id)) {
+              await sendNotification(
+                mentionedUser.id,
+                req.user.id,
+                'task',
+                'Вас упомянули в комментарии',
+                {
+                  action: 'mentioned',
+                  userName: authorName,
+                  fieldName: 'Комментарий',
+                  commentPreview: req.body.content?.substring(0, 100) || '',
+                  taskTitle: task.title,
+                  boardName: board?.name,
+                },
+                `/boards/${task.boardId}`
+              );
+              notifiedUserIds.add(mentionedUser.id);
+            }
+          }
         }
       }
       
