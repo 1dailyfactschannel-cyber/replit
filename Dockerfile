@@ -31,9 +31,12 @@ COPY --from=builder --chown=nodejs:nodejs /app/package.json ./package.json
 COPY --from=builder --chown=nodejs:nodejs /app/node_modules ./node_modules
 COPY --from=builder --chown=nodejs:nodejs /app/migrations ./migrations
 COPY --from=builder --chown=nodejs:nodejs /app/script/migrate.js ./script/migrate.js
+COPY --from=builder --chown=nodejs:nodejs /app/startup.sh ./startup.sh
+
+RUN chmod +x startup.sh
 
 USER nodejs
 
 EXPOSE 3000
 
-CMD ["node", "script/migrate.js"]
+CMD ["./startup.sh"]
