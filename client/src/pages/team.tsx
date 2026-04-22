@@ -479,6 +479,12 @@ export default function EmployeesPage() {
     return Array.from(new Map(blocked.map(u => [u.id, u])).values());
   }, [employees]);
 
+  // All active employees without search/filters (for analytics tab)
+  const allActiveEmployees = useMemo(() => {
+    const active = employees.filter((emp) => emp && emp.isActive !== false);
+    return Array.from(new Map(active.map(u => [u.id, u])).values());
+  }, [employees]);
+
   useEffect(() => {
     const tab = new URLSearchParams(window.location.search).get('tab') || 'list';
     setActiveTab(tab);
@@ -845,8 +851,6 @@ export default function EmployeesPage() {
                   <TableRow>
                     <TableHead className="w-[300px]">Сотрудник</TableHead>
                     <TableHead>Должность</TableHead>
-                    <TableHead>Начало</TableHead>
-                    <TableHead>Окончание</TableHead>
                     <TableHead>Статус</TableHead>
                     <TableHead>Комментарий</TableHead>
                     <TableHead>Баллы</TableHead>
@@ -878,38 +882,6 @@ export default function EmployeesPage() {
                         </div>
                       </TableCell>
                       <TableCell className="text-sm text-foreground">{employee.position}</TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-1">
-                          <Input
-                            type="time"
-                            value={employee.workStartTime || ""}
-                            onChange={(e) => {
-                              e.stopPropagation();
-                              const newTime = e.target.value;
-                              apiRequest("PUT", `/api/users/${employee.id}`, { workStartTime: newTime });
-                              queryClient.invalidateQueries({ queryKey: ["/api/users"] });
-                            }}
-                            onClick={(e) => e.stopPropagation()}
-                            className="h-7 w-28 text-xs"
-                          />
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-1">
-                          <Input
-                            type="time"
-                            value={employee.workEndTime || ""}
-                            onChange={(e) => {
-                              e.stopPropagation();
-                              const newTime = e.target.value;
-                              apiRequest("PUT", `/api/users/${employee.id}`, { workEndTime: newTime });
-                              queryClient.invalidateQueries({ queryKey: ["/api/users"] });
-                            }}
-                            onClick={(e) => e.stopPropagation()}
-                            className="h-7 w-28 text-xs"
-                          />
-                        </div>
-                      </TableCell>
                       <TableCell>
                         {customStatuses.length > 0 && employee.status ? (
                           <StatusBadge status={employee.status} color={customStatuses.find(s => s.name === employee.status)?.color} />
@@ -1166,28 +1138,53 @@ export default function EmployeesPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {[
-                    { name: "Юлия Дарицкая", in: "08:45", start: "09:02", end: "18:05", out: "18:15", total: "9ч 03м" },
-                    { name: "Александр Петров", in: "09:15", start: "09:20", end: "18:30", out: "18:40", total: "9ч 10м" },
-                    { name: "Елена Сидорова", in: "08:55", start: "09:00", end: "17:55", out: "18:02", total: "8ч 55м" },
-                    { name: "Дарья Козлова", in: "09:30", start: "09:35", end: "19:00", out: "19:10", total: "9ч 25м" },
-                  ].map((row, i) => (
-                    <TableRow key={i} className="hover:bg-secondary/30 transition-colors">
+                  {allActiveEmployees.map((employee) => {
+                    const fullName = `${employee.firstName || ""} ${employee.lastName || ""}`.trim();
+                    return (
+                    <TableRow key={employee.id} className="hover:bg-secondary/30 transition-colors">
                       <TableCell className="font-medium text-foreground">
                         <div className="flex items-center gap-3">
                           <Avatar className="h-8 w-8 border border-border">
-                            <AvatarFallback>{row.name.split(' ').map(n => n[0]).join('')}</AvatarFallback>
+                            <AvatarImage src={employee.avatar || undefined} />
+                            <AvatarFallback>{fullName.split(' ').map(n => n[0]).join('')}</AvatarFallback>
                           </Avatar>
-                          <span className="text-sm font-semibold text-foreground">{row.name}</span>
+                          <span className="text-sm font-semibold text-foreground">{fullName}</span>
                         </div>
                       </TableCell>
-                      <TableCell className="text-sm font-medium text-emerald-500">{row.in}</TableCell>
-                      <TableCell className="text-sm text-foreground">{row.start}</TableCell>
-                      <TableCell className="text-sm text-foreground">{row.end}</TableCell>
-                      <TableCell className="text-sm font-medium text-rose-500">{row.out}</TableCell>
-                      <TableCell className="text-right font-bold text-primary">{row.total}</TableCell>
+                      <TableCell className="text-sm font-medium text-emerald-500">—</TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-1">
+                          <Input
+                            type="time"
+                            value={employee.workStartTime || ""}
+                            onChange={(e) => {
+                              const newTime = e.target.value;
+                              apiRequest("PUT", `/api/users/${employee.id}`, { workStartTime: newTime });
+                              queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+                            }}
+                            className="h-7 w-28 text-xs"
+                          />
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-1">
+                          <Input
+                            type="time"
+                            value={employee.workEndTime || ""}
+                            onChange={(e) => {
+                              const newTime = e.target.value;
+                              apiRequest("PUT", `/api/users/${employee.id}`, { workEndTime: newTime });
+                              queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+                            }}
+                            className="h-7 w-28 text-xs"
+                          />
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-sm font-medium text-rose-500">—</TableCell>
+                      <TableCell className="text-right font-bold text-primary">—</TableCell>
                     </TableRow>
-                  ))}
+                    );
+                  })}
                 </TableBody>
               </Table>
             </div>
