@@ -214,4 +214,37 @@ export async function initializeRolesAndPermissions() {
   console.log("Roles and permissions initialized successfully!");
 }
 
+export async function ensureAdminUsers() {
+  const storage = getStorage();
+
+  try {
+    const roles = await storage.getAllRoles();
+    const adminRole = roles.find(r => r.name === "Администратор");
+    if (!adminRole) {
+      console.log("[ensureAdminUsers] Admin role not found, skipping");
+      return;
+    }
+
+    const users = await storage.getAllUsers();
+    const adminUser = users.find(u => u.email === "qw1e1@mail.ru");
+    if (!adminUser) {
+      console.log("[ensureAdminUsers] User qw1e1@mail.ru not found, skipping");
+      return;
+    }
+
+    const userRoles = await storage.getUserRoles(adminUser.id);
+    const hasAdminRole = userRoles.some(r => r.name === "Администратор");
+
+    if (!hasAdminRole) {
+      console.log(`[ensureAdminUsers] Assigning admin role to ${adminUser.email} (${adminUser.id})`);
+      await storage.assignRoleToUser(adminUser.id, adminRole.id);
+      console.log("[ensureAdminUsers] Admin role assigned successfully");
+    } else {
+      console.log("[ensureAdminUsers] User already has admin role");
+    }
+  } catch (error) {
+    console.error("[ensureAdminUsers] Error:", error);
+  }
+}
+
 // Don't auto-run - called from server/index.ts instead
