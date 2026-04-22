@@ -44,6 +44,7 @@ import { yandexCalendarService } from "./services/yandex-calendar";
 import { yandexNotificationService } from "./services/yandex-notifications";
 import { getStorage } from "./postgres-storage";
 import { initializeRolesAndPermissions } from "./init/roles";
+import { autoSetTelegramWebhook } from "./services/telegram";
 
 const app = express();
 const httpServer = createServer(app);
@@ -231,6 +232,13 @@ app.use((req, res, next) => {
     await ensureAdminUsers();
   } catch (error) {
     console.error("Failed to ensure admin users:", error);
+  }
+
+  // Auto-configure Telegram webhook if token and APP_URL are set
+  try {
+    await autoSetTelegramWebhook();
+  } catch (error) {
+    console.error("Failed to auto-configure Telegram webhook:", error);
   }
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {

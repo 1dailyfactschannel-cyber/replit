@@ -131,3 +131,39 @@ export function escapeHtml(text: string): string {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
 }
+
+export async function autoSetTelegramWebhook(): Promise<void> {
+  const appUrl = process.env.APP_URL || process.env.RENDER_EXTERNAL_URL || process.env.VERCEL_URL;
+  if (!appUrl) {
+    console.warn("[Telegram] APP_URL not set. Skipping automatic webhook setup. Set APP_URL to enable Telegram bot.");
+    return;
+  }
+
+  const token = await getBotToken();
+  if (!token) {
+    console.warn("[Telegram] Bot token not configured. Skipping webhook setup.");
+    return;
+  }
+
+  const webhookUrl = `${appUrl.replace(/\/$/, "")}/api/webhook/telegram`;
+
+  try {
+    // Check current webhook status
+    const infoRes = await fetch(`${TELEGRAM_API}${token}/getWebhookInfo`);
+    const info = await infoRes.json();
+
+    if (info.ok && info.result?.url === webhookUrl) {
+      console.log("[Telegram] Webhook already set correctly:", webhookUrl);
+      return;
+    }
+
+    const success = await setTelegramWebhook(token, webhookUrl);
+    if (success) {
+      console.log("[Telegram] Webhook auto-configured:", webhookUrl);
+    } else {
+      console.error("[Telegram] Failed to auto-configure webhook.");
+    }
+  } catch (error) {
+    console.error("[Telegram] Error during auto webhook setup:", error);
+  }
+}
