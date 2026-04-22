@@ -48,7 +48,9 @@ import {
   Copy,
   RefreshCw,
   Link,
-  UserX
+  UserX,
+  Webhook,
+  AlertCircle
 } from "lucide-react";
 import { RolesManagement } from "@/components/settings/RolesManagement";
 import { YandexCalendarConnect, YandexCalendarSettings } from "@/components/integrations/YandexCalendarConnect";
@@ -1158,6 +1160,26 @@ function TelegramSettings() {
     }
   });
 
+  const webhookMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/admin/telegram-webhook");
+      return res.json();
+    },
+    onSuccess: (data) => {
+      toast({
+        title: "Webhook установлен",
+        description: data.message || "Telegram webhook успешно настроен.",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Ошибка",
+        description: "Не удалось установить webhook. Проверьте токен и APP_URL.",
+        variant: "destructive",
+      });
+    }
+  });
+
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
       <Card className="border-border/50 shadow-sm overflow-hidden">
@@ -1197,6 +1219,15 @@ function TelegramSettings() {
               </p>
             </div>
 
+            <div className="rounded-xl bg-amber-50 dark:bg-amber-500/10 p-4 border border-amber-200 dark:border-amber-500/20 space-y-2">
+              <h5 className="text-xs font-bold flex items-center gap-2 uppercase tracking-tight text-amber-700 dark:text-amber-400">
+                <AlertCircle className="w-3 h-3" /> Важно: APP_URL
+              </h5>
+              <p className="text-[11px] text-amber-700/80 dark:text-amber-400/80 leading-relaxed">
+                Для работы webhook убедитесь, что в переменных окружения сервера задан <code className="bg-amber-100 dark:bg-amber-500/20 px-1 py-0.5 rounded font-mono text-[10px]">APP_URL</code> — публичный адрес вашего приложения (например, <code className="bg-amber-100 dark:bg-amber-500/20 px-1 py-0.5 rounded font-mono text-[10px]">https://portal.m4bank.ru</code>). Webhook устанавливается автоматически при старте сервера. Если адрес изменился — нажмите кнопку ниже.
+              </p>
+            </div>
+
             <div className="rounded-xl bg-muted/50 p-4 border border-border/50 space-y-3">
               <h5 className="text-xs font-bold flex items-center gap-2 uppercase tracking-tight">
                 <SettingsIcon className="w-3 h-3 text-primary" /> Инструкция по настройке
@@ -1206,7 +1237,8 @@ function TelegramSettings() {
                   "Создайте нового бота через @BotFather в Telegram",
                   "Скопируйте полученный HTTP API Token",
                   "Вставьте токен в поле выше и нажмите сохранить",
-                  "Теперь система сможет отправлять уведомления"
+                  "Убедитесь, что задана переменная APP_URL в окружении сервера",
+                  "Нажмите «Установить webhook» или перезапустите сервер"
                 ].map((step, i) => (
                   <li key={i} className="text-[11px] text-muted-foreground flex items-start gap-2">
                     <span className="flex items-center justify-center w-4 h-4 rounded-full bg-background border border-border/50 text-[10px] font-bold shrink-0">{i + 1}</span>
@@ -1217,9 +1249,18 @@ function TelegramSettings() {
             </div>
           </div>
         </CardContent>
-        <CardFooter className="bg-muted/20 border-t border-border/50 px-6 py-4 flex justify-end">
-          <Button 
-            onClick={() => mutation.mutate(token)} 
+        <CardFooter className="bg-muted/20 border-t border-border/50 px-6 py-4 flex justify-end gap-2">
+          <Button
+            onClick={() => webhookMutation.mutate()}
+            disabled={webhookMutation.isPending || !token}
+            variant="outline"
+            className="gap-2"
+          >
+            {webhookMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Webhook className="w-4 h-4" />}
+            Установить webhook
+          </Button>
+          <Button
+            onClick={() => mutation.mutate(token)}
             disabled={mutation.isPending}
             className="gap-2 shadow-lg shadow-primary/20"
           >
