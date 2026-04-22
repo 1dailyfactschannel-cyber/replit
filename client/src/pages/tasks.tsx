@@ -116,35 +116,14 @@ export default function Tasks() {
     return initialElapsed + (currentTime - firstRenderTime);
   }, [currentTime]);
 
-  // Склонение слова "час"
-  const getHoursWord = (n: number): string => {
-    if (n % 10 === 1 && n % 100 !== 11) return 'час';
-    if (n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20)) return 'часа';
-    return 'часов';
-  };
-
-  // Склонение слова "минута"
-  const getMinutesWord = (n: number): string => {
-    if (n % 10 === 1 && n % 100 !== 11) return 'минута';
-    if (n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20)) return 'минуты';
-    return 'минут';
-  };
-
-  const formatDuration = useCallback((elapsedMs: number, isMobile: boolean = false) => {
+  const formatDuration = useCallback((elapsedMs: number) => {
     const hours = Math.floor(elapsedMs / 3600000);
     const minutes = Math.floor((elapsedMs % 3600000) / 60000);
-    
-    if (isMobile) {
-      // Мобильный формат: "2ч 30м"
-      if (hours === 0) return `${minutes}м`;
-      if (minutes === 0) return `${hours}ч`;
-      return `${hours}ч ${minutes}м`;
-    }
-    
-    // Десктоп формат: "2 часов, 30 минут"
-    if (hours === 0) return `${minutes} ${getMinutesWord(minutes)}`;
-    if (minutes === 0) return `${hours} ${getHoursWord(hours)}`;
-    return `${hours} ${getHoursWord(hours)}, ${minutes} ${getMinutesWord(minutes)}`;
+
+    // Формат: "2ч 30м"
+    if (hours === 0) return `${minutes}м`;
+    if (minutes === 0) return `${hours}ч`;
+    return `${hours}ч ${minutes}м`;
   }, []);
 
   const formatDate = useCallback((date: any) => {
@@ -526,8 +505,7 @@ export default function Tasks() {
                                 : "text-primary border-primary/10"
                             )}>
                               <div className={cn("w-2 h-2 rounded-full animate-pulse", isOverdue ? "bg-destructive" : "bg-primary")} />
-                              <span className="text-sm hidden sm:inline">{formatDuration(getTaskElapsedTime(task.id, task.acceptedAt), false)}</span>
-                              <span className="text-sm sm:hidden">{formatDuration(getTaskElapsedTime(task.id, task.acceptedAt), true)}</span>
+                              <span className="text-sm">{formatDuration(getTaskElapsedTime(task.id, task.acceptedAt))}</span>
                             </div>
                           );
                         })()
