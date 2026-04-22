@@ -27,10 +27,10 @@ async function runMigrations() {
       .filter(f => f.endsWith('.sql'))
       .sort();
 
-    // Only run the specific work_time migration we need
+    // Only run the newest migrations that add missing columns
     // Skip all older migrations to avoid partial-application errors
-    const targetFile = '0020_add_work_time.sql';
-    const files = allFiles.filter(f => f === targetFile);
+    const targetFiles = ['0020_add_work_time.sql', '0021_add_missing_columns.sql'];
+    const files = allFiles.filter(f => targetFiles.includes(f));
 
     console.log(`[migrate] Will run ${files.length} targeted migration(s)`);
 
