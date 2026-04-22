@@ -20,8 +20,6 @@ services:
       - "3245:3000"
     networks:
       - portal_teamsync-network
-    depends_on:
-      - client
 
   # Frontend Client with Nginx
   client:
@@ -34,6 +32,8 @@ services:
       - "8090:80"
     networks:
       - portal_teamsync-network
+    depends_on:
+      - server
 
 networks:
   portal_teamsync-network:

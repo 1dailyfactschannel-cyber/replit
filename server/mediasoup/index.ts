@@ -35,13 +35,12 @@ export class MediasoupServer {
 
       this.worker.on('died', () => {
         console.error('[Mediasoup] Worker died');
-        process.exit(1);
       });
 
       console.log('[Mediasoup] Worker started successfully');
     } catch (error) {
-      console.error('[Mediasoup] Failed to start worker:', error);
-      throw error;
+      console.error('[Mediasoup] Failed to start worker, continuing without WebRTC support:', error);
+      this.worker = null;
     }
   }
 
