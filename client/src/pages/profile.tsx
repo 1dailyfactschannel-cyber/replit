@@ -114,19 +114,32 @@ export default function Profile() {
   };
 
   const handleConnectTelegram = () => {
-    // В реальном приложении здесь была бы ссылка на ваш бот с уникальным токеном
-    // Например: window.open(`https://t.me/TeamSyncNotifyBot?start=user_123`, '_blank');
-    
-    window.open('https://t.me/TeamSyncNotifyBot', '_blank');
-    
-    // Симуляция успешного подключения через 3 секунды (после того как пользователь якобы нажал Start)
-    setTimeout(() => {
-      setProfile(prev => ({ ...prev, telegramConnected: true }));
+    if (!user?.id) return;
+    // Deep link with user ID for webhook to bind telegramId
+    window.open(`https://t.me/TeamSyncNotifyBot?start=connect_${user.id}`, '_blank');
+    toast({
+      title: "Откройте бот",
+      description: "Нажмите «Start» в Telegram, чтобы завершить подключение.",
+    });
+  };
+
+  const handleDisconnectTelegram = async () => {
+    if (!user?.id) return;
+    try {
+      await apiRequest("PATCH", "/api/user", { telegramId: null, telegramConnected: false });
+      queryClient.invalidateQueries({ queryKey: ["/api/user"] });
+      setProfile(prev => ({ ...prev, telegramConnected: false }));
       toast({
-        title: "Уведомления подключены",
-        description: "Вы успешно подключили Telegram-бота для получения уведомлений.",
+        title: "Telegram отключён",
+        description: "Вы больше не будете получать уведомления в Telegram.",
       });
-    }, 3000);
+    } catch (error) {
+      toast({
+        title: "Ошибка",
+        description: "Не удалось отключить Telegram.",
+        variant: "destructive",
+      });
+    }
   };
 
   const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -373,16 +386,26 @@ export default function Profile() {
                           className="bg-secondary/30 border-border/50 focus:bg-background transition-all"
                         />
                       </div>
-                      <div className="flex items-end">
+                      <div className="flex items-end gap-2">
                         {profile.telegramConnected ? (
-                          <div className="flex items-center gap-2 text-emerald-600 bg-emerald-50 dark:bg-emerald-500/10 px-4 py-2 rounded-md border border-emerald-200 dark:border-emerald-500/20 w-full h-10">
-                            <CheckCircle2 className="w-4 h-4" />
-                            <span className="text-sm font-medium">Уведомления подключены</span>
-                          </div>
+                          <>
+                            <div className="flex items-center gap-2 text-emerald-600 bg-emerald-50 dark:bg-emerald-500/10 px-4 py-2 rounded-md border border-emerald-200 dark:border-emerald-500/20 flex-1 h-10">
+                              <CheckCircle2 className="w-4 h-4 shrink-0" />
+                              <span className="text-sm font-medium truncate">Уведомления подключены</span>
+                            </div>
+                            <Button
+                              onClick={handleDisconnectTelegram}
+                              variant="outline"
+                              size="sm"
+                              className="h-10 text-destructive border-destructive/30 hover:bg-destructive/5"
+                            >
+                              Отключить
+                            </Button>
+                          </>
                         ) : (
-                          <Button 
+                          <Button
                             onClick={handleConnectTelegram}
-                            variant="outline" 
+                            variant="outline"
                             className="w-full gap-2 border-primary/30 hover:border-primary/60 hover:bg-primary/5 h-10"
                           >
                             <Bell className="w-4 h-4 text-primary" />

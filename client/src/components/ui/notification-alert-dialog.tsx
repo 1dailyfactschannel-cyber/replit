@@ -100,9 +100,16 @@ export function NotificationAlertDialog() {
     const queryClient = useQueryClient()
     const { notify } = useNotifications()
 
-    const { data: notifications = [] } = useQuery<Notification[]>({
+    const { data: notificationsData } = useQuery<{ notifications: Notification[] }>({
         queryKey: ["/api/notifications"],
+        queryFn: async () => {
+            const res = await fetch('/api/notifications?page=1&limit=5', { credentials: 'include' });
+            if (!res.ok) throw new Error('Failed to fetch notifications');
+            return res.json();
+        },
     })
+
+    const notifications = notificationsData?.notifications || []
 
     const markAsReadMutation = useMutation({
         mutationFn: async (id: string) => {

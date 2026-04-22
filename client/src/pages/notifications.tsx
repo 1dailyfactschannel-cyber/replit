@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import type { Notification } from "@shared/schema";
 import { formatDistanceToNow, format, isToday, isYesterday, isThisWeek, parseISO } from "date-fns";
@@ -316,9 +316,29 @@ export default function NotificationsPage() {
   const queryClient = useQueryClient();
   const { notify } = useNotifications();
 
-  const { data: notifications = [], isLoading } = useQuery<Notification[]>({
+  const {
+    data,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    isLoading,
+  } = useInfiniteQuery({
     queryKey: ["/api/notifications"],
+    queryFn: async ({ pageParam = 1 }) => {
+      const res = await fetch(`/api/notifications?page=${pageParam}&limit=20`, { credentials: 'include' });
+      if (!res.ok) throw new Error('Failed to fetch notifications');
+      return res.json() as Promise<{ notifications: Notification[]; pagination: { page: number; total: number; totalPages: number } }>;
+    },
+    getNextPageParam: (lastPage) => {
+      if (lastPage.pagination.page < lastPage.pagination.totalPages) {
+        return lastPage.pagination.page + 1;
+      }
+      return undefined;
+    },
+    initialPageParam: 1,
   });
+
+  const notifications = data?.pages.flatMap((page) => page.notifications) || [];
 
   const markAsReadMutation = useMutation({
     mutationFn: async (id: string) => {
@@ -351,8 +371,8 @@ export default function NotificationsPage() {
 
   const deleteAllReadMutation = useMutation({
     mutationFn: async () => {
-      const readNotifications = notifications.filter((n) => n.isRead);
-      await Promise.all(readNotifications.map((n) => apiRequest("DELETE", `/api/notifications/${n.id}`)));
+      const readNotifications = notifications.filter((n: Notification) => n.isRead);
+      await Promise.all(readNotifications.map((n: Notification) => apiRequest("DELETE", `/api/notifications/${n.id}`)));
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
@@ -389,7 +409,7 @@ export default function NotificationsPage() {
     };
   }, [queryClient, notify]);
 
-  const filteredNotifications = notifications.filter((n) => {
+  const filteredNotifications = notifications.filter((n: Notification) => {
     const matchesSearch =
       search === "" ||
       n.title.toLowerCase().includes(search.toLowerCase()) ||
@@ -407,7 +427,7 @@ export default function NotificationsPage() {
 
   const groupedNotifications = groupNotificationsByDate(filteredNotifications);
 
-  const unreadCount = notifications.filter((n) => !n.isRead).length;
+  const unreadCount = notifications.filter((n: Notification) => !n.isRead).length;
 
   const handleNavigate = (notification: Notification) => {
     const type = getNotificationType(notification.type);
@@ -513,7 +533,7 @@ export default function NotificationsPage() {
                 >
                   Прочитанные
                 </DropdownMenuItem>
-                {notifications.some((n) => n.isRead) && (
+                {notifications.some((n: Notification) => n.isRead) && (
                   <>
                     <div className="border-t my-1" />
                     <DropdownMenuItem
@@ -617,6 +637,23 @@ export default function NotificationsPage() {
                 );
               })}
             </div>
+            {/* Load More */}
+            {hasNextPage && (
+              <div className="flex justify-center py-4">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => fetchNextPage()}
+                  disabled={isFetchingNextPage}
+                  className="h-8 text-xs"
+                >
+                  {isFetchingNextPage ? (
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary mr-2" />
+                  ) : null}
+                  Загрузить ещё
+                </Button>
+              </div>
+            )}
           </ScrollArea>
         )}
       </div>

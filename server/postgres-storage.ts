@@ -1537,16 +1537,31 @@ export class PostgresStorage {
   }
 
   // Notification methods
-  async getNotifications(userId: string): Promise<Notification[]> {
+  async getNotifications(userId: string, limit: number = 20, offset: number = 0): Promise<Notification[]> {
     try {
       return await this.db
         .select()
         .from(schema.notifications)
         .where(eq(schema.notifications.userId, userId))
-        .orderBy(desc(schema.notifications.createdAt));
+        .orderBy(desc(schema.notifications.createdAt))
+        .limit(limit)
+        .offset(offset);
     } catch (error) {
       console.error("Error getting notifications:", error);
       return [];
+    }
+  }
+
+  async getNotificationsCount(userId: string): Promise<number> {
+    try {
+      const result = await this.db
+        .select({ count: sql<number>`count(*)` })
+        .from(schema.notifications)
+        .where(eq(schema.notifications.userId, userId));
+      return result[0]?.count || 0;
+    } catch (error) {
+      console.error("Error getting notifications count:", error);
+      return 0;
     }
   }
 

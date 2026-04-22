@@ -17,6 +17,7 @@ import { formatUserName, formatUserBasic } from "./utils";
 import rateLimit from "express-rate-limit";
 import bcrypt from "bcrypt";
 import yandexCalendarRoutes from "./routes/yandex-calendar";
+import { sendTelegramMessage, handleTelegramUpdate, escapeHtml, setTelegramWebhook } from "./services/telegram";
 
 // Permission middleware
 function requirePermission(...permissions: string[]) {
@@ -156,9 +157,61 @@ async function sendNotification(
       message,
       link: link || null,
     });
+
+    // Send Telegram notification for important types
+    const importantTypes = ['chat', 'task', 'calendar', 'call'];
+    const isImportant = importantTypes.includes(type) && (
+      data.action === 'mentioned' ||
+      data.action === 'status_changed' ||
+      data.action === 'task_assigned' ||
+      type === 'call'
+    );
+
+    if (isImportant) {
+      try {
+        const recipient = await storage.getUser(userId);
+        if (recipient?.telegramId && recipient.telegramConnected) {
+          const tgText = buildTelegramNotificationText(title, data, link);
+          await sendTelegramMessage(recipient.telegramId, tgText);
+        }
+      } catch (tgError) {
+        console.error("[Notification] Failed to send Telegram:", tgError);
+      }
+    }
   } catch (error) {
     console.error("Error sending notification:", error);
   }
+}
+
+function buildTelegramNotificationText(title: string, data: NotificationData, link?: string): string {
+  const parts: string[] = [];
+  parts.push(`<b>${escapeHtml(title)}</b>`);
+
+  if (data.userName) {
+    const actionText = data.action === 'mentioned' ? 'упомянул(а) вас' :
+                       data.action === 'status_changed' ? 'изменил(а) статус' :
+                       data.action === 'task_assigned' ? 'назначил(а) вам задачу' :
+                       'действие';
+    parts.push(`${escapeHtml(data.userName)} ${actionText}`);
+  }
+
+  if (data.taskTitle) {
+    parts.push(`📋 <b>${escapeHtml(data.taskTitle)}</b>`);
+  }
+
+  if (data.fieldName && data.newValue) {
+    parts.push(`${escapeHtml(data.fieldName)}: ${escapeHtml(data.newValue)}`);
+  }
+
+  if (data.commentPreview) {
+    parts.push(`💬 «${escapeHtml(data.commentPreview)}»`);
+  }
+
+  if (link) {
+    parts.push(`<a href="${link}">Открыть в приложении</a>`);
+  }
+
+  return parts.join("\n\n");
 }
 
 // Security: Allowed file types for upload
@@ -261,7 +314,7 @@ export async function registerRoutes(
       const user = req.user;
       
       // Whitelist allowed fields for security
-      const allowedFields = ['firstName', 'lastName', 'avatar', 'department', 'position', 'phone', 'timezone', 'language', 'telegram', 'notes'];
+      const allowedFields = ['firstName', 'lastName', 'avatar', 'department', 'position', 'phone', 'timezone', 'language', 'telegram', 'telegramId', 'telegramConnected', 'notes'];
       const updateData: Record<string, any> = {};
       
       for (const field of allowedFields) {
@@ -980,6 +1033,45 @@ export async function registerRoutes(
       res.json(settings);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch settings" });
+    }
+  });
+
+  // Telegram bot webhook
+  app.post("/api/webhook/telegram", async (req, res) => {
+    try {
+      const replyText = await handleTelegramUpdate(req.body);
+      if (replyText) {
+        const update = req.body;
+        const chatId = update.message?.chat?.id;
+        if (chatId) {
+          await sendTelegramMessage(chatId.toString(), replyText);
+        }
+      }
+      res.status(200).json({ ok: true });
+    } catch (error) {
+      console.error("[Telegram Webhook] Error:", error);
+      res.status(200).json({ ok: true }); // Always return 200 to Telegram
+    }
+  });
+
+  // Set Telegram webhook (admin only)
+  app.post("/api/admin/telegram-webhook", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
+    try {
+      const setting = await storage.getSiteSetting("tg_bot_token");
+      if (!setting?.value) {
+        return res.status(400).json({ message: "Bot token not configured" });
+      }
+      const webhookUrl = `${req.protocol}://${req.get('host')}/api/webhook/telegram`;
+      const success = await setTelegramWebhook(setting.value, webhookUrl);
+      if (success) {
+        res.json({ message: "Webhook установлен", url: webhookUrl });
+      } else {
+        res.status(500).json({ message: "Не удалось установить webhook" });
+      }
+    } catch (error) {
+      console.error("Error setting Telegram webhook:", error);
+      res.status(500).json({ message: "Failed to set webhook" });
     }
   });
 
@@ -3045,15 +3137,33 @@ export async function registerRoutes(
     if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
     try {
       const user = req.user;
-      const cacheKey = `user:${user.id}:notifications`;
+      const page = Math.max(1, parseInt(req.query.page as string) || 1);
+      const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string) || 20));
+      const offset = (page - 1) * limit;
+
+      const cacheKey = `user:${user.id}:notifications:page${page}:limit${limit}`;
       const cached = await getCache(cacheKey);
       if (cached) {
         return res.json(cached);
       }
 
-      const notifications = await storage.getNotifications(user.id);
-      await setCache(cacheKey, notifications, 60); // Cache for 1 minute
-      res.json(notifications);
+      const [notifications, total] = await Promise.all([
+        storage.getNotifications(user.id, limit, offset),
+        storage.getNotificationsCount(user.id)
+      ]);
+
+      const result = {
+        notifications,
+        pagination: {
+          page,
+          limit,
+          total,
+          totalPages: Math.ceil(total / limit)
+        }
+      };
+
+      await setCache(cacheKey, result, 60); // Cache for 1 minute
+      res.json(result);
     } catch (error) {
       console.error("Error fetching notifications:", error);
       res.status(500).json({ message: "Failed to fetch notifications" });
