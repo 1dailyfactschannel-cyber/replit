@@ -27,10 +27,12 @@ async function runMigrations() {
       .filter(f => f.endsWith('.sql'))
       .sort();
 
-    // Only run numbered migrations (0001_*, 0020_*, etc.)
-    const files = allFiles.filter(f => /^\d{4}_/.test(f));
+    // Only run the specific work_time migration we need
+    // Skip all older migrations to avoid partial-application errors
+    const targetFile = '0020_add_work_time.sql';
+    const files = allFiles.filter(f => f === targetFile);
 
-    console.log(`[migrate] Found ${files.length} numbered migration files (skipped ${allFiles.length - files.length} non-numbered)`);
+    console.log(`[migrate] Will run ${files.length} targeted migration(s)`);
 
     for (const file of files) {
       const filepath = path.join(migrationsDir, file);
