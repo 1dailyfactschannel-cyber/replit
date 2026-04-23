@@ -418,6 +418,7 @@ function SecurityManagement() {
 function IntegrationsManagement() {
   const [showTelegram, setShowTelegram] = useState(false);
   const [showYandexCalendar, setShowYandexCalendar] = useState(false);
+  const [showEmail, setShowEmail] = useState(false);
   const [activeTab, setActiveTab] = useState("all");
   
   const integrations = [
@@ -467,6 +468,15 @@ function IntegrationsManagement() {
       category: "management"
     },
     { 
+      id: "email", 
+      name: "Email SMTP", 
+      desc: "Email-уведомления о регистрации и смене пароля", 
+      icon: Mail, 
+      color: "bg-[#EA4335]", 
+      connected: false,
+      category: "notifications"
+    },
+    { 
       id: "yandex-calendar", 
       name: "Яндекс Календарь", 
       desc: "Синхронизация событий и встреч", 
@@ -489,6 +499,7 @@ function IntegrationsManagement() {
   const categories = [
     { id: "all", label: "Все" },
     { id: "messengers", label: "Мессенджеры" },
+    { id: "notifications", label: "Уведомления" },
     { id: "dev", label: "Разработка" },
     { id: "management", label: "Управление" },
     { id: "calendar", label: "Календари" },
@@ -514,6 +525,18 @@ function IntegrationsManagement() {
   if (showYandexCalendar) {
     return (
       <YandexCalendarSettings onBack={() => setShowYandexCalendar(false)} />
+    );
+  }
+
+  if (showEmail) {
+    return (
+      <div className="space-y-4 animate-in fade-in slide-in-from-left-2 duration-300">
+        <Button variant="ghost" size="sm" onClick={() => setShowEmail(false)} className="gap-2 -ml-2 text-muted-foreground hover:text-foreground">
+          <ChevronRight className="w-4 h-4 rotate-180" />
+          Назад к интеграциям
+        </Button>
+        <EmailSettings />
+      </div>
     );
   }
 
@@ -584,7 +607,10 @@ function IntegrationsManagement() {
                     "h-8 text-xs font-bold px-4",
                     item.connected ? "border-border/50" : "shadow-lg shadow-primary/20"
                   )}
-                  onClick={() => item.id === "telegram" && setShowTelegram(true)}
+                  onClick={() => {
+                    if (item.id === "telegram") setShowTelegram(true);
+                    if (item.id === "email") setShowEmail(true);
+                  }}
                 >
                   {item.connected ? "Настроить" : "Подключить"}
                 </Button>
@@ -608,6 +634,210 @@ function IntegrationsManagement() {
             Запросить сервис
           </Button>
         </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function EmailSettings() {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [config, setConfig] = useState({
+    host: "",
+    port: 587,
+    secure: false,
+    user: "",
+    password: "",
+    from: "",
+    fromName: "TeamSync",
+  });
+  const [testEmail, setTestEmail] = useState("");
+
+  const { data: savedConfig, isLoading } = useQuery<any>({
+    queryKey: ["/api/email-config"],
+  });
+
+  useEffect(() => {
+    if (savedConfig) {
+      setConfig((prev) => ({
+        ...prev,
+        ...savedConfig,
+        password: savedConfig.password || "",
+      }));
+    }
+  }, [savedConfig]);
+
+  const saveMutation = useMutation({
+    mutationFn: async (data: typeof config) => {
+      const res = await apiRequest("POST", "/api/email-config", data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/email-config"] });
+      toast({ title: "Сохранено", description: "Настройки SMTP обновлены" });
+    },
+    onError: () => {
+      toast({ title: "Ошибка", description: "Не удалось сохранить настройки", variant: "destructive" });
+    },
+  });
+
+  const testMutation = useMutation({
+    mutationFn: async (email: string) => {
+      const res = await apiRequest("POST", "/api/email-config/test", { email });
+      return res.json();
+    },
+    onSuccess: (data) => {
+      if (data.success) {
+        toast({ title: "Успех", description: "Тестовое письмо отправлено" });
+      } else {
+        toast({ title: "Ошибка отправки", description: data.message, variant: "destructive" });
+      }
+    },
+    onError: () => {
+      toast({ title: "Ошибка", description: "Не удалось отправить тестовое письмо", variant: "destructive" });
+    },
+  });
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4 max-w-2xl">
+      <Card className="border-border/50 shadow-sm">
+        <CardHeader className="pb-4">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Mail className="w-4 h-4 text-[#EA4335]" />
+            Настройка SMTP
+          </CardTitle>
+          <CardDescription className="text-xs">
+            Настройте сервер исходящей почты для отправки уведомлений пользователям
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <Label className="text-xs font-bold">SMTP Сервер (Host)</Label>
+              <Input
+                value={config.host}
+                onChange={(e) => setConfig({ ...config, host: e.target.value })}
+                placeholder="smtp.yandex.ru"
+                className="h-9 text-xs"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-bold">Порт</Label>
+              <Input
+                type="number"
+                value={config.port}
+                onChange={(e) => setConfig({ ...config, port: Number(e.target.value) })}
+                placeholder="587"
+                className="h-9 text-xs"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-bold">Логин / Email</Label>
+              <Input
+                value={config.user}
+                onChange={(e) => setConfig({ ...config, user: e.target.value })}
+                placeholder="noreply@example.com"
+                className="h-9 text-xs"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-bold">Пароль / App Token</Label>
+              <Input
+                type="password"
+                value={config.password}
+                onChange={(e) => setConfig({ ...config, password: e.target.value })}
+                placeholder={savedConfig?.password ? "••••••••" : "Введите пароль"}
+                className="h-9 text-xs"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-bold">Адрес отправителя (From)</Label>
+              <Input
+                value={config.from}
+                onChange={(e) => setConfig({ ...config, from: e.target.value })}
+                placeholder="noreply@example.com"
+                className="h-9 text-xs"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-bold">Имя отправителя</Label>
+              <Input
+                value={config.fromName}
+                onChange={(e) => setConfig({ ...config, fromName: e.target.value })}
+                placeholder="TeamSync"
+                className="h-9 text-xs"
+              />
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 pt-2">
+            <input
+              type="checkbox"
+              id="secure"
+              checked={config.secure}
+              onChange={(e) => setConfig({ ...config, secure: e.target.checked })}
+              className="rounded border-border/50"
+            />
+            <Label htmlFor="secure" className="text-xs cursor-pointer">
+              Использовать SSL/TLS (порт 465)
+            </Label>
+          </div>
+
+          <div className="rounded-xl bg-amber-50 dark:bg-amber-500/10 p-4 border border-amber-200 dark:border-amber-500/20 space-y-2">
+            <h5 className="text-xs font-bold flex items-center gap-2 uppercase tracking-tight text-amber-700 dark:text-amber-400">
+              <AlertCircle className="w-3 h-3" /> Примеры настроек
+            </h5>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-[11px] text-amber-700/80 dark:text-amber-400/80">
+              <div>
+                <strong>Yandex:</strong> smtp.yandex.ru, 465, SSL
+              </div>
+              <div>
+                <strong>Google:</strong> smtp.gmail.com, 587, без SSL (используйте App Password)
+              </div>
+              <div>
+                <strong>Mail.ru:</strong> smtp.mail.ru, 465, SSL
+              </div>
+              <div>
+                <strong>Beget:</strong> smtp.beget.com, 465, SSL
+              </div>
+            </div>
+          </div>
+        </CardContent>
+        <CardFooter className="bg-muted/20 border-t border-border/50 px-6 py-4 flex flex-col sm:flex-row gap-3 justify-between">
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            <Input
+              value={testEmail}
+              onChange={(e) => setTestEmail(e.target.value)}
+              placeholder="Email для теста"
+              className="h-9 text-xs w-full sm:w-56"
+            />
+            <Button
+              onClick={() => testMutation.mutate(testEmail)}
+              disabled={testMutation.isPending || !testEmail}
+              variant="outline"
+              className="h-9 gap-2 shrink-0"
+            >
+              {testMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
+              Тест
+            </Button>
+          </div>
+          <Button
+            onClick={() => saveMutation.mutate(config)}
+            disabled={saveMutation.isPending}
+            className="h-9 gap-2 shadow-lg shadow-primary/20"
+          >
+            {saveMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+            Сохранить настройки
+          </Button>
+        </CardFooter>
       </Card>
     </div>
   );

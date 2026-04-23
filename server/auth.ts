@@ -10,6 +10,7 @@ import { promisify } from "util";
 import rateLimit from "express-rate-limit";
 import Redis from "ioredis";
 import { RedisStore } from "connect-redis";
+import { sendEmail, getWelcomeEmailTemplate } from "./services/email";
 
 const MemoryStore = createMemoryStore(session);
 const scrypt = promisify(crypto.scrypt);
@@ -214,6 +215,20 @@ export function setupAuth(app: Express) {
         firstName: "",
         lastName: "",
       });
+
+      // Send welcome email (non-blocking)
+      try {
+        const name = user.firstName || user.username || user.email.split("@")[0];
+        const template = getWelcomeEmailTemplate(name, process.env.APP_URL);
+        await sendEmail({
+          to: user.email,
+          subject: "Добро пожаловать в TeamSync!",
+          html: template.html,
+          text: template.text,
+        });
+      } catch (emailError) {
+        console.error("Failed to send welcome email:", emailError);
+      }
 
       req.login(user, (err) => {
         if (err) return next(err);

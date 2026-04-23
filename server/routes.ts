@@ -18,6 +18,7 @@ import rateLimit from "express-rate-limit";
 import bcrypt from "bcrypt";
 import yandexCalendarRoutes from "./routes/yandex-calendar";
 import { sendTelegramMessage, handleTelegramUpdate, escapeHtml, setTelegramWebhook } from "./services/telegram";
+import { sendEmail, testEmailConnection, getEmailConfig, getWelcomeEmailTemplate, getPasswordChangedTemplate } from "./services/email";
 
 // Permission middleware
 function requirePermission(...permissions: string[]) {
@@ -1080,6 +1081,88 @@ export async function registerRoutes(
     }
   });
 
+  // Email settings routes
+  app.get("/api/email-config", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
+    try {
+      const config = await getEmailConfig();
+      if (!config) {
+        return res.json({
+          host: "",
+          port: 587,
+          secure: false,
+          user: "",
+          password: "",
+          from: "",
+          fromName: "TeamSync",
+        });
+      }
+      // Never return actual password to client
+      res.json({ ...config, password: config.password ? "••••••••" : "" });
+    } catch (error) {
+      console.error("Error fetching email config:", error);
+      res.status(500).json({ message: "Failed to fetch email config" });
+    }
+  });
+
+  app.post("/api/email-config", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
+    try {
+      const { host, port, secure, user, password, from, fromName } = req.body;
+      if (!host || !user) {
+        return res.status(400).json({ message: "Host и User обязательны" });
+      }
+
+      // If password is masked, keep existing password
+      let finalPassword = password;
+      if (password === "••••••••" || !password) {
+        const existing = await getEmailConfig();
+        finalPassword = existing?.password || "";
+      }
+
+      const config: any = {
+        host,
+        port: Number(port) || 587,
+        secure: secure === true || secure === "true",
+        user,
+        password: finalPassword,
+        from: from || user,
+      };
+      if (fromName) config.fromName = fromName;
+
+      await storage.setSiteSetting("email_config", JSON.stringify(config));
+      res.json({ success: true, message: "Настройки email сохранены" });
+    } catch (error) {
+      console.error("Error saving email config:", error);
+      res.status(500).json({ message: "Failed to save email config" });
+    }
+  });
+
+  app.post("/api/email-config/test", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
+    try {
+      const { email } = req.body;
+      if (!email) {
+        return res.status(400).json({ message: "Укажите email для теста" });
+      }
+      const verifyResult = await testEmailConnection();
+      if (!verifyResult.success) {
+        return res.status(400).json(verifyResult);
+      }
+      const template = getWelcomeEmailTemplate(req.user.firstName || req.user.username || "Пользователь");
+      const sendResult = await sendEmail({
+        to: email,
+        subject: "Тестовое письмо от TeamSync",
+        html: template.html,
+        text: template.text,
+      });
+      res.json(sendResult);
+    } catch (error: any) {
+      console.error("Error testing email:", error);
+      res.status(500).json({ success: false, message: error.message });
+    }
+  });
+
   // Telegram bot webhook
   app.post("/api/webhook/telegram", async (req, res) => {
     try {
@@ -1197,7 +1280,21 @@ export async function registerRoutes(
       const saltRounds = 10;
       const hashedPassword = await bcrypt.hash(newPassword, saltRounds);
       await storage.updateUser(user.id, { password: hashedPassword });
-      
+
+      // Send password change notification (non-blocking)
+      try {
+        const name = user.firstName || user.username || user.email.split("@")[0];
+        const template = getPasswordChangedTemplate(name);
+        await sendEmail({
+          to: user.email,
+          subject: "Пароль изменен",
+          html: template.html,
+          text: template.text,
+        });
+      } catch (emailError) {
+        console.error("Failed to send password change email:", emailError);
+      }
+
       res.json({ message: "Пароль успешно изменен" });
     } catch (error) {
       console.error("Error changing password:", error);
