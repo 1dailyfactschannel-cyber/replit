@@ -942,11 +942,6 @@ function ArchiveManagement() {
 
 function TeamManagement() {
   const { toast } = useToast();
-  const queryClient = useQueryClient();
-  
-  const { data: users = [], isLoading } = useQuery<User[]>({
-    queryKey: ["/api/users"],
-  });
 
   // Department state
   const [departments, setDepartments] = useState<{id: string; name: string; description: string | null; color: string}[]>([]);
@@ -1042,131 +1037,14 @@ function TeamManagement() {
     }
   };
 
-  const deleteUserMutation = useMutation({
-    mutationFn: async (id: string) => {
-      const res = await apiRequest("DELETE", `/api/users/${id}`);
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/users"] });
-      toast({ title: "Пользователь удалён", description: "Пользователь успешно удалён из команды" });
-    },
-    onError: (error: any) => {
-      toast({ 
-        title: "Ошибка", 
-        description: error?.message || "Не удалось удалить пользователя", 
-        variant: "destructive" 
-      });
-    }
-  });
-
-  const handleDeleteMember = (memberId: string, memberName: string) => {
-    if (confirm(`Вы уверены, что хотите удалить пользователя "${memberName}" из команды?`)) {
-      deleteUserMutation.mutate(memberId);
-    }
-  };
-
-  const members = users.map(user => ({
-    id: user.id,
-    name: (user.firstName && user.lastName) ? `${user.firstName} ${user.lastName}` : user.username,
-    role: user.position || "Сотрудник",
-    email: user.email,
-    department: user.department || "Без отдела",
-    status: user.isOnline ? "online" : "offline",
-    lastActive: user.lastSeen ? new Date(user.lastSeen).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' }) : "Недавно",
-    avatar: user.avatar || ""
-  }));
-
   const invites = [
     { id: 1, email: "hr@teamsync.com", role: "HR-менеджер", sentAt: "24.01.2026", status: "pending" },
     { id: 2, email: "dev-lead@teamsync.com", role: "Админ", sentAt: "23.01.2026", status: "expired" },
   ];
 
   return (
-    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 space-y-4">
-          <div className="flex items-center justify-between px-1">
-            <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
-              <Users className="w-3.5 h-3.5" />
-              Все участники ({members.length})
-            </h4>
-          </div>
-          
-          <Card className="border-border/50 shadow-sm overflow-hidden bg-card/50">
-            <div className="divide-y divide-border/50">
-              {members.map((member) => (
-                <div key={member.id} className="p-4 flex items-center justify-between hover:bg-muted/30 transition-colors group">
-                  <div className="flex items-center gap-4">
-                    <div className="relative">
-                      <Avatar className="w-10 h-10 border border-border/50 shadow-sm ring-2 ring-background">
-                        <AvatarImage src={member.avatar} />
-                        <AvatarFallback className="bg-primary/5 text-primary text-xs font-bold">
-                          {member.name.split(" ").map(n => n[0]).join("")}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div className={cn(
-                        "absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-background shadow-sm",
-                        member.status === "online" ? "bg-emerald-500" : "bg-slate-300"
-                      )} />
-                    </div>
-                    <div className="flex flex-col">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-bold tracking-tight group-hover:text-primary transition-colors">{member.name}</span>
-                        <Badge variant="secondary" className="text-[10px] h-4 px-1.5 font-bold uppercase tracking-tighter bg-primary/10 text-primary border-none">
-                          {member.role}
-                        </Badge>
-                      </div>
-                      <div className="flex items-center gap-2 mt-0.5">
-                        <span className="text-[11px] text-muted-foreground font-medium flex items-center gap-1">
-                          <Mail className="w-3 h-3 opacity-50" />
-                          {member.email}
-                        </span>
-                        <span className="text-[11px] text-muted-foreground">•</span>
-                        <span className="text-[11px] text-muted-foreground font-medium">{member.department}</span>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-4">
-                    <div className="hidden md:flex flex-col items-end text-right mr-4">
-                      <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground opacity-50">Активность</span>
-                      <span className="text-[11px] font-medium">{member.lastActive}</span>
-                    </div>
-                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all transform translate-x-2 group-hover:translate-x-0">
-                      <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-background shadow-sm border border-transparent hover:border-border/50">
-                        <Pencil className="w-3.5 h-3.5" />
-                      </Button>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-background shadow-sm border border-transparent hover:border-border/50">
-                            <MoreVertical className="w-3.5 h-3.5" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="w-48">
-                          <DropdownMenuItem className="text-xs font-medium gap-2">
-                            <Shield className="w-3.5 h-3.5" /> Изменить роль
-                          </DropdownMenuItem>
-                          <DropdownMenuItem className="text-xs font-medium gap-2">
-                            <Mail className="w-3.5 h-3.5" /> Написать письмо
-                          </DropdownMenuItem>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem 
-                            className="text-xs font-medium gap-2 text-rose-500 focus:text-rose-500 focus:bg-rose-50"
-                            onClick={() => handleDeleteMember(member.id, member.name)}
-                          >
-                            <Trash2 className="w-3.5 h-3.5" /> Удалить из команды
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </Card>
-        </div>
-
-        <div className="space-y-6">
+    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300 max-w-3xl">
+      <div className="space-y-6">
           <div className="space-y-4">
             <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2 px-1">
               <Mail className="w-3.5 h-3.5" />
@@ -1298,7 +1176,6 @@ function TeamManagement() {
             </Card>
           </div>
         </div>
-      </div>
 
       {/* Department Dialog */}
       <Dialog open={isDeptDialogOpen} onOpenChange={setIsDeptDialogOpen}>
