@@ -332,6 +332,7 @@ export default function EmployeesPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/users"] });
       queryClient.invalidateQueries({ queryKey: ["/api/user"] });
       queryClient.invalidateQueries({ queryKey: ["/api/users", selectedEmployee?.id, "roles"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/users/me/permissions"] });
       toast({ title: "Успешно", description: "Данные сотрудника обновлены" });
       setIsDetailsOpen(false);
     },
@@ -383,9 +384,11 @@ export default function EmployeesPage() {
 
   // Initialize editing employee when modal opens
   const prevSelectedIdRef = useRef<string | null>(null);
+  const rolesSyncedRef = useRef(false);
   useEffect(() => {
     if (selectedEmployee && selectedEmployee.id !== prevSelectedIdRef.current) {
       prevSelectedIdRef.current = selectedEmployee.id;
+      rolesSyncedRef.current = false;
       setEditingEmployee({
         firstName: selectedEmployee.firstName || "",
         lastName: selectedEmployee.lastName || "",
@@ -395,10 +398,18 @@ export default function EmployeesPage() {
         telegram: selectedEmployee.telegram || "",
         notes: selectedEmployee.notes || "",
         status: selectedEmployee.status || "",
-        roleIds: userRoles.map(r => r.id),
+        roleIds: [],
       });
     }
-  }, [selectedEmployee, userRoles]);
+  }, [selectedEmployee]);
+
+  // Sync roleIds when userRoles loads (separate effect to avoid overwriting manual changes)
+  useEffect(() => {
+    if (selectedEmployee && editingEmployee && !rolesSyncedRef.current) {
+      rolesSyncedRef.current = true;
+      setEditingEmployee(prev => prev ? { ...prev, roleIds: userRoles.map(r => r.id) } : null);
+    }
+  }, [userRoles, selectedEmployee, editingEmployee]);
 
   // Sync API employees when loaded
   useEffect(() => {

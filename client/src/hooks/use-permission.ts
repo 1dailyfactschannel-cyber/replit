@@ -9,7 +9,7 @@ export function usePermission() {
   const { data: user, isLoading: userLoading } = useQuery({
     queryKey: ["/api/user"],
     queryFn: async () => {
-      const res = await fetch('/api/user', { credentials: 'include' });
+      const res = await fetch('/api/user', { credentials: 'include', cache: 'no-store' });
       if (!res.ok) return null;
       return res.json();
     }
@@ -18,12 +18,12 @@ export function usePermission() {
   const { data: permissionsData, isLoading: permissionsLoading } = useQuery<UserPermissions>({
     queryKey: ["/api/users/me/permissions"],
     queryFn: async () => {
-      const res = await fetch('/api/users/me/permissions', { credentials: 'include' });
+      const res = await fetch('/api/users/me/permissions', { credentials: 'include', cache: 'no-store' });
       if (!res.ok) throw new Error(`Failed to fetch permissions: ${res.status}`);
       return res.json();
     },
     enabled: !!user,
-    staleTime: 1000 * 60, // 1 minute
+    staleTime: 1000 * 30, // 30 seconds
   });
 
   const userRoles = permissionsData?.roles || [];

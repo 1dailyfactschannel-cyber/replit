@@ -1208,15 +1208,17 @@ export class PostgresStorage {
 
   async setUserRoles(userId: string, roleIds: string[], assignedBy?: string): Promise<void> {
     try {
-      await this.db.delete(schema.userRoles).where(eq(schema.userRoles.userId, userId));
-      if (roleIds.length > 0) {
-        const values = roleIds.map(roleId => ({
-          userId,
-          roleId,
-          assignedBy: assignedBy || null
-        }));
-        await this.db.insert(schema.userRoles).values(values);
-      }
+      await this.db.transaction(async (tx) => {
+        await tx.delete(schema.userRoles).where(eq(schema.userRoles.userId, userId));
+        if (roleIds.length > 0) {
+          const values = roleIds.map(roleId => ({
+            userId,
+            roleId,
+            assignedBy: assignedBy || null
+          }));
+          await tx.insert(schema.userRoles).values(values);
+        }
+      });
     } catch (error) {
       console.error("Error setting user roles:", error);
       throw error;
