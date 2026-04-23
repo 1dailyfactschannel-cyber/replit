@@ -256,6 +256,25 @@ app.use((req, res, next) => {
     console.error("[DB] Failed to ensure work time columns:", error);
   }
 
+  // Ensure accrual_rules table exists
+  try {
+    const storage = getStorage();
+    await storage.db.execute(sql`
+      CREATE TABLE IF NOT EXISTS accrual_rules (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        name TEXT NOT NULL,
+        type TEXT NOT NULL,
+        points_amount INTEGER DEFAULT 1,
+        description TEXT,
+        is_active BOOLEAN DEFAULT true,
+        created_at TIMESTAMP DEFAULT NOW()
+      );
+    `);
+    console.log("[DB] Accrual rules table ensured");
+  } catch (error) {
+    console.error("[DB] Failed to ensure accrual rules table:", error);
+  }
+
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
     const message = err.message || "Internal Server Error";

@@ -833,8 +833,52 @@ export async function registerRoutes(
           comment: newStatusComment || null,
           changedBy: req.user!.id
         });
+
+        // Evaluate accrual rules when status changes to online
+        const onlineStatuses = ["online", "в сети", "active", "активен", "available", "доступен"];
+        const normalizedStatus = newStatus.toLowerCase().trim();
+        if (onlineStatuses.includes(normalizedStatus)) {
+          try {
+            const activeRules = await storage.getActiveAccrualRules();
+            const arrivalRule = activeRules.find((r) => r.type === "arrival_on_time");
+            if (arrivalRule && currentUser.workStartTime) {
+              const now = new Date();
+              const [startHour, startMinute] = currentUser.workStartTime.split(":").map(Number);
+              const workStart = new Date(now);
+              workStart.setHours(startHour, startMinute, 0, 0);
+
+              const rulePoints = arrivalRule.pointsAmount ?? 0;
+              const isOnTime = now <= workStart;
+              const pointsToAward = isOnTime ? rulePoints : -rulePoints;
+
+              if (pointsToAward !== 0) {
+                await storage.createTransaction({
+                  userId: req.params.id,
+                  statusName: arrivalRule.name,
+                  type: pointsToAward >= 0 ? "earned" : "spent",
+                  amount: Math.abs(pointsToAward),
+                  description: isOnTime
+                    ? `Приход вовремя (${currentUser.workStartTime})`
+                    : `Опоздание (${currentUser.workStartTime})`,
+                  changedBy: req.user!.id,
+                });
+
+                // Update user balance
+                await storage.db.execute(sql`
+                  UPDATE users
+                  SET points_balance = COALESCE(points_balance, 0) + ${pointsToAward},
+                      total_points_earned = CASE WHEN ${pointsToAward} > 0 THEN COALESCE(total_points_earned, 0) + ${pointsToAward} ELSE total_points_earned END,
+                      total_points_spent = CASE WHEN ${pointsToAward} < 0 THEN COALESCE(total_points_spent, 0) + ${Math.abs(pointsToAward)} ELSE total_points_spent END
+                  WHERE id = ${req.params.id}
+                `);
+              }
+            }
+          } catch (ruleError) {
+            console.error("[ACCRUAL RULES] Error evaluating arrival rule:", ruleError);
+          }
+        }
       }
-      
+
       // Invalidate cache
       await delCache("users:all");
       res.json(user);
@@ -3912,6 +3956,67 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error deleting points setting:", error);
       res.status(500).json({ message: "Failed to delete points setting" });
+    }
+  });
+
+  // Accrual Rules
+  app.get("/api/accrual-rules", async (req, res) => {
+    try {
+      const rules = await storage.getAccrualRules();
+      res.json(rules);
+    } catch (error) {
+      console.error("Error getting accrual rules:", error);
+      res.status(500).json({ message: "Failed to get accrual rules" });
+    }
+  });
+
+  app.post("/api/accrual-rules", async (req, res) => {
+    try {
+      const { name, type, pointsAmount, description, isActive } = req.body;
+
+      if (!name || !type || pointsAmount === undefined) {
+        return res.status(400).json({ message: "name, type, and pointsAmount are required" });
+      }
+
+      const rule = await storage.createAccrualRule({
+        name,
+        type,
+        pointsAmount: parseInt(pointsAmount) || 0,
+        description,
+        isActive: isActive !== false,
+      });
+
+      res.status(201).json(rule);
+    } catch (error) {
+      console.error("Error creating accrual rule:", error);
+      res.status(500).json({ message: "Failed to create accrual rule" });
+    }
+  });
+
+  app.patch("/api/accrual-rules/:id", async (req, res) => {
+    try {
+      const { name, type, pointsAmount, description, isActive } = req.body;
+      const rule = await storage.updateAccrualRule(req.params.id, {
+        name,
+        type,
+        pointsAmount: pointsAmount !== undefined ? parseInt(pointsAmount) : undefined,
+        description,
+        isActive,
+      });
+      res.json(rule);
+    } catch (error) {
+      console.error("Error updating accrual rule:", error);
+      res.status(500).json({ message: "Failed to update accrual rule" });
+    }
+  });
+
+  app.delete("/api/accrual-rules/:id", async (req, res) => {
+    try {
+      await storage.deleteAccrualRule(req.params.id);
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting accrual rule:", error);
+      res.status(500).json({ message: "Failed to delete accrual rule" });
     }
   });
 

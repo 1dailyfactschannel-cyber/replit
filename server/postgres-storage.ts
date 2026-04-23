@@ -2572,6 +2572,54 @@ export class PostgresStorage {
     }
   }
 
+  // Accrual Rules
+  async getAccrualRules(): Promise<schema.AccrualRule[]> {
+    try {
+      return await this.db.select().from(schema.accrualRules).orderBy(schema.accrualRules.createdAt);
+    } catch (error) {
+      console.error("Error getting accrual rules:", error);
+      return [];
+    }
+  }
+
+  async getActiveAccrualRules(): Promise<schema.AccrualRule[]> {
+    try {
+      return await this.db.select().from(schema.accrualRules).where(eq(schema.accrualRules.isActive, true));
+    } catch (error) {
+      console.error("Error getting active accrual rules:", error);
+      return [];
+    }
+  }
+
+  async createAccrualRule(rule: schema.InsertAccrualRule): Promise<schema.AccrualRule> {
+    try {
+      const [created] = await this.db.insert(schema.accrualRules).values(rule).returning();
+      return created;
+    } catch (error) {
+      console.error("Error creating accrual rule:", error);
+      throw error;
+    }
+  }
+
+  async updateAccrualRule(id: string, rule: Partial<schema.InsertAccrualRule>): Promise<schema.AccrualRule> {
+    try {
+      const [updated] = await this.db.update(schema.accrualRules).set(rule).where(eq(schema.accrualRules.id, id)).returning();
+      return updated;
+    } catch (error) {
+      console.error("Error updating accrual rule:", error);
+      throw error;
+    }
+  }
+
+  async deleteAccrualRule(id: string): Promise<void> {
+    try {
+      await this.db.delete(schema.accrualRules).where(eq(schema.accrualRules.id, id));
+    } catch (error) {
+      console.error("Error deleting accrual rule:", error);
+      throw error;
+    }
+  }
+
   // User Points and Transactions
   async getUserPoints(userId: string): Promise<{ balance: number; totalEarned: number; totalSpent: number; level: number }> {
     try {

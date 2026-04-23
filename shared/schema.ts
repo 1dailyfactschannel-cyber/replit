@@ -971,6 +971,28 @@ export const insertUserPointsTransactionSchema = createInsertSchema(userPointsTr
 export type UserPointsTransaction = typeof userPointsTransactions.$inferSelect;
 export type InsertUserPointsTransaction = z.infer<typeof insertUserPointsTransactionSchema>;
 
+// Accrual rules table - configurable rules for automatic point awards/penalties
+export const accrualRules = pgTable("accrual_rules", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  name: text("name").notNull(), // e.g. "Приход вовремя"
+  type: text("type").notNull(), // e.g. "arrival_on_time"
+  pointsAmount: integer("points_amount").default(1), // positive = reward, negative = penalty
+  description: text("description"),
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertAccrualRuleSchema = createInsertSchema(accrualRules).pick({
+  name: true,
+  type: true,
+  pointsAmount: true,
+  description: true,
+  isActive: true,
+});
+
+export type AccrualRule = typeof accrualRules.$inferSelect;
+export type InsertAccrualRule = z.infer<typeof insertAccrualRuleSchema>;
+
 // User settings table - for storing user preferences (UI state, collapsed projects, etc.)
 export const userSettings = pgTable("user_settings", {
   id: uuid("id").primaryKey().defaultRandom(),

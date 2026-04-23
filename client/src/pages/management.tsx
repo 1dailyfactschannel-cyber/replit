@@ -50,7 +50,12 @@ import {
   Link,
   UserX,
   Webhook,
-  AlertCircle
+  AlertCircle,
+  Clock,
+  ListChecks,
+  ToggleLeft,
+  ToggleRight,
+  MinusCircle
 } from "lucide-react";
 import { RolesManagement } from "@/components/settings/RolesManagement";
 import { YandexCalendarConnect, YandexCalendarSettings } from "@/components/integrations/YandexCalendarConnect";
@@ -3420,7 +3425,349 @@ function BalanceManagement() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AccrualRulesSection />
     </div>
+  );
+}
+
+// Accrual Rules Section
+function AccrualRulesSection() {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [editingRule, setEditingRule] = useState<any>(null);
+  const [ruleName, setRuleName] = useState("");
+  const [ruleType, setRuleType] = useState("arrival_on_time");
+  const [rulePoints, setRulePoints] = useState("1");
+  const [ruleDescription, setRuleDescription] = useState("");
+
+  const { data: rules, isLoading } = useQuery<any[]>({
+    queryKey: ["/api/accrual-rules"],
+  });
+
+  const createMutation = useMutation({
+    mutationFn: async (data: any) => {
+      const res = await apiRequest("POST", "/api/accrual-rules", data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/accrual-rules"] });
+      toast({ title: "Правило добавлено", description: "Правило начисления успешно создано" });
+      setIsDialogOpen(false);
+      resetForm();
+    },
+    onError: (error: Error) => {
+      toast({ title: "Ошибка", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: any }) => {
+      const res = await apiRequest("PATCH", `/api/accrual-rules/${id}`, data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/accrual-rules"] });
+      toast({ title: "Правило обновлено", description: "Изменения сохранены" });
+      setIsDialogOpen(false);
+      resetForm();
+    },
+    onError: (error: Error) => {
+      toast({ title: "Ошибка", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      await apiRequest("DELETE", `/api/accrual-rules/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/accrual-rules"] });
+      toast({ title: "Правило удалено", description: "Правило начисления удалено" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Ошибка", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const toggleMutation = useMutation({
+    mutationFn: async ({ id, isActive }: { id: string; isActive: boolean }) => {
+      const res = await apiRequest("PATCH", `/api/accrual-rules/${id}`, { isActive });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/accrual-rules"] });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Ошибка", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const resetForm = () => {
+    setRuleName("");
+    setRuleType("arrival_on_time");
+    setRulePoints("1");
+    setRuleDescription("");
+    setEditingRule(null);
+  };
+
+  const openDialog = (rule?: any) => {
+    if (rule) {
+      setEditingRule(rule);
+      setRuleName(rule.name);
+      setRuleType(rule.type);
+      setRulePoints(rule.pointsAmount.toString());
+      setRuleDescription(rule.description || "");
+    } else {
+      resetForm();
+    }
+    setIsDialogOpen(true);
+  };
+
+  const handleSave = () => {
+    const data = {
+      name: ruleName,
+      type: ruleType,
+      pointsAmount: parseInt(rulePoints) || 0,
+      description: ruleDescription,
+      isActive: true,
+    };
+
+    if (editingRule) {
+      updateMutation.mutate({ id: editingRule.id, data });
+    } else {
+      createMutation.mutate(data);
+    }
+  };
+
+  const ruleTypeOptions = [
+    { value: "arrival_on_time", label: "Приход вовремя", description: "Начисляет баллы если пользователь поставил статус 'В сети' раньше времени начала рабочего дня. Списывает если позже." },
+  ];
+
+  return (
+    <>
+      <Card className="border-border/50 shadow-sm">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <ListChecks className="w-5 h-5 text-emerald-500" />
+            Правила начисления
+          </CardTitle>
+          <CardDescription>
+            Настройте автоматические правила начисления и списания баллов за активности пользователей
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center justify-between mb-6">
+            <div className="text-sm text-muted-foreground">
+              <p>Правила проверяются автоматически при действиях пользователей.</p>
+              <p>Отрицательное значение баллов означает штраф (списание).</p>
+            </div>
+            <Button onClick={() => openDialog()} className="gap-2">
+              <Plus className="w-4 h-4" />
+              Добавить правило
+            </Button>
+          </div>
+
+          {isLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="w-6 h-6 animate-spin text-primary" />
+            </div>
+          ) : rules && rules.length > 0 ? (
+            <div className="space-y-3">
+              {rules.map((rule: any) => (
+                <div
+                  key={rule.id}
+                  className={cn(
+                    "flex items-center justify-between p-4 rounded-lg border transition-colors",
+                    rule.isActive
+                      ? "bg-secondary/30 hover:bg-secondary/50 border-transparent"
+                      : "bg-muted/30 hover:bg-muted/50 border-dashed opacity-60"
+                  )}
+                >
+                  <div className="flex items-center gap-4">
+                    <div className={cn(
+                      "w-10 h-10 rounded-full flex items-center justify-center",
+                      rule.pointsAmount >= 0
+                        ? "bg-emerald-100 dark:bg-emerald-900/30"
+                        : "bg-rose-100 dark:bg-rose-900/30"
+                    )}>
+                      {rule.pointsAmount >= 0 ? (
+                        <Coins className="w-5 h-5 text-emerald-600" />
+                      ) : (
+                        <MinusCircle className="w-5 h-5 text-rose-600" />
+                      )}
+                    </div>
+                    <div>
+                      <p className="font-medium">{rule.name}</p>
+                      <p className="text-sm text-muted-foreground">
+                        {rule.type === "arrival_on_time" && "Приход вовремя"}
+                        {rule.description && ` · ${rule.description}`}
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {rule.isActive ? (
+                          <span className="text-emerald-600">Активно</span>
+                        ) : (
+                          <span className="text-muted-foreground">Отключено</span>
+                        )}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-4">
+                    <div className="text-right">
+                      <p className={cn(
+                        "text-2xl font-bold",
+                        rule.pointsAmount >= 0 ? "text-emerald-600" : "text-rose-600"
+                      )}>
+                        {rule.pointsAmount > 0 ? `+${rule.pointsAmount}` : rule.pointsAmount}
+                      </p>
+                      <p className="text-xs text-muted-foreground">баллов</p>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                        onClick={() => toggleMutation.mutate({ id: rule.id, isActive: !rule.isActive })}
+                        title={rule.isActive ? "Отключить" : "Включить"}
+                      >
+                        {rule.isActive ? (
+                          <ToggleRight className="w-5 h-5 text-emerald-500" />
+                        ) : (
+                          <ToggleLeft className="w-5 h-5 text-muted-foreground" />
+                        )}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                        onClick={() => openDialog(rule)}
+                      >
+                        <Pencil className="w-4 h-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-destructive hover:text-destructive"
+                        onClick={() => deleteMutation.mutate(rule.id)}
+                        disabled={deleteMutation.isPending}
+                      >
+                        {deleteMutation.isPending ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <Trash2 className="w-4 h-4" />
+                        )}
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-8 text-muted-foreground">
+              <ListChecks className="w-12 h-12 mx-auto mb-3 opacity-30" />
+              <p>Правила не найдены</p>
+              <p className="text-sm">Добавьте первое правило начисления баллов</p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>
+              {editingRule ? "Редактировать правило" : "Добавить правило"}
+            </DialogTitle>
+            <DialogDescription>
+              Настройте автоматическое начисление или списание баллов
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="ruleName">Название правила</Label>
+              <Input
+                id="ruleName"
+                value={ruleName}
+                onChange={(e) => setRuleName(e.target.value)}
+                placeholder="Например: Приход вовремя"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="ruleType">Тип правила</Label>
+              <select
+                id="ruleType"
+                value={ruleType}
+                onChange={(e) => setRuleType(e.target.value)}
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              >
+                {ruleTypeOptions.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-muted-foreground">
+                {ruleTypeOptions.find((o) => o.value === ruleType)?.description}
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="rulePoints">Количество баллов</Label>
+              <Input
+                id="rulePoints"
+                type="number"
+                value={rulePoints}
+                onChange={(e) => setRulePoints(e.target.value)}
+                placeholder="1"
+              />
+              <p className="text-xs text-muted-foreground">
+                Положительное число — начисление. Отрицательное — штраф (списание).
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="ruleDescription">Описание (необязательно)</Label>
+              <Input
+                id="ruleDescription"
+                value={ruleDescription}
+                onChange={(e) => setRuleDescription(e.target.value)}
+                placeholder="Дополнительное пояснение к правилу"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            {editingRule && (
+              <Button
+                type="button"
+                variant="destructive"
+                className="mr-auto"
+                onClick={() => {
+                  deleteMutation.mutate(editingRule.id);
+                  setIsDialogOpen(false);
+                }}
+                disabled={deleteMutation.isPending}
+              >
+                {deleteMutation.isPending ? (
+                  <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                ) : null}
+                Удалить
+              </Button>
+            )}
+            <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
+              Отмена
+            </Button>
+            <Button
+              onClick={handleSave}
+              disabled={!ruleName || createMutation.isPending || updateMutation.isPending}
+            >
+              {createMutation.isPending || updateMutation.isPending ? (
+                <Loader2 className="w-4 h-4 animate-spin mr-2" />
+              ) : null}
+              {editingRule ? "Сохранить" : "Создать"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 
