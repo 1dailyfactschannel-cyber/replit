@@ -3496,7 +3496,7 @@ export class PostgresStorage {
           isNull(schema.guestInvitations.usedAt)
         )
       );
-      return result.rowCount || 0;
+      return (result as any).rowCount || 0;
     } catch (error) {
       console.error("Error cleaning up expired guest invitations:", error);
       return 0;
