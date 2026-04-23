@@ -536,7 +536,6 @@ export default function EmployeesPage() {
               <TabsTrigger value="list">Список</TabsTrigger>
               <TabsTrigger value="departments">Отделы</TabsTrigger>
               <TabsTrigger value="analytics">Аналитика</TabsTrigger>
-              <TabsTrigger value="roles">Роли</TabsTrigger>
             </TabsList>
           </Tabs>
         </div>
