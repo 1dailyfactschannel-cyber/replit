@@ -45,6 +45,7 @@ import { yandexNotificationService } from "./services/yandex-notifications";
 import { getStorage } from "./postgres-storage";
 import { initializeRolesAndPermissions } from "./init/roles";
 import { autoSetTelegramWebhook } from "./services/telegram";
+import { sql } from "drizzle-orm";
 
 const app = express();
 const httpServer = createServer(app);
@@ -239,6 +240,20 @@ app.use((req, res, next) => {
     await autoSetTelegramWebhook();
   } catch (error) {
     console.error("Failed to auto-configure Telegram webhook:", error);
+  }
+
+  // Ensure work time columns exist in users table
+  try {
+    const storage = getStorage();
+    await storage.db.execute(sql`
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS work_start_time TEXT;
+    `);
+    await storage.db.execute(sql`
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS work_end_time TEXT;
+    `);
+    console.log("[DB] Work time columns ensured");
+  } catch (error) {
+    console.error("[DB] Failed to ensure work time columns:", error);
   }
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {

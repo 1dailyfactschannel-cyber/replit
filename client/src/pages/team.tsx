@@ -1140,15 +1140,24 @@ export default function EmployeesPage() {
                 <TableBody>
                   {allActiveEmployees.map((employee) => {
                     const fullName = `${employee.firstName || ""} ${employee.lastName || ""}`.trim();
+                    const displayName = fullName || employee.email || "Без имени";
+                    const initials = fullName
+                      ? fullName.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()
+                      : (employee.email?.substring(0, 2).toUpperCase() || "??");
                     return (
                     <TableRow key={employee.id} className="hover:bg-secondary/30 transition-colors">
                       <TableCell className="font-medium text-foreground">
                         <div className="flex items-center gap-3">
                           <Avatar className="h-8 w-8 border border-border">
                             <AvatarImage src={employee.avatar || undefined} />
-                            <AvatarFallback>{fullName.split(' ').map(n => n[0]).join('')}</AvatarFallback>
+                            <AvatarFallback>{initials}</AvatarFallback>
                           </Avatar>
-                          <span className="text-sm font-semibold text-foreground">{fullName}</span>
+                          <div className="flex flex-col">
+                            <span className="text-sm font-semibold text-foreground">{displayName}</span>
+                            {!fullName && employee.email && (
+                              <span className="text-[10px] text-muted-foreground">{employee.email}</span>
+                            )}
+                          </div>
                         </div>
                       </TableCell>
                       <TableCell className="text-sm font-medium text-emerald-500">—</TableCell>
@@ -1157,10 +1166,14 @@ export default function EmployeesPage() {
                           <Input
                             type="time"
                             value={employee.workStartTime || ""}
-                            onChange={(e) => {
+                            onChange={async (e) => {
                               const newTime = e.target.value;
-                              apiRequest("PUT", `/api/users/${employee.id}`, { workStartTime: newTime });
-                              queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+                              try {
+                                await apiRequest("PUT", `/api/users/${employee.id}`, { workStartTime: newTime });
+                                queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+                              } catch (err) {
+                                toast({ title: "Ошибка", description: "Не удалось сохранить время", variant: "destructive" });
+                              }
                             }}
                             className="h-7 w-28 text-xs"
                           />
@@ -1171,10 +1184,14 @@ export default function EmployeesPage() {
                           <Input
                             type="time"
                             value={employee.workEndTime || ""}
-                            onChange={(e) => {
+                            onChange={async (e) => {
                               const newTime = e.target.value;
-                              apiRequest("PUT", `/api/users/${employee.id}`, { workEndTime: newTime });
-                              queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+                              try {
+                                await apiRequest("PUT", `/api/users/${employee.id}`, { workEndTime: newTime });
+                                queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+                              } catch (err) {
+                                toast({ title: "Ошибка", description: "Не удалось сохранить время", variant: "destructive" });
+                              }
                             }}
                             className="h-7 w-28 text-xs"
                           />
