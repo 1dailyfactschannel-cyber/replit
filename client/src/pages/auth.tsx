@@ -87,7 +87,7 @@ export default function Auth() {
         <div className="hidden lg:flex flex-col justify-center flex-1 space-y-6 text-white p-8">
           <div className="flex items-center gap-2 mb-4">
             <div className="w-12 h-12 rounded-2xl bg-white flex items-center justify-center text-primary font-bold text-3xl shadow-2xl">
-              T
+              m4
             </div>
             <span className="font-sans font-bold text-3xl tracking-tight">portal</span>
           </div>
