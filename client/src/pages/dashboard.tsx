@@ -15,7 +15,6 @@ import {
   TrendingUp,
   Users,
   FolderOpen,
-  Plus,
   RefreshCw,
   CheckSquare,
   PlayCircle,
@@ -146,12 +145,7 @@ export default function Dashboard() {
               {isLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <RefreshCw className="w-4 h-4 mr-2" />}
               Обновить
             </Button>
-            <Link href="/tasks">
-              <Button className="shadow-lg shadow-primary/20">
-                <Plus className="w-4 h-4 mr-2" />
-                Создать задачу
-              </Button>
-            </Link>
+
           </div>
         </div>
 
@@ -306,11 +300,6 @@ export default function Dashboard() {
                 <div className="flex flex-col items-center justify-center h-full text-muted-foreground py-8">
                   <CheckSquare className="w-12 h-12 mb-2 opacity-30" />
                   <p>На сегодня задач нет</p>
-                  <Link href="/tasks">
-                    <Button variant="link" size="sm" className="mt-2">
-                      Создать задачу
-                    </Button>
-                  </Link>
                 </div>
               ) : (
                 <div className="space-y-4">
