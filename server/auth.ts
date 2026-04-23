@@ -11,6 +11,7 @@ import rateLimit from "express-rate-limit";
 import Redis from "ioredis";
 import { RedisStore } from "connect-redis";
 import { sendEmail, getWelcomeEmailTemplate } from "./services/email";
+import { getIO } from "./socket";
 
 const MemoryStore = createMemoryStore(session);
 const scrypt = promisify(crypto.scrypt);
@@ -201,10 +202,24 @@ export function setupAuth(app: Express) {
 
   app.post("/api/register", async (req, res, next) => {
     try {
-      const { email, password, username } = req.body;
+      const { email, password, username, inviteToken } = req.body;
       const existingUser = await storage.getUserByEmail(email);
       if (existingUser) {
         return res.status(400).json({ message: "Пользователь с таким email уже существует" });
+      }
+
+      let invitation = null;
+      if (inviteToken) {
+        invitation = await storage.getUserInvitationByToken(inviteToken);
+        if (!invitation) {
+          return res.status(400).json({ message: "Приглашение не найдено" });
+        }
+        if (invitation.status !== "pending" || new Date(invitation.expiresAt) < new Date()) {
+          return res.status(400).json({ message: "Приглашение недействительно или истекло" });
+        }
+        if (invitation.email.toLowerCase() !== email.toLowerCase()) {
+          return res.status(400).json({ message: "Email не совпадает с приглашением" });
+        }
       }
 
       const hashedPassword = await hashPassword(password);
@@ -215,6 +230,40 @@ export function setupAuth(app: Express) {
         firstName: "",
         lastName: "",
       });
+
+      // If registered via invitation, mark it as accepted and notify inviter
+      if (invitation) {
+        try {
+          await storage.acceptUserInvitation(invitation.token);
+
+          // Notify inviter
+          if (invitation.invitedBy) {
+            const notification = await storage.createNotification({
+              userId: invitation.invitedBy,
+              senderId: user.id,
+              type: "system",
+              title: "Приглашение принято",
+              message: JSON.stringify({
+                action: "invitation_accepted",
+                invitedEmail: invitation.email,
+                userId: user.id,
+                username: user.username,
+              }),
+              link: "/management?section=team",
+            });
+
+            // Emit real-time notification
+            try {
+              const io = getIO();
+              io.to(`user:${invitation.invitedBy}`).emit("new-notification", notification);
+            } catch (socketErr) {
+              // Socket not initialized, ignore
+            }
+          }
+        } catch (inviteErr) {
+          console.error("Error processing invitation acceptance:", inviteErr);
+        }
+      }
 
       // Send welcome email (non-blocking)
       try {

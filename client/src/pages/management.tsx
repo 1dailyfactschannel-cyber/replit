@@ -1126,11 +1126,24 @@ function TeamManagement() {
                               {invite.role && (
                                 <p className="text-[11px] text-muted-foreground font-medium">{invite.role}</p>
                               )}
+                              {invite.inviter && (
+                                <div className="flex items-center gap-1.5 pt-0.5">
+                                  <Avatar className="w-4 h-4">
+                                    <AvatarImage src={invite.inviter.avatar || undefined} />
+                                    <AvatarFallback className="text-[8px] bg-primary/10">
+                                      {(invite.inviter.firstName?.[0] || invite.inviter.username?.[0] || "?").toUpperCase()}
+                                    </AvatarFallback>
+                                  </Avatar>
+                                  <span className="text-[10px] text-muted-foreground">
+                                    Пригласил: {invite.inviter.firstName || invite.inviter.username || invite.inviter.email}
+                                  </span>
+                                </div>
+                              )}
                             </div>
                             <Badge
                               variant="outline"
                               className={cn(
-                                "text-[9px] uppercase font-bold px-1.5 h-4 border-none",
+                                "text-[9px] uppercase font-bold px-1.5 h-4 border-none shrink-0",
                                 status === "pending" && "bg-amber-500/10 text-amber-600",
                                 status === "accepted" && "bg-emerald-500/10 text-emerald-600",
                                 status === "expired" && "bg-rose-500/10 text-rose-600"

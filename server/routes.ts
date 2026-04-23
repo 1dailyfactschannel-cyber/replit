@@ -5284,7 +5284,33 @@ export async function registerRoutes(
 
     try {
       const invitations = await storage.getUserInvitations();
-      res.json(invitations);
+
+      // Fetch inviter details for each invitation
+      const invitationsWithInviter = await Promise.all(
+        invitations.map(async (inv) => {
+          let inviter = null;
+          if (inv.invitedBy) {
+            try {
+              const user = await storage.getUser(inv.invitedBy);
+              if (user) {
+                inviter = {
+                  id: user.id,
+                  firstName: user.firstName,
+                  lastName: user.lastName,
+                  username: user.username,
+                  email: user.email,
+                  avatar: user.avatar,
+                };
+              }
+            } catch (e) {
+              // ignore missing user
+            }
+          }
+          return { ...inv, inviter };
+        })
+      );
+
+      res.json(invitationsWithInviter);
     } catch (error) {
       console.error("Error fetching user invitations:", error);
       res.status(500).json({ message: "Failed to fetch invitations" });
