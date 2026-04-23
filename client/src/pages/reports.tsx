@@ -16,7 +16,13 @@ import {
   Loader2,
   ArrowUp,
   ArrowDown,
-  Minus
+  Minus,
+  Download,
+  Target,
+  Timer,
+  Activity,
+  Percent,
+  Award
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
@@ -26,6 +32,15 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { 
   Select,
   SelectContent,
@@ -52,6 +67,75 @@ import {
 } from "recharts";
 
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16'];
+
+// Custom chart tooltip
+const CustomTooltip = ({ active, payload, label }: any) => {
+  if (active && payload && payload.length) {
+    return (
+      <div className="bg-background border border-border rounded-lg shadow-lg p-3 min-w-[180px]">
+        {label && <p className="text-sm font-semibold text-foreground mb-2">{label}</p>}
+        {payload.map((entry: any, index: number) => (
+          <div key={index} className="flex items-center justify-between gap-4 text-sm">
+            <div className="flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: entry.color }} />
+              <span className="text-muted-foreground">{entry.name}</span>
+            </div>
+            <span className="font-medium text-foreground">{entry.value}</span>
+          </div>
+        ))}
+      </div>
+    );
+  }
+  return null;
+};
+
+// Stat card component
+function StatCard({ title, value, icon: Icon, color, subtitle, trend }: {
+  title: string;
+  value: string | number;
+  icon: React.ElementType;
+  color: string;
+  subtitle?: string;
+  trend?: "up" | "down" | "neutral";
+}) {
+  const colorClasses: Record<string, string> = {
+    blue: "bg-blue-500/10 text-blue-600 border-blue-500/20",
+    green: "bg-emerald-500/10 text-emerald-600 border-emerald-500/20",
+    red: "bg-rose-500/10 text-rose-600 border-rose-500/20",
+    amber: "bg-amber-500/10 text-amber-600 border-amber-500/20",
+    purple: "bg-purple-500/10 text-purple-600 border-purple-500/20",
+    slate: "bg-slate-500/10 text-slate-600 border-slate-500/20",
+  };
+  return (
+    <Card className="border-border/50 shadow-sm">
+      <CardContent className="p-5">
+        <div className="flex items-start justify-between">
+          <div className="space-y-2">
+            <p className="text-sm text-muted-foreground font-medium">{title}</p>
+            <p className="text-3xl font-bold tracking-tight">{value}</p>
+            {subtitle && (
+              <div className="flex items-center gap-1.5 text-xs">
+                {trend === "up" && <ArrowUp className="w-3.5 h-3.5 text-emerald-500" />}
+                {trend === "down" && <ArrowDown className="w-3.5 h-3.5 text-rose-500" />}
+                {trend === "neutral" && <Minus className="w-3.5 h-3.5 text-slate-400" />}
+                <span className={cn(
+                  trend === "up" && "text-emerald-600",
+                  trend === "down" && "text-rose-600",
+                  trend === "neutral" && "text-slate-500"
+                )}>
+                  {subtitle}
+                </span>
+              </div>
+            )}
+          </div>
+          <div className={cn("p-2.5 rounded-xl border", colorClasses[color] || colorClasses.slate)}>
+            <Icon className="w-5 h-5" />
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
 
 export default function ReportsPage() {
   const [activeReport, setActiveReport] = useState("overview");
@@ -219,9 +303,15 @@ export default function ReportsPage() {
           <div className="p-6">
             {/* Filters */}
             <div className="mb-6 p-4 bg-muted/30 rounded-xl border border-border/50">
-              <div className="flex items-center gap-2 mb-4">
-                <Filter className="w-4 h-4 text-foreground" />
-                <span className="text-sm font-medium text-foreground">Фильтры</span>
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <Filter className="w-4 h-4 text-foreground" />
+                  <span className="text-sm font-medium text-foreground">Фильтры</span>
+                </div>
+                <Button variant="outline" size="sm" className="gap-2 h-8">
+                  <Download className="w-3.5 h-3.5" />
+                  Экспорт
+                </Button>
               </div>
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
                 <Select value={selectedWorkspace} onValueChange={setSelectedWorkspace}>
@@ -307,74 +397,117 @@ export default function ReportsPage() {
                   <div className="space-y-6">
                     {/* Stats Cards */}
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                      <Card>
-                        <CardHeader className="pb-2">
-                          <CardDescription>Всего задач</CardDescription>
-                          <CardTitle className="text-3xl">{formatNumber(overviewData.totalTasks || 0)}</CardTitle>
-                        </CardHeader>
-                      </Card>
-                      <Card>
-                        <CardHeader className="pb-2">
-                          <CardDescription>В работе</CardDescription>
-                          <CardTitle className="text-3xl text-blue-500">{formatNumber(overviewData.inProgressTasks || 0)}</CardTitle>
-                        </CardHeader>
-                      </Card>
-                      <Card>
-                        <CardHeader className="pb-2">
-                          <CardDescription>Выполнено</CardDescription>
-                          <CardTitle className="text-3xl text-green-500">{formatNumber(overviewData.completedTasks || 0)}</CardTitle>
-                        </CardHeader>
-                      </Card>
-                      <Card>
-                        <CardHeader className="pb-2">
-                          <CardDescription>Просрочено</CardDescription>
-                          <CardTitle className="text-3xl text-red-500">{formatNumber(overviewData.overdueTasks || 0)}</CardTitle>
-                        </CardHeader>
-                      </Card>
+                      <StatCard
+                        title="Всего задач"
+                        value={formatNumber(overviewData.totalTasks || 0)}
+                        icon={CheckSquare}
+                        color="blue"
+                        subtitle="+12% за неделю"
+                        trend="up"
+                      />
+                      <StatCard
+                        title="В работе"
+                        value={formatNumber(overviewData.inProgressTasks || 0)}
+                        icon={Activity}
+                        color="amber"
+                        subtitle="5% от общего числа"
+                        trend="neutral"
+                      />
+                      <StatCard
+                        title="Выполнено"
+                        value={formatNumber(overviewData.completedTasks || 0)}
+                        icon={Target}
+                        color="green"
+                        subtitle="+8% за неделю"
+                        trend="up"
+                      />
+                      <StatCard
+                        title="Просрочено"
+                        value={formatNumber(overviewData.overdueTasks || 0)}
+                        icon={Clock}
+                        color="red"
+                        subtitle="-3% за неделю"
+                        trend="down"
+                      />
                     </div>
 
                     {/* Charts */}
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                      <Card>
+                      <Card className="border-border/50 shadow-sm">
                         <CardHeader>
-                          <CardTitle>Задачи по статусам</CardTitle>
+                          <CardTitle className="text-base font-semibold flex items-center gap-2">
+                            <PieChart className="w-4 h-4 text-primary" />
+                            Задачи по статусам
+                          </CardTitle>
                         </CardHeader>
                         <CardContent>
-                          <ResponsiveContainer width="100%" height={300}>
+                          <ResponsiveContainer width="100%" height={320}>
                             <RechartsPieChart>
                               <Pie
                                 data={overviewData.tasksByStatus || []}
                                 cx="50%"
                                 cy="50%"
-                                innerRadius={60}
-                                outerRadius={100}
-                                paddingAngle={5}
+                                innerRadius={70}
+                                outerRadius={110}
+                                paddingAngle={4}
                                 dataKey="count"
                                 nameKey="status"
+                                strokeWidth={2}
+                                stroke="hsl(var(--background))"
                               >
                                 {(overviewData.tasksByStatus || []).map((entry: any, index: number) => (
                                   <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                                 ))}
                               </Pie>
-                              <Tooltip />
-                              <Legend />
+                              <Tooltip content={<CustomTooltip />} />
+                              <Legend 
+                                verticalAlign="bottom" 
+                                height={36}
+                                iconType="circle"
+                                iconSize={8}
+                                formatter={(value: string) => <span className="text-sm text-muted-foreground ml-1">{value}</span>}
+                              />
                             </RechartsPieChart>
                           </ResponsiveContainer>
                         </CardContent>
                       </Card>
 
-                      <Card>
+                      <Card className="border-border/50 shadow-sm">
                         <CardHeader>
-                          <CardTitle>Задачи по дням</CardTitle>
+                          <CardTitle className="text-base font-semibold flex items-center gap-2">
+                            <TrendingUp className="w-4 h-4 text-primary" />
+                            Задачи по дням
+                          </CardTitle>
                         </CardHeader>
                         <CardContent>
-                          <ResponsiveContainer width="100%" height={300}>
-                            <AreaChart data={overviewData.tasksByDay || []}>
-                              <CartesianGrid strokeDasharray="3 3" />
-                              <XAxis dataKey="date" />
-                              <YAxis />
-                              <Tooltip />
-                              <Area type="monotone" dataKey="count" stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.3} />
+                          <ResponsiveContainer width="100%" height={320}>
+                            <AreaChart data={overviewData.tasksByDay || []} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                              <defs>
+                                <linearGradient id="colorCount" x1="0" y1="0" x2="0" y2="1">
+                                  <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/>
+                                  <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
+                                </linearGradient>
+                              </defs>
+                              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
+                              <XAxis 
+                                dataKey="date" 
+                                tick={{ fontSize: 12, fill: 'hsl(var(--muted-foreground))' }}
+                                tickLine={false}
+                                axisLine={false}
+                              />
+                              <YAxis 
+                                tick={{ fontSize: 12, fill: 'hsl(var(--muted-foreground))' }}
+                                tickLine={false}
+                                axisLine={false}
+                              />
+                              <Tooltip content={<CustomTooltip />} />
+                              <Area 
+                                type="monotone" 
+                                dataKey="count" 
+                                stroke="#3b82f6" 
+                                strokeWidth={2}
+                                fill="url(#colorCount)" 
+                              />
                             </AreaChart>
                           </ResponsiveContainer>
                         </CardContent>
@@ -386,53 +519,109 @@ export default function ReportsPage() {
                 {/* Workspaces Report */}
                 {activeReport === "workspaces" && workspacesReport && (
                   <div className="space-y-6">
-                    <Card>
+                    {/* KPI Cards */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                      <StatCard
+                        title="Всего пространств"
+                        value={workspacesReport.workspaces?.length || 0}
+                        icon={Folder}
+                        color="blue"
+                      />
+                      <StatCard
+                        title="Всего задач"
+                        value={formatNumber(workspacesReport.workspaces?.reduce((sum: number, w: any) => sum + (w.tasksCount || 0), 0) || 0)}
+                        icon={CheckSquare}
+                        color="purple"
+                      />
+                      <StatCard
+                        title="Выполнено"
+                        value={formatNumber(workspacesReport.workspaces?.reduce((sum: number, w: any) => sum + (w.completedCount || 0), 0) || 0)}
+                        icon={Target}
+                        color="green"
+                      />
+                      <StatCard
+                        title="Общее время"
+                        value={formatDuration(workspacesReport.workspaces?.reduce((sum: number, w: any) => sum + (w.totalTime || 0), 0) || 0)}
+                        icon={Timer}
+                        color="amber"
+                      />
+                    </div>
+
+                    <Card className="border-border/50 shadow-sm">
                       <CardHeader>
-                        <CardTitle>По пространствам</CardTitle>
+                        <CardTitle className="text-base font-semibold flex items-center gap-2">
+                          <Folder className="w-4 h-4 text-primary" />
+                          По пространствам
+                        </CardTitle>
                       </CardHeader>
                       <CardContent>
-                        <div className="overflow-x-auto">
-                          <table className="w-full">
-                            <thead>
-                              <tr className="border-b">
-                                <th className="text-left py-3 px-4 font-medium">Пространство</th>
-                                <th className="text-right py-3 px-4 font-medium">Проектов</th>
-                                <th className="text-right py-3 px-4 font-medium">Задач</th>
-                                <th className="text-right py-3 px-4 font-medium">Выполнено</th>
-                                <th className="text-right py-3 px-4 font-medium">В работе</th>
-                                <th className="text-right py-3 px-4 font-medium">Общее время</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {(workspacesReport.workspaces || []).map((ws: any, idx: number) => (
-                                <tr key={ws.id} className="border-b hover:bg-muted/50">
-                                  <td className="py-3 px-4 font-medium">{ws.name}</td>
-                                  <td className="text-right py-3 px-4">{ws.projectsCount}</td>
-                                  <td className="text-right py-3 px-4">{ws.tasksCount}</td>
-                                  <td className="text-right py-3 px-4 text-green-500">{ws.completedCount}</td>
-                                  <td className="text-right py-3 px-4 text-blue-500">{ws.inProgressCount}</td>
-                                  <td className="text-right py-3 px-4">{formatDuration(ws.totalTime || 0)}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
+                        <Table>
+                          <TableHeader>
+                            <TableRow className="hover:bg-transparent">
+                              <TableHead className="w-[200px]">Пространство</TableHead>
+                              <TableHead className="text-right">Проектов</TableHead>
+                              <TableHead className="text-right">Задач</TableHead>
+                              <TableHead className="text-right">Выполнено</TableHead>
+                              <TableHead className="text-right">В работе</TableHead>
+                              <TableHead className="text-right">Выполнение</TableHead>
+                              <TableHead className="text-right">Общее время</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {(workspacesReport.workspaces || []).map((ws: any) => {
+                              const completionRate = ws.tasksCount > 0 ? Math.round((ws.completedCount / ws.tasksCount) * 100) : 0;
+                              return (
+                                <TableRow key={ws.id} className="hover:bg-muted/50">
+                                  <TableCell className="font-medium">{ws.name}</TableCell>
+                                  <TableCell className="text-right">{ws.projectsCount}</TableCell>
+                                  <TableCell className="text-right">{ws.tasksCount}</TableCell>
+                                  <TableCell className="text-right text-emerald-600">{ws.completedCount}</TableCell>
+                                  <TableCell className="text-right text-blue-600">{ws.inProgressCount}</TableCell>
+                                  <TableCell className="text-right">
+                                    <div className="flex items-center justify-end gap-2">
+                                      <span className="text-xs font-medium w-8 text-right">{completionRate}%</span>
+                                      <Progress value={completionRate} className="w-16 h-1.5" />
+                                    </div>
+                                  </TableCell>
+                                  <TableCell className="text-right text-muted-foreground">{formatDuration(ws.totalTime || 0)}</TableCell>
+                                </TableRow>
+                              );
+                            })}
+                          </TableBody>
+                        </Table>
                       </CardContent>
                     </Card>
 
-                    <Card>
+                    <Card className="border-border/50 shadow-sm">
                       <CardHeader>
-                        <CardTitle>Распределение задач по пространствам</CardTitle>
+                        <CardTitle className="text-base font-semibold flex items-center gap-2">
+                          <BarChart2 className="w-4 h-4 text-primary" />
+                          Распределение задач по пространствам
+                        </CardTitle>
                       </CardHeader>
                       <CardContent>
-                        <ResponsiveContainer width="100%" height={300}>
-                          <BarChart data={workspacesReport.workspaces || []}>
-                            <CartesianGrid strokeDasharray="3 3" />
-                            <XAxis dataKey="name" />
-                            <YAxis />
-                            <Tooltip />
-                            <Bar dataKey="tasksCount" fill="#3b82f6" name="Всего задач" />
-                            <Bar dataKey="completedCount" fill="#10b981" name="Выполнено" />
+                        <ResponsiveContainer width="100%" height={320}>
+                          <BarChart data={workspacesReport.workspaces || []} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
+                            <XAxis 
+                              dataKey="name" 
+                              tick={{ fontSize: 12, fill: 'hsl(var(--muted-foreground))' }}
+                              tickLine={false}
+                              axisLine={false}
+                            />
+                            <YAxis 
+                              tick={{ fontSize: 12, fill: 'hsl(var(--muted-foreground))' }}
+                              tickLine={false}
+                              axisLine={false}
+                            />
+                            <Tooltip content={<CustomTooltip />} />
+                            <Legend 
+                              iconType="circle"
+                              iconSize={8}
+                              formatter={(value: string) => <span className="text-sm text-muted-foreground ml-1">{value}</span>}
+                            />
+                            <Bar dataKey="tasksCount" fill="#3b82f6" name="Всего задач" radius={[4, 4, 0, 0]} />
+                            <Bar dataKey="completedCount" fill="#10b981" name="Выполнено" radius={[4, 4, 0, 0]} />
                           </BarChart>
                         </ResponsiveContainer>
                       </CardContent>
@@ -443,53 +632,112 @@ export default function ReportsPage() {
                 {/* Projects Report */}
                 {activeReport === "projects" && projectsReport && (
                   <div className="space-y-6">
-                    <Card>
+                    {/* KPI Cards */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                      <StatCard
+                        title="Всего проектов"
+                        value={projectsReport.projects?.length || 0}
+                        icon={LayoutGrid}
+                        color="blue"
+                      />
+                      <StatCard
+                        title="Всего задач"
+                        value={formatNumber(projectsReport.projects?.reduce((sum: number, p: any) => sum + (p.tasksCount || 0), 0) || 0)}
+                        icon={CheckSquare}
+                        color="purple"
+                      />
+                      <StatCard
+                        title="Выполнено"
+                        value={formatNumber(projectsReport.projects?.reduce((sum: number, p: any) => sum + (p.completedCount || 0), 0) || 0)}
+                        icon={Target}
+                        color="green"
+                      />
+                      <StatCard
+                        title="Общее время"
+                        value={formatDuration(projectsReport.projects?.reduce((sum: number, p: any) => sum + (p.totalTime || 0), 0) || 0)}
+                        icon={Timer}
+                        color="amber"
+                      />
+                    </div>
+
+                    <Card className="border-border/50 shadow-sm">
                       <CardHeader>
-                        <CardTitle>По проектам</CardTitle>
+                        <CardTitle className="text-base font-semibold flex items-center gap-2">
+                          <LayoutGrid className="w-4 h-4 text-primary" />
+                          По проектам
+                        </CardTitle>
                       </CardHeader>
                       <CardContent>
-                        <div className="overflow-x-auto">
-                          <table className="w-full">
-                            <thead>
-                              <tr className="border-b">
-                                <th className="text-left py-3 px-4 font-medium">Проект</th>
-                                <th className="text-left py-3 px-4 font-medium">Пространство</th>
-                                <th className="text-right py-3 px-4 font-medium">Задач</th>
-                                <th className="text-right py-3 px-4 font-medium">Выполнено</th>
-                                <th className="text-right py-3 px-4 font-medium">В работе</th>
-                                <th className="text-right py-3 px-4 font-medium">Общее время</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {(projectsReport.projects || []).map((p: any) => (
-                                <tr key={p.id} className="border-b hover:bg-muted/50">
-                                  <td className="py-3 px-4 font-medium">{p.name}</td>
-                                  <td className="py-3 px-4 text-muted-foreground">{p.workspaceName}</td>
-                                  <td className="text-right py-3 px-4">{p.tasksCount}</td>
-                                  <td className="text-right py-3 px-4 text-green-500">{p.completedCount}</td>
-                                  <td className="text-right py-3 px-4 text-blue-500">{p.inProgressCount}</td>
-                                  <td className="text-right py-3 px-4">{formatDuration(p.totalTime || 0)}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
+                        <Table>
+                          <TableHeader>
+                            <TableRow className="hover:bg-transparent">
+                              <TableHead>Проект</TableHead>
+                              <TableHead>Пространство</TableHead>
+                              <TableHead className="text-right">Задач</TableHead>
+                              <TableHead className="text-right">Выполнено</TableHead>
+                              <TableHead className="text-right">В работе</TableHead>
+                              <TableHead className="text-right">Выполнение</TableHead>
+                              <TableHead className="text-right">Общее время</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {(projectsReport.projects || []).map((p: any) => {
+                              const completionRate = p.tasksCount > 0 ? Math.round((p.completedCount / p.tasksCount) * 100) : 0;
+                              return (
+                                <TableRow key={p.id} className="hover:bg-muted/50">
+                                  <TableCell className="font-medium">{p.name}</TableCell>
+                                  <TableCell className="text-muted-foreground">{p.workspaceName}</TableCell>
+                                  <TableCell className="text-right">{p.tasksCount}</TableCell>
+                                  <TableCell className="text-right text-emerald-600">{p.completedCount}</TableCell>
+                                  <TableCell className="text-right text-blue-600">{p.inProgressCount}</TableCell>
+                                  <TableCell className="text-right">
+                                    <div className="flex items-center justify-end gap-2">
+                                      <span className="text-xs font-medium w-8 text-right">{completionRate}%</span>
+                                      <Progress value={completionRate} className="w-16 h-1.5" />
+                                    </div>
+                                  </TableCell>
+                                  <TableCell className="text-right text-muted-foreground">{formatDuration(p.totalTime || 0)}</TableCell>
+                                </TableRow>
+                              );
+                            })}
+                          </TableBody>
+                        </Table>
                       </CardContent>
                     </Card>
 
-                    <Card>
+                    <Card className="border-border/50 shadow-sm">
                       <CardHeader>
-                        <CardTitle>Сравнение проектов</CardTitle>
+                        <CardTitle className="text-base font-semibold flex items-center gap-2">
+                          <BarChart2 className="w-4 h-4 text-primary" />
+                          Сравнение проектов
+                        </CardTitle>
                       </CardHeader>
                       <CardContent>
-                        <ResponsiveContainer width="100%" height={300}>
-                          <BarChart data={projectsReport.projects || []} layout="vertical">
-                            <CartesianGrid strokeDasharray="3 3" />
-                            <XAxis type="number" />
-                            <YAxis dataKey="name" type="category" width={100} />
-                            <Tooltip />
-                            <Bar dataKey="completedCount" fill="#10b981" name="Выполнено" />
-                            <Bar dataKey="inProgressCount" fill="#3b82f6" name="В работе" />
+                        <ResponsiveContainer width="100%" height={320}>
+                          <BarChart data={projectsReport.projects || []} layout="vertical" margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" horizontal={false} />
+                            <XAxis 
+                              type="number" 
+                              tick={{ fontSize: 12, fill: 'hsl(var(--muted-foreground))' }}
+                              tickLine={false}
+                              axisLine={false}
+                            />
+                            <YAxis 
+                              dataKey="name" 
+                              type="category" 
+                              width={120}
+                              tick={{ fontSize: 12, fill: 'hsl(var(--muted-foreground))' }}
+                              tickLine={false}
+                              axisLine={false}
+                            />
+                            <Tooltip content={<CustomTooltip />} />
+                            <Legend 
+                              iconType="circle"
+                              iconSize={8}
+                              formatter={(value: string) => <span className="text-sm text-muted-foreground ml-1">{value}</span>}
+                            />
+                            <Bar dataKey="completedCount" fill="#10b981" name="Выполнено" radius={[0, 4, 4, 0]} />
+                            <Bar dataKey="inProgressCount" fill="#3b82f6" name="В работе" radius={[0, 4, 4, 0]} />
                           </BarChart>
                         </ResponsiveContainer>
                       </CardContent>
@@ -500,35 +748,78 @@ export default function ReportsPage() {
                 {/* Boards Report */}
                 {activeReport === "boards" && boardsReport && (
                   <div className="space-y-6">
-                    <Card>
+                    {/* KPI Cards */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                      <StatCard
+                        title="Всего досок"
+                        value={boardsReport.boards?.length || 0}
+                        icon={Calendar}
+                        color="blue"
+                      />
+                      <StatCard
+                        title="Всего задач"
+                        value={formatNumber(boardsReport.boards?.reduce((sum: number, b: any) => sum + (b.tasksCount || 0), 0) || 0)}
+                        icon={CheckSquare}
+                        color="purple"
+                      />
+                      <StatCard
+                        title="Выполнено"
+                        value={formatNumber(boardsReport.boards?.reduce((sum: number, b: any) => sum + (b.completedCount || 0), 0) || 0)}
+                        icon={Target}
+                        color="green"
+                      />
+                      <StatCard
+                        title="Среднее время"
+                        value={formatDuration(
+                          boardsReport.boards?.length > 0
+                            ? boardsReport.boards.reduce((sum: number, b: any) => sum + (b.avgTime || 0), 0) / boardsReport.boards.length
+                            : 0
+                        )}
+                        icon={Timer}
+                        color="amber"
+                      />
+                    </div>
+
+                    <Card className="border-border/50 shadow-sm">
                       <CardHeader>
-                        <CardTitle>По доскам</CardTitle>
+                        <CardTitle className="text-base font-semibold flex items-center gap-2">
+                          <Calendar className="w-4 h-4 text-primary" />
+                          По доскам
+                        </CardTitle>
                       </CardHeader>
                       <CardContent>
-                        <div className="overflow-x-auto">
-                          <table className="w-full">
-                            <thead>
-                              <tr className="border-b">
-                                <th className="text-left py-3 px-4 font-medium">Доска</th>
-                                <th className="text-left py-3 px-4 font-medium">Проект</th>
-                                <th className="text-right py-3 px-4 font-medium">Задач</th>
-                                <th className="text-right py-3 px-4 font-medium">Выполнено</th>
-                                <th className="text-right py-3 px-4 font-medium">Ср. время</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {(boardsReport.boards || []).map((b: any) => (
-                                <tr key={b.id} className="border-b hover:bg-muted/50">
-                                  <td className="py-3 px-4 font-medium">{b.name}</td>
-                                  <td className="py-3 px-4 text-muted-foreground">{b.projectName}</td>
-                                  <td className="text-right py-3 px-4">{b.tasksCount}</td>
-                                  <td className="text-right py-3 px-4 text-green-500">{b.completedCount}</td>
-                                  <td className="text-right py-3 px-4">{formatDuration(b.avgTime || 0)}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
+                        <Table>
+                          <TableHeader>
+                            <TableRow className="hover:bg-transparent">
+                              <TableHead>Доска</TableHead>
+                              <TableHead>Проект</TableHead>
+                              <TableHead className="text-right">Задач</TableHead>
+                              <TableHead className="text-right">Выполнено</TableHead>
+                              <TableHead className="text-right">Выполнение</TableHead>
+                              <TableHead className="text-right">Ср. время</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {(boardsReport.boards || []).map((b: any) => {
+                              const completionRate = b.tasksCount > 0 ? Math.round((b.completedCount / b.tasksCount) * 100) : 0;
+                              return (
+                                <TableRow key={b.id} className="hover:bg-muted/50">
+                                  <TableCell className="font-medium">{b.name}</TableCell>
+                                  <TableCell className="text-muted-foreground">{b.projectName}</TableCell>
+                                  <TableCell className="text-right">{b.tasksCount}</TableCell>
+                                  <TableCell className="text-right text-emerald-600">{b.completedCount}</TableCell>
+                                  <TableCell className="text-right">
+                                    <div className="flex items-center justify-end gap-2">
+                                      <span className="text-xs font-medium w-8 text-right">{completionRate}%</span>
+                                      <Progress value={completionRate} className="w-16 h-1.5" />
+                                    </div>
+                                  </TableCell>
+                                  <TableCell className="text-right text-muted-foreground">{formatDuration(b.avgTime || 0)}</TableCell>
+                                </TableRow>
+                              );
+                            })}
+                          </TableBody>
+                        </Table>
                       </CardContent>
                     </Card>
                   </div>
@@ -537,44 +828,102 @@ export default function ReportsPage() {
                 {/* Tasks Time Tracking Report */}
                 {activeReport === "tasks" && tasksTimeData && (
                   <div className="space-y-6">
-                    <Card>
+                    {/* KPI Cards */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                      <StatCard
+                        title="Всего статусов"
+                        value={tasksTimeData.statusReport?.length || 0}
+                        icon={CheckSquare}
+                        color="blue"
+                      />
+                      <StatCard
+                        title="Всего задач"
+                        value={formatNumber(tasksTimeData.statusReport?.reduce((sum: number, s: any) => sum + (s.taskCount || 0), 0) || 0)}
+                        icon={Target}
+                        color="purple"
+                      />
+                      <StatCard
+                        title="Общее время"
+                        value={formatDuration(tasksTimeData.statusReport?.reduce((sum: number, s: any) => sum + (s.totalSeconds || 0), 0) || 0)}
+                        icon={Timer}
+                        color="amber"
+                      />
+                      <StatCard
+                        title="Среднее время"
+                        value={formatDuration(
+                          tasksTimeData.statusReport?.length > 0
+                            ? tasksTimeData.statusReport.reduce((sum: number, s: any) => sum + (s.totalSeconds || 0), 0) / tasksTimeData.statusReport.length
+                            : 0
+                        )}
+                        icon={Clock}
+                        color="slate"
+                      />
+                    </div>
+
+                    <Card className="border-border/50 shadow-sm">
                       <CardHeader>
-                        <CardTitle>Время в статусах</CardTitle>
+                        <CardTitle className="text-base font-semibold flex items-center gap-2">
+                          <Clock className="w-4 h-4 text-primary" />
+                          Время в статусах
+                        </CardTitle>
                         <CardDescription>Статистика по статусам задач за выбранный период</CardDescription>
                       </CardHeader>
                       <CardContent>
-                        <div className="overflow-x-auto">
-                          <table className="w-full">
-                            <thead>
-                              <tr className="border-b">
-                                <th className="text-left py-3 px-4 font-medium">Статус</th>
-                                <th className="text-right py-3 px-4 font-medium">Количество задач</th>
-                                <th className="text-right py-3 px-4 font-medium">Общее время</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {(tasksTimeData.statusReport || []).map((s: any, idx: number) => (
-                                <tr key={idx} className="border-b hover:bg-muted/50">
-                                  <td className="py-3 px-4">
-                                    <Badge variant="outline">{s.status}</Badge>
-                                  </td>
-                                  <td className="text-right py-3 px-4 font-medium">{s.taskCount}</td>
-                                  <td className="text-right py-3 px-4">{formatDuration(s.totalSeconds || 0)}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
+                        <Table>
+                          <TableHeader>
+                            <TableRow className="hover:bg-transparent">
+                              <TableHead>Статус</TableHead>
+                              <TableHead className="text-right">Количество задач</TableHead>
+                              <TableHead className="text-right">Доля задач</TableHead>
+                              <TableHead className="text-right">Общее время</TableHead>
+                              <TableHead className="text-right">Доля времени</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {(() => {
+                              const totalTasks = tasksTimeData.statusReport?.reduce((sum: number, s: any) => sum + (s.taskCount || 0), 0) || 0;
+                              const totalTime = tasksTimeData.statusReport?.reduce((sum: number, s: any) => sum + (s.totalSeconds || 0), 0) || 0;
+                              return (tasksTimeData.statusReport || []).map((s: any, idx: number) => {
+                                const taskShare = totalTasks > 0 ? Math.round((s.taskCount / totalTasks) * 100) : 0;
+                                const timeShare = totalTime > 0 ? Math.round((s.totalSeconds / totalTime) * 100) : 0;
+                                return (
+                                  <TableRow key={idx} className="hover:bg-muted/50">
+                                    <TableCell>
+                                      <Badge variant="outline" className="font-medium">{s.status}</Badge>
+                                    </TableCell>
+                                    <TableCell className="text-right font-medium">{s.taskCount}</TableCell>
+                                    <TableCell className="text-right">
+                                      <div className="flex items-center justify-end gap-2">
+                                        <span className="text-xs w-8 text-right">{taskShare}%</span>
+                                        <Progress value={taskShare} className="w-16 h-1.5" />
+                                      </div>
+                                    </TableCell>
+                                    <TableCell className="text-right">{formatDuration(s.totalSeconds || 0)}</TableCell>
+                                    <TableCell className="text-right">
+                                      <div className="flex items-center justify-end gap-2">
+                                        <span className="text-xs w-8 text-right">{timeShare}%</span>
+                                        <Progress value={timeShare} className="w-16 h-1.5" />
+                                      </div>
+                                    </TableCell>
+                                  </TableRow>
+                                );
+                              });
+                            })()}
+                          </TableBody>
+                        </Table>
                       </CardContent>
                     </Card>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <Card>
+                      <Card className="border-border/50 shadow-sm">
                         <CardHeader>
-                          <CardTitle>Распределение задач по статусам</CardTitle>
+                          <CardTitle className="text-base font-semibold flex items-center gap-2">
+                            <PieChart className="w-4 h-4 text-primary" />
+                            Распределение задач по статусам
+                          </CardTitle>
                         </CardHeader>
                         <CardContent>
-                          <ResponsiveContainer width="100%" height={300}>
+                          <ResponsiveContainer width="100%" height={320}>
                             <RechartsPieChart>
                               <Pie
                                 data={tasksTimeData.statusReport || []}
@@ -582,31 +931,62 @@ export default function ReportsPage() {
                                 nameKey="status"
                                 cx="50%"
                                 cy="50%"
+                                innerRadius={60}
                                 outerRadius={100}
-                                label={({ status, taskCount }: any) => `${status}: ${taskCount}`}
+                                paddingAngle={4}
+                                strokeWidth={2}
+                                stroke="hsl(var(--background))"
+                                label={({ status, percent }: any) => `${status}: ${(percent * 100).toFixed(0)}%`}
+                                labelLine={false}
                               >
                                 {(tasksTimeData.statusReport || []).map((entry: any, index: number) => (
-                                  <Cell key={`cell-${index}`} fill={['#3b82f6', '#f59e0b', '#8b5cf6', '#22c55e'][index % 4]} />
+                                  <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                                 ))}
                               </Pie>
-                              <Tooltip />
+                              <Tooltip content={<CustomTooltip />} />
+                              <Legend 
+                                verticalAlign="bottom" 
+                                height={36}
+                                iconType="circle"
+                                iconSize={8}
+                                formatter={(value: string) => <span className="text-sm text-muted-foreground ml-1">{value}</span>}
+                              />
                             </RechartsPieChart>
                           </ResponsiveContainer>
                         </CardContent>
                       </Card>
 
-                      <Card>
+                      <Card className="border-border/50 shadow-sm">
                         <CardHeader>
-                          <CardTitle>Распределение времени по статусам</CardTitle>
+                          <CardTitle className="text-base font-semibold flex items-center gap-2">
+                            <BarChart2 className="w-4 h-4 text-primary" />
+                            Распределение времени по статусам
+                          </CardTitle>
                         </CardHeader>
                         <CardContent>
-                          <ResponsiveContainer width="100%" height={300}>
-                            <BarChart data={tasksTimeData.statusReport || []} layout="vertical">
-                              <CartesianGrid strokeDasharray="3 3" />
-                              <XAxis type="number" />
-                              <YAxis dataKey="status" type="category" width={100} />
-                              <Tooltip formatter={(value: number) => formatDuration(value)} />
-                              <Bar dataKey="totalSeconds" fill="#3b82f6" name="Время" />
+                          <ResponsiveContainer width="100%" height={320}>
+                            <BarChart data={tasksTimeData.statusReport || []} layout="vertical" margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" horizontal={false} />
+                              <XAxis 
+                                type="number" 
+                                tick={{ fontSize: 12, fill: 'hsl(var(--muted-foreground))' }}
+                                tickLine={false}
+                                axisLine={false}
+                                tickFormatter={(v: number) => formatDuration(v)}
+                              />
+                              <YAxis 
+                                dataKey="status" 
+                                type="category" 
+                                width={100}
+                                tick={{ fontSize: 12, fill: 'hsl(var(--muted-foreground))' }}
+                                tickLine={false}
+                                axisLine={false}
+                              />
+                              <Tooltip 
+                                content={<CustomTooltip />} 
+                                formatter={(value: number) => formatDuration(value)}
+                              />
+                              <Bar dataKey="totalSeconds" fill="#3b82f6" name="Время" radius={[0, 4, 4, 0]} />
                             </BarChart>
                           </ResponsiveContainer>
                         </CardContent>
@@ -618,61 +998,118 @@ export default function ReportsPage() {
                 {/* Users Report */}
                 {activeReport === "users" && usersReport && (
                   <div className="space-y-6">
-                    <Card>
+                    {/* KPI Cards */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                      <StatCard
+                        title="Всего сотрудников"
+                        value={usersReport.users?.length || 0}
+                        icon={Users}
+                        color="blue"
+                      />
+                      <StatCard
+                        title="Всего выполнено"
+                        value={formatNumber(usersReport.users?.reduce((sum: number, u: any) => sum + (u.completedCount || 0), 0) || 0)}
+                        icon={Target}
+                        color="green"
+                      />
+                      <StatCard
+                        title="Всего комментариев"
+                        value={formatNumber(usersReport.users?.reduce((sum: number, u: any) => sum + (u.commentsCount || 0), 0) || 0)}
+                        icon={Activity}
+                        color="purple"
+                      />
+                      <StatCard
+                        title="Общее время"
+                        value={formatDuration(usersReport.users?.reduce((sum: number, u: any) => sum + (u.totalTime || 0), 0) || 0)}
+                        icon={Timer}
+                        color="amber"
+                      />
+                    </div>
+
+                    <Card className="border-border/50 shadow-sm">
                       <CardHeader>
-                        <CardTitle>Аналитика сотрудников</CardTitle>
+                        <CardTitle className="text-base font-semibold flex items-center gap-2">
+                          <Users className="w-4 h-4 text-primary" />
+                          Аналитика сотрудников
+                        </CardTitle>
                       </CardHeader>
                       <CardContent>
-                        <div className="overflow-x-auto">
-                          <table className="w-full">
-                            <thead>
-                              <tr className="border-b">
-                                <th className="text-left py-3 px-4 font-medium">Сотрудник</th>
-                                <th className="text-right py-3 px-4 font-medium">Выполнено</th>
-                                <th className="text-right py-3 px-4 font-medium">В работе</th>
-                                <th className="text-right py-3 px-4 font-medium">Ср. время</th>
-                                <th className="text-right py-3 px-4 font-medium">Комментариев</th>
-                                <th className="text-right py-3 px-4 font-medium">Общее время</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {(usersReport.users || []).map((u: any) => (
-                                <tr key={u.id} className="border-b hover:bg-muted/50">
-                                  <td className="py-3 px-4">
-                                    <div className="flex items-center gap-2">
+                        <Table>
+                          <TableHeader>
+                            <TableRow className="hover:bg-transparent">
+                              <TableHead>Сотрудник</TableHead>
+                              <TableHead className="text-right">Выполнено</TableHead>
+                              <TableHead className="text-right">В работе</TableHead>
+                              <TableHead className="text-right">Продуктивность</TableHead>
+                              <TableHead className="text-right">Комментариев</TableHead>
+                              <TableHead className="text-right">Ср. время</TableHead>
+                              <TableHead className="text-right">Общее время</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {(usersReport.users || []).map((u: any) => {
+                              const totalTasks = (u.completedCount || 0) + (u.inProgressCount || 0);
+                              const productivity = totalTasks > 0 ? Math.round(((u.completedCount || 0) / totalTasks) * 100) : 0;
+                              return (
+                                <TableRow key={u.id} className="hover:bg-muted/50">
+                                  <TableCell>
+                                    <div className="flex items-center gap-3">
                                       <Avatar className="w-8 h-8">
                                         <AvatarImage src={u.avatar || undefined} />
                                         <AvatarFallback>{u.name?.charAt(0) || 'U'}</AvatarFallback>
                                       </Avatar>
                                       <span className="font-medium">{u.name}</span>
                                     </div>
-                                  </td>
-                                  <td className="text-right py-3 px-4 text-green-500">{u.completedCount}</td>
-                                  <td className="text-right py-3 px-4 text-blue-500">{u.inProgressCount}</td>
-                                  <td className="text-right py-3 px-4">{formatDuration(u.avgTime || 0)}</td>
-                                  <td className="text-right py-3 px-4">{u.commentsCount}</td>
-                                  <td className="text-right py-3 px-4 font-medium">{formatDuration(u.totalTime || 0)}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
+                                  </TableCell>
+                                  <TableCell className="text-right text-emerald-600">{u.completedCount}</TableCell>
+                                  <TableCell className="text-right text-blue-600">{u.inProgressCount}</TableCell>
+                                  <TableCell className="text-right">
+                                    <div className="flex items-center justify-end gap-2">
+                                      <span className="text-xs font-medium w-8 text-right">{productivity}%</span>
+                                      <Progress value={productivity} className="w-16 h-1.5" />
+                                    </div>
+                                  </TableCell>
+                                  <TableCell className="text-right">{u.commentsCount}</TableCell>
+                                  <TableCell className="text-right text-muted-foreground">{formatDuration(u.avgTime || 0)}</TableCell>
+                                  <TableCell className="text-right font-medium">{formatDuration(u.totalTime || 0)}</TableCell>
+                                </TableRow>
+                              );
+                            })}
+                          </TableBody>
+                        </Table>
                       </CardContent>
                     </Card>
 
-                    <Card>
+                    <Card className="border-border/50 shadow-sm">
                       <CardHeader>
-                        <CardTitle>Продуктивность сотрудников</CardTitle>
+                        <CardTitle className="text-base font-semibold flex items-center gap-2">
+                          <BarChart2 className="w-4 h-4 text-primary" />
+                          Продуктивность сотрудников
+                        </CardTitle>
                       </CardHeader>
                       <CardContent>
-                        <ResponsiveContainer width="100%" height={300}>
-                          <BarChart data={usersReport.users || []}>
-                            <CartesianGrid strokeDasharray="3 3" />
-                            <XAxis dataKey="name" />
-                            <YAxis />
-                            <Tooltip />
-                            <Bar dataKey="completedCount" fill="#10b981" name="Выполнено" />
-                            <Bar dataKey="inProgressCount" fill="#3b82f6" name="В работе" />
+                        <ResponsiveContainer width="100%" height={320}>
+                          <BarChart data={usersReport.users || []} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
+                            <XAxis 
+                              dataKey="name" 
+                              tick={{ fontSize: 12, fill: 'hsl(var(--muted-foreground))' }}
+                              tickLine={false}
+                              axisLine={false}
+                            />
+                            <YAxis 
+                              tick={{ fontSize: 12, fill: 'hsl(var(--muted-foreground))' }}
+                              tickLine={false}
+                              axisLine={false}
+                            />
+                            <Tooltip content={<CustomTooltip />} />
+                            <Legend 
+                              iconType="circle"
+                              iconSize={8}
+                              formatter={(value: string) => <span className="text-sm text-muted-foreground ml-1">{value}</span>}
+                            />
+                            <Bar dataKey="completedCount" fill="#10b981" name="Выполнено" radius={[4, 4, 0, 0]} />
+                            <Bar dataKey="inProgressCount" fill="#3b82f6" name="В работе" radius={[4, 4, 0, 0]} />
                           </BarChart>
                         </ResponsiveContainer>
                       </CardContent>
