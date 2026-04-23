@@ -873,6 +873,7 @@ export default function EmployeesPage() {
                     <TableHead>Должность</TableHead>
                     <TableHead>Статус</TableHead>
                     <TableHead>Комментарий</TableHead>
+                    <TableHead className="text-center">Удаленка</TableHead>
                     <TableHead>Баллы</TableHead>
                     <TableHead className="text-right">Действия</TableHead>
                   </TableRow>
@@ -913,6 +914,15 @@ export default function EmployeesPage() {
                         {employee.statusComment ? (
                           <span className="text-sm text-muted-foreground max-w-[150px] truncate block" title={employee.statusComment}>
                             {employee.statusComment}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-center">
+                        {employee.isRemote ? (
+                          <span title="Работает удаленно">
+                            <Monitor className="w-4 h-4 text-blue-500 mx-auto" />
                           </span>
                         ) : (
                           <span className="text-xs text-muted-foreground">—</span>
