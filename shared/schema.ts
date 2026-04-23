@@ -1317,6 +1317,23 @@ export const guestSessions = pgTable("guest_sessions", {
   expiresIdx: index("idx_guest_sessions_expires").on(table.expiresAt),
 }));
 
+// User Invitations table
+export const userInvitations = pgTable("user_invitations", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  email: varchar("email", { length: 255 }).notNull(),
+  role: varchar("role", { length: 100 }),
+  token: varchar("token", { length: 64 }).notNull().unique(),
+  status: varchar("status", { length: 20 }).notNull().default("pending"),
+  invitedBy: uuid("invited_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").defaultNow(),
+  expiresAt: timestamp("expires_at").notNull(),
+  acceptedAt: timestamp("accepted_at"),
+}, (table) => ({
+  tokenIdx: index("idx_user_invitations_token").on(table.token),
+  statusIdx: index("idx_user_invitations_status").on(table.status),
+  emailIdx: index("idx_user_invitations_email").on(table.email),
+}));
+
 export type CallSettings = typeof callSettings.$inferSelect;
 export type InsertCallSettings = z.infer<typeof insertCallSettingsSchema>;
 export type CallParticipant = typeof callParticipants.$inferSelect;
@@ -1327,4 +1344,6 @@ export type GuestInvitation = typeof guestInvitations.$inferSelect;
 export type InsertGuestInvitation = typeof guestInvitations.$inferInsert;
 export type GuestSession = typeof guestSessions.$inferSelect;
 export type InsertGuestSession = typeof guestSessions.$inferInsert;
+export type UserInvitation = typeof userInvitations.$inferSelect;
+export type InsertUserInvitation = typeof userInvitations.$inferInsert;
 

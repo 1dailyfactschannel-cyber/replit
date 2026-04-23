@@ -1037,10 +1037,67 @@ function TeamManagement() {
     }
   };
 
-  const invites = [
-    { id: 1, email: "hr@teamsync.com", role: "HR-менеджер", sentAt: "24.01.2026", status: "pending" },
-    { id: 2, email: "dev-lead@teamsync.com", role: "Админ", sentAt: "23.01.2026", status: "expired" },
-  ];
+  // Invitations state
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteRole, setInviteRole] = useState("");
+
+  const { data: invitations = [], isLoading: invitationsLoading, refetch: refetchInvitations } = useQuery<any[]>({
+    queryKey: ["/api/team/invitations"],
+  });
+
+  const sendInviteMutation = useMutation({
+    mutationFn: async (data: { email: string; role?: string }) => {
+      const res = await apiRequest("POST", "/api/team/invitations", data);
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message || "Не удалось отправить приглашение");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      refetchInvitations();
+      setInviteEmail("");
+      setInviteRole("");
+      toast({ title: "Приглашение отправлено", description: "Письмо с приглашением отправлено на указанный email" });
+    },
+    onError: (error: any) => {
+      toast({ title: "Ошибка", description: error?.message || "Не удалось отправить приглашение", variant: "destructive" });
+    }
+  });
+
+  const deleteInviteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await apiRequest("DELETE", `/api/team/invitations/${id}`, {});
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message || "Не удалось удалить приглашение");
+      }
+    },
+    onSuccess: () => {
+      refetchInvitations();
+      toast({ title: "Приглашение удалено", description: "Приглашение успешно отменено" });
+    },
+    onError: (error: any) => {
+      toast({ title: "Ошибка", description: error?.message || "Не удалось удалить приглашение", variant: "destructive" });
+    }
+  });
+
+  const handleSendInvite = () => {
+    if (!inviteEmail.trim() || !inviteEmail.includes("@")) {
+      toast({ title: "Ошибка", description: "Введите корректный email адрес", variant: "destructive" });
+      return;
+    }
+    sendInviteMutation.mutate({ email: inviteEmail.trim(), role: inviteRole || undefined });
+  };
+
+  const formatDate = (dateStr: string) => {
+    const date = new Date(dateStr);
+    return date.toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric" });
+  };
+
+  const isExpired = (expiresAt: string) => {
+    return new Date(expiresAt) < new Date();
+  };
 
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300 max-w-3xl">
@@ -1052,39 +1109,64 @@ function TeamManagement() {
             </h4>
             <Card className="border-border/50 shadow-sm bg-card/50">
               <CardContent className="p-0">
-                <div className="divide-y divide-border/50">
-                  {invites.map((invite) => (
-                    <div key={invite.id} className="p-4 space-y-3">
-                      <div className="flex items-start justify-between">
-                        <div className="space-y-0.5">
-                          <p className="text-sm font-bold truncate max-w-[150px]">{invite.email}</p>
-                          <p className="text-[11px] text-muted-foreground font-medium">{invite.role}</p>
+                {invitationsLoading ? (
+                  <div className="p-8 text-center">
+                    <Loader2 className="w-6 h-6 animate-spin text-muted-foreground mx-auto" />
+                  </div>
+                ) : (
+                  <div className="divide-y divide-border/50">
+                    {invitations.map((invite: any) => {
+                      const expired = invite.status === "pending" && isExpired(invite.expiresAt);
+                      const status = invite.status === "accepted" ? "accepted" : expired ? "expired" : invite.status;
+                      return (
+                        <div key={invite.id} className="p-4 space-y-3">
+                          <div className="flex items-start justify-between">
+                            <div className="space-y-0.5">
+                              <p className="text-sm font-bold truncate max-w-[200px]">{invite.email}</p>
+                              {invite.role && (
+                                <p className="text-[11px] text-muted-foreground font-medium">{invite.role}</p>
+                              )}
+                            </div>
+                            <Badge
+                              variant="outline"
+                              className={cn(
+                                "text-[9px] uppercase font-bold px-1.5 h-4 border-none",
+                                status === "pending" && "bg-amber-500/10 text-amber-600",
+                                status === "accepted" && "bg-emerald-500/10 text-emerald-600",
+                                status === "expired" && "bg-rose-500/10 text-rose-600"
+                              )}
+                            >
+                              {status === "pending" ? "Ожидает" : status === "accepted" ? "Принят" : "Истек"}
+                            </Badge>
+                          </div>
+                          <div className="flex items-center justify-between pt-1">
+                            <span className="text-[10px] text-muted-foreground">
+                              {invite.createdAt ? `Отправлено: ${formatDate(invite.createdAt)}` : "—"}
+                            </span>
+                            <div className="flex items-center gap-1">
+                              {status === "pending" && (
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-6 w-6 text-muted-foreground hover:text-rose-500"
+                                  onClick={() => {
+                                    if (confirm("Отменить приглашение?")) {
+                                      deleteInviteMutation.mutate(invite.id);
+                                    }
+                                  }}
+                                  disabled={deleteInviteMutation.isPending}
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                </Button>
+                              )}
+                            </div>
+                          </div>
                         </div>
-                        <Badge 
-                          variant={invite.status === "pending" ? "outline" : "secondary"} 
-                          className={cn(
-                            "text-[9px] uppercase font-bold px-1.5 h-4 border-none",
-                            invite.status === "pending" ? "bg-amber-500/10 text-amber-600" : "bg-rose-500/10 text-rose-600"
-                          )}
-                        >
-                          {invite.status === "pending" ? "Ожидает" : "Истек"}
-                        </Badge>
-                      </div>
-                      <div className="flex items-center justify-between pt-1">
-                        <span className="text-[10px] text-muted-foreground">Отправлено: {invite.sentAt}</span>
-                        <div className="flex items-center gap-1">
-                          <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-primary">
-                            <Send className="w-3 h-3" />
-                          </Button>
-                          <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-rose-500">
-                            <Trash2 className="w-3 h-3" />
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                {invites.length === 0 && (
+                      );
+                    })}
+                  </div>
+                )}
+                {!invitationsLoading && invitations.length === 0 && (
                   <div className="p-8 text-center space-y-2">
                     <Mail className="w-8 h-8 text-muted-foreground opacity-20 mx-auto" />
                     <p className="text-[11px] text-muted-foreground">Нет активных приглашений</p>
@@ -1103,12 +1185,31 @@ function TeamManagement() {
               <CardDescription className="text-[11px]">Отправьте приглашение по email</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3 relative z-10">
-              <Input 
-                placeholder="Email адрес..." 
+              <Input
+                placeholder="Email адрес..."
+                value={inviteEmail}
+                onChange={(e) => setInviteEmail(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleSendInvite()}
                 className="h-8 text-xs bg-background/50 border-primary/20 focus:border-primary/40 transition-all"
               />
-              <Button size="sm" className="w-full h-8 text-xs font-bold gap-2 shadow-sm">
-                <Send className="w-3 h-3" />
+              <Input
+                placeholder="Роль (необязательно)..."
+                value={inviteRole}
+                onChange={(e) => setInviteRole(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleSendInvite()}
+                className="h-8 text-xs bg-background/50 border-primary/20 focus:border-primary/40 transition-all"
+              />
+              <Button
+                size="sm"
+                className="w-full h-8 text-xs font-bold gap-2 shadow-sm"
+                onClick={handleSendInvite}
+                disabled={sendInviteMutation.isPending}
+              >
+                {sendInviteMutation.isPending ? (
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                ) : (
+                  <Send className="w-3 h-3" />
+                )}
                 Отправить инвайт
               </Button>
             </CardContent>

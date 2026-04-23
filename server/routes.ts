@@ -5205,6 +5205,131 @@ export async function registerRoutes(
     }
   });
 
+  // ==================== USER INVITATION ROUTES ====================
+
+  // Create user invitation (requires auth)
+  app.post("/api/team/invitations", async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    try {
+      const { email, role } = req.body;
+      if (!email || !email.trim()) {
+        return res.status(400).json({ message: "Email is required" });
+      }
+
+      // Validate email format
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(email.trim())) {
+        return res.status(400).json({ message: "Invalid email format" });
+      }
+
+      // Check if user already exists
+      const existingUser = await storage.getUserByEmail(email.trim());
+      if (existingUser) {
+        return res.status(409).json({ message: "User with this email already exists" });
+      }
+
+      // Check if pending invitation already exists
+      const existingInvitation = await storage.getUserInvitationByEmail(email.trim());
+      if (existingInvitation && existingInvitation.status === "pending" && new Date(existingInvitation.expiresAt) > new Date()) {
+        return res.status(409).json({ message: "Invitation already sent to this email" });
+      }
+
+      const invitation = await storage.createUserInvitation({
+        email: email.trim(),
+        role: role || undefined,
+        invitedBy: req.user!.id,
+        expiresInHours: 168, // 7 days
+      });
+
+      // Send invitation email if SMTP is configured
+      const appUrl = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
+      const inviteLink = `${appUrl}/auth?invite=${invitation.token}`;
+
+      const emailResult = await sendEmail({
+        to: invitation.email,
+        subject: "Приглашение присоединиться к portal",
+        html: `
+          <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #1a1a1a;">
+            <div style="background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%); padding: 32px 24px; text-align: center;">
+              <h1 style="color: #ffffff; margin: 0; font-size: 24px;">Приглашение в команду</h1>
+            </div>
+            <div style="padding: 32px 24px; background: #ffffff;">
+              <p style="font-size: 16px; line-height: 1.6; margin: 0 0 16px;">Здравствуйте!</p>
+              <p style="font-size: 16px; line-height: 1.6; margin: 0 0 24px;">Вас пригласили присоединиться к <strong>portal</strong>. Нажмите кнопку ниже, чтобы создать аккаунт:</p>
+              <a href="${inviteLink}" style="display: inline-block; background: #6366f1; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: 500;">Принять приглашение</a>
+              <p style="font-size: 13px; color: #6b7280; margin: 24px 0 0;">Ссылка действительна в течение 7 дней. Если вы не ожидали этого приглашения, проигнорируйте письмо.</p>
+            </div>
+          </div>
+        `,
+      });
+
+      res.json({
+        ...invitation,
+        emailSent: emailResult.success,
+      });
+    } catch (error) {
+      console.error("Error creating user invitation:", error);
+      res.status(500).json({ message: "Failed to create invitation" });
+    }
+  });
+
+  // Get all user invitations (requires auth)
+  app.get("/api/team/invitations", async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    try {
+      const invitations = await storage.getUserInvitations();
+      res.json(invitations);
+    } catch (error) {
+      console.error("Error fetching user invitations:", error);
+      res.status(500).json({ message: "Failed to fetch invitations" });
+    }
+  });
+
+  // Verify user invitation (public)
+  app.get("/api/team/invitations/:token/verify", async (req, res) => {
+    try {
+      const invitation = await storage.getUserInvitationByToken(req.params.token);
+
+      if (!invitation) {
+        return res.status(404).json({ valid: false, message: "Invitation not found" });
+      }
+
+      if (invitation.status !== "pending") {
+        return res.json({ valid: false, message: "Invitation has already been used" });
+      }
+
+      if (new Date(invitation.expiresAt) < new Date()) {
+        return res.json({ valid: false, message: "Invitation has expired" });
+      }
+
+      res.json({ valid: true, invitation });
+    } catch (error) {
+      console.error("Error verifying user invitation:", error);
+      res.status(500).json({ message: "Failed to verify invitation" });
+    }
+  });
+
+  // Cancel/delete user invitation (requires auth)
+  app.delete("/api/team/invitations/:id", async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    try {
+      await storage.cancelUserInvitation(req.params.id);
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error canceling user invitation:", error);
+      res.status(500).json({ message: "Failed to cancel invitation" });
+    }
+  });
+
   // Yandex Calendar routes
   app.use("/api", yandexCalendarRoutes);
 

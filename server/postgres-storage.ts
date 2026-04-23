@@ -44,6 +44,10 @@ import {
   type InsertCallParticipant,
   type TeamRoomAdmin,
   type InsertTeamRoomAdmin,
+  type UserInvitation,
+  type InsertUserInvitation,
+  type GuestInvitation,
+  type GuestSession,
   yandexCalendarIntegrations,
   yandexCalendarEvents,
   yandexCalendarNotifications,
@@ -3502,9 +3506,99 @@ export class PostgresStorage {
   async cleanupExpiredGuestSessions(): Promise<number> {
     try {
       const result = await this.db.delete(schema.guestSessions).where(lt(schema.guestSessions.expiresAt, new Date()));
-      return result.rowCount || 0;
+      return (result as any).rowCount || 0;
     } catch (error) {
       console.error("Error cleaning up expired guest sessions:", error);
+      return 0;
+    }
+  }
+
+  // ==================== USER INVITATIONS ====================
+
+  async createUserInvitation(data: { email: string; role?: string; invitedBy: string; expiresInHours?: number }): Promise<UserInvitation> {
+    try {
+      const token = generateSecureToken();
+      const expiresAt = new Date(Date.now() + (data.expiresInHours || 24) * 60 * 60 * 1000);
+      
+      const [invitation] = await this.db.insert(schema.userInvitations).values({
+        email: data.email,
+        role: data.role || null,
+        token,
+        status: "pending",
+        invitedBy: data.invitedBy,
+        expiresAt,
+      }).returning();
+      
+      return invitation;
+    } catch (error) {
+      console.error("Error creating user invitation:", error);
+      throw error;
+    }
+  }
+
+  async getUserInvitations(): Promise<UserInvitation[]> {
+    try {
+      return await this.db.select().from(schema.userInvitations).orderBy(desc(schema.userInvitations.createdAt));
+    } catch (error) {
+      console.error("Error getting user invitations:", error);
+      return [];
+    }
+  }
+
+  async getUserInvitationByToken(token: string): Promise<UserInvitation | null> {
+    try {
+      const [invitation] = await this.db.select().from(schema.userInvitations).where(eq(schema.userInvitations.token, token)).limit(1);
+      return invitation || null;
+    } catch (error) {
+      console.error("Error getting user invitation by token:", error);
+      return null;
+    }
+  }
+
+  async getUserInvitationByEmail(email: string): Promise<UserInvitation | null> {
+    try {
+      const [invitation] = await this.db.select().from(schema.userInvitations).where(eq(schema.userInvitations.email, email)).limit(1);
+      return invitation || null;
+    } catch (error) {
+      console.error("Error getting user invitation by email:", error);
+      return null;
+    }
+  }
+
+  async acceptUserInvitation(token: string): Promise<UserInvitation | null> {
+    try {
+      const [invitation] = await this.db.update(schema.userInvitations)
+        .set({ status: "accepted", acceptedAt: new Date() })
+        .where(eq(schema.userInvitations.token, token))
+        .returning();
+      return invitation || null;
+    } catch (error) {
+      console.error("Error accepting user invitation:", error);
+      return null;
+    }
+  }
+
+  async cancelUserInvitation(id: string): Promise<boolean> {
+    try {
+      await this.db.delete(schema.userInvitations).where(eq(schema.userInvitations.id, id));
+      return true;
+    } catch (error) {
+      console.error("Error canceling user invitation:", error);
+      return false;
+    }
+  }
+
+  async cleanupExpiredUserInvitations(): Promise<number> {
+    try {
+      const result = await this.db.delete(schema.userInvitations).where(
+        and(
+          lt(schema.userInvitations.expiresAt, new Date()),
+          eq(schema.userInvitations.status, "pending")
+        )
+      );
+      return (result as any).rowCount || 0;
+    } catch (error) {
+      console.error("Error cleaning up expired user invitations:", error);
       return 0;
     }
   }
