@@ -45,7 +45,8 @@ import {
   Layers,
   Clock,
   GripVertical,
-  Info
+  Info,
+  Star
 } from "lucide-react";
 import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd";
 import { Button } from "@/components/ui/button";
@@ -679,20 +680,24 @@ interface ProjectItemProps {
   project: any;
   isActive: boolean;
   isCollapsed: boolean;
+  isFavorite: boolean;
   onSelect: (projectId: string) => void;
   onToggleCollapse: (projectId: string, e: React.MouseEvent) => void;
   onEdit?: (project: any) => void;
   onDelete?: (projectId: string) => void;
+  onToggleFavorite?: (projectId: string, e: React.MouseEvent) => void;
 }
 
-const ProjectItem = React.memo(({ 
-  project, 
-  isActive, 
-  isCollapsed, 
-  onSelect, 
+const ProjectItem = React.memo(({
+  project,
+  isActive,
+  isCollapsed,
+  isFavorite,
+  onSelect,
   onToggleCollapse,
   onEdit,
-  onDelete
+  onDelete,
+  onToggleFavorite
 }: ProjectItemProps) => {
   return (
     <div className="space-y-1">
@@ -705,7 +710,7 @@ const ProjectItem = React.memo(({
             : "text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
         )}
       >
-        <div 
+        <div
           className="flex flex-col flex-1 min-w-0"
           onClick={(e) => {
             if (isActive) {
@@ -727,6 +732,21 @@ const ProjectItem = React.memo(({
             <span className="truncate text-left">{project.name}</span>
           </div>
         </div>
+        {onToggleFavorite && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleFavorite(project.id, e);
+            }}
+            className={cn(
+              "shrink-0 opacity-0 group-hover/project:opacity-100 transition-opacity p-1 rounded-md hover:bg-primary/10",
+              isFavorite && "opacity-100"
+            )}
+            title={isFavorite ? "Удалить из избранного" : "Добавить в избранное"}
+          >
+            <Star className={cn("w-3.5 h-3.5", isFavorite ? "fill-amber-400 text-amber-400" : "text-muted-foreground")} />
+          </button>
+        )}
       </div>
     </div>
   );
@@ -736,7 +756,8 @@ const ProjectItem = React.memo(({
     prevProps.project.name === nextProps.project.name &&
     prevProps.project.progress === nextProps.project.progress &&
     prevProps.isActive === nextProps.isActive &&
-    prevProps.isCollapsed === nextProps.isCollapsed
+    prevProps.isCollapsed === nextProps.isCollapsed &&
+    prevProps.isFavorite === nextProps.isFavorite
   );
 });
 
@@ -920,6 +941,18 @@ export default function Projects() {
     staleTime: 1000 * 60 * 10, // 10 minutes
   });
 
+  // User settings for favorites
+  const { data: userSettings = [] } = useQuery<any[]>({
+    queryKey: ["/api/user/settings"],
+    enabled: !!user?.id,
+    staleTime: 1000 * 60 * 5,
+  });
+
+  const favoriteProjectIds = useMemo(() => {
+    const setting = userSettings.find((s: any) => s.key === 'favorite_projects');
+    return (setting?.value as string[]) || [];
+  }, [userSettings]);
+
   const activeBoard = useMemo(() => 
     boards.find(b => b.id === activeBoardId) || boards[0],
     [boards, activeBoardId]
@@ -1078,6 +1111,46 @@ export default function Projects() {
       queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
     }
   });
+
+  const toggleFavoriteMutation = useMutation({
+    mutationFn: async ({ projectId, isFavorite }: { projectId: string; isFavorite: boolean }) => {
+      const currentIds = favoriteProjectIds;
+      const newIds = isFavorite
+        ? [...currentIds, projectId]
+        : currentIds.filter((id: string) => id !== projectId);
+      const res = await apiRequest("PUT", "/api/user/settings", { key: 'favorite_projects', value: newIds });
+      return res.json();
+    },
+    onMutate: async ({ projectId, isFavorite }) => {
+      await queryClient.cancelQueries({ queryKey: ["/api/user/settings"] });
+      const previousSettings = queryClient.getQueryData(["/api/user/settings"]);
+      
+      queryClient.setQueryData(["/api/user/settings"], (old: any[] = []) => {
+        const others = old.filter((s: any) => s.key !== 'favorite_projects');
+        const currentIds = (old.find((s: any) => s.key === 'favorite_projects')?.value as string[]) || [];
+        const newIds = isFavorite
+          ? [...currentIds, projectId]
+          : currentIds.filter((id: string) => id !== projectId);
+        return [...others, { key: 'favorite_projects', value: newIds }];
+      });
+      
+      return { previousSettings };
+    },
+    onError: (error, variables, context) => {
+      if (context?.previousSettings) {
+        queryClient.setQueryData(["/api/user/settings"], context.previousSettings);
+      }
+      toast.error("Не удалось обновить избранное");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/user/settings"] });
+    }
+  });
+
+  const handleToggleFavorite = (projectId: string) => {
+    const isFavorite = favoriteProjectIds.includes(projectId);
+    toggleFavoriteMutation.mutate({ projectId, isFavorite: !isFavorite });
+  };
 
   const createBoardMutation = useMutation({
     mutationFn: async ({ projectId, name }: { projectId: string, name: string }) => {
@@ -1930,6 +2003,7 @@ export default function Projects() {
                     project={project}
                     isActive={activeProject?.id === project.id}
                     isCollapsed={!!collapsedProjects[project.id]}
+                    isFavorite={favoriteProjectIds.includes(project.id)}
                     onSelect={(projectId) => {
                       setShowAllTasks(false);
                       handleProjectChange(projectId);
@@ -1938,6 +2012,7 @@ export default function Projects() {
                     onToggleCollapse={toggleProjectCollapse}
                     onEdit={handleEditProject}
                     onDelete={handleDeleteProject}
+                    onToggleFavorite={handleToggleFavorite}
                   />
                   
                   {activeProject?.id === project.id && !collapsedProjects[project.id] && (
