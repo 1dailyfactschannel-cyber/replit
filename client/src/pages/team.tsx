@@ -158,9 +158,7 @@ export default function EmployeesPage() {
   const [departments, setDepartments] = useState<Department[]>(mockDepartments);
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
-  const [isCreateDeptOpen, setIsCreateDeptOpen] = useState(false);
   const [isCreateEmployeeOpen, setIsCreateEmployeeOpen] = useState(false);
-  const [newDeptName, setNewDeptName] = useState("");
   const [activeTab, setActiveTab] = useState(initialTab);
 
   // New employee form state
@@ -510,19 +508,6 @@ export default function EmployeesPage() {
     setActiveTab(tab);
   }, [window.location.search]);
 
-  const handleCreateDepartment = () => {
-    if (!newDeptName.trim()) return;
-    const colors = ["bg-blue-500", "bg-purple-500", "bg-emerald-500", "bg-amber-500", "bg-rose-500", "bg-indigo-500"];
-    const newDept: Department = {
-      id: Date.now().toString(),
-      name: newDeptName,
-      color: colors[departments.length % colors.length]
-    };
-    setDepartments(prev => [...prev, newDept]);
-    setNewDeptName("");
-    setIsCreateDeptOpen(false);
-  };
-
   return (
     <Layout>
       <div className="p-6 space-y-6 animate-in fade-in duration-500">
@@ -534,7 +519,6 @@ export default function EmployeesPage() {
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full sm:w-auto">
             <TabsList className="bg-secondary/50">
               <TabsTrigger value="list">Список</TabsTrigger>
-              <TabsTrigger value="departments">Отделы</TabsTrigger>
               <TabsTrigger value="analytics">Аналитика</TabsTrigger>
             </TabsList>
           </Tabs>
@@ -1094,92 +1078,7 @@ export default function EmployeesPage() {
                 </div>
               )}
             </>
-          ) : activeTab === "departments" ? (
-          <div className="space-y-6">
-            <div className="flex items-center justify-between">
-              <div className="relative flex-1 max-w-sm">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                <Input placeholder="Поиск отделов..." className="pl-9 bg-secondary/30 border-border/50" />
-              </div>
-              <Dialog open={isCreateDeptOpen} onOpenChange={setIsCreateDeptOpen}>
-                <DialogTrigger asChild>
-                  <Button className="gap-2">
-                    <Plus className="w-4 h-4" />
-                    Создать отдел
-                  </Button>
-                </DialogTrigger>
-                <DialogContent>
-                  <DialogHeader>
-                    <DialogTitle>Создать новый отдел</DialogTitle>
-                    <DialogDescription>Укажите название нового отдела для управления командой.</DialogDescription>
-                  </DialogHeader>
-                  <div className="space-y-4 py-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="dept-name">Название отдела</Label>
-                      <Input 
-                        id="dept-name" 
-                        placeholder="Напр: Разработка" 
-                        value={newDeptName}
-                        onChange={(e) => setNewDeptName(e.target.value)}
-                        onKeyDown={(e) => e.key === 'Enter' && handleCreateDepartment()}
-                      />
-                    </div>
-                  </div>
-                  <DialogFooter>
-                    <Button variant="outline" onClick={() => setIsCreateDeptOpen(false)}>Отмена</Button>
-                    <Button onClick={handleCreateDepartment} disabled={!newDeptName.trim()}>Создать</Button>
-                  </DialogFooter>
-                </DialogContent>
-              </Dialog>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {departments.map((dept) => (
-                <div key={dept.id} className="group p-6 rounded-2xl bg-card border border-border/50 hover:shadow-lg hover:border-primary/30 transition-all">
-                  <div className="flex items-start justify-between mb-4">
-                    <div className={cn("p-3 rounded-xl bg-opacity-10", dept.color.replace('bg-', 'bg-opacity-10 text-'))}>
-                      <Users className="w-6 h-6" />
-                    </div>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon" className="h-8 w-8 opacity-0 group-hover:opacity-100">
-                          <MoreVertical className="w-4 h-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem className="gap-2">
-                          <Pencil className="w-3 h-3" /> Переименовать
-                        </DropdownMenuItem>
-                        <DropdownMenuItem className="gap-2 text-rose-500">
-                          <Trash2 className="w-3 h-3" /> Удалить
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </div>
-                  <h3 className="text-lg font-bold mb-1">{dept.name}</h3>
-                  <p className="text-sm text-muted-foreground mb-4">
-                    {employees.filter(e => e.department === dept.name).length} сотрудников
-                  </p>
-                  <div className="flex -space-x-2 overflow-hidden">
-                    {employees.filter(e => e.department === dept.name).slice(0, 5).map((e) => {
-                      const empFullName = `${e.firstName || ""} ${e.lastName || ""}`.trim();
-                      return (
-                      <Avatar key={e.id} className="inline-block h-8 w-8 rounded-full ring-2 ring-background">
-                        <AvatarImage src={e.avatar || undefined} />
-                        <AvatarFallback>{empFullName[0]}</AvatarFallback>
-                      </Avatar>
-                    )})}
-                    {employees.filter(e => e.department === dept.name).length > 5 && (
-                      <div className="flex items-center justify-center h-8 w-8 rounded-full bg-secondary text-[10px] font-bold ring-2 ring-background">
-                        +{employees.filter(e => e.department === dept.name).length - 5}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        ) : activeTab === "analytics" ? (
+          ) : activeTab === "analytics" ? (
           <div className="space-y-4">
             <div className="flex items-center gap-4">
               <div className="relative flex-1 max-w-sm">
