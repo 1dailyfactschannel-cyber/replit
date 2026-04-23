@@ -1,5 +1,5 @@
 import { Layout } from "@/components/layout/Layout";
-import React, { useState, useMemo, useEffect, useCallback } from "react";
+import React, { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { cn } from "@/lib/utils";
 import { 
   Users, 
@@ -890,6 +890,21 @@ export default function Projects() {
       }
     }
   }, [activeProjectId, projects, handleProjectChange]);
+
+  // Handle projectId from URL query params
+  const hasHandledUrlRef = useRef(false);
+  useEffect(() => {
+    if (hasHandledUrlRef.current || projects.length === 0) return;
+    const params = new URLSearchParams(window.location.search);
+    const projectId = params.get('projectId');
+    if (projectId) {
+      const project = projects.find((p: any) => p.id === projectId);
+      if (project) {
+        handleProjectChange(projectId);
+        hasHandledUrlRef.current = true;
+      }
+    }
+  }, [projects, handleProjectChange]);
 
   const { data: boards = [], isLoading: isLoadingBoards } = useQuery<any[]>({
     queryKey: ["/api/projects", activeProject?.id, "boards"],

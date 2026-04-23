@@ -391,7 +391,7 @@ export default function Dashboard() {
               ) : (
                 <div className="space-y-5">
                   {teamWorkload.map((member) => (
-                    <Link key={member.id} href={`/team/${member.id}`}>
+                    <Link key={member.id} href="/team">
                       <div className="flex items-center gap-4 cursor-pointer hover:bg-muted/50 p-2 rounded-lg transition-colors">
                         <Avatar className="w-10 h-10">
                           <AvatarFallback className="bg-primary/10 text-primary text-sm">
@@ -450,7 +450,7 @@ export default function Dashboard() {
               ) : (
                 <div className="space-y-4">
                   {recentProjects.map((project) => (
-                    <Link key={project.id} href={`/projects/${project.id}`}>
+                    <Link key={project.id} href={`/projects?projectId=${project.id}`}>
                       <div className="p-3 rounded-lg border border-border/50 hover:border-primary/50 hover:shadow-sm transition-all cursor-pointer">
                         <div className="flex items-center gap-3">
                           <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
