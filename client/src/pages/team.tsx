@@ -211,7 +211,7 @@ export default function EmployeesPage() {
   }, [employees]);
 
   // User roles - fetch when modal is open and employee is selected
-  const { data: userRoles = [] } = useQuery<Role[]>({
+  const { data: userRoles = [], isPending: userRolesLoading } = useQuery<Role[]>({
     queryKey: ["/api/users", selectedEmployee?.id, "roles"],
     queryFn: async () => {
       if (!selectedEmployee?.id) return [];
@@ -385,6 +385,15 @@ export default function EmployeesPage() {
   // Initialize editing employee when modal opens
   const prevSelectedIdRef = useRef<string | null>(null);
   const rolesSyncedRef = useRef(false);
+
+  // Reset sync state when modal opens so reopening same employee reinitializes correctly
+  useEffect(() => {
+    if (isDetailsOpen && selectedEmployee) {
+      prevSelectedIdRef.current = null;
+      rolesSyncedRef.current = false;
+    }
+  }, [isDetailsOpen]);
+
   useEffect(() => {
     if (selectedEmployee && selectedEmployee.id !== prevSelectedIdRef.current) {
       prevSelectedIdRef.current = selectedEmployee.id;
@@ -405,11 +414,11 @@ export default function EmployeesPage() {
 
   // Sync roleIds when userRoles loads (separate effect to avoid overwriting manual changes)
   useEffect(() => {
-    if (selectedEmployee && editingEmployee && !rolesSyncedRef.current) {
+    if (selectedEmployee && editingEmployee && !rolesSyncedRef.current && !userRolesLoading) {
       rolesSyncedRef.current = true;
       setEditingEmployee(prev => prev ? { ...prev, roleIds: userRoles.map(r => r.id) } : null);
     }
-  }, [userRoles, selectedEmployee, editingEmployee]);
+  }, [userRoles, selectedEmployee, editingEmployee, userRolesLoading]);
 
   // Sync API employees when loaded
   useEffect(() => {
