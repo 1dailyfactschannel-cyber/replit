@@ -33,6 +33,7 @@ export default function Auth() {
       if (res.ok) {
         const user = await res.json();
         queryClient.setQueryData(["/api/user"], user);
+        queryClient.invalidateQueries({ queryKey: ["/api/users/me/permissions"] });
         toast({ title: "Успешный вход", description: `Добро пожаловать, ${user.firstName || user.username}!` });
         setLocation("/");
       } else {

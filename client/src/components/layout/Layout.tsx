@@ -334,6 +334,7 @@ const SidebarContentComponent = React.memo(({
                 try {
                   await apiRequest("POST", "/api/logout");
                   queryClient.setQueryData(["/api/user"], null);
+                  queryClient.invalidateQueries({ queryKey: ["/api/users/me/permissions"] });
                   setLocation("/auth");
                 } catch (error) {
                   console.error("Logout failed:", error);

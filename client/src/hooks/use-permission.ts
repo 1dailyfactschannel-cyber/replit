@@ -19,10 +19,11 @@ export function usePermission() {
     queryKey: ["/api/users/me/permissions"],
     queryFn: async () => {
       const res = await fetch('/api/users/me/permissions', { credentials: 'include' });
-      if (!res.ok) return { permissions: [], roles: [] };
+      if (!res.ok) throw new Error(`Failed to fetch permissions: ${res.status}`);
       return res.json();
     },
-    enabled: !!user
+    enabled: !!user,
+    staleTime: 1000 * 60, // 1 minute
   });
 
   const userRoles = permissionsData?.roles || [];
