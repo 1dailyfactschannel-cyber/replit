@@ -1459,7 +1459,10 @@ export default function Projects() {
       console.log("[Frontend] Invalidating queries for board:", activeBoard?.id);
       // Синхронизируем данные с сервером
       queryClient.invalidateQueries({ queryKey: ["/api/boards", activeBoard?.id, "full"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/boards"] });
       queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks/my-tasks"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks/all"] });
     }
   });
 
@@ -1728,7 +1731,10 @@ export default function Projects() {
       if (!old || !Array.isArray(old)) return old;
       return old.map((t: any) => t.id === updatedTask.id ? { ...t, ...updatedTask } : t);
     });
-    
+
+    // Invalidate my-tasks so the assignee sees updates immediately
+    queryClient.invalidateQueries({ queryKey: ["/api/tasks/my-tasks"] });
+
     // Обновляем selectedTask, чтобы модальное окно отображало актуальные данные
     setSelectedTask((prev: any) => {
       if (prev && prev.id === updatedTask.id) {

@@ -157,15 +157,10 @@ if (process.env.NODE_ENV === "production") {
   }));
 }
 
-// Security: Cache-Control for sensitive endpoints
-app.use('/api/auth', (_req, res, next) => {
+// Security: Disable HTTP caching for all API routes to prevent stale data
+app.use('/api', (_req, res, next) => {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
   res.setHeader('Pragma', 'no-cache');
-  next();
-});
-
-app.use('/api/user', (_req, res, next) => {
-  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
   next();
 });
 

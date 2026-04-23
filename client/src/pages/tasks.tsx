@@ -92,6 +92,8 @@ export default function Tasks() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/tasks/my-tasks"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks/all"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/boards"] });
       toast.success("Задача обновлена");
     },
     onError: () => {
@@ -254,6 +256,8 @@ export default function Tasks() {
 
   const handleUpdateTask = (updatedTask: Task) => {
     queryClient.invalidateQueries({ queryKey: ["/api/tasks/my-tasks"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/tasks/all"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/boards"] });
     setSelectedTask(updatedTask);
   };
 
