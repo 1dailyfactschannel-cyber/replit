@@ -178,7 +178,7 @@ export function PageLoadingAnimation() {
             className="text-2xl font-bold tracking-wide"
             style={{ color: "#1e3a8a" }}
           >
-            m4portal
+            portal
           </h2>
           <motion.p
             animate={{ opacity: [0.4, 1, 0.4] }}

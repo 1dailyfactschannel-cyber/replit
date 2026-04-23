@@ -55,7 +55,7 @@ export default function Auth() {
       if (res.ok) {
         const user = await res.json();
         queryClient.setQueryData(["/api/user"], user);
-        toast({ title: "Аккаунт создан", description: "Добро пожаловать в m4portal!" });
+        toast({ title: "Аккаунт создан", description: "Добро пожаловать в portal!" });
         setLocation("/");
       } else {
         const error = await res.json();
@@ -89,7 +89,7 @@ export default function Auth() {
             <div className="w-12 h-12 rounded-2xl bg-white flex items-center justify-center text-primary font-bold text-3xl shadow-2xl">
               T
             </div>
-            <span className="font-sans font-bold text-3xl tracking-tight">m4portal</span>
+            <span className="font-sans font-bold text-3xl tracking-tight">portal</span>
           </div>
           <h1 className="text-5xl xl:text-6xl font-extrabold leading-[1.1] tracking-tight">
             Управляйте проектами <br />
