@@ -3253,82 +3253,82 @@ function BalanceManagement() {
   };
 
   return (
-    <div className="animate-in fade-in slide-in-from-bottom-2 duration-300 space-y-6">
+    <div className="animate-in fade-in slide-in-from-bottom-2 duration-300 space-y-4">
       <Card className="border-border/50 shadow-sm">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Coins className="w-5 h-5 text-amber-500" />
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Coins className="w-4 h-4 text-amber-500" />
             Настройка баллов за статусы задач
           </CardTitle>
-          <CardDescription>
-            Настройте количество баллов и максимальное время, которое задача может провести в статусе для получения баллов
+          <CardDescription className="text-xs">
+            Настройте количество баллов и максимальное время в статусе для получения баллов
           </CardDescription>
         </CardHeader>
-        <CardContent>
-          <div className="flex items-center justify-between mb-6">
-            <div className="text-sm text-muted-foreground">
+        <CardContent className="pt-0">
+          <div className="flex items-center justify-between mb-3">
+            <div className="text-xs text-muted-foreground">
               <p>Баллы начисляются автоматически при смене статуса задачи.</p>
               <p>1 балл = 1 рубль в магазине.</p>
             </div>
-            <Button onClick={() => openDialog()} className="gap-2">
-              <Plus className="w-4 h-4" />
-              Добавить статус
+            <Button onClick={() => openDialog()} size="sm" className="gap-1 h-8">
+              <Plus className="w-3.5 h-3.5" />
+              Добавить
             </Button>
           </div>
 
           {isLoading ? (
-            <div className="flex items-center justify-center py-8">
-              <Loader2 className="w-6 h-6 animate-spin text-primary" />
+            <div className="flex items-center justify-center py-4">
+              <Loader2 className="w-5 h-5 animate-spin text-primary" />
             </div>
           ) : settings && settings.length > 0 ? (
-            <div className="space-y-3">
+            <div className="space-y-2">
               {settings.map((setting: any) => (
                 <div
                   key={setting.id}
-                  className="flex items-center justify-between p-4 rounded-lg bg-secondary/30 hover:bg-secondary/50 transition-colors"
+                  className="flex items-center justify-between p-2.5 rounded-md bg-secondary/30 hover:bg-secondary/50 transition-colors"
                 >
-                  <div className="flex items-center gap-4">
-                    <div className="w-10 h-10 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center">
-                      <Coins className="w-5 h-5 text-amber-600" />
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center">
+                      <Coins className="w-4 h-4 text-amber-600" />
                     </div>
                     <div>
-                      <p className="font-medium">{setting.statusName}</p>
-                      <p className="text-sm text-muted-foreground">
+                      <p className="text-sm font-medium">{setting.statusName}</p>
+                      <p className="text-xs text-muted-foreground">
                         {setting.isActive ? "Активно" : "Неактивно"}
                       </p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-3">
                     <div className="text-right">
-                      <p className="text-2xl font-bold text-amber-600">{setting.pointsAmount}</p>
-                      <p className="text-xs text-muted-foreground">баллов</p>
+                      <p className="text-lg font-bold text-amber-600">{setting.pointsAmount}</p>
+                      <p className="text-[10px] text-muted-foreground">баллов</p>
                     </div>
                     {setting.maxTimeInStatus > 0 && (
-                      <div className="text-right px-3 border-l border-border">
-                        <p className="text-sm font-medium text-rose-600">{setting.maxTimeInStatus} мин</p>
-                        <p className="text-xs text-muted-foreground">макс. время</p>
+                      <div className="text-right px-2 border-l border-border">
+                        <p className="text-xs font-medium text-rose-600">{setting.maxTimeInStatus} мин</p>
+                        <p className="text-[10px] text-muted-foreground">макс. время</p>
                       </div>
                     )}
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center gap-0.5">
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="h-8 w-8"
+                        className="h-7 w-7"
                         onClick={() => openDialog(setting)}
                       >
-                        <Pencil className="w-4 h-4" />
+                        <Pencil className="w-3.5 h-3.5" />
                       </Button>
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="h-8 w-8 text-destructive hover:text-destructive"
+                        className="h-7 w-7 text-destructive hover:text-destructive"
                         onClick={() => deleteMutation.mutate(setting.id)}
                         disabled={deleteMutation.isPending}
                       >
                         {deleteMutation.isPending ? (
-                          <Loader2 className="w-4 h-4 animate-spin" />
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
                         ) : (
-                          <Trash2 className="w-4 h-4" />
+                          <Trash2 className="w-3.5 h-3.5" />
                         )}
                       </Button>
                     </div>
@@ -3337,10 +3337,10 @@ function BalanceManagement() {
               ))}
             </div>
           ) : (
-            <div className="text-center py-8 text-muted-foreground">
-              <Coins className="w-12 h-12 mx-auto mb-3 opacity-30" />
-              <p>Настройки не найдены</p>
-              <p className="text-sm">Добавьте первый статус для начисления баллов</p>
+            <div className="text-center py-4 text-muted-foreground">
+              <Coins className="w-8 h-8 mx-auto mb-2 opacity-30" />
+              <p className="text-sm">Настройки не найдены</p>
+              <p className="text-xs">Добавьте первый статус для начисления баллов</p>
             </div>
           )}
         </CardContent>
@@ -3548,63 +3548,63 @@ function AccrualRulesSection() {
   return (
     <>
       <Card className="border-border/50 shadow-sm">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <ListChecks className="w-5 h-5 text-emerald-500" />
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <ListChecks className="w-4 h-4 text-emerald-500" />
             Правила начисления
           </CardTitle>
-          <CardDescription>
-            Настройте автоматические правила начисления и списания баллов за активности пользователей
+          <CardDescription className="text-xs">
+            Настройте автоматические правила начисления и списания баллов
           </CardDescription>
         </CardHeader>
-        <CardContent>
-          <div className="flex items-center justify-between mb-6">
-            <div className="text-sm text-muted-foreground">
+        <CardContent className="pt-0">
+          <div className="flex items-center justify-between mb-3">
+            <div className="text-xs text-muted-foreground">
               <p>Правила проверяются автоматически при действиях пользователей.</p>
               <p>Отрицательное значение баллов означает штраф (списание).</p>
             </div>
-            <Button onClick={() => openDialog()} className="gap-2">
-              <Plus className="w-4 h-4" />
-              Добавить правило
+            <Button onClick={() => openDialog()} size="sm" className="gap-1 h-8">
+              <Plus className="w-3.5 h-3.5" />
+              Добавить
             </Button>
           </div>
 
           {isLoading ? (
-            <div className="flex items-center justify-center py-8">
-              <Loader2 className="w-6 h-6 animate-spin text-primary" />
+            <div className="flex items-center justify-center py-4">
+              <Loader2 className="w-5 h-5 animate-spin text-primary" />
             </div>
           ) : rules && rules.length > 0 ? (
-            <div className="space-y-3">
+            <div className="space-y-2">
               {rules.map((rule: any) => (
                 <div
                   key={rule.id}
                   className={cn(
-                    "flex items-center justify-between p-4 rounded-lg border transition-colors",
+                    "flex items-center justify-between p-2.5 rounded-md border transition-colors",
                     rule.isActive
                       ? "bg-secondary/30 hover:bg-secondary/50 border-transparent"
                       : "bg-muted/30 hover:bg-muted/50 border-dashed opacity-60"
                   )}
                 >
-                  <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-3">
                     <div className={cn(
-                      "w-10 h-10 rounded-full flex items-center justify-center",
+                      "w-8 h-8 rounded-full flex items-center justify-center",
                       rule.pointsAmount >= 0
                         ? "bg-emerald-100 dark:bg-emerald-900/30"
                         : "bg-rose-100 dark:bg-rose-900/30"
                     )}>
                       {rule.pointsAmount >= 0 ? (
-                        <Coins className="w-5 h-5 text-emerald-600" />
+                        <Coins className="w-4 h-4 text-emerald-600" />
                       ) : (
-                        <MinusCircle className="w-5 h-5 text-rose-600" />
+                        <MinusCircle className="w-4 h-4 text-rose-600" />
                       )}
                     </div>
                     <div>
-                      <p className="font-medium">{rule.name}</p>
-                      <p className="text-sm text-muted-foreground">
+                      <p className="text-sm font-medium">{rule.name}</p>
+                      <p className="text-xs text-muted-foreground">
                         {rule.type === "arrival_on_time" && "Приход вовремя"}
                         {rule.description && ` · ${rule.description}`}
                       </p>
-                      <p className="text-xs text-muted-foreground mt-0.5">
+                      <p className="text-[10px] text-muted-foreground mt-0.5">
                         {rule.isActive ? (
                           <span className="text-emerald-600">Активно</span>
                         ) : (
@@ -3613,49 +3613,49 @@ function AccrualRulesSection() {
                       </p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-3">
                     <div className="text-right">
                       <p className={cn(
-                        "text-2xl font-bold",
+                        "text-lg font-bold",
                         rule.pointsAmount >= 0 ? "text-emerald-600" : "text-rose-600"
                       )}>
                         {rule.pointsAmount > 0 ? `+${rule.pointsAmount}` : rule.pointsAmount}
                       </p>
-                      <p className="text-xs text-muted-foreground">баллов</p>
+                      <p className="text-[10px] text-muted-foreground">баллов</p>
                     </div>
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center gap-0.5">
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="h-8 w-8"
+                        className="h-7 w-7"
                         onClick={() => toggleMutation.mutate({ id: rule.id, isActive: !rule.isActive })}
                         title={rule.isActive ? "Отключить" : "Включить"}
                       >
                         {rule.isActive ? (
-                          <ToggleRight className="w-5 h-5 text-emerald-500" />
+                          <ToggleRight className="w-4 h-4 text-emerald-500" />
                         ) : (
-                          <ToggleLeft className="w-5 h-5 text-muted-foreground" />
+                          <ToggleLeft className="w-4 h-4 text-muted-foreground" />
                         )}
                       </Button>
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="h-8 w-8"
+                        className="h-7 w-7"
                         onClick={() => openDialog(rule)}
                       >
-                        <Pencil className="w-4 h-4" />
+                        <Pencil className="w-3.5 h-3.5" />
                       </Button>
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="h-8 w-8 text-destructive hover:text-destructive"
+                        className="h-7 w-7 text-destructive hover:text-destructive"
                         onClick={() => deleteMutation.mutate(rule.id)}
                         disabled={deleteMutation.isPending}
                       >
                         {deleteMutation.isPending ? (
-                          <Loader2 className="w-4 h-4 animate-spin" />
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
                         ) : (
-                          <Trash2 className="w-4 h-4" />
+                          <Trash2 className="w-3.5 h-3.5" />
                         )}
                       </Button>
                     </div>
@@ -3664,10 +3664,10 @@ function AccrualRulesSection() {
               ))}
             </div>
           ) : (
-            <div className="text-center py-8 text-muted-foreground">
-              <ListChecks className="w-12 h-12 mx-auto mb-3 opacity-30" />
-              <p>Правила не найдены</p>
-              <p className="text-sm">Добавьте первое правило начисления баллов</p>
+            <div className="text-center py-4 text-muted-foreground">
+              <ListChecks className="w-8 h-8 mx-auto mb-2 opacity-30" />
+              <p className="text-sm">Правила не найдены</p>
+              <p className="text-xs">Добавьте первое правило начисления баллов</p>
             </div>
           )}
         </CardContent>
