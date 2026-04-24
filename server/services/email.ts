@@ -151,6 +151,31 @@ export function getPasswordChangeCodeTemplate(userName: string, code: string, ex
   return { html, text };
 }
 
+export function getOwnerTransferCodeTemplate(userName: string, code: string, expiresMinutes: number = 10): { html: string; text: string } {
+  const html = `
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #1a1a1a;">
+      <div style="background: linear-gradient(135deg, #1e1b4b 0%, #4338ca 100%); padding: 32px 24px; text-align: center;">
+        <h1 style="color: #ffffff; margin: 0; font-size: 24px;">Подтверждение передачи прав владельца</h1>
+      </div>
+      <div style="padding: 32px 24px; background: #ffffff;">
+        <p style="font-size: 16px; line-height: 1.6; margin: 0 0 16px;">Здравствуйте, <strong>${userName}</strong>!</p>
+        <p style="font-size: 16px; line-height: 1.6; margin: 0 0 24px;">Вы инициировали передачу права владельца системы другому пользователю. Для подтверждения операции введите код ниже в приложении:</p>
+        <div style="background: #f3f4f6; border-radius: 12px; padding: 24px; text-align: center; margin: 0 0 24px;">
+          <span style="font-size: 32px; font-weight: bold; letter-spacing: 8px; color: #4338ca; font-family: monospace;">${code}</span>
+        </div>
+        <p style="font-size: 14px; color: #6b7280; margin: 0 0 16px;">Код действителен в течение <strong>${expiresMinutes} минут</strong>.</p>
+        <div style="background: #fef3c7; border-left: 4px solid #f59e0b; padding: 16px; border-radius: 4px;">
+          <p style="font-size: 14px; color: #92400e; margin: 0;"><strong>Важно:</strong> после подтверждения вы потеряете статус владельца, но сохраните роль Администратора. Если вы не инициировали передачу прав, немедленно смените мастер-пароль и свяжитесь с поддержкой.</p>
+        </div>
+      </div>
+    </div>
+  `;
+
+  const text = `Подтверждение передачи прав владельца\n\nЗдравствуйте, ${userName}!\n\nВы инициировали передачу права владельца системы другому пользователю. Для подтверждения операции введите код: ${code}\n\nКод действителен в течение ${expiresMinutes} минут.\n\nПосле подтверждения вы потеряете статус владельца, но сохраните роль Администратора. Если вы не инициировали передачу прав, немедленно смените мастер-пароль.`;
+
+  return { html, text };
+}
+
 export function getPasswordChangedTemplate(userName: string): { html: string; text: string } {
   const html = `
     <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #1a1a1a;">

@@ -18,7 +18,7 @@ import rateLimit from "express-rate-limit";
 import bcrypt from "bcrypt";
 import yandexCalendarRoutes from "./routes/yandex-calendar";
 import { sendTelegramMessage, handleTelegramUpdate, escapeHtml, setTelegramWebhook } from "./services/telegram";
-import { sendEmail, testEmailConnection, getEmailConfig, getWelcomeEmailTemplate, getPasswordChangedTemplate, getPasswordChangeCodeTemplate } from "./services/email";
+import { sendEmail, testEmailConnection, getEmailConfig, getWelcomeEmailTemplate, getPasswordChangedTemplate, getPasswordChangeCodeTemplate, getOwnerTransferCodeTemplate } from "./services/email";
 
 // Permission middleware
 function requirePermission(...permissions: string[]) {
@@ -530,6 +530,184 @@ export async function registerRoutes(
     } catch (error: any) {
       console.error("DELETE /api/roles/:id error:", error);
       res.status(500).json({ message: "Failed to delete role", error: error.message });
+    }
+  });
+
+  // ==================== OWNER TRANSFER ENDPOINTS ====================
+  const ownerTransferCodes = new Map<string, { code: string; expiresAt: number; newOwnerUserId: string }>();
+
+  // Get current owner
+  app.get("/api/owner", async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    try {
+      // Try to get from site settings first
+      const ownerSetting = await storage.getSiteSetting("owner_user_id");
+      if (ownerSetting) {
+        const user = await storage.getUser(ownerSetting.value);
+        if (user) {
+          return res.json({
+            id: user.id,
+            firstName: user.firstName,
+            lastName: user.lastName,
+            email: user.email,
+            avatar: user.avatar,
+          });
+        }
+      }
+
+      // Fallback: find user with Owner role
+      const allRoles = await storage.getAllRoles();
+      const ownerRole = allRoles.find(r => r.name === "Владелец");
+      if (ownerRole) {
+        const allUsers = await storage.getAllUsers();
+        for (const u of allUsers) {
+          const userRoles = await storage.getUserRoles(u.id);
+          if (userRoles.some(r => r.id === ownerRole.id)) {
+            // Cache for next time
+            await storage.setSiteSetting("owner_user_id", u.id);
+            return res.json({
+              id: u.id,
+              firstName: u.firstName,
+              lastName: u.lastName,
+              email: u.email,
+              avatar: u.avatar,
+            });
+          }
+        }
+      }
+
+      res.json(null);
+    } catch (error: any) {
+      console.error("GET /api/owner error:", error);
+      res.status(500).json({ message: "Failed to fetch owner", error: error.message });
+    }
+  });
+
+  // Step 1: Verify master password and send email code
+  app.post("/api/owner/verify", async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    const { masterPassword, newOwnerUserId } = req.body;
+    const currentUser = req.user!;
+
+    try {
+      // Verify current user is the owner
+      const ownerSetting = await storage.getSiteSetting("owner_user_id");
+      if (ownerSetting && ownerSetting.value !== currentUser.id) {
+        return res.status(403).json({ message: "Only the owner can transfer ownership" });
+      }
+
+      // Verify master password
+      const existingHash = await storage.getSiteSetting("master_password_hash");
+      if (!existingHash) {
+        return res.status(400).json({ message: "Master password not set" });
+      }
+
+      const isValid = await bcrypt.compare(masterPassword, existingHash.value);
+      if (!isValid) {
+        return res.status(400).json({ message: "Неверный мастер-пароль" });
+      }
+
+      // Verify new owner user exists
+      const newOwner = await storage.getUser(newOwnerUserId);
+      if (!newOwner) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      // Generate 6-digit code
+      const code = Math.floor(100000 + Math.random() * 900000).toString();
+      const expiresAt = Date.now() + 10 * 60 * 1000; // 10 minutes
+
+      // Store transfer request
+      ownerTransferCodes.set(currentUser.id, { code, expiresAt, newOwnerUserId });
+
+      // Send email with code
+      const name = currentUser.firstName || currentUser.username || currentUser.email.split("@")[0];
+      const template = getOwnerTransferCodeTemplate(name, code, 10);
+      const result = await sendEmail({
+        to: currentUser.email,
+        subject: "Код подтверждения передачи прав владельца",
+        html: template.html,
+        text: template.text,
+      });
+
+      if (!result.success) {
+        ownerTransferCodes.delete(currentUser.id);
+        return res.status(500).json({ message: result.message || "Не удалось отправить email" });
+      }
+
+      res.json({ message: "Код подтверждения отправлен на ваш email", expiresIn: 600 });
+    } catch (error) {
+      console.error("POST /api/owner/verify error:", error);
+      res.status(500).json({ message: "Failed to verify owner transfer" });
+    }
+  });
+
+  // Step 2: Confirm transfer with code
+  app.post("/api/owner/confirm", async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    const { code } = req.body;
+    const currentUser = req.user!;
+
+    try {
+      const record = ownerTransferCodes.get(currentUser.id);
+      if (!record) {
+        return res.status(400).json({ message: "Код не найден или истёк. Начните процедуру заново." });
+      }
+
+      if (record.code !== code) {
+        return res.status(400).json({ message: "Неверный код подтверждения" });
+      }
+
+      if (Date.now() > record.expiresAt) {
+        ownerTransferCodes.delete(currentUser.id);
+        return res.status(400).json({ message: "Код истёк. Начните процедуру заново." });
+      }
+
+      // Find owner role
+      const allRoles = await storage.getAllRoles();
+      const ownerRole = allRoles.find(r => r.name === "Владелец");
+      const adminRole = allRoles.find(r => r.name === "Администратор");
+
+      if (!ownerRole) {
+        return res.status(500).json({ message: "Owner role not found" });
+      }
+
+      // Remove owner role from current user
+      await storage.removeRoleFromUser(currentUser.id, ownerRole.id);
+
+      // Add admin role to current user if not already present
+      if (adminRole) {
+        const currentUserRoles = await storage.getUserRoles(currentUser.id);
+        if (!currentUserRoles.some(r => r.id === adminRole.id)) {
+          await storage.assignRoleToUser(currentUser.id, adminRole.id);
+        }
+      }
+
+      // Assign owner role to new user
+      await storage.assignRoleToUser(record.newOwnerUserId, ownerRole.id);
+
+      // Update site setting
+      await storage.setSiteSetting("owner_user_id", record.newOwnerUserId);
+
+      // Clean up
+      ownerTransferCodes.delete(currentUser.id);
+
+      // Invalidate cache
+      await delCache("users:all");
+
+      res.json({ success: true, message: "Права владельца успешно переданы" });
+    } catch (error) {
+      console.error("POST /api/owner/confirm error:", error);
+      res.status(500).json({ message: "Failed to confirm owner transfer" });
     }
   });
 

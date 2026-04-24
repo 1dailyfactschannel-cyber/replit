@@ -13,6 +13,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter }
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -34,7 +35,10 @@ import {
   MoreVertical,
   Loader2,
   Activity,
-  Puzzle
+  Puzzle,
+  Crown,
+  KeyRound,
+  Mail
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -121,6 +125,13 @@ export function RolesManagement() {
   const [editColor, setEditColor] = useState("#6366f1");
   const [isEditing, setIsEditing] = useState(false);
 
+  // Owner transfer state
+  const [isTransferDialogOpen, setIsTransferDialogOpen] = useState(false);
+  const [transferStep, setTransferStep] = useState<1 | 2>(1);
+  const [masterPassword, setMasterPassword] = useState("");
+  const [transferCode, setTransferCode] = useState("");
+  const [selectedNewOwnerId, setSelectedNewOwnerId] = useState("");
+
   const { data: apiRoles = [], isLoading: rolesLoading } = useQuery<Role[]>({
     queryKey: ["/api/roles"],
     queryFn: async () => {
@@ -136,6 +147,24 @@ export function RolesManagement() {
       return res.json();
     },
   });
+
+  const { data: currentUser } = useQuery<{ id: string; firstName: string | null; lastName: string | null; email: string }>({
+    queryKey: ["/api/user"],
+  });
+
+  const { data: currentOwner } = useQuery<{ id: string; firstName: string | null; lastName: string | null; email: string; avatar: string | null } | null>({
+    queryKey: ["/api/owner"],
+  });
+
+  const { data: allUsers = [] } = useQuery<{ id: string; firstName: string | null; lastName: string | null; email: string }[]>({
+    queryKey: ["/api/users"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/users");
+      return res.json();
+    },
+  });
+
+  const isCurrentUserOwner = currentUser?.id === currentOwner?.id;
 
   const createRoleMutation = useMutation({
     mutationFn: async (data: { name: string; description: string }) => {
@@ -202,6 +231,63 @@ export function RolesManagement() {
       toast({
         title: "Ошибка",
         description: "Не удалось удалить роль.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const verifyOwnerTransferMutation = useMutation({
+    mutationFn: async ({ masterPassword, newOwnerUserId }: { masterPassword: string; newOwnerUserId: string }) => {
+      const res = await apiRequest("POST", "/api/owner/verify", { masterPassword, newOwnerUserId });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message || "Ошибка верификации");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      setTransferStep(2);
+      toast({
+        title: "Код отправлен",
+        description: "Введите код подтверждения из письма на вашей почте.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Ошибка",
+        description: error.message || "Не удалось отправить код.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const confirmOwnerTransferMutation = useMutation({
+    mutationFn: async ({ code }: { code: string }) => {
+      const res = await apiRequest("POST", "/api/owner/confirm", { code });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message || "Ошибка подтверждения");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/owner"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/user"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+      setIsTransferDialogOpen(false);
+      setTransferStep(1);
+      setMasterPassword("");
+      setTransferCode("");
+      setSelectedNewOwnerId("");
+      toast({
+        title: "Передача завершена",
+        description: "Права владельца успешно переданы новому пользователю.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Ошибка",
+        description: error.message || "Не удалось подтвердить передачу.",
         variant: "destructive",
       });
     },
@@ -517,6 +603,48 @@ export function RolesManagement() {
                   )}
                 </div>
               </CardHeader>
+
+              {/* Owner role info and transfer */}
+              {selectedRole.name === "Владелец" && (
+                <div className="px-6 py-4 border-b border-border/50 bg-indigo-950/5">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-indigo-950/10 flex items-center justify-center border border-indigo-950/20">
+                        <Crown className="w-5 h-5 text-indigo-950 dark:text-indigo-300" />
+                      </div>
+                      <div>
+                        <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Текущий владелец</p>
+                        {currentOwner ? (
+                          <p className="text-sm font-semibold">
+                            {`${currentOwner.firstName || ""} ${currentOwner.lastName || ""}`.trim() || currentOwner.email}
+                            <span className="text-xs text-muted-foreground font-normal ml-2">{currentOwner.email}</span>
+                          </p>
+                        ) : (
+                          <p className="text-sm text-muted-foreground">Не назначен</p>
+                        )}
+                      </div>
+                    </div>
+                    {isCurrentUserOwner && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-9 gap-2 text-xs font-bold border-indigo-950/30 bg-indigo-950/5 hover:bg-indigo-950/10"
+                        onClick={() => {
+                          setIsTransferDialogOpen(true);
+                          setTransferStep(1);
+                          setMasterPassword("");
+                          setTransferCode("");
+                          setSelectedNewOwnerId("");
+                        }}
+                      >
+                        <KeyRound className="w-3.5 h-3.5" />
+                        Передать владельца
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              )}
+
               <CardContent className="p-0">
                 <div className="px-6 py-3 border-b border-border/50 bg-muted/10">
                   <div className="relative">
@@ -590,6 +718,126 @@ export function RolesManagement() {
           )}
         </div>
       </div>
+
+      {/* Owner Transfer Dialog */}
+      <Dialog open={isTransferDialogOpen} onOpenChange={(open) => {
+        if (!open) {
+          setIsTransferDialogOpen(false);
+          setTransferStep(1);
+          setMasterPassword("");
+          setTransferCode("");
+          setSelectedNewOwnerId("");
+        }
+      }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Crown className="w-5 h-5 text-indigo-600" />
+              Передача прав владельца
+            </DialogTitle>
+            <DialogDescription>
+              {transferStep === 1
+                ? "Выберите нового владельца и подтвердите мастер-паролем."
+                : "Введите код подтверждения, отправленный на ваш email."}
+            </DialogDescription>
+          </DialogHeader>
+
+          {transferStep === 1 ? (
+            <div className="space-y-4 py-2">
+              <div className="space-y-2">
+                <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Новый владелец</Label>
+                <Select value={selectedNewOwnerId} onValueChange={setSelectedNewOwnerId}>
+                  <SelectTrigger className="bg-background/50 border-border/50">
+                    <SelectValue placeholder="Выберите пользователя..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {allUsers
+                      .filter((u) => u.id !== currentUser?.id)
+                      .map((u) => (
+                        <SelectItem key={u.id} value={u.id}>
+                          {`${u.firstName || ""} ${u.lastName || ""}`.trim() || u.email} ({u.email})
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Мастер-пароль</Label>
+                <Input
+                  type="password"
+                  placeholder="Введите мастер-пароль..."
+                  value={masterPassword}
+                  onChange={(e) => setMasterPassword(e.target.value)}
+                  className="bg-background/50 border-border/50"
+                />
+              </div>
+
+              <div className="bg-amber-500/5 border border-amber-500/20 rounded-lg p-3 flex gap-3">
+                <AlertCircle className="w-5 h-5 text-amber-500 shrink-0" />
+                <p className="text-[11px] text-amber-800 leading-relaxed">
+                  После подтверждения вы потеряете статус владельца, но сохраните роль Администратора. Это действие нельзя отменить.
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-4 py-2">
+              <div className="flex items-center gap-3 p-3 rounded-lg bg-emerald-500/5 border border-emerald-500/20">
+                <Mail className="w-5 h-5 text-emerald-600 shrink-0" />
+                <div>
+                  <p className="text-xs font-bold text-emerald-800">Код отправлен</p>
+                  <p className="text-[11px] text-emerald-700">Проверьте почту {currentUser?.email} и введите 6-значный код.</p>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Код подтверждения</Label>
+                <Input
+                  placeholder="000000"
+                  maxLength={6}
+                  value={transferCode}
+                  onChange={(e) => setTransferCode(e.target.value.replace(/\D/g, ""))}
+                  className="bg-background/50 border-border/50 text-center text-lg tracking-[0.5em] font-mono"
+                />
+              </div>
+            </div>
+          )}
+
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setIsTransferDialogOpen(false);
+                setTransferStep(1);
+                setMasterPassword("");
+                setTransferCode("");
+                setSelectedNewOwnerId("");
+              }}
+            >
+              Отмена
+            </Button>
+            {transferStep === 1 ? (
+              <Button
+                disabled={!selectedNewOwnerId || !masterPassword || verifyOwnerTransferMutation.isPending}
+                onClick={() => verifyOwnerTransferMutation.mutate({ masterPassword, newOwnerUserId: selectedNewOwnerId })}
+                className="gap-2 shadow-lg shadow-primary/20"
+              >
+                {verifyOwnerTransferMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
+                Отправить код
+              </Button>
+            ) : (
+              <Button
+                disabled={transferCode.length !== 6 || confirmOwnerTransferMutation.isPending}
+                onClick={() => confirmOwnerTransferMutation.mutate({ code: transferCode })}
+                className="gap-2 shadow-lg shadow-primary/20"
+              >
+                {confirmOwnerTransferMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
+                Подтвердить передачу
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

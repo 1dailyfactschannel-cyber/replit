@@ -90,6 +90,13 @@ const systemPermissions = [
 
 const systemRoles = [
   {
+    name: "Владелец",
+    description: "Полный контроль над системой, включая передачу прав владельца",
+    color: "#1e1b4b",
+    permissions: systemPermissions.map(p => p.key),
+    isSystem: true
+  },
+  {
     name: "Администратор",
     description: "Полный доступ ко всем функциям системы",
     color: "#ef4444",
@@ -221,6 +228,8 @@ export async function ensureAdminUsers() {
   try {
     const roles = await storage.getAllRoles();
     const adminRole = roles.find(r => r.name === "Администратор");
+    const ownerRole = roles.find(r => r.name === "Владелец");
+
     if (!adminRole) {
       console.log("[ensureAdminUsers] Admin role not found, skipping");
       return;
@@ -235,6 +244,7 @@ export async function ensureAdminUsers() {
 
     const userRoles = await storage.getUserRoles(adminUser.id);
     const hasAdminRole = userRoles.some(r => r.name === "Администратор");
+    const hasOwnerRole = userRoles.some(r => r.name === "Владелец");
 
     if (!hasAdminRole) {
       console.log(`[ensureAdminUsers] Assigning admin role to ${adminUser.email} (${adminUser.id})`);
@@ -242,6 +252,15 @@ export async function ensureAdminUsers() {
       console.log("[ensureAdminUsers] Admin role assigned successfully");
     } else {
       console.log("[ensureAdminUsers] User already has admin role");
+    }
+
+    if (ownerRole && !hasOwnerRole) {
+      console.log(`[ensureAdminUsers] Assigning owner role to ${adminUser.email} (${adminUser.id})`);
+      await storage.assignRoleToUser(adminUser.id, ownerRole.id);
+      await storage.setSiteSetting("owner_user_id", adminUser.id);
+      console.log("[ensureAdminUsers] Owner role assigned successfully");
+    } else if (ownerRole && hasOwnerRole) {
+      console.log("[ensureAdminUsers] User already has owner role");
     }
   } catch (error) {
     console.error("[ensureAdminUsers] Error:", error);
