@@ -18,7 +18,7 @@ import rateLimit from "express-rate-limit";
 import bcrypt from "bcrypt";
 import yandexCalendarRoutes from "./routes/yandex-calendar";
 import { sendTelegramMessage, handleTelegramUpdate, escapeHtml, setTelegramWebhook } from "./services/telegram";
-import { sendEmail, testEmailConnection, getEmailConfig, getWelcomeEmailTemplate, getPasswordChangedTemplate } from "./services/email";
+import { sendEmail, testEmailConnection, getEmailConfig, getWelcomeEmailTemplate, getPasswordChangedTemplate, getPasswordChangeCodeTemplate } from "./services/email";
 
 // Permission middleware
 function requirePermission(...permissions: string[]) {
@@ -1244,6 +1244,111 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error setting master password:", error);
       res.status(500).json({ message: "Failed to set master password" });
+    }
+  });
+
+  // In-memory store for password change confirmation codes
+  const passwordChangeCodes = new Map<string, { code: string; expiresAt: number; newPassword: string }>();
+
+  // Request password change confirmation code
+  app.post("/api/settings/request-password-change", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
+
+    const { currentPassword } = req.body;
+    const user = req.user!;
+
+    try {
+      // Verify current master password
+      const existingHash = await storage.getSiteSetting("master_password_hash");
+      if (existingHash) {
+        if (!currentPassword) {
+          return res.status(400).json({ message: "Введите текущий пароль" });
+        }
+        const isValid = await bcrypt.compare(currentPassword, existingHash.value);
+        if (!isValid) {
+          return res.status(400).json({ message: "Неверный текущий пароль" });
+        }
+      }
+
+      // Generate 6-digit code
+      const code = Math.floor(100000 + Math.random() * 900000).toString();
+      const expiresAt = Date.now() + 10 * 60 * 1000; // 10 minutes
+
+      // Store temporarily (without password yet)
+      passwordChangeCodes.set(user.id, { code, expiresAt, newPassword: "" });
+
+      // Send email with code
+      const name = user.firstName || user.username || user.email.split("@")[0];
+      const template = getPasswordChangeCodeTemplate(name, code, 10);
+      const result = await sendEmail({
+        to: user.email,
+        subject: "Код подтверждения смены пароля",
+        html: template.html,
+        text: template.text,
+      });
+
+      if (!result.success) {
+        passwordChangeCodes.delete(user.id);
+        return res.status(500).json({ message: result.message || "Не удалось отправить email" });
+      }
+
+      res.json({ message: "Код подтверждения отправлен на ваш email", expiresIn: 600 });
+    } catch (error) {
+      console.error("Error requesting password change:", error);
+      res.status(500).json({ message: "Failed to request password change" });
+    }
+  });
+
+  // Confirm password change with code
+  app.post("/api/settings/confirm-password-change", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
+
+    const { code, newPassword } = req.body;
+    const user = req.user!;
+
+    if (!newPassword || newPassword.length < 6) {
+      return res.status(400).json({ message: "Пароль должен быть не менее 6 символов" });
+    }
+
+    try {
+      const record = passwordChangeCodes.get(user.id);
+      if (!record) {
+        return res.status(400).json({ message: "Код не найден. Запросите новый код." });
+      }
+      if (Date.now() > record.expiresAt) {
+        passwordChangeCodes.delete(user.id);
+        return res.status(400).json({ message: "Код истек. Запросите новый код." });
+      }
+      if (record.code !== code) {
+        return res.status(400).json({ message: "Неверный код подтверждения" });
+      }
+
+      // Hash and save new password
+      const saltRounds = 10;
+      const hashedPassword = await bcrypt.hash(newPassword, saltRounds);
+      await storage.setSiteSetting("master_password_hash", hashedPassword);
+
+      // Clean up code
+      passwordChangeCodes.delete(user.id);
+
+      // Send confirmation email
+      try {
+        const name = user.firstName || user.username || user.email.split("@")[0];
+        const template = getPasswordChangedTemplate(name);
+        await sendEmail({
+          to: user.email,
+          subject: "Пароль изменен",
+          html: template.html,
+          text: template.text,
+        });
+      } catch (emailError) {
+        console.error("Failed to send password change confirmation email:", emailError);
+      }
+
+      res.json({ message: "Пароль успешно изменен" });
+    } catch (error) {
+      console.error("Error confirming password change:", error);
+      res.status(500).json({ message: "Failed to confirm password change" });
     }
   });
 

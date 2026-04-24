@@ -116,6 +116,10 @@ export function RolesManagement() {
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [newRoleName, setNewRoleName] = useState("");
   const [newRoleDesc, setNewRoleDesc] = useState("");
+  const [editName, setEditName] = useState("");
+  const [editDesc, setEditDesc] = useState("");
+  const [editColor, setEditColor] = useState("#6366f1");
+  const [isEditing, setIsEditing] = useState(false);
 
   const { data: apiRoles = [], isLoading: rolesLoading } = useQuery<Role[]>({
     queryKey: ["/api/roles"],
@@ -213,6 +217,15 @@ export function RolesManagement() {
     return roles.find(r => r.id === selectedRoleId) || roles[0] || null;
   }, [selectedRoleId, roles]);
 
+  React.useEffect(() => {
+    if (selectedRole) {
+      setEditName(selectedRole.name);
+      setEditDesc(selectedRole.description || "");
+      setEditColor(selectedRole.color || "#6366f1");
+      setIsEditing(false);
+    }
+  }, [selectedRole?.id]);
+
   const togglePermission = (permissionKey: string) => {
     if (!selectedRole) return;
 
@@ -250,10 +263,21 @@ export function RolesManagement() {
 
   const handleSave = () => {
     if (!selectedRole) return;
-    toast({
-      title: "Изменения сохранены",
-      description: `Настройки для роли "${selectedRole.name}" обновлены.`,
+    if (selectedRole.isSystem) {
+      toast({
+        title: "Ошибка",
+        description: "Системные роли нельзя редактировать.",
+        variant: "destructive"
+      });
+      return;
+    }
+    updateRoleMutation.mutate({
+      id: selectedRole.id,
+      name: editName.trim(),
+      description: editDesc.trim(),
+      color: editColor,
     });
+    setIsEditing(false);
   };
 
   const filteredRoles = roles.filter(role =>
@@ -418,37 +442,86 @@ export function RolesManagement() {
           {selectedRole ? (
             <Card className="border-border/50 bg-card/50 backdrop-blur-sm shadow-sm flex flex-col overflow-hidden border-none ring-1 ring-border/50">
               <CardHeader className="flex flex-row items-start justify-between bg-muted/20 border-b border-border/50 py-6">
-                <div className="space-y-1">
-                  <div className="flex items-center gap-3">
-                    <div
-                      className="w-3 h-3 rounded-full"
-                      style={{ backgroundColor: selectedRole.color || "#6366f1" }}
-                    />
-                    <CardTitle className="text-xl font-bold tracking-tight">
-                      Права доступа: {selectedRole.name}
-                    </CardTitle>
-                  </div>
-                  <CardDescription className="text-sm font-medium">
-                    {selectedRole.description || ""}
-                  </CardDescription>
+                <div className="space-y-2 flex-1">
+                  {isEditing && !selectedRole.isSystem ? (
+                    <>
+                      <div className="flex items-center gap-3">
+                        <input
+                          type="color"
+                          value={editColor}
+                          onChange={(e) => setEditColor(e.target.value)}
+                          className="w-8 h-8 rounded cursor-pointer border-0 p-0"
+                        />
+                        <Input
+                          value={editName}
+                          onChange={(e) => setEditName(e.target.value)}
+                          className="h-9 text-lg font-bold bg-background/50 border-border/50"
+                          placeholder="Название роли"
+                        />
+                      </div>
+                      <Input
+                        value={editDesc}
+                        onChange={(e) => setEditDesc(e.target.value)}
+                        className="h-8 text-sm bg-background/50 border-border/50"
+                        placeholder="Описание роли"
+                      />
+                    </>
+                  ) : (
+                    <>
+                      <div className="flex items-center gap-3">
+                        <div
+                          className="w-3 h-3 rounded-full"
+                          style={{ backgroundColor: selectedRole.color || "#6366f1" }}
+                        />
+                        <CardTitle className="text-xl font-bold tracking-tight">
+                          Права доступа: {selectedRole.name}
+                        </CardTitle>
+                      </div>
+                      <CardDescription className="text-sm font-medium">
+                        {selectedRole.description || "Нет описания"}
+                      </CardDescription>
+                    </>
+                  )}
                 </div>
-                <div className="flex items-center gap-2">
-                  <Button variant="outline" size="sm" className="h-9 gap-2 text-xs font-bold border-border/50 bg-background/50">
-                    <Copy className="w-3.5 h-3.5" /> Копировать
-                  </Button>
-                  <Button
-                    size="sm"
-                    className="h-9 gap-2 text-xs font-bold shadow-lg shadow-primary/20"
-                    disabled={updateRoleMutation.isPending}
-                    onClick={handleSave}
-                  >
-                    {updateRoleMutation.isPending ? (
-                      <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" />
-                    ) : (
-                      <Save className="w-3.5 h-3.5" />
-                    )}
-                    Сохранить
-                  </Button>
+                <div className="flex items-center gap-2 ml-4">
+                  {!selectedRole.isSystem && (
+                    <>
+                      {isEditing ? (
+                        <>
+                          <Button variant="outline" size="sm" className="h-9 gap-2 text-xs font-bold" onClick={() => setIsEditing(false)}>
+                            Отмена
+                          </Button>
+                          <Button
+                            size="sm"
+                            className="h-9 gap-2 text-xs font-bold shadow-lg shadow-primary/20"
+                            disabled={updateRoleMutation.isPending || !editName.trim()}
+                            onClick={handleSave}
+                          >
+                            {updateRoleMutation.isPending ? (
+                              <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" />
+                            ) : (
+                              <Save className="w-3.5 h-3.5" />
+                            )}
+                            Сохранить
+                          </Button>
+                        </>
+                      ) : (
+                        <>
+                          <Button variant="outline" size="sm" className="h-9 gap-2 text-xs font-bold border-border/50 bg-background/50" onClick={() => setIsEditing(true)}>
+                            Редактировать
+                          </Button>
+                          <Button variant="outline" size="sm" className="h-9 gap-2 text-xs font-bold border-border/50 bg-background/50">
+                            <Copy className="w-3.5 h-3.5" /> Копировать
+                          </Button>
+                        </>
+                      )}
+                    </>
+                  )}
+                  {selectedRole.isSystem && (
+                    <Button variant="outline" size="sm" className="h-9 gap-2 text-xs font-bold border-border/50 bg-background/50">
+                      <Copy className="w-3.5 h-3.5" /> Копировать
+                    </Button>
+                  )}
                 </div>
               </CardHeader>
               <CardContent className="p-0">

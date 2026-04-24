@@ -126,6 +126,31 @@ export function getWelcomeEmailTemplate(userName: string, appUrl?: string): { ht
   return { html, text };
 }
 
+export function getPasswordChangeCodeTemplate(userName: string, code: string, expiresMinutes: number = 10): { html: string; text: string } {
+  const html = `
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #1a1a1a;">
+      <div style="background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%); padding: 32px 24px; text-align: center;">
+        <h1 style="color: #ffffff; margin: 0; font-size: 24px;">Подтверждение смены пароля</h1>
+      </div>
+      <div style="padding: 32px 24px; background: #ffffff;">
+        <p style="font-size: 16px; line-height: 1.6; margin: 0 0 16px;">Здравствуйте, <strong>${userName}</strong>!</p>
+        <p style="font-size: 16px; line-height: 1.6; margin: 0 0 24px;">Вы запросили смену мастер-пароля. Для подтверждения операции введите код ниже в приложении:</p>
+        <div style="background: #f3f4f6; border-radius: 12px; padding: 24px; text-align: center; margin: 0 0 24px;">
+          <span style="font-size: 32px; font-weight: bold; letter-spacing: 8px; color: #6366f1; font-family: monospace;">${code}</span>
+        </div>
+        <p style="font-size: 14px; color: #6b7280; margin: 0 0 16px;">Код действителен в течение <strong>${expiresMinutes} минут</strong>.</p>
+        <div style="background: #fef3c7; border-left: 4px solid #f59e0b; padding: 16px; border-radius: 4px;">
+          <p style="font-size: 14px; color: #92400e; margin: 0;"><strong>Важно:</strong> если вы не запрашивали смену пароля, немедленно свяжитесь с администратором — возможно, кто-то пытается получить доступ к вашему аккаунту.</p>
+        </div>
+      </div>
+    </div>
+  `;
+
+  const text = `Подтверждение смены пароля\n\nЗдравствуйте, ${userName}!\n\nВы запросили смену мастер-пароля. Для подтверждения операции введите код: ${code}\n\nКод действителен в течение ${expiresMinutes} минут.\n\nЕсли вы не запрашивали смену пароля, немедленно свяжитесь с администратором.`;
+
+  return { html, text };
+}
+
 export function getPasswordChangedTemplate(userName: string): { html: string; text: string } {
   const html = `
     <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #1a1a1a;">
