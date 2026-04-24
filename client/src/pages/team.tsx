@@ -60,7 +60,9 @@ import {
   Key,
   RefreshCw,
   Eye,
-  EyeOff
+  EyeOff,
+  TrendingUp,
+  ShoppingBag
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useLocation } from "wouter";
@@ -1488,6 +1490,83 @@ export default function EmployeesPage() {
                           </TableRow>
                         ))}
                       </TableBody>
+                      </Table>
+                    </div>
+                  )}
+                </TabsContent>
+
+                <TabsContent value="audit_points" className="mt-0">
+                  {pointsHistory.length === 0 ? (
+                    <div className="text-center py-8 text-muted-foreground">
+                      <Coins className="w-8 h-8 mx-auto mb-2 opacity-20" />
+                      <p className="text-sm">История баллов пуста</p>
+                    </div>
+                  ) : (
+                    <div className="max-h-[400px] overflow-y-auto">
+                      <Table>
+                        <TableHeader className="bg-secondary/20 sticky top-0">
+                          <TableRow>
+                            <TableHead className="w-[100px]">Тип</TableHead>
+                            <TableHead>Описание</TableHead>
+                            <TableHead className="w-[100px]">Баллы</TableHead>
+                            <TableHead className="w-[140px]">Кем выполнено</TableHead>
+                            <TableHead className="w-[120px]">Дата и время</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {pointsHistory.map((entry) => (
+                            <TableRow key={entry.id}>
+                              <TableCell>
+                                <div className="flex items-center gap-1.5">
+                                  {entry.type === 'earned' ? (
+                                    <TrendingUp className="w-4 h-4 text-emerald-500" />
+                                  ) : entry.type === 'spent' ? (
+                                    <ShoppingBag className="w-4 h-4 text-rose-500" />
+                                  ) : entry.type === 'reverted' ? (
+                                    <Coins className="w-4 h-4 text-amber-500" />
+                                  ) : (
+                                    <Coins className="w-4 h-4 text-muted-foreground" />
+                                  )}
+                                  <span className="text-xs capitalize">
+                                    {entry.type === 'earned' ? 'Начисление' : entry.type === 'spent' ? 'Списание' : entry.type === 'reverted' ? 'Возврат' : entry.type}
+                                  </span>
+                                </div>
+                              </TableCell>
+                              <TableCell className="text-sm">
+                                {entry.description || '—'}
+                                {entry.task && (
+                                  <span className="block text-xs text-muted-foreground mt-0.5">
+                                    Задача: {entry.task.title}
+                                  </span>
+                                )}
+                              </TableCell>
+                              <TableCell>
+                                <span className={`font-bold ${
+                                  entry.type === 'earned' ? 'text-emerald-600' : 
+                                  entry.type === 'spent' ? 'text-rose-600' : 
+                                  entry.type === 'reverted' ? 'text-amber-600' : 'text-muted-foreground'
+                                }`}>
+                                  {entry.type === 'earned' ? '+' : entry.type === 'spent' || entry.type === 'reverted' ? '-' : ''}
+                                  {Math.abs(entry.amount)}
+                                </span>
+                              </TableCell>
+                              <TableCell className="text-sm text-muted-foreground">
+                                {entry.changedByUser 
+                                  ? `${entry.changedByUser.firstName || ''} ${entry.changedByUser.lastName || ''}`.trim() || 'Система'
+                                  : 'Система'}
+                              </TableCell>
+                              <TableCell className="text-sm text-muted-foreground">
+                                {entry.createdAt ? new Date(entry.createdAt).toLocaleString('ru-RU', { 
+                                  day: '2-digit', 
+                                  month: '2-digit', 
+                                  year: 'numeric', 
+                                  hour: '2-digit', 
+                                  minute: '2-digit'
+                                }) : '—'}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
                       </Table>
                     </div>
                   )}
