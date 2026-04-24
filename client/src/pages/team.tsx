@@ -811,31 +811,6 @@ export default function EmployeesPage() {
                         </Button>
                       </div>
                     </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="new-role">Роль</Label>
-                      <Select 
-                        value={newEmployee.roleIds[0] || "__empty__"} 
-                        onValueChange={(value) => setNewEmployee(prev => ({ 
-                          ...prev, 
-                          roleIds: value === "__empty__" ? [] : [value] 
-                        }))}
-                      >
-                        <SelectTrigger id="new-role">
-                          <SelectValue placeholder="Выберите роль" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="__empty__">Без роли</SelectItem>
-                          {apiRoles.map((role) => (
-                            <SelectItem key={role.id} value={role.id}>
-                              <div className="flex items-center gap-2">
-                                <span className="w-2 h-2 rounded-full" style={{ backgroundColor: role.color || '#6b7280' }} />
-                                {role.name}
-                              </div>
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
                   </div>
                   <DialogFooter>
                     <Button variant="outline" onClick={() => setIsCreateEmployeeOpen(false)}>Отмена</Button>
