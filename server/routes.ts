@@ -1407,6 +1407,113 @@ export async function registerRoutes(
     }
   });
 
+  // In-memory store for user password change confirmation codes
+  const userPasswordChangeCodes = new Map<string, { code: string; expiresAt: number }>();
+
+  // Request user password change confirmation code
+  app.post("/api/user/request-password-change", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
+
+    const { currentPassword } = req.body;
+    const user = req.user!;
+
+    try {
+      const dbUser = await storage.getUser(user.id);
+      if (!dbUser) {
+        return res.status(404).json({ message: "Пользователь не найден" });
+      }
+
+      // Verify current password
+      const isValid = dbUser.password.startsWith('$2') || dbUser.password.startsWith('$')
+        ? await bcrypt.compare(currentPassword, dbUser.password)
+        : dbUser.password === currentPassword;
+
+      if (!isValid) {
+        return res.status(400).json({ message: "Неверный текущий пароль" });
+      }
+
+      // Generate 6-digit code
+      const code = Math.floor(100000 + Math.random() * 900000).toString();
+      const expiresAt = Date.now() + 10 * 60 * 1000; // 10 minutes
+
+      // Store temporarily
+      userPasswordChangeCodes.set(user.id, { code, expiresAt });
+
+      // Send email with code
+      const name = user.firstName || user.username || user.email.split("@")[0];
+      const template = getPasswordChangeCodeTemplate(name, code, 10);
+      const result = await sendEmail({
+        to: user.email,
+        subject: "Код подтверждения смены пароля",
+        html: template.html,
+        text: template.text,
+      });
+
+      if (!result.success) {
+        userPasswordChangeCodes.delete(user.id);
+        return res.status(500).json({ message: result.message || "Не удалось отправить email" });
+      }
+
+      res.json({ message: "Код подтверждения отправлен на ваш email", expiresIn: 600 });
+    } catch (error) {
+      console.error("Error requesting user password change:", error);
+      res.status(500).json({ message: "Failed to request password change" });
+    }
+  });
+
+  // Confirm user password change with code
+  app.post("/api/user/confirm-password-change", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
+
+    const { code, newPassword } = req.body;
+    const user = req.user!;
+
+    if (!newPassword || newPassword.length < 6) {
+      return res.status(400).json({ message: "Пароль должен быть не менее 6 символов" });
+    }
+
+    try {
+      const record = userPasswordChangeCodes.get(user.id);
+      if (!record) {
+        return res.status(400).json({ message: "Код не найден. Запросите новый код." });
+      }
+      if (Date.now() > record.expiresAt) {
+        userPasswordChangeCodes.delete(user.id);
+        return res.status(400).json({ message: "Код истек. Запросите новый код." });
+      }
+      if (record.code !== code) {
+        return res.status(400).json({ message: "Неверный код подтверждения" });
+      }
+
+      // Hash and save new password
+      const saltRounds = 10;
+      const hashedPassword = await bcrypt.hash(newPassword, saltRounds);
+      await storage.updateUser(user.id, { password: hashedPassword });
+
+      // Clean up code
+      userPasswordChangeCodes.delete(user.id);
+
+      // Send confirmation email
+      try {
+        const name = user.firstName || user.username || user.email.split("@")[0];
+        const template = getPasswordChangedTemplate(name);
+        await sendEmail({
+          to: user.email,
+          subject: "Пароль изменен",
+          html: template.html,
+          text: template.text,
+        });
+      } catch (emailError) {
+        console.error("Failed to send password change confirmation email:", emailError);
+      }
+
+      res.json({ message: "Пароль успешно изменен" });
+    } catch (error) {
+      console.error("Error confirming user password change:", error);
+      res.status(500).json({ message: "Failed to confirm password change" });
+    }
+  });
+
   // Workspace routes
   app.get("/api/workspaces", async (req, res) => {
     if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
