@@ -306,6 +306,12 @@ export function setupWebSockets(httpServer: HttpServer) {
     socket.on("disconnect", async () => {
       log(`Socket ${socket.id} disconnected`, "socket.io");
       
+      // Clean up typing timeouts to prevent memory leaks
+      typingTimeouts.forEach((timeout, key) => {
+        clearTimeout(timeout);
+        typingTimeouts.delete(key);
+      });
+      
       // Clean up mediasoup resources for disconnected user
       // This would require tracking userId by socket.id
     });

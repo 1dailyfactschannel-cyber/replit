@@ -261,39 +261,6 @@ export async function registerRoutes(
   await mediasoupServer.init();
   
   io = setupWebSockets(httpServer);
-  console.log("Registering API routes...");
-
-  // TEST ROUTES - проверка доступности API (без авторизации для отладки)
-  app.get("/api/test", (req, res) => {
-    console.log("[TEST] API TEST ROUTE HIT!");
-    res.json({ status: "ok", timestamp: new Date().toISOString() });
-  });
-
-  app.put("/api/test/update/:id", async (req, res) => {
-    console.log("[TEST] UPDATE TEST ROUTE HIT!");
-    console.log("[TEST] ID:", req.params.id);
-    console.log("[TEST] Body:", JSON.stringify(req.body));
-    
-    try {
-      const { isRemote, ...updateData } = req.body;
-      console.log("[TEST] isRemote:", isRemote);
-      console.log("[TEST] updateData:", JSON.stringify(updateData));
-      
-      // Only test the database update part
-      if (isRemote !== undefined) {
-        console.log("[TEST] Updating is_remote column...");
-        await storage.db.execute(sql`
-          UPDATE users SET is_remote = ${Boolean(isRemote)} WHERE id = ${req.params.id}
-        `);
-        console.log("[TEST] Update successful!");
-      }
-      
-      res.json({ status: "ok", message: "Test update completed" });
-    } catch (error) {
-      console.error("[TEST] Error:", error);
-      res.status(500).json({ message: (error as Error).message });
-    }
-  });
 
   // Apply global rate limiter to all /api routes
   app.use("/api", globalLimiter);
@@ -310,9 +277,8 @@ export async function registerRoutes(
 
   app.patch("/api/user", async (req, res) => {
     if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
-    console.log("PATCH /api/user hit!");
     try {
-      const user = req.user;
+      const user = req.user!;
       
       // Whitelist allowed fields for security
       const allowedFields = ['firstName', 'lastName', 'avatar', 'department', 'position', 'phone', 'timezone', 'language', 'telegram', 'telegramId', 'telegramConnected', 'notes'];
@@ -324,12 +290,7 @@ export async function registerRoutes(
         }
       }
       
-      if (updateData.telegram !== undefined) {
-        console.log("Updating telegram field to:", updateData.telegram);
-      }
-      
       const updatedUser = await storage.updateUser(user.id, updateData);
-      console.log("PATCH /api/user: User updated successfully", updatedUser.id);
       res.json(updatedUser);
     } catch (error: any) {
       console.error("PATCH /api/user error:", error);
@@ -388,18 +349,9 @@ export async function registerRoutes(
   });
 
   // Create new user (admin only)
-  app.post("/api/users", async (req, res) => {
-    if (!req.isAuthenticated()) {
-      return res.status(401).json({ message: "Unauthorized" });
-    }
-    
-    // Check if user is admin
-    if (req.user.role !== "admin") {
-      return res.status(403).json({ message: "Forbidden - Admin access required" });
-    }
-
+  app.post("/api/users", requirePermission("users:create"), async (req, res) => {
     try {
-      const { firstName, lastName, email, phone, position, department, telegram, password, roleIds } = req.body;
+      const { firstName, lastName, email, phone, position, department, password, roleIds } = req.body;
 
       if (!email) {
         return res.status(400).json({ message: "Email is required" });
@@ -415,18 +367,9 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Пользователь с таким email уже существует" });
       }
 
-      // Determine role name for the role column (legacy)
-      let roleName = "user"; // default
-      if (roleIds && Array.isArray(roleIds) && roleIds.length > 0) {
-        const role = await storage.getRoleById(roleIds[0]);
-        if (role) {
-          roleName = role.name;
-        }
-      }
-
       // Use provided password or generate random one
       const passwordToUse = password || Math.random().toString(36).slice(-10);
-      const hashedPassword = await hashPassword(passwordToUse);
+      const hashedPassword = await bcrypt.hash(passwordToUse, 10);
 
       // Create user
       const newUser = await storage.createUser({
@@ -438,14 +381,11 @@ export async function registerRoutes(
         phone: phone || "",
         position: position || "",
         department: department || "",
-        telegram: telegram || "",
-        isActive: true,
-        role: roleName,
       });
 
       // Assign roles if provided (many-to-many)
       if (roleIds && Array.isArray(roleIds) && roleIds.length > 0) {
-        await storage.setUserRoles(newUser.id, roleIds, req.user.id);
+        await storage.setUserRoles(newUser.id, roleIds, req.user!.id);
       }
 
       // Invalidate cache
@@ -1530,7 +1470,7 @@ export async function registerRoutes(
     if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
     try {
       const { name, description, color } = req.body;
-      const user = req.user;
+      const user = req.user!;
       const [workspace] = await storage.db.insert(schema.workspaces).values({
         name,
         description,
@@ -1604,7 +1544,7 @@ export async function registerRoutes(
   app.post("/api/projects", requirePermission("projects:create"), async (req, res) => {
     // console.log("POST /api/projects hit with body:", req.body);
     try {
-      const user = req.user;
+      const user = req.user!;
       
       const projectData = { 
         name: req.body.name,
@@ -1676,9 +1616,6 @@ export async function registerRoutes(
   });
 
   app.delete("/api/projects/:id", requirePermission("projects:delete"), async (req, res) => {
-    
-    console.log("[API] Delete project request body:", req.body);
-    
     const masterPassword = req.body?.masterPassword;
     
     if (!masterPassword) {
@@ -1690,7 +1627,6 @@ export async function registerRoutes(
       
       // If master password is not set, allow deletion without verification
       if (!masterPasswordHash) {
-        console.log("[API] No master password set, allowing deletion");
         await storage.deleteProject(req.params.id);
         await delCache("projects:stats:all");
         return res.status(204).send();
@@ -2636,8 +2572,7 @@ export async function registerRoutes(
 
   app.post("/api/boards/:boardId/tasks", requirePermission("tasks:create"), async (req, res) => {
     try {
-      const user = req.user;
-      console.log("[API] Creating task with data:", req.body);
+      const user = req.user!;
 
       // Validate required fields
       if (!req.body.title || typeof req.body.title !== 'string' || req.body.title.trim() === '') {
@@ -2671,16 +2606,13 @@ export async function registerRoutes(
         reporterId: user.id,
         status: req.body.status || determinedStatus
       } as any;
-      console.log("[API] Task data prepared:", taskData);
 
       const task = await storage.createTask(taskData);
-      console.log("[API] Task created:", task);
       
       // Start timer for initial status
       try {
         const initialStatus = task.status || "В планах";
         await storage.recordTaskStatusEntry(task.id, initialStatus);
-        console.log("[API] Started timer for status:", initialStatus);
       } catch (error) {
         console.error("Error starting task timer:", error);
       }
@@ -2689,7 +2621,6 @@ export async function registerRoutes(
       if (task.assigneeId) {
         try {
           await storage.startUserTimeTracking(task.id, task.assigneeId, task.status || "В планах");
-          console.log("[API] Started user time tracking for assignee:", task.assigneeId);
         } catch (error) {
           console.error("Error starting user time tracking:", error);
         }
@@ -2718,8 +2649,6 @@ export async function registerRoutes(
             
             // Update user points
             await storage.updateUserPoints(task.assigneeId, points);
-            
-            console.log("[API] Awarded", points, "points to user", task.assigneeId, "for initial status", task.status);
           }
         } catch (error) {
           console.error("Error awarding initial points:", error);
@@ -2869,25 +2798,18 @@ export async function registerRoutes(
   });
 
   app.patch("/api/board-columns/:columnId", async (req, res) => {
-    console.log("[API] PATCH /api/board-columns/:columnId - Received request");
-    console.log("[API] Column ID:", req.params.columnId);
-    console.log("[API] Body:", req.body);
-    
     if (!req.isAuthenticated()) {
-      console.log("[API] Unauthorized request");
       return res.status(401).json({ message: "Не авторизован" });
     }
     
     try {
       const { name, color, description } = req.body;
-      console.log("[API] Attempting to update column with name:", name, "color:", color, "description:", description);
       
       // Get board ID before updating
       const column = await storage.db.select().from(schema.boardColumns).where(eq(schema.boardColumns.id, req.params.columnId));
       const boardId = column[0]?.boardId;
       
       const updated = await storage.updateBoardColumn(req.params.columnId, { name, color, description: description || null });
-      console.log("[API] Column updated successfully:", updated);
       
       // Invalidate board cache
       if (boardId) {
@@ -3049,7 +2971,7 @@ export async function registerRoutes(
   app.get("/api/chats", async (req, res) => {
     if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
     try {
-      const user = req.user;
+      const user = req.user!;
       const cacheKey = `user:${user.id}:chats`;
       const cached = await getCache(cacheKey);
       if (cached) {
@@ -3132,7 +3054,7 @@ export async function registerRoutes(
   app.post("/api/chats", async (req, res) => {
     if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
     try {
-      const user = req.user;
+      const user = req.user!;
       
       const { name, type, participantIds, description, avatar } = req.body;
       
@@ -3255,7 +3177,7 @@ export async function registerRoutes(
   app.post("/api/chats/:chatId/messages", async (req, res) => {
     if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
     try {
-      const user = req.user;
+      const user = req.user!;
       
       const message = await storage.createMessage({
         chatId: req.params.chatId,
@@ -3368,7 +3290,7 @@ export async function registerRoutes(
   app.post("/api/chats/:chatId/read", async (req, res) => {
     if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
     try {
-      const user = req.user;
+      const user = req.user!;
 
       await storage.markChatMessagesAsRead(req.params.chatId, user.id);
       
@@ -3389,7 +3311,7 @@ export async function registerRoutes(
   app.get("/api/chat-folders", async (req, res) => {
     if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
     try {
-      const user = req.user;
+      const user = req.user!;
       const foldersWithItems = await storage.getChatFolders(user.id);
       res.json(foldersWithItems);
     } catch (error) {
@@ -3400,7 +3322,7 @@ export async function registerRoutes(
   app.post("/api/chat-folders", async (req, res) => {
     if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
     try {
-      const user = req.user;
+      const user = req.user!;
       
       const { name, icon, chatIds } = req.body;
       const folder = await storage.createChatFolder({
@@ -3449,7 +3371,7 @@ export async function registerRoutes(
   app.get("/api/calls", async (req, res) => {
     if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
     try {
-      const user = req.user;
+      const user = req.user!;
       const calls = await storage.getCallsForUser(user.id);
       res.json(calls);
     } catch (error) {
@@ -3460,7 +3382,7 @@ export async function registerRoutes(
   app.post("/api/calls", async (req, res) => {
     if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
     try {
-      const user = req.user;
+      const user = req.user!;
       
       const call = await storage.createCall({
         ...req.body,
@@ -3489,7 +3411,7 @@ export async function registerRoutes(
   app.get("/api/notifications", async (req, res) => {
     if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
     try {
-      const user = req.user;
+      const user = req.user!;
       const page = Math.max(1, parseInt(req.query.page as string) || 1);
       const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string) || 20));
       const offset = (page - 1) * limit;
@@ -3557,7 +3479,7 @@ export async function registerRoutes(
   app.post("/api/notifications/read-all", async (req, res) => {
     if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
     try {
-      const user = req.user;
+      const user = req.user!;
       await storage.markAllNotificationsAsRead(user.id);
       res.json({ success: true });
     } catch (error) {

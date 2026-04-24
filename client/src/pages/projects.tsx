@@ -1278,7 +1278,7 @@ export default function Projects() {
 
   const handleSaveEditColumn = () => {
     if (editingKanbanColumn && editColumnName.trim()) {
-      handleEditColumn(editingKanbanColumn.id, editColumnName.trim(), editColumnColor, editColumnDescription || null);
+      handleEditColumn(editingKanbanColumn.id, editColumnName.trim(), editColumnColor, editColumnDescription || undefined);
       setIsEditColumnOpen(false);
       setEditingKanbanColumn(null);
       setEditColumnName("");
