@@ -1,5 +1,5 @@
 import { Layout } from "@/components/layout/Layout";
-import { useState, useEffect, useMemo, useDeferredValue, useRef } from "react";
+import { useState, useEffect, useMemo, useDeferredValue, useRef, Fragment } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { 
@@ -884,7 +884,7 @@ export default function EmployeesPage() {
                         const dept = departments.find(d => d.name === deptName);
                         const groupEmployees = grouped[deptName];
                         return (
-                          <React.Fragment key={deptName}>
+                          <Fragment key={deptName}>
                             {/* Compact department separator */}
                             {deptIndex > 0 && (
                               <TableRow className="border-t-2 border-border/80">
@@ -1012,7 +1012,7 @@ export default function EmployeesPage() {
                                 </TableRow>
                               );
                             })}
-                          </React.Fragment>
+                          </Fragment>
                         );
                       })}
                     </TableBody>
