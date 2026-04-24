@@ -349,7 +349,7 @@ export async function registerRoutes(
   });
 
   // Create new user (admin only)
-  app.post("/api/users", requirePermission("users:create"), async (req, res) => {
+  app.post("/api/users", requirePermission("team:create"), async (req, res) => {
     try {
       const { firstName, lastName, email, phone, position, department, password, roleIds } = req.body;
 
