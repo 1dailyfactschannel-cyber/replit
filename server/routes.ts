@@ -4220,19 +4220,63 @@ export async function registerRoutes(
     }
   });
 
+  // Admin shop routes
+  app.get("/api/shop/items/all", requirePermission("management:shop"), async (req, res) => {
+    try {
+      const items = await storage.db.select().from(schema.shopItems).orderBy(desc(schema.shopItems.createdAt));
+      res.json(items);
+    } catch (error) {
+      console.error("Error getting all shop items:", error);
+      res.status(500).json({ message: "Failed to get shop items" });
+    }
+  });
+
+  app.post("/api/shop/items", requirePermission("management:shop"), async (req, res) => {
+    try {
+      const item = await storage.createShopItem(req.body);
+      res.status(201).json(item);
+    } catch (error) {
+      console.error("Error creating shop item:", error);
+      res.status(500).json({ message: "Failed to create shop item" });
+    }
+  });
+
+  app.put("/api/shop/items/:id", requirePermission("management:shop"), async (req, res) => {
+    try {
+      const item = await storage.updateShopItem(req.params.id, req.body);
+      if (!item) {
+        return res.status(404).json({ message: "Item not found" });
+      }
+      res.json(item);
+    } catch (error) {
+      console.error("Error updating shop item:", error);
+      res.status(500).json({ message: "Failed to update shop item" });
+    }
+  });
+
+  app.delete("/api/shop/items/:id", requirePermission("management:shop"), async (req, res) => {
+    try {
+      await storage.deleteShopItem(req.params.id);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting shop item:", error);
+      res.status(500).json({ message: "Failed to delete shop item" });
+    }
+  });
+
   app.post("/api/shop/purchase", async (req, res) => {
     if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
-    
+
     try {
       const { itemId, quantity = 1 } = req.body;
-      
+
       if (!itemId) {
         return res.status(400).json({ message: "itemId is required" });
       }
 
       // Get user points
       const userPoints = await storage.getUserPoints(req.user!.id);
-      
+
       // Get item
       const item = await storage.getShopItem(itemId);
       if (!item) {
@@ -4260,11 +4304,45 @@ export async function registerRoutes(
         userId: req.user!.id,
         type: "spent",
         amount: -totalCost,
-        description: `Покупка "${item.name}"`
+        description: `Заявка на "${item.name}"`
       });
 
       // Update user points
       await storage.updateUserPoints(req.user!.id, -totalCost);
+
+      // Notify admins about new purchase request
+      try {
+        const adminRole = await storage.getRoleByName("Администратор");
+        if (adminRole) {
+          const adminUserRoles = await storage.db.select({ userId: schema.userRoles.userId })
+            .from(schema.userRoles)
+            .where(eq(schema.userRoles.roleId, adminRole.id));
+
+          const buyer = await storage.getUser(req.user!.id);
+          const buyerName = buyer?.firstName || buyer?.username || "Пользователь";
+
+          for (const aur of adminUserRoles) {
+            const notification = await storage.createNotification({
+              userId: aur.userId,
+              senderId: req.user!.id,
+              type: "system",
+              title: "Новая заявка на покупку",
+              message: JSON.stringify({
+                action: "shop_purchase_request",
+                purchaseId: purchase.id,
+                buyerName,
+                itemName: item.name,
+                quantity,
+                totalCost,
+              }),
+            });
+            const io = getIO();
+            io.to(`user:${aur.userId}`).emit("new-notification", notification);
+          }
+        }
+      } catch (notifyError) {
+        console.error("Error notifying admins about purchase:", notifyError);
+      }
 
       res.status(201).json(purchase);
     } catch (error) {
@@ -4275,13 +4353,106 @@ export async function registerRoutes(
 
   app.get("/api/shop/purchases", async (req, res) => {
     if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
-    
+
     try {
       const purchases = await storage.getUserPurchases(req.user!.id);
       res.json(purchases);
     } catch (error) {
       console.error("Error getting purchases:", error);
       res.status(500).json({ message: "Failed to get purchases" });
+    }
+  });
+
+  // Admin purchase management
+  app.get("/api/shop/purchases/all", requirePermission("management:shop"), async (req, res) => {
+    try {
+      const purchases = await storage.getAllPurchases();
+      res.json(purchases);
+    } catch (error) {
+      console.error("Error getting all purchases:", error);
+      res.status(500).json({ message: "Failed to get purchases" });
+    }
+  });
+
+  app.patch("/api/shop/purchases/:id/status", requirePermission("management:shop"), async (req, res) => {
+    try {
+      const { status } = req.body;
+      const validStatuses = ["pending", "approved", "rejected"];
+
+      if (!validStatuses.includes(status)) {
+        return res.status(400).json({ message: "Invalid status" });
+      }
+
+      const purchase = await storage.getPurchaseById(req.params.id);
+      if (!purchase) {
+        return res.status(404).json({ message: "Purchase not found" });
+      }
+
+      // If already processed, don't allow changes
+      if (purchase.status !== "pending" && status !== purchase.status) {
+        return res.status(400).json({ message: "Purchase already processed" });
+      }
+
+      const updated = await storage.updatePurchaseStatus(req.params.id, status);
+
+      // Handle approval logic
+      if (status === "approved" && purchase.status !== "approved") {
+        // Decrease item stock
+        const item = await storage.getShopItem(purchase.itemId);
+        if (item && item.stock !== null && item.stock >= (purchase.quantity || 1)) {
+          await storage.updateShopItem(purchase.itemId, {
+            stock: item.stock - (purchase.quantity || 1)
+          });
+        }
+
+        // Notify buyer
+        const notification = await storage.createNotification({
+          userId: purchase.userId,
+          senderId: req.user!.id,
+          type: "system",
+          title: "Заявка одобрена",
+          message: JSON.stringify({
+            action: "shop_purchase_approved",
+            purchaseId: purchase.id,
+            itemName: item?.name || "Товар",
+          }),
+        });
+        const io = getIO();
+        io.to(`user:${purchase.userId}`).emit("new-notification", notification);
+      }
+
+      // Handle rejection logic - return points
+      if (status === "rejected" && purchase.status !== "rejected") {
+        // Return points to user
+        await storage.createTransaction({
+          userId: purchase.userId,
+          type: "earned",
+          amount: purchase.totalCost,
+          description: `Возврат баллов: заявка отклонена`
+        });
+        await storage.updateUserPoints(purchase.userId, purchase.totalCost);
+
+        // Notify buyer
+        const item = await storage.getShopItem(purchase.itemId);
+        const notification = await storage.createNotification({
+          userId: purchase.userId,
+          senderId: req.user!.id,
+          type: "system",
+          title: "Заявка отклонена",
+          message: JSON.stringify({
+            action: "shop_purchase_rejected",
+            purchaseId: purchase.id,
+            itemName: item?.name || "Товар",
+          }),
+        });
+        const io = getIO();
+        io.to(`user:${purchase.userId}`).emit("new-notification", notification);
+      }
+
+      res.json(updated);
+    } catch (error) {
+      console.error("Error updating purchase status:", error);
+      res.status(500).json({ message: "Failed to update purchase status" });
     }
   });
 

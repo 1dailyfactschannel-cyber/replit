@@ -84,8 +84,9 @@ export class PostgresStorage {
     const client = postgres(process.env.DATABASE_URL, {
       max: 10,
       idle_timeout: 20,
-      connect_timeout: 10,
+      connect_timeout: 30,
       onnotice: (notice) => console.log("Postgres Notice:", notice),
+      onparameter: (param) => console.log("Postgres Param:", param),
     });
     
     this.db = drizzle(client, { schema });
@@ -1240,6 +1241,9 @@ export class PostgresStorage {
   }
 
   async hasPermission(userId: string, permission: string): Promise<boolean> {
+    const userRoles = await this.getUserRoles(userId);
+    const isAdmin = userRoles.some(r => r.name === "Администратор");
+    if (isAdmin) return true;
     const permissions = await this.getUserPermissions(userId);
     return permissions.includes(permission);
   }
@@ -2787,6 +2791,29 @@ export class PostgresStorage {
     }
   }
 
+  async updateShopItem(id: string, updates: Partial<InsertShopItem>): Promise<ShopItem | undefined> {
+    try {
+      const [updated] = await this.db.update(schema.shopItems)
+        .set(updates)
+        .where(eq(schema.shopItems.id, id))
+        .returning();
+      return updated;
+    } catch (error) {
+      console.error("Error updating shop item:", error);
+      throw error;
+    }
+  }
+
+  async deleteShopItem(id: string): Promise<boolean> {
+    try {
+      await this.db.delete(schema.shopItems).where(eq(schema.shopItems.id, id));
+      return true;
+    } catch (error) {
+      console.error("Error deleting shop item:", error);
+      throw error;
+    }
+  }
+
   async createPurchase(purchase: InsertShopPurchase): Promise<ShopPurchase> {
     try {
       const [created] = await this.db.insert(schema.shopPurchases).values(purchase).returning();
@@ -2797,15 +2824,90 @@ export class PostgresStorage {
     }
   }
 
-  async getUserPurchases(userId: string): Promise<ShopPurchase[]> {
+  async getUserPurchases(userId: string): Promise<(ShopPurchase & { item?: { id: string; name: string; image: string | null; cost: number } })[]> {
     try {
-      return await this.db.select()
+      const purchases = await this.db.select()
         .from(schema.shopPurchases)
         .where(eq(schema.shopPurchases.userId, userId))
         .orderBy(desc(schema.shopPurchases.purchasedAt));
+
+      const enriched = await Promise.all(
+        purchases.map(async (purchase) => {
+          const [item] = await this.db.select({
+            id: schema.shopItems.id,
+            name: schema.shopItems.name,
+            image: schema.shopItems.image,
+            cost: schema.shopItems.cost,
+          }).from(schema.shopItems).where(eq(schema.shopItems.id, purchase.itemId)).limit(1);
+
+          return { ...purchase, item: item || undefined };
+        })
+      );
+
+      return enriched;
     } catch (error) {
       console.error("Error getting user purchases:", error);
       return [];
+    }
+  }
+
+  async getAllPurchases(): Promise<(ShopPurchase & { user?: { id: string; firstName: string | null; lastName: string | null; username: string; avatar: string | null }; item?: { id: string; name: string; image: string | null; cost: number } })[]> {
+    try {
+      const purchases = await this.db.select()
+        .from(schema.shopPurchases)
+        .orderBy(desc(schema.shopPurchases.purchasedAt));
+
+      const enriched = await Promise.all(
+        purchases.map(async (purchase) => {
+          const [user] = await this.db.select({
+            id: schema.users.id,
+            firstName: schema.users.firstName,
+            lastName: schema.users.lastName,
+            username: schema.users.username,
+            avatar: schema.users.avatar,
+          }).from(schema.users).where(eq(schema.users.id, purchase.userId)).limit(1);
+
+          const [item] = await this.db.select({
+            id: schema.shopItems.id,
+            name: schema.shopItems.name,
+            image: schema.shopItems.image,
+            cost: schema.shopItems.cost,
+          }).from(schema.shopItems).where(eq(schema.shopItems.id, purchase.itemId)).limit(1);
+
+          return { ...purchase, user: user || undefined, item: item || undefined };
+        })
+      );
+
+      return enriched;
+    } catch (error) {
+      console.error("Error getting all purchases:", error);
+      return [];
+    }
+  }
+
+  async getPurchaseById(id: string): Promise<ShopPurchase | undefined> {
+    try {
+      const [purchase] = await this.db.select()
+        .from(schema.shopPurchases)
+        .where(eq(schema.shopPurchases.id, id))
+        .limit(1);
+      return purchase;
+    } catch (error) {
+      console.error("Error getting purchase by id:", error);
+      return undefined;
+    }
+  }
+
+  async updatePurchaseStatus(id: string, status: string): Promise<ShopPurchase | undefined> {
+    try {
+      const [updated] = await this.db.update(schema.shopPurchases)
+        .set({ status })
+        .where(eq(schema.shopPurchases.id, id))
+        .returning();
+      return updated;
+    } catch (error) {
+      console.error("Error updating purchase status:", error);
+      throw error;
     }
   }
 

@@ -3,90 +3,77 @@ import { useState } from "react";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Coins, ShoppingBag, CheckCircle2, Search, Filter, Minus, Plus } from "lucide-react";
+import { Coins, ShoppingBag, Search, Filter, Minus, Plus, Loader2, Package } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { apiRequest } from "@/lib/queryClient";
+import { cn } from "@/lib/utils";
 
-interface Product {
+interface ShopItem {
   id: string;
   name: string;
-  description: string;
-  price: number;
-  image: string;
-  category: string;
-  stock: number;
+  description: string | null;
+  cost: number;
+  image: string | null;
+  category: string | null;
+  stock: number | null;
+  isActive: boolean | null;
 }
 
-const products: Product[] = [
-  {
-    id: "1",
-    name: "Худи TeamSync",
-    description: "Удобное оверсайз худи с фирменным логотипом. 100% хлопок.",
-    price: 3500,
-    image: "https://images.unsplash.com/photo-1556821840-3a63f95609a7?q=80&w=400&h=400&auto=format&fit=crop",
-    category: "Мерч",
-    stock: 12
-  },
-  {
-    id: "2",
-    name: "Термокружка",
-    description: "Сохраняет тепло до 12 часов. Идеально для офиса.",
-    price: 1200,
-    image: "https://images.unsplash.com/photo-1517254456976-ee8682099819?q=80&w=400&h=400&auto=format&fit=crop",
-    category: "Аксессуары",
-    stock: 25
-  },
-  {
-    id: "3",
-    name: "Сертификат OZON",
-    description: "Номинал 2000 рублей. Придет на почту сразу после одобрения.",
-    price: 2000,
-    image: "https://images.unsplash.com/photo-1549463591-2439834430ad?q=80&w=400&h=400&auto=format&fit=crop",
-    category: "Сертификаты",
-    stock: 50
-  },
-  {
-    id: "4",
-    name: "Рюкзак для ноутбука",
-    description: "Вмещает ноутбук до 16 дюймов. Влагостойкий материал.",
-    price: 5000,
-    image: "https://images.unsplash.com/photo-1553062407-98eeb64c6a62?q=80&w=400&h=400&auto=format&fit=crop",
-    category: "Мерч",
-    stock: 5
-  },
-  {
-    id: "5",
-    name: "Беспроводная мышь",
-    description: "Эргономичный дизайн, тихие клавиши. Подключение по Bluetooth.",
-    price: 2500,
-    image: "https://images.unsplash.com/photo-1527864550417-7fd91fc51a46?q=80&w=400&h=400&auto=format&fit=crop",
-    category: "Техника",
-    stock: 8
-  },
-  {
-    id: "6",
-    name: "Коврик для йоги",
-    description: "Нескользящее покрытие, толщина 6мм. Чехол в комплекте.",
-    price: 1800,
-    image: "https://images.unsplash.com/photo-1592432676556-382946c8b9cc?q=80&w=400&h=400&auto=format&fit=crop",
-    category: "Здоровье",
-    stock: 15
-  }
-];
+interface UserPoints {
+  balance: number;
+  totalEarned: number;
+  totalSpent: number;
+}
 
 export default function ShopPage() {
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState("");
-  const [purchasedIds, setPurchasedIds] = useState<string[]>([]);
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [quantities, setQuantities] = useState<Record<string, number>>({});
 
-  const handleBuy = (product: Product) => {
-    const qty = quantities[product.id] || 1;
-    toast({
-      title: "Заявка отправлена",
-      description: `Ваша заявка на "${product.name}" (${qty} шт.) отправлена на одобрение.`,
-    });
-    setPurchasedIds([...purchasedIds, product.id]);
+  const { data: items, isLoading: itemsLoading } = useQuery<ShopItem[]>({
+    queryKey: ["/api/shop/items"],
+    staleTime: 1000 * 60,
+  });
+
+  const { data: userPoints, isLoading: pointsLoading } = useQuery<UserPoints>({
+    queryKey: ["/api/users/me/points"],
+    staleTime: 1000 * 30,
+  });
+
+  const purchaseMutation = useMutation({
+    mutationFn: async ({ itemId, quantity }: { itemId: string; quantity: number }) => {
+      const res = await apiRequest("POST", "/api/shop/purchase", { itemId, quantity });
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Заявка отправлена", description: "Ваша заявка на покупку отправлена на рассмотрение." });
+      queryClient.invalidateQueries({ queryKey: ["/api/users/me/points"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/shop/purchases"] });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Ошибка",
+        description: error.message || "Не удалось оформить заявку",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleBuy = (item: ShopItem) => {
+    const qty = quantities[item.id] || 1;
+    if (userPoints && userPoints.balance < item.cost * qty) {
+      toast({
+        title: "Недостаточно баллов",
+        description: `У вас ${userPoints.balance} баллов, а нужно ${item.cost * qty}.`,
+        variant: "destructive",
+      });
+      return;
+    }
+    purchaseMutation.mutate({ itemId: item.id, quantity: qty });
   };
 
   const updateQuantity = (id: string, delta: number, max: number) => {
@@ -97,10 +84,18 @@ export default function ShopPage() {
     });
   };
 
-  const filteredProducts = products.filter(p => 
-    p.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-    p.category.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const categories: string[] = Array.from(new Set(items?.map(i => i.category).filter((c): c is string => !!c) || []));
+
+  const filteredItems = items?.filter(item => {
+    if (!item.isActive) return false;
+    const matchesSearch =
+      item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (item.category?.toLowerCase() || "").includes(searchTerm.toLowerCase());
+    const matchesCategory = selectedCategory ? item.category === selectedCategory : true;
+    return matchesSearch && matchesCategory;
+  }) || [];
+
+  const isLoading = itemsLoading || pointsLoading;
 
   return (
     <Layout>
@@ -112,105 +107,171 @@ export default function ShopPage() {
           </div>
           <div className="flex items-center gap-2 bg-primary/10 text-primary px-4 py-2 rounded-full border border-primary/20">
             <Coins className="w-5 h-5 text-amber-500" />
-            <span className="font-bold">1,250 баллов</span>
+            <span className="font-bold">
+              {pointsLoading ? "..." : `${userPoints?.balance ?? 0} баллов`}
+            </span>
           </div>
         </div>
 
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-4 flex-wrap">
           <div className="relative flex-1 max-w-sm">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <Input 
-              placeholder="Поиск товаров..." 
-              className="pl-9 bg-secondary/30 border-border/50" 
+            <Input
+              placeholder="Поиск товаров..."
+              className="pl-9 bg-secondary/30 border-border/50"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
-          <Button variant="outline" className="gap-2 border-border/50">
-            <Filter className="w-4 h-4" />
-            Категории
-          </Button>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-          {filteredProducts.map((product) => (
-            <Card key={product.id} className="border-border/50 overflow-hidden flex flex-col group hover:shadow-xl hover:shadow-primary/5 transition-all duration-300">
-              <div className="aspect-square overflow-hidden relative">
-                <img 
-                  src={product.image} 
-                  alt={product.name} 
-                  className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
-                />
-                <Badge className="absolute top-3 right-3 bg-background/80 backdrop-blur-md text-foreground border-border/50">
-                  {product.category}
-                </Badge>
-              </div>
-              <CardHeader className="p-4 pb-2">
-                <CardTitle className="text-lg leading-tight">{product.name}</CardTitle>
-              </CardHeader>
-              <CardContent className="p-4 pt-0 flex-1">
-                <p className="text-sm text-muted-foreground line-clamp-2">
-                  {product.description}
-                </p>
-                <div className="mt-4 space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-1.5 font-bold text-lg">
-                      <Coins className="w-4 h-4 text-amber-500" />
-                      {(product.price * (quantities[product.id] || 1)).toLocaleString()}
-                    </div>
-                    <span className="text-xs text-muted-foreground">В наличии: {product.stock} шт.</span>
-                  </div>
-
-                  {!purchasedIds.includes(product.id) && (
-                    <div className="flex items-center justify-between bg-secondary/30 rounded-lg p-1 border border-border/50">
-                      <Button 
-                        variant="ghost" 
-                        size="icon" 
-                        className="h-8 w-8"
-                        onClick={() => updateQuantity(product.id, -1, product.stock)}
-                        disabled={ (quantities[product.id] || 1) <= 1 }
-                      >
-                        <Minus className="w-3.5 h-3.5" />
-                      </Button>
-                      <span className="text-sm font-bold w-8 text-center">
-                        {quantities[product.id] || 1}
-                      </span>
-                      <Button 
-                        variant="ghost" 
-                        size="icon" 
-                        className="h-8 w-8"
-                        onClick={() => updateQuantity(product.id, 1, product.stock)}
-                        disabled={ (quantities[product.id] || 1) >= product.stock }
-                      >
-                        <Plus className="w-3.5 h-3.5" />
-                      </Button>
-                    </div>
-                  )}
-                </div>
-              </CardContent>
-              <CardFooter className="p-4 pt-0">
-                <Button 
-                  className="w-full gap-2" 
-                  disabled={purchasedIds.includes(product.id)}
-                  onClick={() => handleBuy(product)}
-                  variant={purchasedIds.includes(product.id) ? "outline" : "default"}
+          {categories.length > 0 && (
+            <div className="flex items-center gap-2 flex-wrap">
+              <Button
+                variant={selectedCategory === null ? "default" : "outline"}
+                size="sm"
+                onClick={() => setSelectedCategory(null)}
+                className="text-xs"
+              >
+                Все
+              </Button>
+              {categories.map(cat => (
+                <Button
+                  key={cat}
+                  variant={selectedCategory === cat ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setSelectedCategory(cat === selectedCategory ? null : cat)}
+                  className="text-xs"
                 >
-                  {purchasedIds.includes(product.id) ? (
-                    <>
-                      <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-                      Заявка подана
-                    </>
-                  ) : (
-                    <>
-                      <ShoppingBag className="w-4 h-4" />
-                      Купить
-                    </>
-                  )}
+                  {cat}
                 </Button>
-              </CardFooter>
-            </Card>
-          ))}
+              ))}
+            </div>
+          )}
         </div>
+
+        {isLoading ? (
+          <div className="flex items-center justify-center py-20">
+            <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+          </div>
+        ) : filteredItems.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-20 text-center space-y-4">
+            <div className="w-16 h-16 rounded-full bg-muted/50 flex items-center justify-center">
+              <Package className="w-8 h-8 text-muted-foreground opacity-40" />
+            </div>
+            <div>
+              <h3 className="font-medium text-muted-foreground">Товары не найдены</h3>
+              <p className="text-sm text-muted-foreground mt-1">
+                {items && items.length > 0
+                  ? "Попробуйте изменить параметры поиска"
+                  : "В магазине пока нет товаров. Загляните позже!"}
+              </p>
+            </div>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+            {filteredItems.map((item) => {
+              const qty = quantities[item.id] || 1;
+              const totalCost = item.cost * qty;
+              const canAfford = (userPoints?.balance ?? 0) >= totalCost;
+              const inStock = (item.stock || 0) > 0;
+              const disabled = purchaseMutation.isPending || !inStock || !canAfford;
+
+              return (
+                <Card key={item.id} className="border-border/50 overflow-hidden flex flex-col group hover:shadow-xl hover:shadow-primary/5 transition-all duration-300">
+                  <div className="aspect-square overflow-hidden relative bg-muted/30">
+                    {item.image ? (
+                      <img
+                        src={item.image}
+                        alt={item.name}
+                        className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center">
+                        <Package className="w-12 h-12 text-muted-foreground/30" />
+                      </div>
+                    )}
+                    {item.category && (
+                      <Badge className="absolute top-3 right-3 bg-background/80 backdrop-blur-md text-foreground border-border/50">
+                        {item.category}
+                      </Badge>
+                    )}
+                  </div>
+                  <CardHeader className="p-4 pb-2">
+                    <CardTitle className="text-lg leading-tight">{item.name}</CardTitle>
+                  </CardHeader>
+                  <CardContent className="p-4 pt-0 flex-1">
+                    {item.description && (
+                      <p className="text-sm text-muted-foreground line-clamp-2">
+                        {item.description}
+                      </p>
+                    )}
+                    <div className="mt-4 space-y-4">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-1.5 font-bold text-lg">
+                          <Coins className="w-4 h-4 text-amber-500" />
+                          {totalCost.toLocaleString()}
+                        </div>
+                        <span className="text-xs text-muted-foreground">
+                          В наличии: {item.stock ?? 0} шт.
+                        </span>
+                      </div>
+
+                      <div className="flex items-center justify-between bg-secondary/30 rounded-lg p-1 border border-border/50">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8"
+                          onClick={() => updateQuantity(item.id, -1, item.stock || 1)}
+                          disabled={qty <= 1}
+                        >
+                          <Minus className="w-3.5 h-3.5" />
+                        </Button>
+                        <span className="text-sm font-bold w-8 text-center">
+                          {qty}
+                        </span>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8"
+                          onClick={() => updateQuantity(item.id, 1, item.stock || 1)}
+                          disabled={qty >= (item.stock || 1)}
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                        </Button>
+                      </div>
+                    </div>
+                  </CardContent>
+                  <CardFooter className="p-4 pt-0">
+                    <Button
+                      className="w-full gap-2"
+                      onClick={() => handleBuy(item)}
+                      disabled={disabled}
+                      variant={inStock && canAfford ? "default" : "outline"}
+                    >
+                      {purchaseMutation.isPending ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : !inStock ? (
+                        <>
+                          <Package className="w-4 h-4" />
+                          Нет в наличии
+                        </>
+                      ) : !canAfford ? (
+                        <>
+                          <Coins className="w-4 h-4" />
+                          Недостаточно баллов
+                        </>
+                      ) : (
+                        <>
+                          <ShoppingBag className="w-4 h-4" />
+                          Купить
+                        </>
+                      )}
+                    </Button>
+                  </CardFooter>
+                </Card>
+              );
+            })}
+          </div>
+        )}
       </div>
     </Layout>
   );

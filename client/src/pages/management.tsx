@@ -55,7 +55,11 @@ import {
   ListChecks,
   ToggleLeft,
   ToggleRight,
-  MinusCircle
+  MinusCircle,
+  Store,
+  Image as ImageIcon,
+  Package,
+  ShoppingBag
 } from "lucide-react";
 import { RolesManagement } from "@/components/settings/RolesManagement";
 import { YandexCalendarConnect, YandexCalendarSettings } from "@/components/integrations/YandexCalendarConnect";
@@ -66,8 +70,10 @@ import { useToast } from "@/hooks/use-toast";
 import { usePermission } from "@/hooks/use-permission";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -96,6 +102,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 export default function ManagementPage() {
   const { canManage, isAdmin, isLoading } = usePermission();
@@ -111,6 +118,7 @@ export default function ManagementPage() {
     { id: "calls", label: "Звонки", icon: Phone, description: "Управление звонками и командными залами", permission: "management:calls" },
     { id: "integrations", label: "Интеграции", icon: Puzzle, description: "Внешние сервисы и API", permission: "management:integrations" },
     { id: "balance", label: "Баланс", icon: Coins, description: "Настройка баллов за статусы задач", permission: "management:balance" },
+    { id: "shop", label: "Магазин", icon: Store, description: "Управление товарами магазина", permission: "management:shop" },
   ].filter(section => isAdmin || canManage(section.id));
 
   // Set initial active section or redirect if no permissions
@@ -238,6 +246,8 @@ export default function ManagementPage() {
                 <CallsManagement />
               ) : activeSection === "balance" ? (
                 <BalanceManagement />
+              ) : activeSection === "shop" ? (
+                <ShopManagement />
               ) : sections.length > 0 ? (
                 <DefaultSection section={sections.find(s => s.id === activeSection) || sections[0]} />
               ) : (
@@ -1115,7 +1125,7 @@ function TeamManagement() {
                   </div>
                 ) : (
                   <div className="divide-y divide-border/50">
-                    {invitations.map((invite: any) => {
+                    {(invitations || []).map((invite: any) => {
                       const expired = invite.status === "pending" && isExpired(invite.expiresAt);
                       const status = invite.status === "accepted" ? "accepted" : expired ? "expired" : invite.status;
                       return (
@@ -1179,7 +1189,7 @@ function TeamManagement() {
                     })}
                   </div>
                 )}
-                {!invitationsLoading && invitations.length === 0 && (
+                {!invitationsLoading && (invitations || []).length === 0 && (
                   <div className="p-8 text-center space-y-2">
                     <Mail className="w-8 h-8 text-muted-foreground opacity-20 mx-auto" />
                     <p className="text-[11px] text-muted-foreground">Нет активных приглашений</p>
@@ -4601,6 +4611,647 @@ function CallsManagement() {
                 <Loader2 className="w-4 h-4 animate-spin mr-2" />
               ) : null}
               {editingRoom ? "Сохранить" : "Создать"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+interface ShopItem {
+  id: string;
+  name: string;
+  description: string | null;
+  cost: number;
+  image: string | null;
+  category: string | null;
+  stock: number | null;
+  isActive: boolean | null;
+  createdAt: Date | null;
+}
+
+interface ShopPurchase {
+  id: string;
+  userId: string;
+  itemId: string;
+  quantity: number | null;
+  totalCost: number;
+  status: string;
+  purchasedAt: Date | null;
+  user?: {
+    id: string;
+    firstName: string | null;
+    lastName: string | null;
+    username: string;
+    avatar: string | null;
+  };
+  item?: {
+    id: string;
+    name: string;
+    image: string | null;
+    cost: number;
+  };
+}
+
+function ShopManagement() {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [activeTab, setActiveTab] = useState("items");
+
+  // Items state
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [editingItem, setEditingItem] = useState<ShopItem | null>(null);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [itemToDelete, setItemToDelete] = useState<ShopItem | null>(null);
+  const [uploadingImage, setUploadingImage] = useState(false);
+
+  const [formData, setFormData] = useState({
+    name: "",
+    description: "",
+    cost: "",
+    stock: "",
+    category: "",
+    image: "",
+    isActive: true,
+  });
+
+  const { data: items, isLoading: itemsLoading } = useQuery<ShopItem[]>({
+    queryKey: ["/api/shop/items/all"],
+    staleTime: 1000 * 60,
+  });
+
+  const createMutation = useMutation({
+    mutationFn: async (data: any) => {
+      const res = await apiRequest("POST", "/api/shop/items", data);
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Товар создан", description: "Новый товар успешно добавлен в магазин." });
+      queryClient.invalidateQueries({ queryKey: ["/api/shop/items/all"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/shop/items"] });
+      setIsDialogOpen(false);
+      resetForm();
+    },
+    onError: (error: any) => {
+      toast({ title: "Ошибка", description: error.message || "Не удалось создать товар", variant: "destructive" });
+    },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: any }) => {
+      const res = await apiRequest("PUT", `/api/shop/items/${id}`, data);
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Товар обновлен", description: "Изменения успешно сохранены." });
+      queryClient.invalidateQueries({ queryKey: ["/api/shop/items/all"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/shop/items"] });
+      setIsDialogOpen(false);
+      setEditingItem(null);
+      resetForm();
+    },
+    onError: (error: any) => {
+      toast({ title: "Ошибка", description: error.message || "Не удалось обновить товар", variant: "destructive" });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      await apiRequest("DELETE", `/api/shop/items/${id}`);
+    },
+    onSuccess: () => {
+      toast({ title: "Товар удален", description: "Товар успешно удален из магазина." });
+      queryClient.invalidateQueries({ queryKey: ["/api/shop/items/all"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/shop/items"] });
+      setIsDeleteDialogOpen(false);
+      setItemToDelete(null);
+    },
+    onError: (error: any) => {
+      toast({ title: "Ошибка", description: error.message || "Не удалось удалить товар", variant: "destructive" });
+    },
+  });
+
+  // Purchases state
+  const { data: purchases, isLoading: purchasesLoading } = useQuery<ShopPurchase[]>({
+    queryKey: ["/api/shop/purchases/all"],
+    staleTime: 1000 * 30,
+    enabled: activeTab === "orders",
+  });
+
+  const updatePurchaseMutation = useMutation({
+    mutationFn: async ({ id, status }: { id: string; status: string }) => {
+      const res = await apiRequest("PATCH", `/api/shop/purchases/${id}/status`, { status });
+      return res.json();
+    },
+    onSuccess: (_, vars) => {
+      const statusText = vars.status === "approved" ? "одобрена" : vars.status === "rejected" ? "отклонена" : "обновлена";
+      toast({ title: `Заявка ${statusText}`, description: `Статус заявки изменен на "${statusText}".` });
+      queryClient.invalidateQueries({ queryKey: ["/api/shop/purchases/all"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/shop/purchases"] });
+    },
+    onError: (error: any) => {
+      toast({ title: "Ошибка", description: error.message || "Не удалось обновить статус", variant: "destructive" });
+    },
+  });
+
+  const resetForm = () => {
+    setFormData({
+      name: "",
+      description: "",
+      cost: "",
+      stock: "",
+      category: "",
+      image: "",
+      isActive: true,
+    });
+  };
+
+  const openCreateDialog = () => {
+    setEditingItem(null);
+    resetForm();
+    setIsDialogOpen(true);
+  };
+
+  const openEditDialog = (item: ShopItem) => {
+    setEditingItem(item);
+    setFormData({
+      name: item.name,
+      description: item.description || "",
+      cost: String(item.cost),
+      stock: String(item.stock || 0),
+      category: item.category || "",
+      image: item.image || "",
+      isActive: item.isActive ?? true,
+    });
+    setIsDialogOpen(true);
+  };
+
+  const handleSave = () => {
+    if (!formData.name.trim() || !formData.cost.trim()) {
+      toast({ title: "Ошибка", description: "Название и цена обязательны для заполнения", variant: "destructive" });
+      return;
+    }
+
+    const payload = {
+      name: formData.name.trim(),
+      description: formData.description.trim() || null,
+      cost: parseInt(formData.cost, 10),
+      stock: parseInt(formData.stock, 10) || 0,
+      category: formData.category.trim() || null,
+      image: formData.image.trim() || null,
+      isActive: formData.isActive,
+    };
+
+    if (editingItem) {
+      updateMutation.mutate({ id: editingItem.id, data: payload });
+    } else {
+      createMutation.mutate(payload);
+    }
+  };
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setUploadingImage(true);
+    try {
+      const uploadForm = new FormData();
+      uploadForm.append("file", file);
+
+      const res = await fetch("/api/upload", {
+        method: "POST",
+        body: uploadForm,
+        credentials: "include",
+      });
+
+      if (!res.ok) throw new Error("Upload failed");
+
+      const data = await res.json();
+      setFormData(prev => ({ ...prev, image: data.url }));
+      toast({ title: "Изображение загружено", description: "Картинка товара успешно загружена." });
+    } catch (error: any) {
+      toast({ title: "Ошибка загрузки", description: error.message || "Не удалось загрузить изображение", variant: "destructive" });
+    } finally {
+      setUploadingImage(false);
+    }
+  };
+
+  const categories: string[] = Array.from(new Set(items?.map(i => i.category).filter((c): c is string => !!c) || []));
+
+  const pendingCount = purchases?.filter(p => p.status === "pending").length || 0;
+
+  const formatUserName = (user?: ShopPurchase["user"]) => {
+    if (!user) return "Неизвестный";
+    return user.firstName || user.username;
+  };
+
+  return (
+    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+        <TabsList className="grid w-full max-w-md grid-cols-2">
+          <TabsTrigger value="items" className="gap-2">
+            <Package className="w-4 h-4" />
+            Товары
+          </TabsTrigger>
+          <TabsTrigger value="orders" className="gap-2">
+            <ShoppingBag className="w-4 h-4" />
+            Заявки
+            {pendingCount > 0 && (
+              <Badge variant="destructive" className="h-4 min-w-4 px-1 text-[10px]">{pendingCount}</Badge>
+            )}
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="items" className="space-y-6 mt-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-lg font-bold">Товары магазина</h3>
+              <p className="text-sm text-muted-foreground">
+                {items?.length || 0} {items?.length === 1 ? "товар" : items && items.length < 5 ? "товара" : "товаров"} в каталоге
+              </p>
+            </div>
+            <Button onClick={openCreateDialog} className="gap-2 shadow-lg shadow-primary/20">
+              <Plus className="w-4 h-4" />
+              Добавить товар
+            </Button>
+          </div>
+
+          {itemsLoading ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+            </div>
+          ) : !items || items.length === 0 ? (
+            <Card className="border-border/50 shadow-sm border-dashed">
+              <CardContent className="p-12 flex flex-col items-center justify-center text-center space-y-4">
+                <div className="w-16 h-16 rounded-full bg-muted/50 flex items-center justify-center">
+                  <Store className="w-8 h-8 text-muted-foreground opacity-40" />
+                </div>
+                <div>
+                  <h4 className="font-medium text-muted-foreground">Магазин пуст</h4>
+                  <p className="text-sm text-muted-foreground mt-1">Добавьте первый товар, чтобы начать продажи</p>
+                </div>
+                <Button variant="outline" onClick={openCreateDialog} className="gap-2">
+                  <Plus className="w-4 h-4" />
+                  Добавить товар
+                </Button>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {items.map((item) => (
+                <Card key={item.id} className={cn(
+                  "border-border/50 shadow-sm overflow-hidden group transition-all hover:shadow-md",
+                  !item.isActive && "opacity-60"
+                )}>
+                  <div className="aspect-[4/3] bg-muted/30 relative overflow-hidden">
+                    {item.image ? (
+                      <img
+                        src={item.image}
+                        alt={item.name}
+                        className="w-full h-full object-cover transition-transform group-hover:scale-105"
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center">
+                        <Package className="w-12 h-12 text-muted-foreground/30" />
+                      </div>
+                    )}
+                    {!item.isActive && (
+                      <div className="absolute inset-0 bg-background/60 flex items-center justify-center">
+                        <Badge variant="secondary" className="text-xs">Неактивен</Badge>
+                      </div>
+                    )}
+                    <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="secondary" size="icon" className="h-8 w-8 bg-background/90 backdrop-blur-sm">
+                            <MoreVertical className="w-3.5 h-3.5" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={() => openEditDialog(item)}>
+                            <Pencil className="w-3.5 h-3.5 mr-2" />
+                            Редактировать
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem
+                            className="text-destructive focus:text-destructive"
+                            onClick={() => {
+                              setItemToDelete(item);
+                              setIsDeleteDialogOpen(true);
+                            }}
+                          >
+                            <Trash2 className="w-3.5 h-3.5 mr-2" />
+                            Удалить
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
+                  </div>
+                  <CardContent className="p-4 space-y-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <h4 className="font-medium text-sm truncate">{item.name}</h4>
+                        {item.category && (
+                          <Badge variant="outline" className="text-[10px] mt-1 font-normal">
+                            {item.category}
+                          </Badge>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1 text-primary font-bold text-sm shrink-0">
+                        <Coins className="w-3.5 h-3.5" />
+                        {item.cost}
+                      </div>
+                    </div>
+                    {item.description && (
+                      <p className="text-xs text-muted-foreground line-clamp-2">{item.description}</p>
+                    )}
+                    <div className="flex items-center justify-between text-xs text-muted-foreground pt-1 border-t border-border/40">
+                      <span className="flex items-center gap-1">
+                        <Package className="w-3 h-3" />
+                        Остаток: {item.stock ?? 0}
+                      </span>
+                      <span className={cn(
+                        "w-2 h-2 rounded-full",
+                        (item.stock ?? 0) > 10 ? "bg-emerald-500" : (item.stock ?? 0) > 0 ? "bg-amber-500" : "bg-red-500"
+                      )} />
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+        </TabsContent>
+
+        <TabsContent value="orders" className="space-y-6 mt-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-lg font-bold">Заявки на покупку</h3>
+              <p className="text-sm text-muted-foreground">
+                {purchases?.length || 0} заявок, {pendingCount} на рассмотрении
+              </p>
+            </div>
+          </div>
+
+          {purchasesLoading ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+            </div>
+          ) : !purchases || purchases.length === 0 ? (
+            <Card className="border-border/50 shadow-sm border-dashed">
+              <CardContent className="p-12 flex flex-col items-center justify-center text-center space-y-4">
+                <div className="w-16 h-16 rounded-full bg-muted/50 flex items-center justify-center">
+                  <ShoppingBag className="w-8 h-8 text-muted-foreground opacity-40" />
+                </div>
+                <div>
+                  <h4 className="font-medium text-muted-foreground">Нет заявок</h4>
+                  <p className="text-sm text-muted-foreground mt-1">Здесь появятся заявки от сотрудников</p>
+                </div>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="space-y-3">
+              {purchases.map((purchase) => (
+                <Card key={purchase.id} className={cn(
+                  "border-border/50 shadow-sm overflow-hidden",
+                  purchase.status === "pending" && "border-amber-500/30"
+                )}>
+                  <CardContent className="p-4">
+                    <div className="flex items-center gap-4">
+                      <div className="w-14 h-14 rounded-lg bg-muted/30 overflow-hidden shrink-0">
+                        {purchase.item?.image ? (
+                          <img src={purchase.item.image} alt={purchase.item.name} className="w-full h-full object-cover" />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center">
+                            <Package className="w-6 h-6 text-muted-foreground/30" />
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <h4 className="font-medium text-sm truncate">{purchase.item?.name || "Товар"}</h4>
+                          <Badge
+                            variant={purchase.status === "pending" ? "outline" : purchase.status === "approved" ? "default" : "secondary"}
+                            className={cn(
+                              "text-[10px] h-4 px-1.5",
+                              purchase.status === "pending" && "border-amber-500 text-amber-600",
+                              purchase.status === "approved" && "bg-emerald-500 text-white",
+                              purchase.status === "rejected" && "bg-red-500 text-white"
+                            )}
+                          >
+                            {purchase.status === "pending" ? "На рассмотрении" : purchase.status === "approved" ? "Одобрена" : "Отклонена"}
+                          </Badge>
+                        </div>
+                        <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
+                          <span className="flex items-center gap-1">
+                            <Avatar className="w-4 h-4">
+                              <AvatarImage src={purchase.user?.avatar || undefined} />
+                              <AvatarFallback className="text-[8px]">{(formatUserName(purchase.user) || "?")[0]}</AvatarFallback>
+                            </Avatar>
+                            {formatUserName(purchase.user)}
+                          </span>
+                          <span className="flex items-center gap-1">
+                            <Coins className="w-3 h-3 text-amber-500" />
+                            {purchase.totalCost} баллов
+                          </span>
+                          <span>× {purchase.quantity || 1} шт.</span>
+                        </div>
+                      </div>
+                      {purchase.status === "pending" && (
+                        <div className="flex items-center gap-2 shrink-0">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-8 text-xs gap-1 border-red-300 text-red-600 hover:bg-red-50 hover:text-red-700"
+                            onClick={() => updatePurchaseMutation.mutate({ id: purchase.id, status: "rejected" })}
+                            disabled={updatePurchaseMutation.isPending}
+                          >
+                            <X className="w-3 h-3" />
+                            Отклонить
+                          </Button>
+                          <Button
+                            size="sm"
+                            className="h-8 text-xs gap-1 bg-emerald-500 hover:bg-emerald-600"
+                            onClick={() => updatePurchaseMutation.mutate({ id: purchase.id, status: "approved" })}
+                            disabled={updatePurchaseMutation.isPending}
+                          >
+                            <Check className="w-3 h-3" />
+                            Одобрить
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+        </TabsContent>
+      </Tabs>
+
+      {/* Create/Edit Dialog */}
+      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{editingItem ? "Редактировать товар" : "Добавить товар"}</DialogTitle>
+            <DialogDescription>
+              {editingItem ? "Измените информацию о товаре" : "Заполните данные нового товара для магазина"}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="item-name">Название <span className="text-red-500">*</span></Label>
+              <Input
+                id="item-name"
+                placeholder="Например, Худи TeamSync"
+                value={formData.name}
+                onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="item-description">Описание</Label>
+              <Textarea
+                id="item-description"
+                placeholder="Описание товара..."
+                rows={3}
+                value={formData.description}
+                onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="item-cost">Цена (баллы) <span className="text-red-500">*</span></Label>
+                <Input
+                  id="item-cost"
+                  type="number"
+                  min={0}
+                  placeholder="1000"
+                  value={formData.cost}
+                  onChange={(e) => setFormData(prev => ({ ...prev, cost: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="item-stock">Лимит (шт.)</Label>
+                <Input
+                  id="item-stock"
+                  type="number"
+                  min={0}
+                  placeholder="10"
+                  value={formData.stock}
+                  onChange={(e) => setFormData(prev => ({ ...prev, stock: e.target.value }))}
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="item-category">Категория</Label>
+              <div className="flex gap-2">
+                <Input
+                  id="item-category"
+                  list="categories"
+                  placeholder="Например, Мерч"
+                  value={formData.category}
+                  onChange={(e) => setFormData(prev => ({ ...prev, category: e.target.value }))}
+                  className="flex-1"
+                />
+                <datalist id="categories">
+                  {categories.filter((c): c is string => !!c).map(cat => (
+                    <option key={cat} value={cat} />
+                  ))}
+                </datalist>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="item-image">Изображение</Label>
+              <div className="flex gap-3 items-start">
+                {formData.image ? (
+                  <div className="relative w-20 h-20 rounded-lg overflow-hidden border border-border shrink-0">
+                    <img src={formData.image} alt="Preview" className="w-full h-full object-cover" />
+                    <button
+                      onClick={() => setFormData(prev => ({ ...prev, image: "" }))}
+                      className="absolute top-0.5 right-0.5 w-5 h-5 rounded-full bg-destructive text-white flex items-center justify-center text-xs hover:bg-destructive/90"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                ) : (
+                  <div className="w-20 h-20 rounded-lg border border-dashed border-border flex flex-col items-center justify-center text-muted-foreground shrink-0">
+                    <ImageIcon className="w-6 h-6 mb-1" />
+                    <span className="text-[10px]">Нет фото</span>
+                  </div>
+                )}
+                <div className="flex-1 space-y-2">
+                  <Input
+                    id="item-image-file"
+                    type="file"
+                    accept="image/*"
+                    onChange={handleImageUpload}
+                    disabled={uploadingImage}
+                    className="text-sm"
+                  />
+                  <p className="text-[10px] text-muted-foreground">Или введите URL вручную:</p>
+                  <Input
+                    placeholder="https://..."
+                    value={formData.image}
+                    onChange={(e) => setFormData(prev => ({ ...prev, image: e.target.value }))}
+                    className="text-sm"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between rounded-lg border border-border/50 p-3">
+              <div className="space-y-0.5">
+                <Label htmlFor="item-active" className="text-sm font-medium">Активен</Label>
+                <p className="text-xs text-muted-foreground">Товар будет виден в магазине</p>
+              </div>
+              <Switch
+                id="item-active"
+                checked={formData.isActive}
+                onCheckedChange={(checked) => setFormData(prev => ({ ...prev, isActive: checked }))}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
+              Отмена
+            </Button>
+            <Button
+              onClick={handleSave}
+              disabled={createMutation.isPending || updateMutation.isPending || !formData.name.trim() || !formData.cost.trim()}
+            >
+              {createMutation.isPending || updateMutation.isPending ? (
+                <Loader2 className="w-4 h-4 animate-spin mr-2" />
+              ) : null}
+              {editingItem ? "Сохранить" : "Создать"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Удалить товар?</DialogTitle>
+            <DialogDescription>
+              Вы уверены, что хотите удалить товар <strong>"{itemToDelete?.name}"</strong>? Это действие нельзя отменить.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setIsDeleteDialogOpen(false)}>
+              Отмена
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => itemToDelete && deleteMutation.mutate(itemToDelete.id)}
+              disabled={deleteMutation.isPending}
+            >
+              {deleteMutation.isPending && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
+              Удалить
             </Button>
           </DialogFooter>
         </DialogContent>

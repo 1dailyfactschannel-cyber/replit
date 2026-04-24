@@ -173,7 +173,7 @@ const SidebarContentComponent = React.memo(({
     staleTime: 1000 * 60 * 5,
   });
 
-  const favoriteProjectIds = (userSettings.find((s: any) => s.key === 'favorite_projects')?.value as string[]) || [];
+  const favoriteProjectIds = (userSettings?.find((s: any) => s.key === 'favorite_projects')?.value as string[]) || [];
   const favoriteProjects = projects.filter((p: any) => favoriteProjectIds.includes(p.id));
 
   return (
