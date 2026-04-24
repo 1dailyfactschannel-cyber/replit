@@ -7,7 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter }
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Camera, Mail, Phone, Send, Briefcase, User, Save, FileText, Bell, ExternalLink, CheckCircle2, Building2, Loader2, Coins, TrendingUp, ShoppingBag, Award } from "lucide-react";
+import { Camera, Mail, Phone, Send, Briefcase, User, Save, FileText, Bell, ExternalLink, CheckCircle2, XCircle, Clock, Building2, Loader2, Coins, TrendingUp, ShoppingBag, Award } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -28,6 +28,65 @@ export default function Profile() {
     queryKey: ["/api/users/me/points-history"],
     enabled: !!user,
   });
+
+  const { data: purchases, isLoading: purchasesLoading } = useQuery<any[]>({
+    queryKey: ["/api/shop/purchases"],
+    enabled: !!user,
+    staleTime: 1000 * 30,
+  });
+
+  const ITEMS_PER_PAGE = 15;
+  const [transactionsPage, setTransactionsPage] = useState(1);
+  const [purchasesPage, setPurchasesPage] = useState(1);
+
+  const paginate = (items: any[] | undefined | null, page: number) => {
+    const safeItems = items || [];
+    const start = (page - 1) * ITEMS_PER_PAGE;
+    const end = start + ITEMS_PER_PAGE;
+    return {
+      data: safeItems.slice(start, end),
+      totalPages: Math.max(1, Math.ceil(safeItems.length / ITEMS_PER_PAGE)),
+      total: safeItems.length,
+    };
+  };
+
+  const PaginationControls = ({
+    page,
+    totalPages,
+    total,
+    onChange,
+  }: {
+    page: number;
+    totalPages: number;
+    total: number;
+    onChange: (p: number) => void;
+  }) => (
+    <div className="flex items-center justify-between pt-4 border-t border-border/50 mt-4">
+      <span className="text-xs text-muted-foreground">
+        Всего: {total} | Страница {page} из {totalPages}
+      </span>
+      <div className="flex items-center gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => onChange(Math.max(1, page - 1))}
+          disabled={page <= 1}
+          className="h-8 px-3"
+        >
+          Назад
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => onChange(Math.min(totalPages, page + 1))}
+          disabled={page >= totalPages}
+          className="h-8 px-3"
+        >
+          Вперёд
+        </Button>
+      </div>
+    </div>
+  );
 
   const { data: departments = [] } = useQuery<{id: string; name: string; color: string}[]>({
     queryKey: ["/api/departments"],
@@ -249,7 +308,7 @@ export default function Profile() {
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-2 lg:w-[400px]">
+          <TabsList className="grid w-full grid-cols-3 lg:w-[500px]">
             <TabsTrigger value="profile" className="gap-2">
               <User className="w-4 h-4" />
               Профиль
@@ -257,6 +316,10 @@ export default function Profile() {
             <TabsTrigger value="balance" className="gap-2">
               <Coins className="w-4 h-4" />
               Баланс
+            </TabsTrigger>
+            <TabsTrigger value="purchases" className="gap-2">
+              <ShoppingBag className="w-4 h-4" />
+              История покупок
             </TabsTrigger>
           </TabsList>
 
@@ -570,39 +633,136 @@ export default function Profile() {
                     <Loader2 className="w-6 h-6 animate-spin text-primary" />
                   </div>
                 ) : transactions && transactions.length > 0 ? (
-                  <div className="space-y-3">
-                    {transactions.map((transaction: any) => (
-                      <div 
-                        key={transaction.id} 
-                        className="flex items-center justify-between p-3 rounded-lg bg-secondary/30 hover:bg-secondary/50 transition-colors"
-                      >
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-full bg-background flex items-center justify-center">
-                            {getTransactionIcon(transaction.type)}
+                  <>
+                    <div className="space-y-3">
+                      {paginate(transactions, transactionsPage).data.map((transaction: any) => (
+                        <div
+                          key={transaction.id}
+                          className="flex items-center justify-between p-3 rounded-lg bg-secondary/30 hover:bg-secondary/50 transition-colors"
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-full bg-background flex items-center justify-center">
+                              {getTransactionIcon(transaction.type)}
+                            </div>
+                            <div>
+                              <p className="font-medium">{transaction.description}</p>
+                              <p className="text-xs text-muted-foreground">
+                                {new Date(transaction.createdAt).toLocaleDateString('ru-RU', {
+                                  day: 'numeric',
+                                  month: 'long',
+                                  hour: '2-digit',
+                                  minute: '2-digit'
+                                })}
+                              </p>
+                            </div>
                           </div>
-                          <div>
-                            <p className="font-medium">{transaction.description}</p>
-                            <p className="text-xs text-muted-foreground">
-                              {new Date(transaction.createdAt).toLocaleDateString('ru-RU', {
-                                day: 'numeric',
-                                month: 'long',
-                                hour: '2-digit',
-                                minute: '2-digit'
-                              })}
-                            </p>
-                          </div>
+                          <span className={`font-bold ${getTransactionColor(transaction.type)}`}>
+                            {getTransactionPrefix(transaction.type)}{transaction.amount}
+                          </span>
                         </div>
-                        <span className={`font-bold ${getTransactionColor(transaction.type)}`}>
-                          {getTransactionPrefix(transaction.type)}{transaction.amount}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
+                      ))}
+                    </div>
+                    <PaginationControls
+                      page={transactionsPage}
+                      totalPages={paginate(transactions, transactionsPage).totalPages}
+                      total={paginate(transactions, transactionsPage).total}
+                      onChange={setTransactionsPage}
+                    />
+                  </>
                 ) : (
                   <div className="text-center py-8 text-muted-foreground">
                     <Coins className="w-12 h-12 mx-auto mb-3 opacity-30" />
                     <p>История транзакций пуста</p>
                     <p className="text-sm">Выполняйте задачи, чтобы получать баллы!</p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="purchases" className="space-y-6">
+            <Card className="border-border/50 shadow-sm">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <ShoppingBag className="w-5 h-5" />
+                  История покупок
+                </CardTitle>
+                <CardDescription>
+                  Список всех ваших заявок на покупку и их статусы
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {purchasesLoading ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                  </div>
+                ) : purchases && purchases.length > 0 ? (
+                  <>
+                    <div className="space-y-3">
+                      {paginate(purchases, purchasesPage).data.map((purchase: any) => (
+                        <div
+                          key={purchase.id}
+                          className="flex items-center gap-4 p-3 rounded-lg bg-secondary/30 hover:bg-secondary/50 transition-colors"
+                        >
+                          <div className="w-12 h-12 rounded-lg bg-background flex items-center justify-center overflow-hidden shrink-0 border border-border/50">
+                            {purchase.item?.image ? (
+                              <img src={purchase.item.image} alt={purchase.item.name} className="w-full h-full object-cover" />
+                            ) : (
+                              <ShoppingBag className="w-5 h-5 text-muted-foreground/40" />
+                            )}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium truncate">
+                              {purchase.item?.name || "Неизвестный товар"}
+                            </p>
+                            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                              <span>{purchase.quantity} шт.</span>
+                              <span>·</span>
+                              <span className="font-medium text-amber-600">{purchase.totalCost} баллов</span>
+                              <span>·</span>
+                              <span>
+                                {new Date(purchase.purchasedAt).toLocaleDateString('ru-RU', {
+                                  day: 'numeric',
+                                  month: 'long',
+                                  hour: '2-digit',
+                                  minute: '2-digit'
+                                })}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="shrink-0">
+                            {purchase.status === 'approved' ? (
+                              <div className="flex items-center gap-1.5 text-emerald-600 bg-emerald-50 dark:bg-emerald-500/10 px-3 py-1 rounded-full text-xs font-medium border border-emerald-200 dark:border-emerald-500/20">
+                                <CheckCircle2 className="w-3.5 h-3.5" />
+                                Одобрено
+                              </div>
+                            ) : purchase.status === 'rejected' ? (
+                              <div className="flex items-center gap-1.5 text-rose-600 bg-rose-50 dark:bg-rose-500/10 px-3 py-1 rounded-full text-xs font-medium border border-rose-200 dark:border-rose-500/20">
+                                <XCircle className="w-3.5 h-3.5" />
+                                Отклонено
+                              </div>
+                            ) : (
+                              <div className="flex items-center gap-1.5 text-amber-600 bg-amber-50 dark:bg-amber-500/10 px-3 py-1 rounded-full text-xs font-medium border border-amber-200 dark:border-amber-500/20">
+                                <Clock className="w-3.5 h-3.5" />
+                                На рассмотрении
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <PaginationControls
+                      page={purchasesPage}
+                      totalPages={paginate(purchases, purchasesPage).totalPages}
+                      total={paginate(purchases, purchasesPage).total}
+                      onChange={setPurchasesPage}
+                    />
+                  </>
+                ) : (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <ShoppingBag className="w-12 h-12 mx-auto mb-3 opacity-30" />
+                    <p>История покупок пуста</p>
+                    <p className="text-sm">Перейдите в магазин, чтобы приобрести товары за баллы!</p>
                   </div>
                 )}
               </CardContent>

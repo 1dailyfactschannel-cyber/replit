@@ -44,6 +44,8 @@ import { yandexCalendarService } from "./services/yandex-calendar";
 import { yandexNotificationService } from "./services/yandex-notifications";
 import { getStorage } from "./postgres-storage";
 import { initializeRolesAndPermissions } from "./init/roles";
+import { autoSetTelegramWebhook } from "./services/telegram";
+import { sql } from "drizzle-orm";
 
 const app = express();
 const httpServer = createServer(app);
@@ -155,15 +157,10 @@ if (process.env.NODE_ENV === "production") {
   }));
 }
 
-// Security: Cache-Control for sensitive endpoints
-app.use('/api/auth', (_req, res, next) => {
+// Security: Disable HTTP caching for all API routes to prevent stale data
+app.use('/api', (_req, res, next) => {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
   res.setHeader('Pragma', 'no-cache');
-  next();
-});
-
-app.use('/api/user', (_req, res, next) => {
-  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
   next();
 });
 
@@ -231,6 +228,46 @@ app.use((req, res, next) => {
     await ensureAdminUsers();
   } catch (error) {
     console.error("Failed to ensure admin users:", error);
+  }
+
+  // Auto-configure Telegram webhook if token and APP_URL are set
+  try {
+    await autoSetTelegramWebhook();
+  } catch (error) {
+    console.error("Failed to auto-configure Telegram webhook:", error);
+  }
+
+  // Ensure work time columns exist in users table
+  try {
+    const storage = getStorage();
+    await storage.db.execute(sql`
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS work_start_time TEXT;
+    `);
+    await storage.db.execute(sql`
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS work_end_time TEXT;
+    `);
+    console.log("[DB] Work time columns ensured");
+  } catch (error) {
+    console.error("[DB] Failed to ensure work time columns:", error);
+  }
+
+  // Ensure accrual_rules table exists
+  try {
+    const storage = getStorage();
+    await storage.db.execute(sql`
+      CREATE TABLE IF NOT EXISTS accrual_rules (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        name TEXT NOT NULL,
+        type TEXT NOT NULL,
+        points_amount INTEGER DEFAULT 1,
+        description TEXT,
+        is_active BOOLEAN DEFAULT true,
+        created_at TIMESTAMP DEFAULT NOW()
+      );
+    `);
+    console.log("[DB] Accrual rules table ensured");
+  } catch (error) {
+    console.error("[DB] Failed to ensure accrual rules table:", error);
   }
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {

@@ -15,7 +15,6 @@ import {
   TrendingUp,
   Users,
   FolderOpen,
-  Plus,
   RefreshCw,
   CheckSquare,
   PlayCircle,
@@ -146,12 +145,7 @@ export default function Dashboard() {
               {isLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <RefreshCw className="w-4 h-4 mr-2" />}
               Обновить
             </Button>
-            <Link href="/tasks">
-              <Button className="shadow-lg shadow-primary/20">
-                <Plus className="w-4 h-4 mr-2" />
-                Создать задачу
-              </Button>
-            </Link>
+
           </div>
         </div>
 
@@ -306,11 +300,6 @@ export default function Dashboard() {
                 <div className="flex flex-col items-center justify-center h-full text-muted-foreground py-8">
                   <CheckSquare className="w-12 h-12 mb-2 opacity-30" />
                   <p>На сегодня задач нет</p>
-                  <Link href="/tasks">
-                    <Button variant="link" size="sm" className="mt-2">
-                      Создать задачу
-                    </Button>
-                  </Link>
                 </div>
               ) : (
                 <div className="space-y-4">
@@ -391,7 +380,7 @@ export default function Dashboard() {
               ) : (
                 <div className="space-y-5">
                   {teamWorkload.map((member) => (
-                    <Link key={member.id} href={`/team/${member.id}`}>
+                    <Link key={member.id} href="/team">
                       <div className="flex items-center gap-4 cursor-pointer hover:bg-muted/50 p-2 rounded-lg transition-colors">
                         <Avatar className="w-10 h-10">
                           <AvatarFallback className="bg-primary/10 text-primary text-sm">
@@ -450,7 +439,7 @@ export default function Dashboard() {
               ) : (
                 <div className="space-y-4">
                   {recentProjects.map((project) => (
-                    <Link key={project.id} href={`/projects/${project.id}`}>
+                    <Link key={project.id} href={`/projects?projectId=${project.id}`}>
                       <div className="p-3 rounded-lg border border-border/50 hover:border-primary/50 hover:shadow-sm transition-all cursor-pointer">
                         <div className="flex items-center gap-3">
                           <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">

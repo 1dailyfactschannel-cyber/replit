@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -7,7 +7,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Eye, EyeOff, Lock, Mail, User, ArrowRight, Github, Loader2 } from "lucide-react";
+import { Eye, EyeOff, Lock, Mail, User, ArrowRight, Github, Loader2, MailOpen } from "lucide-react";
 import DarkVeil from "@/components/DarkVeil";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -21,9 +21,35 @@ export default function Auth() {
 
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
-  
+
   const [regEmail, setRegEmail] = useState("");
   const [regPassword, setRegPassword] = useState("");
+
+  // Invitation handling
+  const [inviteToken, setInviteToken] = useState<string | null>(null);
+  const [inviteData, setInviteData] = useState<any>(null);
+  const [checkingInvite, setCheckingInvite] = useState(false);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get("invite");
+    if (token) {
+      setInviteToken(token);
+      setCheckingInvite(true);
+      apiRequest("GET", `/api/team/invitations/${token}/verify`)
+        .then(async (res) => {
+          if (res.ok) {
+            const data = await res.json();
+            if (data.valid && data.invitation) {
+              setInviteData(data.invitation);
+              setRegEmail(data.invitation.email);
+            }
+          }
+        })
+        .catch(() => {})
+        .finally(() => setCheckingInvite(false));
+    }
+  }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -33,6 +59,7 @@ export default function Auth() {
       if (res.ok) {
         const user = await res.json();
         queryClient.setQueryData(["/api/user"], user);
+        queryClient.invalidateQueries({ queryKey: ["/api/users/me/permissions"] });
         toast({ title: "Успешный вход", description: `Добро пожаловать, ${user.firstName || user.username}!` });
         setLocation("/");
       } else {
@@ -50,11 +77,15 @@ export default function Auth() {
     e.preventDefault();
     setIsLoading(true);
     try {
-      const res = await apiRequest("POST", "/api/register", { email: regEmail, password: regPassword });
+      const payload: any = { email: regEmail, password: regPassword };
+      if (inviteToken) {
+        payload.inviteToken = inviteToken;
+      }
+      const res = await apiRequest("POST", "/api/register", payload);
       if (res.ok) {
         const user = await res.json();
         queryClient.setQueryData(["/api/user"], user);
-        toast({ title: "Аккаунт создан", description: "Добро пожаловать в m4portal!" });
+        toast({ title: "Аккаунт создан", description: "Добро пожаловать в portal!" });
         setLocation("/");
       } else {
         const error = await res.json();
@@ -86,9 +117,9 @@ export default function Auth() {
         <div className="hidden lg:flex flex-col justify-center flex-1 space-y-6 text-white p-8">
           <div className="flex items-center gap-2 mb-4">
             <div className="w-12 h-12 rounded-2xl bg-white flex items-center justify-center text-primary font-bold text-3xl shadow-2xl">
-              T
+              m4
             </div>
-            <span className="font-sans font-bold text-3xl tracking-tight">m4portal</span>
+            <span className="font-sans font-bold text-3xl tracking-tight">portal</span>
           </div>
           <h1 className="text-5xl xl:text-6xl font-extrabold leading-[1.1] tracking-tight">
             Управляйте проектами <br />
@@ -187,6 +218,26 @@ export default function Auth() {
                 </TabsContent>
 
                 <TabsContent value="register" className="space-y-5">
+                  {checkingInvite && (
+                    <div className="flex items-center justify-center gap-2 text-white/60 text-sm py-2">
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Проверка приглашения...
+                    </div>
+                  )}
+                  {inviteData && (
+                    <div className="bg-primary/20 border border-primary/30 rounded-xl p-4 flex items-start gap-3">
+                      <MailOpen className="w-5 h-5 text-primary mt-0.5 shrink-0" />
+                      <div className="space-y-1">
+                        <p className="text-sm font-medium text-white">Приглашение в команду</p>
+                        <p className="text-xs text-white/60">
+                          Вы были приглашены присоединиться к portal.
+                          {inviteData.role && (
+                            <span> Роль: <span className="text-white/80 font-medium">{inviteData.role}</span>.</span>
+                          )}
+                        </p>
+                      </div>
+                    </div>
+                  )}
                   <form onSubmit={handleRegister} className="space-y-5">
                     <div className="space-y-2">
                       <Label htmlFor="reg-email" className="text-white/70 ml-1">Email</Label>

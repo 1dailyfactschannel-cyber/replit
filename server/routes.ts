@@ -18,6 +18,7 @@ import rateLimit from "express-rate-limit";
 import bcrypt from "bcrypt";
 import yandexCalendarRoutes from "./routes/yandex-calendar";
 import { sendTelegramMessage, handleTelegramUpdate, escapeHtml, setTelegramWebhook } from "./services/telegram";
+import { sendEmail, testEmailConnection, getEmailConfig, getWelcomeEmailTemplate, getPasswordChangedTemplate } from "./services/email";
 
 // Permission middleware
 function requirePermission(...permissions: string[]) {
@@ -833,8 +834,52 @@ export async function registerRoutes(
           comment: newStatusComment || null,
           changedBy: req.user!.id
         });
+
+        // Evaluate accrual rules when status changes to online
+        const onlineStatuses = ["online", "в сети", "active", "активен", "available", "доступен"];
+        const normalizedStatus = newStatus.toLowerCase().trim();
+        if (onlineStatuses.includes(normalizedStatus)) {
+          try {
+            const activeRules = await storage.getActiveAccrualRules();
+            const arrivalRule = activeRules.find((r) => r.type === "arrival_on_time");
+            if (arrivalRule && currentUser.workStartTime) {
+              const now = new Date();
+              const [startHour, startMinute] = currentUser.workStartTime.split(":").map(Number);
+              const workStart = new Date(now);
+              workStart.setHours(startHour, startMinute, 0, 0);
+
+              const rulePoints = arrivalRule.pointsAmount ?? 0;
+              const isOnTime = now <= workStart;
+              const pointsToAward = isOnTime ? rulePoints : -rulePoints;
+
+              if (pointsToAward !== 0) {
+                await storage.createTransaction({
+                  userId: req.params.id,
+                  statusName: arrivalRule.name,
+                  type: pointsToAward >= 0 ? "earned" : "spent",
+                  amount: Math.abs(pointsToAward),
+                  description: isOnTime
+                    ? `Приход вовремя (${currentUser.workStartTime})`
+                    : `Опоздание (${currentUser.workStartTime})`,
+                  changedBy: req.user!.id,
+                });
+
+                // Update user balance
+                await storage.db.execute(sql`
+                  UPDATE users
+                  SET points_balance = COALESCE(points_balance, 0) + ${pointsToAward},
+                      total_points_earned = CASE WHEN ${pointsToAward} > 0 THEN COALESCE(total_points_earned, 0) + ${pointsToAward} ELSE total_points_earned END,
+                      total_points_spent = CASE WHEN ${pointsToAward} < 0 THEN COALESCE(total_points_spent, 0) + ${Math.abs(pointsToAward)} ELSE total_points_spent END
+                  WHERE id = ${req.params.id}
+                `);
+              }
+            }
+          } catch (ruleError) {
+            console.error("[ACCRUAL RULES] Error evaluating arrival rule:", ruleError);
+          }
+        }
       }
-      
+
       // Invalidate cache
       await delCache("users:all");
       res.json(user);
@@ -1036,6 +1081,88 @@ export async function registerRoutes(
     }
   });
 
+  // Email settings routes
+  app.get("/api/email-config", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
+    try {
+      const config = await getEmailConfig();
+      if (!config) {
+        return res.json({
+          host: "",
+          port: 587,
+          secure: false,
+          user: "",
+          password: "",
+          from: "",
+          fromName: "TeamSync",
+        });
+      }
+      // Never return actual password to client
+      res.json({ ...config, password: config.password ? "••••••••" : "" });
+    } catch (error) {
+      console.error("Error fetching email config:", error);
+      res.status(500).json({ message: "Failed to fetch email config" });
+    }
+  });
+
+  app.post("/api/email-config", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
+    try {
+      const { host, port, secure, user, password, from, fromName } = req.body;
+      if (!host || !user) {
+        return res.status(400).json({ message: "Host и User обязательны" });
+      }
+
+      // If password is masked, keep existing password
+      let finalPassword = password;
+      if (password === "••••••••" || !password) {
+        const existing = await getEmailConfig();
+        finalPassword = existing?.password || "";
+      }
+
+      const config: any = {
+        host,
+        port: Number(port) || 587,
+        secure: secure === true || secure === "true",
+        user,
+        password: finalPassword,
+        from: from || user,
+      };
+      if (fromName) config.fromName = fromName;
+
+      await storage.setSiteSetting("email_config", JSON.stringify(config));
+      res.json({ success: true, message: "Настройки email сохранены" });
+    } catch (error) {
+      console.error("Error saving email config:", error);
+      res.status(500).json({ message: "Failed to save email config" });
+    }
+  });
+
+  app.post("/api/email-config/test", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
+    try {
+      const { email } = req.body;
+      if (!email) {
+        return res.status(400).json({ message: "Укажите email для теста" });
+      }
+      const verifyResult = await testEmailConnection();
+      if (!verifyResult.success) {
+        return res.status(400).json(verifyResult);
+      }
+      const template = getWelcomeEmailTemplate(req.user.firstName || req.user.username || "Пользователь");
+      const sendResult = await sendEmail({
+        to: email,
+        subject: "Тестовое письмо от TeamSync",
+        html: template.html,
+        text: template.text,
+      });
+      res.json(sendResult);
+    } catch (error: any) {
+      console.error("Error testing email:", error);
+      res.status(500).json({ success: false, message: error.message });
+    }
+  });
+
   // Telegram bot webhook
   app.post("/api/webhook/telegram", async (req, res) => {
     try {
@@ -1153,7 +1280,21 @@ export async function registerRoutes(
       const saltRounds = 10;
       const hashedPassword = await bcrypt.hash(newPassword, saltRounds);
       await storage.updateUser(user.id, { password: hashedPassword });
-      
+
+      // Send password change notification (non-blocking)
+      try {
+        const name = user.firstName || user.username || user.email.split("@")[0];
+        const template = getPasswordChangedTemplate(name);
+        await sendEmail({
+          to: user.email,
+          subject: "Пароль изменен",
+          html: template.html,
+          text: template.text,
+        });
+      } catch (emailError) {
+        console.error("Failed to send password change email:", emailError);
+      }
+
       res.json({ message: "Пароль успешно изменен" });
     } catch (error) {
       console.error("Error changing password:", error);
@@ -3915,6 +4056,67 @@ export async function registerRoutes(
     }
   });
 
+  // Accrual Rules
+  app.get("/api/accrual-rules", async (req, res) => {
+    try {
+      const rules = await storage.getAccrualRules();
+      res.json(rules);
+    } catch (error) {
+      console.error("Error getting accrual rules:", error);
+      res.status(500).json({ message: "Failed to get accrual rules" });
+    }
+  });
+
+  app.post("/api/accrual-rules", async (req, res) => {
+    try {
+      const { name, type, pointsAmount, description, isActive } = req.body;
+
+      if (!name || !type || pointsAmount === undefined) {
+        return res.status(400).json({ message: "name, type, and pointsAmount are required" });
+      }
+
+      const rule = await storage.createAccrualRule({
+        name,
+        type,
+        pointsAmount: parseInt(pointsAmount) || 0,
+        description,
+        isActive: isActive !== false,
+      });
+
+      res.status(201).json(rule);
+    } catch (error) {
+      console.error("Error creating accrual rule:", error);
+      res.status(500).json({ message: "Failed to create accrual rule" });
+    }
+  });
+
+  app.patch("/api/accrual-rules/:id", async (req, res) => {
+    try {
+      const { name, type, pointsAmount, description, isActive } = req.body;
+      const rule = await storage.updateAccrualRule(req.params.id, {
+        name,
+        type,
+        pointsAmount: pointsAmount !== undefined ? parseInt(pointsAmount) : undefined,
+        description,
+        isActive,
+      });
+      res.json(rule);
+    } catch (error) {
+      console.error("Error updating accrual rule:", error);
+      res.status(500).json({ message: "Failed to update accrual rule" });
+    }
+  });
+
+  app.delete("/api/accrual-rules/:id", async (req, res) => {
+    try {
+      await storage.deleteAccrualRule(req.params.id);
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting accrual rule:", error);
+      res.status(500).json({ message: "Failed to delete accrual rule" });
+    }
+  });
+
   // User Points
   app.get("/api/users/me/points", async (req, res) => {
     if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
@@ -4018,19 +4220,63 @@ export async function registerRoutes(
     }
   });
 
+  // Admin shop routes
+  app.get("/api/shop/items/all", requirePermission("management:shop"), async (req, res) => {
+    try {
+      const items = await storage.db.select().from(schema.shopItems).orderBy(desc(schema.shopItems.createdAt));
+      res.json(items);
+    } catch (error) {
+      console.error("Error getting all shop items:", error);
+      res.status(500).json({ message: "Failed to get shop items" });
+    }
+  });
+
+  app.post("/api/shop/items", requirePermission("management:shop"), async (req, res) => {
+    try {
+      const item = await storage.createShopItem(req.body);
+      res.status(201).json(item);
+    } catch (error) {
+      console.error("Error creating shop item:", error);
+      res.status(500).json({ message: "Failed to create shop item" });
+    }
+  });
+
+  app.put("/api/shop/items/:id", requirePermission("management:shop"), async (req, res) => {
+    try {
+      const item = await storage.updateShopItem(req.params.id, req.body);
+      if (!item) {
+        return res.status(404).json({ message: "Item not found" });
+      }
+      res.json(item);
+    } catch (error) {
+      console.error("Error updating shop item:", error);
+      res.status(500).json({ message: "Failed to update shop item" });
+    }
+  });
+
+  app.delete("/api/shop/items/:id", requirePermission("management:shop"), async (req, res) => {
+    try {
+      await storage.deleteShopItem(req.params.id);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting shop item:", error);
+      res.status(500).json({ message: "Failed to delete shop item" });
+    }
+  });
+
   app.post("/api/shop/purchase", async (req, res) => {
     if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
-    
+
     try {
       const { itemId, quantity = 1 } = req.body;
-      
+
       if (!itemId) {
         return res.status(400).json({ message: "itemId is required" });
       }
 
       // Get user points
       const userPoints = await storage.getUserPoints(req.user!.id);
-      
+
       // Get item
       const item = await storage.getShopItem(itemId);
       if (!item) {
@@ -4058,11 +4304,45 @@ export async function registerRoutes(
         userId: req.user!.id,
         type: "spent",
         amount: -totalCost,
-        description: `Покупка "${item.name}"`
+        description: `Заявка на "${item.name}"`
       });
 
       // Update user points
       await storage.updateUserPoints(req.user!.id, -totalCost);
+
+      // Notify admins about new purchase request
+      try {
+        const adminRole = await storage.getRoleByName("Администратор");
+        if (adminRole) {
+          const adminUserRoles = await storage.db.select({ userId: schema.userRoles.userId })
+            .from(schema.userRoles)
+            .where(eq(schema.userRoles.roleId, adminRole.id));
+
+          const buyer = await storage.getUser(req.user!.id);
+          const buyerName = buyer?.firstName || buyer?.username || "Пользователь";
+
+          for (const aur of adminUserRoles) {
+            const notification = await storage.createNotification({
+              userId: aur.userId,
+              senderId: req.user!.id,
+              type: "system",
+              title: "Новая заявка на покупку",
+              message: JSON.stringify({
+                action: "shop_purchase_request",
+                purchaseId: purchase.id,
+                buyerName,
+                itemName: item.name,
+                quantity,
+                totalCost,
+              }),
+            });
+            const io = getIO();
+            io.to(`user:${aur.userId}`).emit("new-notification", notification);
+          }
+        }
+      } catch (notifyError) {
+        console.error("Error notifying admins about purchase:", notifyError);
+      }
 
       res.status(201).json(purchase);
     } catch (error) {
@@ -4073,13 +4353,106 @@ export async function registerRoutes(
 
   app.get("/api/shop/purchases", async (req, res) => {
     if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
-    
+
     try {
       const purchases = await storage.getUserPurchases(req.user!.id);
       res.json(purchases);
     } catch (error) {
       console.error("Error getting purchases:", error);
       res.status(500).json({ message: "Failed to get purchases" });
+    }
+  });
+
+  // Admin purchase management
+  app.get("/api/shop/purchases/all", requirePermission("management:shop"), async (req, res) => {
+    try {
+      const purchases = await storage.getAllPurchases();
+      res.json(purchases);
+    } catch (error) {
+      console.error("Error getting all purchases:", error);
+      res.status(500).json({ message: "Failed to get purchases" });
+    }
+  });
+
+  app.patch("/api/shop/purchases/:id/status", requirePermission("management:shop"), async (req, res) => {
+    try {
+      const { status } = req.body;
+      const validStatuses = ["pending", "approved", "rejected"];
+
+      if (!validStatuses.includes(status)) {
+        return res.status(400).json({ message: "Invalid status" });
+      }
+
+      const purchase = await storage.getPurchaseById(req.params.id);
+      if (!purchase) {
+        return res.status(404).json({ message: "Purchase not found" });
+      }
+
+      // If already processed, don't allow changes
+      if (purchase.status !== "pending" && status !== purchase.status) {
+        return res.status(400).json({ message: "Purchase already processed" });
+      }
+
+      const updated = await storage.updatePurchaseStatus(req.params.id, status);
+
+      // Handle approval logic
+      if (status === "approved" && purchase.status !== "approved") {
+        // Decrease item stock
+        const item = await storage.getShopItem(purchase.itemId);
+        if (item && item.stock !== null && item.stock >= (purchase.quantity || 1)) {
+          await storage.updateShopItem(purchase.itemId, {
+            stock: item.stock - (purchase.quantity || 1)
+          });
+        }
+
+        // Notify buyer
+        const notification = await storage.createNotification({
+          userId: purchase.userId,
+          senderId: req.user!.id,
+          type: "system",
+          title: "Заявка одобрена",
+          message: JSON.stringify({
+            action: "shop_purchase_approved",
+            purchaseId: purchase.id,
+            itemName: item?.name || "Товар",
+          }),
+        });
+        const io = getIO();
+        io.to(`user:${purchase.userId}`).emit("new-notification", notification);
+      }
+
+      // Handle rejection logic - return points
+      if (status === "rejected" && purchase.status !== "rejected") {
+        // Return points to user
+        await storage.createTransaction({
+          userId: purchase.userId,
+          type: "earned",
+          amount: purchase.totalCost,
+          description: `Возврат баллов: заявка отклонена`
+        });
+        await storage.updateUserPoints(purchase.userId, purchase.totalCost);
+
+        // Notify buyer
+        const item = await storage.getShopItem(purchase.itemId);
+        const notification = await storage.createNotification({
+          userId: purchase.userId,
+          senderId: req.user!.id,
+          type: "system",
+          title: "Заявка отклонена",
+          message: JSON.stringify({
+            action: "shop_purchase_rejected",
+            purchaseId: purchase.id,
+            itemName: item?.name || "Товар",
+          }),
+        });
+        const io = getIO();
+        io.to(`user:${purchase.userId}`).emit("new-notification", notification);
+      }
+
+      res.json(updated);
+    } catch (error) {
+      console.error("Error updating purchase status:", error);
+      res.status(500).json({ message: "Failed to update purchase status" });
     }
   });
 
@@ -5000,6 +5373,157 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error deleting guest session:", error);
       res.status(500).json({ message: "Failed to delete session" });
+    }
+  });
+
+  // ==================== USER INVITATION ROUTES ====================
+
+  // Create user invitation (requires auth)
+  app.post("/api/team/invitations", async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    try {
+      const { email, role } = req.body;
+      if (!email || !email.trim()) {
+        return res.status(400).json({ message: "Email is required" });
+      }
+
+      // Validate email format
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(email.trim())) {
+        return res.status(400).json({ message: "Invalid email format" });
+      }
+
+      // Check if user already exists
+      const existingUser = await storage.getUserByEmail(email.trim());
+      if (existingUser) {
+        return res.status(409).json({ message: "User with this email already exists" });
+      }
+
+      // Check if pending invitation already exists
+      const existingInvitation = await storage.getUserInvitationByEmail(email.trim());
+      if (existingInvitation && existingInvitation.status === "pending" && new Date(existingInvitation.expiresAt) > new Date()) {
+        return res.status(409).json({ message: "Invitation already sent to this email" });
+      }
+
+      const invitation = await storage.createUserInvitation({
+        email: email.trim(),
+        role: role || undefined,
+        invitedBy: req.user!.id,
+        expiresInHours: 168, // 7 days
+      });
+
+      // Send invitation email if SMTP is configured
+      const appUrl = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
+      const inviteLink = `${appUrl}/auth?invite=${invitation.token}`;
+
+      const emailResult = await sendEmail({
+        to: invitation.email,
+        subject: "Приглашение присоединиться к portal",
+        html: `
+          <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #1a1a1a;">
+            <div style="background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%); padding: 32px 24px; text-align: center;">
+              <h1 style="color: #ffffff; margin: 0; font-size: 24px;">Приглашение в команду</h1>
+            </div>
+            <div style="padding: 32px 24px; background: #ffffff;">
+              <p style="font-size: 16px; line-height: 1.6; margin: 0 0 16px;">Здравствуйте!</p>
+              <p style="font-size: 16px; line-height: 1.6; margin: 0 0 24px;">Вас пригласили присоединиться к <strong>portal</strong>. Нажмите кнопку ниже, чтобы создать аккаунт:</p>
+              <a href="${inviteLink}" style="display: inline-block; background: #6366f1; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: 500;">Принять приглашение</a>
+              <p style="font-size: 13px; color: #6b7280; margin: 24px 0 0;">Ссылка действительна в течение 7 дней. Если вы не ожидали этого приглашения, проигнорируйте письмо.</p>
+            </div>
+          </div>
+        `,
+      });
+
+      res.json({
+        ...invitation,
+        emailSent: emailResult.success,
+      });
+    } catch (error) {
+      console.error("Error creating user invitation:", error);
+      res.status(500).json({ message: "Failed to create invitation" });
+    }
+  });
+
+  // Get all user invitations (requires auth)
+  app.get("/api/team/invitations", async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    try {
+      const invitations = await storage.getUserInvitations();
+
+      // Fetch inviter details for each invitation
+      const invitationsWithInviter = await Promise.all(
+        invitations.map(async (inv) => {
+          let inviter = null;
+          if (inv.invitedBy) {
+            try {
+              const user = await storage.getUser(inv.invitedBy);
+              if (user) {
+                inviter = {
+                  id: user.id,
+                  firstName: user.firstName,
+                  lastName: user.lastName,
+                  username: user.username,
+                  email: user.email,
+                  avatar: user.avatar,
+                };
+              }
+            } catch (e) {
+              // ignore missing user
+            }
+          }
+          return { ...inv, inviter };
+        })
+      );
+
+      res.json(invitationsWithInviter);
+    } catch (error) {
+      console.error("Error fetching user invitations:", error);
+      res.status(500).json({ message: "Failed to fetch invitations" });
+    }
+  });
+
+  // Verify user invitation (public)
+  app.get("/api/team/invitations/:token/verify", async (req, res) => {
+    try {
+      const invitation = await storage.getUserInvitationByToken(req.params.token);
+
+      if (!invitation) {
+        return res.status(404).json({ valid: false, message: "Invitation not found" });
+      }
+
+      if (invitation.status !== "pending") {
+        return res.json({ valid: false, message: "Invitation has already been used" });
+      }
+
+      if (new Date(invitation.expiresAt) < new Date()) {
+        return res.json({ valid: false, message: "Invitation has expired" });
+      }
+
+      res.json({ valid: true, invitation });
+    } catch (error) {
+      console.error("Error verifying user invitation:", error);
+      res.status(500).json({ message: "Failed to verify invitation" });
+    }
+  });
+
+  // Cancel/delete user invitation (requires auth)
+  app.delete("/api/team/invitations/:id", async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    try {
+      await storage.cancelUserInvitation(req.params.id);
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error canceling user invitation:", error);
+      res.status(500).json({ message: "Failed to cancel invitation" });
     }
   });
 

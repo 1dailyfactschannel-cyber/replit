@@ -12,14 +12,19 @@ services:
       DATABASE_URL: ${DATABASE_URL}
       SESSION_SECRET: ${SESSION_SECRET}
       REDIS_URL: ${REDIS_URL:-}
-      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://89.208.14.253:8090,http://10.30.0.136:8090}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://10.30.0.136:8090}
       YANDEX_CLIENT_ID: ${YANDEX_CLIENT_ID:-}
       YANDEX_CLIENT_SECRET: ${YANDEX_CLIENT_SECRET:-}
       APP_URL: ${APP_URL:-http://localhost:8090}
+      ALLOW_HTTP: ${ALLOW_HTTP:-true}
     ports:
       - "3245:3000"
     networks:
       - portal_teamsync-network
+    # Раскомментируйте для диагностики сети (контейнер будет использовать сеть хоста):
+    # network_mode: host
+    # extra_hosts:
+    #   - "dbhost:10.30.0.136"
 
   # Frontend Client with Nginx
   client:

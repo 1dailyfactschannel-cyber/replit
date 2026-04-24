@@ -44,6 +44,10 @@ import {
   type InsertCallParticipant,
   type TeamRoomAdmin,
   type InsertTeamRoomAdmin,
+  type UserInvitation,
+  type InsertUserInvitation,
+  type GuestInvitation,
+  type GuestSession,
   yandexCalendarIntegrations,
   yandexCalendarEvents,
   yandexCalendarNotifications,
@@ -80,8 +84,9 @@ export class PostgresStorage {
     const client = postgres(process.env.DATABASE_URL, {
       max: 10,
       idle_timeout: 20,
-      connect_timeout: 10,
+      connect_timeout: 30,
       onnotice: (notice) => console.log("Postgres Notice:", notice),
+      onparameter: (param) => console.log("Postgres Param:", param),
     });
     
     this.db = drizzle(client, { schema });
@@ -1208,15 +1213,17 @@ export class PostgresStorage {
 
   async setUserRoles(userId: string, roleIds: string[], assignedBy?: string): Promise<void> {
     try {
-      await this.db.delete(schema.userRoles).where(eq(schema.userRoles.userId, userId));
-      if (roleIds.length > 0) {
-        const values = roleIds.map(roleId => ({
-          userId,
-          roleId,
-          assignedBy: assignedBy || null
-        }));
-        await this.db.insert(schema.userRoles).values(values);
-      }
+      await this.db.transaction(async (tx) => {
+        await tx.delete(schema.userRoles).where(eq(schema.userRoles.userId, userId));
+        if (roleIds.length > 0) {
+          const values = roleIds.map(roleId => ({
+            userId,
+            roleId,
+            assignedBy: assignedBy || null
+          }));
+          await tx.insert(schema.userRoles).values(values);
+        }
+      });
     } catch (error) {
       console.error("Error setting user roles:", error);
       throw error;
@@ -1234,6 +1241,9 @@ export class PostgresStorage {
   }
 
   async hasPermission(userId: string, permission: string): Promise<boolean> {
+    const userRoles = await this.getUserRoles(userId);
+    const isAdmin = userRoles.some(r => r.name === "Администратор");
+    if (isAdmin) return true;
     const permissions = await this.getUserPermissions(userId);
     return permissions.includes(permission);
   }
@@ -2572,6 +2582,54 @@ export class PostgresStorage {
     }
   }
 
+  // Accrual Rules
+  async getAccrualRules(): Promise<schema.AccrualRule[]> {
+    try {
+      return await this.db.select().from(schema.accrualRules).orderBy(schema.accrualRules.createdAt);
+    } catch (error) {
+      console.error("Error getting accrual rules:", error);
+      return [];
+    }
+  }
+
+  async getActiveAccrualRules(): Promise<schema.AccrualRule[]> {
+    try {
+      return await this.db.select().from(schema.accrualRules).where(eq(schema.accrualRules.isActive, true));
+    } catch (error) {
+      console.error("Error getting active accrual rules:", error);
+      return [];
+    }
+  }
+
+  async createAccrualRule(rule: schema.InsertAccrualRule): Promise<schema.AccrualRule> {
+    try {
+      const [created] = await this.db.insert(schema.accrualRules).values(rule).returning();
+      return created;
+    } catch (error) {
+      console.error("Error creating accrual rule:", error);
+      throw error;
+    }
+  }
+
+  async updateAccrualRule(id: string, rule: Partial<schema.InsertAccrualRule>): Promise<schema.AccrualRule> {
+    try {
+      const [updated] = await this.db.update(schema.accrualRules).set(rule).where(eq(schema.accrualRules.id, id)).returning();
+      return updated;
+    } catch (error) {
+      console.error("Error updating accrual rule:", error);
+      throw error;
+    }
+  }
+
+  async deleteAccrualRule(id: string): Promise<void> {
+    try {
+      await this.db.delete(schema.accrualRules).where(eq(schema.accrualRules.id, id));
+    } catch (error) {
+      console.error("Error deleting accrual rule:", error);
+      throw error;
+    }
+  }
+
   // User Points and Transactions
   async getUserPoints(userId: string): Promise<{ balance: number; totalEarned: number; totalSpent: number; level: number }> {
     try {
@@ -2733,6 +2791,29 @@ export class PostgresStorage {
     }
   }
 
+  async updateShopItem(id: string, updates: Partial<InsertShopItem>): Promise<ShopItem | undefined> {
+    try {
+      const [updated] = await this.db.update(schema.shopItems)
+        .set(updates)
+        .where(eq(schema.shopItems.id, id))
+        .returning();
+      return updated;
+    } catch (error) {
+      console.error("Error updating shop item:", error);
+      throw error;
+    }
+  }
+
+  async deleteShopItem(id: string): Promise<boolean> {
+    try {
+      await this.db.delete(schema.shopItems).where(eq(schema.shopItems.id, id));
+      return true;
+    } catch (error) {
+      console.error("Error deleting shop item:", error);
+      throw error;
+    }
+  }
+
   async createPurchase(purchase: InsertShopPurchase): Promise<ShopPurchase> {
     try {
       const [created] = await this.db.insert(schema.shopPurchases).values(purchase).returning();
@@ -2743,15 +2824,90 @@ export class PostgresStorage {
     }
   }
 
-  async getUserPurchases(userId: string): Promise<ShopPurchase[]> {
+  async getUserPurchases(userId: string): Promise<(ShopPurchase & { item?: { id: string; name: string; image: string | null; cost: number } })[]> {
     try {
-      return await this.db.select()
+      const purchases = await this.db.select()
         .from(schema.shopPurchases)
         .where(eq(schema.shopPurchases.userId, userId))
         .orderBy(desc(schema.shopPurchases.purchasedAt));
+
+      const enriched = await Promise.all(
+        purchases.map(async (purchase) => {
+          const [item] = await this.db.select({
+            id: schema.shopItems.id,
+            name: schema.shopItems.name,
+            image: schema.shopItems.image,
+            cost: schema.shopItems.cost,
+          }).from(schema.shopItems).where(eq(schema.shopItems.id, purchase.itemId)).limit(1);
+
+          return { ...purchase, item: item || undefined };
+        })
+      );
+
+      return enriched;
     } catch (error) {
       console.error("Error getting user purchases:", error);
       return [];
+    }
+  }
+
+  async getAllPurchases(): Promise<(ShopPurchase & { user?: { id: string; firstName: string | null; lastName: string | null; username: string; avatar: string | null }; item?: { id: string; name: string; image: string | null; cost: number } })[]> {
+    try {
+      const purchases = await this.db.select()
+        .from(schema.shopPurchases)
+        .orderBy(desc(schema.shopPurchases.purchasedAt));
+
+      const enriched = await Promise.all(
+        purchases.map(async (purchase) => {
+          const [user] = await this.db.select({
+            id: schema.users.id,
+            firstName: schema.users.firstName,
+            lastName: schema.users.lastName,
+            username: schema.users.username,
+            avatar: schema.users.avatar,
+          }).from(schema.users).where(eq(schema.users.id, purchase.userId)).limit(1);
+
+          const [item] = await this.db.select({
+            id: schema.shopItems.id,
+            name: schema.shopItems.name,
+            image: schema.shopItems.image,
+            cost: schema.shopItems.cost,
+          }).from(schema.shopItems).where(eq(schema.shopItems.id, purchase.itemId)).limit(1);
+
+          return { ...purchase, user: user || undefined, item: item || undefined };
+        })
+      );
+
+      return enriched;
+    } catch (error) {
+      console.error("Error getting all purchases:", error);
+      return [];
+    }
+  }
+
+  async getPurchaseById(id: string): Promise<ShopPurchase | undefined> {
+    try {
+      const [purchase] = await this.db.select()
+        .from(schema.shopPurchases)
+        .where(eq(schema.shopPurchases.id, id))
+        .limit(1);
+      return purchase;
+    } catch (error) {
+      console.error("Error getting purchase by id:", error);
+      return undefined;
+    }
+  }
+
+  async updatePurchaseStatus(id: string, status: string): Promise<ShopPurchase | undefined> {
+    try {
+      const [updated] = await this.db.update(schema.shopPurchases)
+        .set({ status })
+        .where(eq(schema.shopPurchases.id, id))
+        .returning();
+      return updated;
+    } catch (error) {
+      console.error("Error updating purchase status:", error);
+      throw error;
     }
   }
 
@@ -3442,7 +3598,7 @@ export class PostgresStorage {
           isNull(schema.guestInvitations.usedAt)
         )
       );
-      return result.rowCount || 0;
+      return (result as any).rowCount || 0;
     } catch (error) {
       console.error("Error cleaning up expired guest invitations:", error);
       return 0;
@@ -3452,9 +3608,99 @@ export class PostgresStorage {
   async cleanupExpiredGuestSessions(): Promise<number> {
     try {
       const result = await this.db.delete(schema.guestSessions).where(lt(schema.guestSessions.expiresAt, new Date()));
-      return result.rowCount || 0;
+      return (result as any).rowCount || 0;
     } catch (error) {
       console.error("Error cleaning up expired guest sessions:", error);
+      return 0;
+    }
+  }
+
+  // ==================== USER INVITATIONS ====================
+
+  async createUserInvitation(data: { email: string; role?: string; invitedBy: string; expiresInHours?: number }): Promise<UserInvitation> {
+    try {
+      const token = generateSecureToken();
+      const expiresAt = new Date(Date.now() + (data.expiresInHours || 24) * 60 * 60 * 1000);
+      
+      const [invitation] = await this.db.insert(schema.userInvitations).values({
+        email: data.email,
+        role: data.role || null,
+        token,
+        status: "pending",
+        invitedBy: data.invitedBy,
+        expiresAt,
+      }).returning();
+      
+      return invitation;
+    } catch (error) {
+      console.error("Error creating user invitation:", error);
+      throw error;
+    }
+  }
+
+  async getUserInvitations(): Promise<UserInvitation[]> {
+    try {
+      return await this.db.select().from(schema.userInvitations).orderBy(desc(schema.userInvitations.createdAt));
+    } catch (error) {
+      console.error("Error getting user invitations:", error);
+      return [];
+    }
+  }
+
+  async getUserInvitationByToken(token: string): Promise<UserInvitation | null> {
+    try {
+      const [invitation] = await this.db.select().from(schema.userInvitations).where(eq(schema.userInvitations.token, token)).limit(1);
+      return invitation || null;
+    } catch (error) {
+      console.error("Error getting user invitation by token:", error);
+      return null;
+    }
+  }
+
+  async getUserInvitationByEmail(email: string): Promise<UserInvitation | null> {
+    try {
+      const [invitation] = await this.db.select().from(schema.userInvitations).where(eq(schema.userInvitations.email, email)).limit(1);
+      return invitation || null;
+    } catch (error) {
+      console.error("Error getting user invitation by email:", error);
+      return null;
+    }
+  }
+
+  async acceptUserInvitation(token: string): Promise<UserInvitation | null> {
+    try {
+      const [invitation] = await this.db.update(schema.userInvitations)
+        .set({ status: "accepted", acceptedAt: new Date() })
+        .where(eq(schema.userInvitations.token, token))
+        .returning();
+      return invitation || null;
+    } catch (error) {
+      console.error("Error accepting user invitation:", error);
+      return null;
+    }
+  }
+
+  async cancelUserInvitation(id: string): Promise<boolean> {
+    try {
+      await this.db.delete(schema.userInvitations).where(eq(schema.userInvitations.id, id));
+      return true;
+    } catch (error) {
+      console.error("Error canceling user invitation:", error);
+      return false;
+    }
+  }
+
+  async cleanupExpiredUserInvitations(): Promise<number> {
+    try {
+      const result = await this.db.delete(schema.userInvitations).where(
+        and(
+          lt(schema.userInvitations.expiresAt, new Date()),
+          eq(schema.userInvitations.status, "pending")
+        )
+      );
+      return (result as any).rowCount || 0;
+    } catch (error) {
+      console.error("Error cleaning up expired user invitations:", error);
       return 0;
     }
   }

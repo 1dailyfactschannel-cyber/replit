@@ -101,7 +101,7 @@ export function NotificationAlertDialog() {
     const { notify } = useNotifications()
 
     const { data: notificationsData } = useQuery<{ notifications: Notification[] }>({
-        queryKey: ["/api/notifications"],
+        queryKey: ["/api/notifications", "dropdown"],
         queryFn: async () => {
             const res = await fetch('/api/notifications?page=1&limit=5', { credentials: 'include' });
             if (!res.ok) throw new Error('Failed to fetch notifications');
@@ -116,7 +116,7 @@ export function NotificationAlertDialog() {
             await apiRequest("PATCH", `/api/notifications/${id}/read`)
         },
         onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ["/api/notifications"] })
+            queryClient.invalidateQueries({ queryKey: ["/api/notifications", "dropdown"] })
         },
     })
 
@@ -125,7 +125,7 @@ export function NotificationAlertDialog() {
             await apiRequest("POST", "/api/notifications/read-all")
         },
         onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ["/api/notifications"] })
+            queryClient.invalidateQueries({ queryKey: ["/api/notifications", "dropdown"] })
         },
     })
 
@@ -139,7 +139,7 @@ export function NotificationAlertDialog() {
         })
 
         socket.on("new-notification", (notification: Notification) => {
-            queryClient.invalidateQueries({ queryKey: ["/api/notifications"] })
+            queryClient.invalidateQueries({ queryKey: ["/api/notifications", "dropdown"] })
             // Show browser notification
             const content = formatNotificationContent(notification)
             notify(notification.title, {

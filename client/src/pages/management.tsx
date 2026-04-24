@@ -48,7 +48,18 @@ import {
   Copy,
   RefreshCw,
   Link,
-  UserX
+  UserX,
+  Webhook,
+  AlertCircle,
+  Clock,
+  ListChecks,
+  ToggleLeft,
+  ToggleRight,
+  MinusCircle,
+  Store,
+  Image as ImageIcon,
+  Package,
+  ShoppingBag
 } from "lucide-react";
 import { RolesManagement } from "@/components/settings/RolesManagement";
 import { YandexCalendarConnect, YandexCalendarSettings } from "@/components/integrations/YandexCalendarConnect";
@@ -59,8 +70,10 @@ import { useToast } from "@/hooks/use-toast";
 import { usePermission } from "@/hooks/use-permission";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -89,6 +102,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 export default function ManagementPage() {
   const { canManage, isAdmin, isLoading } = usePermission();
@@ -104,6 +118,7 @@ export default function ManagementPage() {
     { id: "calls", label: "Звонки", icon: Phone, description: "Управление звонками и командными залами", permission: "management:calls" },
     { id: "integrations", label: "Интеграции", icon: Puzzle, description: "Внешние сервисы и API", permission: "management:integrations" },
     { id: "balance", label: "Баланс", icon: Coins, description: "Настройка баллов за статусы задач", permission: "management:balance" },
+    { id: "shop", label: "Магазин", icon: Store, description: "Управление товарами магазина", permission: "management:shop" },
   ].filter(section => isAdmin || canManage(section.id));
 
   // Set initial active section or redirect if no permissions
@@ -231,6 +246,8 @@ export default function ManagementPage() {
                 <CallsManagement />
               ) : activeSection === "balance" ? (
                 <BalanceManagement />
+              ) : activeSection === "shop" ? (
+                <ShopManagement />
               ) : sections.length > 0 ? (
                 <DefaultSection section={sections.find(s => s.id === activeSection) || sections[0]} />
               ) : (
@@ -411,6 +428,7 @@ function SecurityManagement() {
 function IntegrationsManagement() {
   const [showTelegram, setShowTelegram] = useState(false);
   const [showYandexCalendar, setShowYandexCalendar] = useState(false);
+  const [showEmail, setShowEmail] = useState(false);
   const [activeTab, setActiveTab] = useState("all");
   
   const integrations = [
@@ -460,6 +478,15 @@ function IntegrationsManagement() {
       category: "management"
     },
     { 
+      id: "email", 
+      name: "Email SMTP", 
+      desc: "Email-уведомления о регистрации и смене пароля", 
+      icon: Mail, 
+      color: "bg-[#EA4335]", 
+      connected: false,
+      category: "notifications"
+    },
+    { 
       id: "yandex-calendar", 
       name: "Яндекс Календарь", 
       desc: "Синхронизация событий и встреч", 
@@ -482,6 +509,7 @@ function IntegrationsManagement() {
   const categories = [
     { id: "all", label: "Все" },
     { id: "messengers", label: "Мессенджеры" },
+    { id: "notifications", label: "Уведомления" },
     { id: "dev", label: "Разработка" },
     { id: "management", label: "Управление" },
     { id: "calendar", label: "Календари" },
@@ -507,6 +535,18 @@ function IntegrationsManagement() {
   if (showYandexCalendar) {
     return (
       <YandexCalendarSettings onBack={() => setShowYandexCalendar(false)} />
+    );
+  }
+
+  if (showEmail) {
+    return (
+      <div className="space-y-4 animate-in fade-in slide-in-from-left-2 duration-300">
+        <Button variant="ghost" size="sm" onClick={() => setShowEmail(false)} className="gap-2 -ml-2 text-muted-foreground hover:text-foreground">
+          <ChevronRight className="w-4 h-4 rotate-180" />
+          Назад к интеграциям
+        </Button>
+        <EmailSettings />
+      </div>
     );
   }
 
@@ -577,7 +617,10 @@ function IntegrationsManagement() {
                     "h-8 text-xs font-bold px-4",
                     item.connected ? "border-border/50" : "shadow-lg shadow-primary/20"
                   )}
-                  onClick={() => item.id === "telegram" && setShowTelegram(true)}
+                  onClick={() => {
+                    if (item.id === "telegram") setShowTelegram(true);
+                    if (item.id === "email") setShowEmail(true);
+                  }}
                 >
                   {item.connected ? "Настроить" : "Подключить"}
                 </Button>
@@ -601,6 +644,210 @@ function IntegrationsManagement() {
             Запросить сервис
           </Button>
         </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function EmailSettings() {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [config, setConfig] = useState({
+    host: "",
+    port: 587,
+    secure: false,
+    user: "",
+    password: "",
+    from: "",
+    fromName: "TeamSync",
+  });
+  const [testEmail, setTestEmail] = useState("");
+
+  const { data: savedConfig, isLoading } = useQuery<any>({
+    queryKey: ["/api/email-config"],
+  });
+
+  useEffect(() => {
+    if (savedConfig) {
+      setConfig((prev) => ({
+        ...prev,
+        ...savedConfig,
+        password: savedConfig.password || "",
+      }));
+    }
+  }, [savedConfig]);
+
+  const saveMutation = useMutation({
+    mutationFn: async (data: typeof config) => {
+      const res = await apiRequest("POST", "/api/email-config", data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/email-config"] });
+      toast({ title: "Сохранено", description: "Настройки SMTP обновлены" });
+    },
+    onError: () => {
+      toast({ title: "Ошибка", description: "Не удалось сохранить настройки", variant: "destructive" });
+    },
+  });
+
+  const testMutation = useMutation({
+    mutationFn: async (email: string) => {
+      const res = await apiRequest("POST", "/api/email-config/test", { email });
+      return res.json();
+    },
+    onSuccess: (data) => {
+      if (data.success) {
+        toast({ title: "Успех", description: "Тестовое письмо отправлено" });
+      } else {
+        toast({ title: "Ошибка отправки", description: data.message, variant: "destructive" });
+      }
+    },
+    onError: () => {
+      toast({ title: "Ошибка", description: "Не удалось отправить тестовое письмо", variant: "destructive" });
+    },
+  });
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4 max-w-2xl">
+      <Card className="border-border/50 shadow-sm">
+        <CardHeader className="pb-4">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Mail className="w-4 h-4 text-[#EA4335]" />
+            Настройка SMTP
+          </CardTitle>
+          <CardDescription className="text-xs">
+            Настройте сервер исходящей почты для отправки уведомлений пользователям
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <Label className="text-xs font-bold">SMTP Сервер (Host)</Label>
+              <Input
+                value={config.host}
+                onChange={(e) => setConfig({ ...config, host: e.target.value })}
+                placeholder="smtp.yandex.ru"
+                className="h-9 text-xs"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-bold">Порт</Label>
+              <Input
+                type="number"
+                value={config.port}
+                onChange={(e) => setConfig({ ...config, port: Number(e.target.value) })}
+                placeholder="587"
+                className="h-9 text-xs"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-bold">Логин / Email</Label>
+              <Input
+                value={config.user}
+                onChange={(e) => setConfig({ ...config, user: e.target.value })}
+                placeholder="noreply@example.com"
+                className="h-9 text-xs"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-bold">Пароль / App Token</Label>
+              <Input
+                type="password"
+                value={config.password}
+                onChange={(e) => setConfig({ ...config, password: e.target.value })}
+                placeholder={savedConfig?.password ? "••••••••" : "Введите пароль"}
+                className="h-9 text-xs"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-bold">Адрес отправителя (From)</Label>
+              <Input
+                value={config.from}
+                onChange={(e) => setConfig({ ...config, from: e.target.value })}
+                placeholder="noreply@example.com"
+                className="h-9 text-xs"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-bold">Имя отправителя</Label>
+              <Input
+                value={config.fromName}
+                onChange={(e) => setConfig({ ...config, fromName: e.target.value })}
+                placeholder="TeamSync"
+                className="h-9 text-xs"
+              />
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 pt-2">
+            <input
+              type="checkbox"
+              id="secure"
+              checked={config.secure}
+              onChange={(e) => setConfig({ ...config, secure: e.target.checked })}
+              className="rounded border-border/50"
+            />
+            <Label htmlFor="secure" className="text-xs cursor-pointer">
+              Использовать SSL/TLS (порт 465)
+            </Label>
+          </div>
+
+          <div className="rounded-xl bg-amber-50 dark:bg-amber-500/10 p-4 border border-amber-200 dark:border-amber-500/20 space-y-2">
+            <h5 className="text-xs font-bold flex items-center gap-2 uppercase tracking-tight text-amber-700 dark:text-amber-400">
+              <AlertCircle className="w-3 h-3" /> Примеры настроек
+            </h5>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-[11px] text-amber-700/80 dark:text-amber-400/80">
+              <div>
+                <strong>Yandex:</strong> smtp.yandex.ru, 465, SSL
+              </div>
+              <div>
+                <strong>Google:</strong> smtp.gmail.com, 587, без SSL (используйте App Password)
+              </div>
+              <div>
+                <strong>Mail.ru:</strong> smtp.mail.ru, 465, SSL
+              </div>
+              <div>
+                <strong>Beget:</strong> smtp.beget.com, 465, SSL
+              </div>
+            </div>
+          </div>
+        </CardContent>
+        <CardFooter className="bg-muted/20 border-t border-border/50 px-6 py-4 flex flex-col sm:flex-row gap-3 justify-between">
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            <Input
+              value={testEmail}
+              onChange={(e) => setTestEmail(e.target.value)}
+              placeholder="Email для теста"
+              className="h-9 text-xs w-full sm:w-56"
+            />
+            <Button
+              onClick={() => testMutation.mutate(testEmail)}
+              disabled={testMutation.isPending || !testEmail}
+              variant="outline"
+              className="h-9 gap-2 shrink-0"
+            >
+              {testMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
+              Тест
+            </Button>
+          </div>
+          <Button
+            onClick={() => saveMutation.mutate(config)}
+            disabled={saveMutation.isPending}
+            className="h-9 gap-2 shadow-lg shadow-primary/20"
+          >
+            {saveMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+            Сохранить настройки
+          </Button>
+        </CardFooter>
       </Card>
     </div>
   );
@@ -705,11 +952,6 @@ function ArchiveManagement() {
 
 function TeamManagement() {
   const { toast } = useToast();
-  const queryClient = useQueryClient();
-  
-  const { data: users = [], isLoading } = useQuery<User[]>({
-    queryKey: ["/api/users"],
-  });
 
   // Department state
   const [departments, setDepartments] = useState<{id: string; name: string; description: string | null; color: string}[]>([]);
@@ -805,131 +1047,71 @@ function TeamManagement() {
     }
   };
 
-  const deleteUserMutation = useMutation({
-    mutationFn: async (id: string) => {
-      const res = await apiRequest("DELETE", `/api/users/${id}`);
+  // Invitations state
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteRole, setInviteRole] = useState("");
+
+  const { data: invitations = [], isLoading: invitationsLoading, refetch: refetchInvitations } = useQuery<any[]>({
+    queryKey: ["/api/team/invitations"],
+  });
+
+  const sendInviteMutation = useMutation({
+    mutationFn: async (data: { email: string; role?: string }) => {
+      const res = await apiRequest("POST", "/api/team/invitations", data);
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message || "Не удалось отправить приглашение");
+      }
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/users"] });
-      toast({ title: "Пользователь удалён", description: "Пользователь успешно удалён из команды" });
+      refetchInvitations();
+      setInviteEmail("");
+      setInviteRole("");
+      toast({ title: "Приглашение отправлено", description: "Письмо с приглашением отправлено на указанный email" });
     },
     onError: (error: any) => {
-      toast({ 
-        title: "Ошибка", 
-        description: error?.message || "Не удалось удалить пользователя", 
-        variant: "destructive" 
-      });
+      toast({ title: "Ошибка", description: error?.message || "Не удалось отправить приглашение", variant: "destructive" });
     }
   });
 
-  const handleDeleteMember = (memberId: string, memberName: string) => {
-    if (confirm(`Вы уверены, что хотите удалить пользователя "${memberName}" из команды?`)) {
-      deleteUserMutation.mutate(memberId);
+  const deleteInviteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await apiRequest("DELETE", `/api/team/invitations/${id}`, {});
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message || "Не удалось удалить приглашение");
+      }
+    },
+    onSuccess: () => {
+      refetchInvitations();
+      toast({ title: "Приглашение удалено", description: "Приглашение успешно отменено" });
+    },
+    onError: (error: any) => {
+      toast({ title: "Ошибка", description: error?.message || "Не удалось удалить приглашение", variant: "destructive" });
     }
+  });
+
+  const handleSendInvite = () => {
+    if (!inviteEmail.trim() || !inviteEmail.includes("@")) {
+      toast({ title: "Ошибка", description: "Введите корректный email адрес", variant: "destructive" });
+      return;
+    }
+    sendInviteMutation.mutate({ email: inviteEmail.trim(), role: inviteRole || undefined });
   };
 
-  const members = users.map(user => ({
-    id: user.id,
-    name: (user.firstName && user.lastName) ? `${user.firstName} ${user.lastName}` : user.username,
-    role: user.position || "Сотрудник",
-    email: user.email,
-    department: user.department || "Без отдела",
-    status: user.isOnline ? "online" : "offline",
-    lastActive: user.lastSeen ? new Date(user.lastSeen).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' }) : "Недавно",
-    avatar: user.avatar || ""
-  }));
+  const formatDate = (dateStr: string) => {
+    const date = new Date(dateStr);
+    return date.toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric" });
+  };
 
-  const invites = [
-    { id: 1, email: "hr@teamsync.com", role: "HR-менеджер", sentAt: "24.01.2026", status: "pending" },
-    { id: 2, email: "dev-lead@teamsync.com", role: "Админ", sentAt: "23.01.2026", status: "expired" },
-  ];
+  const isExpired = (expiresAt: string) => {
+    return new Date(expiresAt) < new Date();
+  };
 
   return (
-    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 space-y-4">
-          <div className="flex items-center justify-between px-1">
-            <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
-              <Users className="w-3.5 h-3.5" />
-              Все участники ({members.length})
-            </h4>
-          </div>
-          
-          <Card className="border-border/50 shadow-sm overflow-hidden bg-card/50">
-            <div className="divide-y divide-border/50">
-              {members.map((member) => (
-                <div key={member.id} className="p-4 flex items-center justify-between hover:bg-muted/30 transition-colors group">
-                  <div className="flex items-center gap-4">
-                    <div className="relative">
-                      <Avatar className="w-10 h-10 border border-border/50 shadow-sm ring-2 ring-background">
-                        <AvatarImage src={member.avatar} />
-                        <AvatarFallback className="bg-primary/5 text-primary text-xs font-bold">
-                          {member.name.split(" ").map(n => n[0]).join("")}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div className={cn(
-                        "absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-background shadow-sm",
-                        member.status === "online" ? "bg-emerald-500" : "bg-slate-300"
-                      )} />
-                    </div>
-                    <div className="flex flex-col">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-bold tracking-tight group-hover:text-primary transition-colors">{member.name}</span>
-                        <Badge variant="secondary" className="text-[10px] h-4 px-1.5 font-bold uppercase tracking-tighter bg-primary/10 text-primary border-none">
-                          {member.role}
-                        </Badge>
-                      </div>
-                      <div className="flex items-center gap-2 mt-0.5">
-                        <span className="text-[11px] text-muted-foreground font-medium flex items-center gap-1">
-                          <Mail className="w-3 h-3 opacity-50" />
-                          {member.email}
-                        </span>
-                        <span className="text-[11px] text-muted-foreground">•</span>
-                        <span className="text-[11px] text-muted-foreground font-medium">{member.department}</span>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-4">
-                    <div className="hidden md:flex flex-col items-end text-right mr-4">
-                      <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground opacity-50">Активность</span>
-                      <span className="text-[11px] font-medium">{member.lastActive}</span>
-                    </div>
-                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all transform translate-x-2 group-hover:translate-x-0">
-                      <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-background shadow-sm border border-transparent hover:border-border/50">
-                        <Pencil className="w-3.5 h-3.5" />
-                      </Button>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-background shadow-sm border border-transparent hover:border-border/50">
-                            <MoreVertical className="w-3.5 h-3.5" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="w-48">
-                          <DropdownMenuItem className="text-xs font-medium gap-2">
-                            <Shield className="w-3.5 h-3.5" /> Изменить роль
-                          </DropdownMenuItem>
-                          <DropdownMenuItem className="text-xs font-medium gap-2">
-                            <Mail className="w-3.5 h-3.5" /> Написать письмо
-                          </DropdownMenuItem>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem 
-                            className="text-xs font-medium gap-2 text-rose-500 focus:text-rose-500 focus:bg-rose-50"
-                            onClick={() => handleDeleteMember(member.id, member.name)}
-                          >
-                            <Trash2 className="w-3.5 h-3.5" /> Удалить из команды
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </Card>
-        </div>
-
-        <div className="space-y-6">
+    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300 max-w-3xl">
+      <div className="space-y-6">
           <div className="space-y-4">
             <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2 px-1">
               <Mail className="w-3.5 h-3.5" />
@@ -937,39 +1119,77 @@ function TeamManagement() {
             </h4>
             <Card className="border-border/50 shadow-sm bg-card/50">
               <CardContent className="p-0">
-                <div className="divide-y divide-border/50">
-                  {invites.map((invite) => (
-                    <div key={invite.id} className="p-4 space-y-3">
-                      <div className="flex items-start justify-between">
-                        <div className="space-y-0.5">
-                          <p className="text-sm font-bold truncate max-w-[150px]">{invite.email}</p>
-                          <p className="text-[11px] text-muted-foreground font-medium">{invite.role}</p>
+                {invitationsLoading ? (
+                  <div className="p-8 text-center">
+                    <Loader2 className="w-6 h-6 animate-spin text-muted-foreground mx-auto" />
+                  </div>
+                ) : (
+                  <div className="divide-y divide-border/50">
+                    {(invitations || []).map((invite: any) => {
+                      const expired = invite.status === "pending" && isExpired(invite.expiresAt);
+                      const status = invite.status === "accepted" ? "accepted" : expired ? "expired" : invite.status;
+                      return (
+                        <div key={invite.id} className="p-4 space-y-3">
+                          <div className="flex items-start justify-between">
+                            <div className="space-y-0.5">
+                              <p className="text-sm font-bold truncate max-w-[200px]">{invite.email}</p>
+                              {invite.role && (
+                                <p className="text-[11px] text-muted-foreground font-medium">{invite.role}</p>
+                              )}
+                              {invite.inviter && (
+                                <div className="flex items-center gap-1.5 pt-0.5">
+                                  <Avatar className="w-4 h-4">
+                                    <AvatarImage src={invite.inviter.avatar || undefined} />
+                                    <AvatarFallback className="text-[8px] bg-primary/10">
+                                      {(invite.inviter.firstName?.[0] || invite.inviter.username?.[0] || "?").toUpperCase()}
+                                    </AvatarFallback>
+                                  </Avatar>
+                                  <span className="text-[10px] text-muted-foreground">
+                                    Пригласил: {invite.inviter.firstName || invite.inviter.username || invite.inviter.email}
+                                  </span>
+                                </div>
+                              )}
+                            </div>
+                            <Badge
+                              variant="outline"
+                              className={cn(
+                                "text-[9px] uppercase font-bold px-1.5 h-4 border-none shrink-0",
+                                status === "pending" && "bg-amber-500/10 text-amber-600",
+                                status === "accepted" && "bg-emerald-500/10 text-emerald-600",
+                                status === "expired" && "bg-rose-500/10 text-rose-600"
+                              )}
+                            >
+                              {status === "pending" ? "Ожидает" : status === "accepted" ? "Принят" : "Истек"}
+                            </Badge>
+                          </div>
+                          <div className="flex items-center justify-between pt-1">
+                            <span className="text-[10px] text-muted-foreground">
+                              {invite.createdAt ? `Отправлено: ${formatDate(invite.createdAt)}` : "—"}
+                            </span>
+                            <div className="flex items-center gap-1">
+                              {status === "pending" && (
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-6 w-6 text-muted-foreground hover:text-rose-500"
+                                  onClick={() => {
+                                    if (confirm("Отменить приглашение?")) {
+                                      deleteInviteMutation.mutate(invite.id);
+                                    }
+                                  }}
+                                  disabled={deleteInviteMutation.isPending}
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                </Button>
+                              )}
+                            </div>
+                          </div>
                         </div>
-                        <Badge 
-                          variant={invite.status === "pending" ? "outline" : "secondary"} 
-                          className={cn(
-                            "text-[9px] uppercase font-bold px-1.5 h-4 border-none",
-                            invite.status === "pending" ? "bg-amber-500/10 text-amber-600" : "bg-rose-500/10 text-rose-600"
-                          )}
-                        >
-                          {invite.status === "pending" ? "Ожидает" : "Истек"}
-                        </Badge>
-                      </div>
-                      <div className="flex items-center justify-between pt-1">
-                        <span className="text-[10px] text-muted-foreground">Отправлено: {invite.sentAt}</span>
-                        <div className="flex items-center gap-1">
-                          <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-primary">
-                            <Send className="w-3 h-3" />
-                          </Button>
-                          <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-rose-500">
-                            <Trash2 className="w-3 h-3" />
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                {invites.length === 0 && (
+                      );
+                    })}
+                  </div>
+                )}
+                {!invitationsLoading && (invitations || []).length === 0 && (
                   <div className="p-8 text-center space-y-2">
                     <Mail className="w-8 h-8 text-muted-foreground opacity-20 mx-auto" />
                     <p className="text-[11px] text-muted-foreground">Нет активных приглашений</p>
@@ -988,12 +1208,31 @@ function TeamManagement() {
               <CardDescription className="text-[11px]">Отправьте приглашение по email</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3 relative z-10">
-              <Input 
-                placeholder="Email адрес..." 
+              <Input
+                placeholder="Email адрес..."
+                value={inviteEmail}
+                onChange={(e) => setInviteEmail(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleSendInvite()}
                 className="h-8 text-xs bg-background/50 border-primary/20 focus:border-primary/40 transition-all"
               />
-              <Button size="sm" className="w-full h-8 text-xs font-bold gap-2 shadow-sm">
-                <Send className="w-3 h-3" />
+              <Input
+                placeholder="Роль (необязательно)..."
+                value={inviteRole}
+                onChange={(e) => setInviteRole(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleSendInvite()}
+                className="h-8 text-xs bg-background/50 border-primary/20 focus:border-primary/40 transition-all"
+              />
+              <Button
+                size="sm"
+                className="w-full h-8 text-xs font-bold gap-2 shadow-sm"
+                onClick={handleSendInvite}
+                disabled={sendInviteMutation.isPending}
+              >
+                {sendInviteMutation.isPending ? (
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                ) : (
+                  <Send className="w-3 h-3" />
+                )}
                 Отправить инвайт
               </Button>
             </CardContent>
@@ -1061,7 +1300,6 @@ function TeamManagement() {
             </Card>
           </div>
         </div>
-      </div>
 
       {/* Department Dialog */}
       <Dialog open={isDeptDialogOpen} onOpenChange={setIsDeptDialogOpen}>
@@ -1158,6 +1396,26 @@ function TelegramSettings() {
     }
   });
 
+  const webhookMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/admin/telegram-webhook");
+      return res.json();
+    },
+    onSuccess: (data) => {
+      toast({
+        title: "Webhook установлен",
+        description: data.message || "Telegram webhook успешно настроен.",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Ошибка",
+        description: "Не удалось установить webhook. Проверьте токен и APP_URL.",
+        variant: "destructive",
+      });
+    }
+  });
+
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
       <Card className="border-border/50 shadow-sm overflow-hidden">
@@ -1197,6 +1455,15 @@ function TelegramSettings() {
               </p>
             </div>
 
+            <div className="rounded-xl bg-amber-50 dark:bg-amber-500/10 p-4 border border-amber-200 dark:border-amber-500/20 space-y-2">
+              <h5 className="text-xs font-bold flex items-center gap-2 uppercase tracking-tight text-amber-700 dark:text-amber-400">
+                <AlertCircle className="w-3 h-3" /> Важно: APP_URL
+              </h5>
+              <p className="text-[11px] text-amber-700/80 dark:text-amber-400/80 leading-relaxed">
+                Для работы webhook убедитесь, что в переменных окружения сервера задан <code className="bg-amber-100 dark:bg-amber-500/20 px-1 py-0.5 rounded font-mono text-[10px]">APP_URL</code> — публичный адрес вашего приложения (например, <code className="bg-amber-100 dark:bg-amber-500/20 px-1 py-0.5 rounded font-mono text-[10px]">https://portal.m4bank.ru</code>). Webhook устанавливается автоматически при старте сервера. Если адрес изменился — нажмите кнопку ниже.
+              </p>
+            </div>
+
             <div className="rounded-xl bg-muted/50 p-4 border border-border/50 space-y-3">
               <h5 className="text-xs font-bold flex items-center gap-2 uppercase tracking-tight">
                 <SettingsIcon className="w-3 h-3 text-primary" /> Инструкция по настройке
@@ -1206,7 +1473,8 @@ function TelegramSettings() {
                   "Создайте нового бота через @BotFather в Telegram",
                   "Скопируйте полученный HTTP API Token",
                   "Вставьте токен в поле выше и нажмите сохранить",
-                  "Теперь система сможет отправлять уведомления"
+                  "Убедитесь, что задана переменная APP_URL в окружении сервера",
+                  "Нажмите «Установить webhook» или перезапустите сервер"
                 ].map((step, i) => (
                   <li key={i} className="text-[11px] text-muted-foreground flex items-start gap-2">
                     <span className="flex items-center justify-center w-4 h-4 rounded-full bg-background border border-border/50 text-[10px] font-bold shrink-0">{i + 1}</span>
@@ -1217,9 +1485,18 @@ function TelegramSettings() {
             </div>
           </div>
         </CardContent>
-        <CardFooter className="bg-muted/20 border-t border-border/50 px-6 py-4 flex justify-end">
-          <Button 
-            onClick={() => mutation.mutate(token)} 
+        <CardFooter className="bg-muted/20 border-t border-border/50 px-6 py-4 flex justify-end gap-2">
+          <Button
+            onClick={() => webhookMutation.mutate()}
+            disabled={webhookMutation.isPending || !token}
+            variant="outline"
+            className="gap-2"
+          >
+            {webhookMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Webhook className="w-4 h-4" />}
+            Установить webhook
+          </Button>
+          <Button
+            onClick={() => mutation.mutate(token)}
             disabled={mutation.isPending}
             className="gap-2 shadow-lg shadow-primary/20"
           >
@@ -3207,82 +3484,82 @@ function BalanceManagement() {
   };
 
   return (
-    <div className="animate-in fade-in slide-in-from-bottom-2 duration-300 space-y-6">
+    <div className="animate-in fade-in slide-in-from-bottom-2 duration-300 space-y-4">
       <Card className="border-border/50 shadow-sm">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Coins className="w-5 h-5 text-amber-500" />
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Coins className="w-4 h-4 text-amber-500" />
             Настройка баллов за статусы задач
           </CardTitle>
-          <CardDescription>
-            Настройте количество баллов и максимальное время, которое задача может провести в статусе для получения баллов
+          <CardDescription className="text-xs">
+            Настройте количество баллов и максимальное время в статусе для получения баллов
           </CardDescription>
         </CardHeader>
-        <CardContent>
-          <div className="flex items-center justify-between mb-6">
-            <div className="text-sm text-muted-foreground">
+        <CardContent className="pt-0">
+          <div className="flex items-center justify-between mb-3">
+            <div className="text-xs text-muted-foreground">
               <p>Баллы начисляются автоматически при смене статуса задачи.</p>
               <p>1 балл = 1 рубль в магазине.</p>
             </div>
-            <Button onClick={() => openDialog()} className="gap-2">
-              <Plus className="w-4 h-4" />
-              Добавить статус
+            <Button onClick={() => openDialog()} size="sm" className="gap-1 h-8">
+              <Plus className="w-3.5 h-3.5" />
+              Добавить
             </Button>
           </div>
 
           {isLoading ? (
-            <div className="flex items-center justify-center py-8">
-              <Loader2 className="w-6 h-6 animate-spin text-primary" />
+            <div className="flex items-center justify-center py-4">
+              <Loader2 className="w-5 h-5 animate-spin text-primary" />
             </div>
           ) : settings && settings.length > 0 ? (
-            <div className="space-y-3">
+            <div className="space-y-2">
               {settings.map((setting: any) => (
                 <div
                   key={setting.id}
-                  className="flex items-center justify-between p-4 rounded-lg bg-secondary/30 hover:bg-secondary/50 transition-colors"
+                  className="flex items-center justify-between p-2.5 rounded-md bg-secondary/30 hover:bg-secondary/50 transition-colors"
                 >
-                  <div className="flex items-center gap-4">
-                    <div className="w-10 h-10 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center">
-                      <Coins className="w-5 h-5 text-amber-600" />
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center">
+                      <Coins className="w-4 h-4 text-amber-600" />
                     </div>
                     <div>
-                      <p className="font-medium">{setting.statusName}</p>
-                      <p className="text-sm text-muted-foreground">
+                      <p className="text-sm font-medium">{setting.statusName}</p>
+                      <p className="text-xs text-muted-foreground">
                         {setting.isActive ? "Активно" : "Неактивно"}
                       </p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-3">
                     <div className="text-right">
-                      <p className="text-2xl font-bold text-amber-600">{setting.pointsAmount}</p>
-                      <p className="text-xs text-muted-foreground">баллов</p>
+                      <p className="text-lg font-bold text-amber-600">{setting.pointsAmount}</p>
+                      <p className="text-[10px] text-muted-foreground">баллов</p>
                     </div>
                     {setting.maxTimeInStatus > 0 && (
-                      <div className="text-right px-3 border-l border-border">
-                        <p className="text-sm font-medium text-rose-600">{setting.maxTimeInStatus} мин</p>
-                        <p className="text-xs text-muted-foreground">макс. время</p>
+                      <div className="text-right px-2 border-l border-border">
+                        <p className="text-xs font-medium text-rose-600">{setting.maxTimeInStatus} мин</p>
+                        <p className="text-[10px] text-muted-foreground">макс. время</p>
                       </div>
                     )}
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center gap-0.5">
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="h-8 w-8"
+                        className="h-7 w-7"
                         onClick={() => openDialog(setting)}
                       >
-                        <Pencil className="w-4 h-4" />
+                        <Pencil className="w-3.5 h-3.5" />
                       </Button>
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="h-8 w-8 text-destructive hover:text-destructive"
+                        className="h-7 w-7 text-destructive hover:text-destructive"
                         onClick={() => deleteMutation.mutate(setting.id)}
                         disabled={deleteMutation.isPending}
                       >
                         {deleteMutation.isPending ? (
-                          <Loader2 className="w-4 h-4 animate-spin" />
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
                         ) : (
-                          <Trash2 className="w-4 h-4" />
+                          <Trash2 className="w-3.5 h-3.5" />
                         )}
                       </Button>
                     </div>
@@ -3291,10 +3568,10 @@ function BalanceManagement() {
               ))}
             </div>
           ) : (
-            <div className="text-center py-8 text-muted-foreground">
-              <Coins className="w-12 h-12 mx-auto mb-3 opacity-30" />
-              <p>Настройки не найдены</p>
-              <p className="text-sm">Добавьте первый статус для начисления баллов</p>
+            <div className="text-center py-4 text-muted-foreground">
+              <Coins className="w-8 h-8 mx-auto mb-2 opacity-30" />
+              <p className="text-sm">Настройки не найдены</p>
+              <p className="text-xs">Добавьте первый статус для начисления баллов</p>
             </div>
           )}
         </CardContent>
@@ -3379,7 +3656,349 @@ function BalanceManagement() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AccrualRulesSection />
     </div>
+  );
+}
+
+// Accrual Rules Section
+function AccrualRulesSection() {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [editingRule, setEditingRule] = useState<any>(null);
+  const [ruleName, setRuleName] = useState("");
+  const [ruleType, setRuleType] = useState("arrival_on_time");
+  const [rulePoints, setRulePoints] = useState("1");
+  const [ruleDescription, setRuleDescription] = useState("");
+
+  const { data: rules, isLoading } = useQuery<any[]>({
+    queryKey: ["/api/accrual-rules"],
+  });
+
+  const createMutation = useMutation({
+    mutationFn: async (data: any) => {
+      const res = await apiRequest("POST", "/api/accrual-rules", data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/accrual-rules"] });
+      toast({ title: "Правило добавлено", description: "Правило начисления успешно создано" });
+      setIsDialogOpen(false);
+      resetForm();
+    },
+    onError: (error: Error) => {
+      toast({ title: "Ошибка", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: any }) => {
+      const res = await apiRequest("PATCH", `/api/accrual-rules/${id}`, data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/accrual-rules"] });
+      toast({ title: "Правило обновлено", description: "Изменения сохранены" });
+      setIsDialogOpen(false);
+      resetForm();
+    },
+    onError: (error: Error) => {
+      toast({ title: "Ошибка", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      await apiRequest("DELETE", `/api/accrual-rules/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/accrual-rules"] });
+      toast({ title: "Правило удалено", description: "Правило начисления удалено" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Ошибка", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const toggleMutation = useMutation({
+    mutationFn: async ({ id, isActive }: { id: string; isActive: boolean }) => {
+      const res = await apiRequest("PATCH", `/api/accrual-rules/${id}`, { isActive });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/accrual-rules"] });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Ошибка", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const resetForm = () => {
+    setRuleName("");
+    setRuleType("arrival_on_time");
+    setRulePoints("1");
+    setRuleDescription("");
+    setEditingRule(null);
+  };
+
+  const openDialog = (rule?: any) => {
+    if (rule) {
+      setEditingRule(rule);
+      setRuleName(rule.name);
+      setRuleType(rule.type);
+      setRulePoints(rule.pointsAmount.toString());
+      setRuleDescription(rule.description || "");
+    } else {
+      resetForm();
+    }
+    setIsDialogOpen(true);
+  };
+
+  const handleSave = () => {
+    const data = {
+      name: ruleName,
+      type: ruleType,
+      pointsAmount: parseInt(rulePoints) || 0,
+      description: ruleDescription,
+      isActive: true,
+    };
+
+    if (editingRule) {
+      updateMutation.mutate({ id: editingRule.id, data });
+    } else {
+      createMutation.mutate(data);
+    }
+  };
+
+  const ruleTypeOptions = [
+    { value: "arrival_on_time", label: "Приход вовремя", description: "Начисляет баллы если пользователь поставил статус 'В сети' раньше времени начала рабочего дня. Списывает если позже." },
+  ];
+
+  return (
+    <>
+      <Card className="border-border/50 shadow-sm">
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <ListChecks className="w-4 h-4 text-emerald-500" />
+            Правила начисления
+          </CardTitle>
+          <CardDescription className="text-xs">
+            Настройте автоматические правила начисления и списания баллов
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="pt-0">
+          <div className="flex items-center justify-between mb-3">
+            <div className="text-xs text-muted-foreground">
+              <p>Правила проверяются автоматически при действиях пользователей.</p>
+              <p>Отрицательное значение баллов означает штраф (списание).</p>
+            </div>
+            <Button onClick={() => openDialog()} size="sm" className="gap-1 h-8">
+              <Plus className="w-3.5 h-3.5" />
+              Добавить
+            </Button>
+          </div>
+
+          {isLoading ? (
+            <div className="flex items-center justify-center py-4">
+              <Loader2 className="w-5 h-5 animate-spin text-primary" />
+            </div>
+          ) : rules && rules.length > 0 ? (
+            <div className="space-y-2">
+              {rules.map((rule: any) => (
+                <div
+                  key={rule.id}
+                  className={cn(
+                    "flex items-center justify-between p-2.5 rounded-md border transition-colors",
+                    rule.isActive
+                      ? "bg-secondary/30 hover:bg-secondary/50 border-transparent"
+                      : "bg-muted/30 hover:bg-muted/50 border-dashed opacity-60"
+                  )}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className={cn(
+                      "w-8 h-8 rounded-full flex items-center justify-center",
+                      rule.pointsAmount >= 0
+                        ? "bg-emerald-100 dark:bg-emerald-900/30"
+                        : "bg-rose-100 dark:bg-rose-900/30"
+                    )}>
+                      {rule.pointsAmount >= 0 ? (
+                        <Coins className="w-4 h-4 text-emerald-600" />
+                      ) : (
+                        <MinusCircle className="w-4 h-4 text-rose-600" />
+                      )}
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium">{rule.name}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {rule.type === "arrival_on_time" && "Приход вовремя"}
+                        {rule.description && ` · ${rule.description}`}
+                      </p>
+                      <p className="text-[10px] text-muted-foreground mt-0.5">
+                        {rule.isActive ? (
+                          <span className="text-emerald-600">Активно</span>
+                        ) : (
+                          <span className="text-muted-foreground">Отключено</span>
+                        )}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="text-right">
+                      <p className={cn(
+                        "text-lg font-bold",
+                        rule.pointsAmount >= 0 ? "text-emerald-600" : "text-rose-600"
+                      )}>
+                        {rule.pointsAmount > 0 ? `+${rule.pointsAmount}` : rule.pointsAmount}
+                      </p>
+                      <p className="text-[10px] text-muted-foreground">баллов</p>
+                    </div>
+                    <div className="flex items-center gap-0.5">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7"
+                        onClick={() => toggleMutation.mutate({ id: rule.id, isActive: !rule.isActive })}
+                        title={rule.isActive ? "Отключить" : "Включить"}
+                      >
+                        {rule.isActive ? (
+                          <ToggleRight className="w-4 h-4 text-emerald-500" />
+                        ) : (
+                          <ToggleLeft className="w-4 h-4 text-muted-foreground" />
+                        )}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7"
+                        onClick={() => openDialog(rule)}
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 text-destructive hover:text-destructive"
+                        onClick={() => deleteMutation.mutate(rule.id)}
+                        disabled={deleteMutation.isPending}
+                      >
+                        {deleteMutation.isPending ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <Trash2 className="w-3.5 h-3.5" />
+                        )}
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-4 text-muted-foreground">
+              <ListChecks className="w-8 h-8 mx-auto mb-2 opacity-30" />
+              <p className="text-sm">Правила не найдены</p>
+              <p className="text-xs">Добавьте первое правило начисления баллов</p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>
+              {editingRule ? "Редактировать правило" : "Добавить правило"}
+            </DialogTitle>
+            <DialogDescription>
+              Настройте автоматическое начисление или списание баллов
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="ruleName">Название правила</Label>
+              <Input
+                id="ruleName"
+                value={ruleName}
+                onChange={(e) => setRuleName(e.target.value)}
+                placeholder="Например: Приход вовремя"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="ruleType">Тип правила</Label>
+              <select
+                id="ruleType"
+                value={ruleType}
+                onChange={(e) => setRuleType(e.target.value)}
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              >
+                {ruleTypeOptions.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-muted-foreground">
+                {ruleTypeOptions.find((o) => o.value === ruleType)?.description}
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="rulePoints">Количество баллов</Label>
+              <Input
+                id="rulePoints"
+                type="number"
+                value={rulePoints}
+                onChange={(e) => setRulePoints(e.target.value)}
+                placeholder="1"
+              />
+              <p className="text-xs text-muted-foreground">
+                Положительное число — начисление. Отрицательное — штраф (списание).
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="ruleDescription">Описание (необязательно)</Label>
+              <Input
+                id="ruleDescription"
+                value={ruleDescription}
+                onChange={(e) => setRuleDescription(e.target.value)}
+                placeholder="Дополнительное пояснение к правилу"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            {editingRule && (
+              <Button
+                type="button"
+                variant="destructive"
+                className="mr-auto"
+                onClick={() => {
+                  deleteMutation.mutate(editingRule.id);
+                  setIsDialogOpen(false);
+                }}
+                disabled={deleteMutation.isPending}
+              >
+                {deleteMutation.isPending ? (
+                  <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                ) : null}
+                Удалить
+              </Button>
+            )}
+            <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
+              Отмена
+            </Button>
+            <Button
+              onClick={handleSave}
+              disabled={!ruleName || createMutation.isPending || updateMutation.isPending}
+            >
+              {createMutation.isPending || updateMutation.isPending ? (
+                <Loader2 className="w-4 h-4 animate-spin mr-2" />
+              ) : null}
+              {editingRule ? "Сохранить" : "Создать"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 
@@ -3992,6 +4611,647 @@ function CallsManagement() {
                 <Loader2 className="w-4 h-4 animate-spin mr-2" />
               ) : null}
               {editingRoom ? "Сохранить" : "Создать"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+interface ShopItem {
+  id: string;
+  name: string;
+  description: string | null;
+  cost: number;
+  image: string | null;
+  category: string | null;
+  stock: number | null;
+  isActive: boolean | null;
+  createdAt: Date | null;
+}
+
+interface ShopPurchase {
+  id: string;
+  userId: string;
+  itemId: string;
+  quantity: number | null;
+  totalCost: number;
+  status: string;
+  purchasedAt: Date | null;
+  user?: {
+    id: string;
+    firstName: string | null;
+    lastName: string | null;
+    username: string;
+    avatar: string | null;
+  };
+  item?: {
+    id: string;
+    name: string;
+    image: string | null;
+    cost: number;
+  };
+}
+
+function ShopManagement() {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [activeTab, setActiveTab] = useState("items");
+
+  // Items state
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [editingItem, setEditingItem] = useState<ShopItem | null>(null);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [itemToDelete, setItemToDelete] = useState<ShopItem | null>(null);
+  const [uploadingImage, setUploadingImage] = useState(false);
+
+  const [formData, setFormData] = useState({
+    name: "",
+    description: "",
+    cost: "",
+    stock: "",
+    category: "",
+    image: "",
+    isActive: true,
+  });
+
+  const { data: items, isLoading: itemsLoading } = useQuery<ShopItem[]>({
+    queryKey: ["/api/shop/items/all"],
+    staleTime: 1000 * 60,
+  });
+
+  const createMutation = useMutation({
+    mutationFn: async (data: any) => {
+      const res = await apiRequest("POST", "/api/shop/items", data);
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Товар создан", description: "Новый товар успешно добавлен в магазин." });
+      queryClient.invalidateQueries({ queryKey: ["/api/shop/items/all"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/shop/items"] });
+      setIsDialogOpen(false);
+      resetForm();
+    },
+    onError: (error: any) => {
+      toast({ title: "Ошибка", description: error.message || "Не удалось создать товар", variant: "destructive" });
+    },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: any }) => {
+      const res = await apiRequest("PUT", `/api/shop/items/${id}`, data);
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Товар обновлен", description: "Изменения успешно сохранены." });
+      queryClient.invalidateQueries({ queryKey: ["/api/shop/items/all"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/shop/items"] });
+      setIsDialogOpen(false);
+      setEditingItem(null);
+      resetForm();
+    },
+    onError: (error: any) => {
+      toast({ title: "Ошибка", description: error.message || "Не удалось обновить товар", variant: "destructive" });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      await apiRequest("DELETE", `/api/shop/items/${id}`);
+    },
+    onSuccess: () => {
+      toast({ title: "Товар удален", description: "Товар успешно удален из магазина." });
+      queryClient.invalidateQueries({ queryKey: ["/api/shop/items/all"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/shop/items"] });
+      setIsDeleteDialogOpen(false);
+      setItemToDelete(null);
+    },
+    onError: (error: any) => {
+      toast({ title: "Ошибка", description: error.message || "Не удалось удалить товар", variant: "destructive" });
+    },
+  });
+
+  // Purchases state
+  const { data: purchases, isLoading: purchasesLoading } = useQuery<ShopPurchase[]>({
+    queryKey: ["/api/shop/purchases/all"],
+    staleTime: 1000 * 30,
+    enabled: activeTab === "orders",
+  });
+
+  const updatePurchaseMutation = useMutation({
+    mutationFn: async ({ id, status }: { id: string; status: string }) => {
+      const res = await apiRequest("PATCH", `/api/shop/purchases/${id}/status`, { status });
+      return res.json();
+    },
+    onSuccess: (_, vars) => {
+      const statusText = vars.status === "approved" ? "одобрена" : vars.status === "rejected" ? "отклонена" : "обновлена";
+      toast({ title: `Заявка ${statusText}`, description: `Статус заявки изменен на "${statusText}".` });
+      queryClient.invalidateQueries({ queryKey: ["/api/shop/purchases/all"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/shop/purchases"] });
+    },
+    onError: (error: any) => {
+      toast({ title: "Ошибка", description: error.message || "Не удалось обновить статус", variant: "destructive" });
+    },
+  });
+
+  const resetForm = () => {
+    setFormData({
+      name: "",
+      description: "",
+      cost: "",
+      stock: "",
+      category: "",
+      image: "",
+      isActive: true,
+    });
+  };
+
+  const openCreateDialog = () => {
+    setEditingItem(null);
+    resetForm();
+    setIsDialogOpen(true);
+  };
+
+  const openEditDialog = (item: ShopItem) => {
+    setEditingItem(item);
+    setFormData({
+      name: item.name,
+      description: item.description || "",
+      cost: String(item.cost),
+      stock: String(item.stock || 0),
+      category: item.category || "",
+      image: item.image || "",
+      isActive: item.isActive ?? true,
+    });
+    setIsDialogOpen(true);
+  };
+
+  const handleSave = () => {
+    if (!formData.name.trim() || !formData.cost.trim()) {
+      toast({ title: "Ошибка", description: "Название и цена обязательны для заполнения", variant: "destructive" });
+      return;
+    }
+
+    const payload = {
+      name: formData.name.trim(),
+      description: formData.description.trim() || null,
+      cost: parseInt(formData.cost, 10),
+      stock: parseInt(formData.stock, 10) || 0,
+      category: formData.category.trim() || null,
+      image: formData.image.trim() || null,
+      isActive: formData.isActive,
+    };
+
+    if (editingItem) {
+      updateMutation.mutate({ id: editingItem.id, data: payload });
+    } else {
+      createMutation.mutate(payload);
+    }
+  };
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setUploadingImage(true);
+    try {
+      const uploadForm = new FormData();
+      uploadForm.append("file", file);
+
+      const res = await fetch("/api/upload", {
+        method: "POST",
+        body: uploadForm,
+        credentials: "include",
+      });
+
+      if (!res.ok) throw new Error("Upload failed");
+
+      const data = await res.json();
+      setFormData(prev => ({ ...prev, image: data.url }));
+      toast({ title: "Изображение загружено", description: "Картинка товара успешно загружена." });
+    } catch (error: any) {
+      toast({ title: "Ошибка загрузки", description: error.message || "Не удалось загрузить изображение", variant: "destructive" });
+    } finally {
+      setUploadingImage(false);
+    }
+  };
+
+  const categories: string[] = Array.from(new Set(items?.map(i => i.category).filter((c): c is string => !!c) || []));
+
+  const pendingCount = purchases?.filter(p => p.status === "pending").length || 0;
+
+  const formatUserName = (user?: ShopPurchase["user"]) => {
+    if (!user) return "Неизвестный";
+    return user.firstName || user.username;
+  };
+
+  return (
+    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+        <TabsList className="grid w-full max-w-md grid-cols-2">
+          <TabsTrigger value="items" className="gap-2">
+            <Package className="w-4 h-4" />
+            Товары
+          </TabsTrigger>
+          <TabsTrigger value="orders" className="gap-2">
+            <ShoppingBag className="w-4 h-4" />
+            Заявки
+            {pendingCount > 0 && (
+              <Badge variant="destructive" className="h-4 min-w-4 px-1 text-[10px]">{pendingCount}</Badge>
+            )}
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="items" className="space-y-6 mt-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-lg font-bold">Товары магазина</h3>
+              <p className="text-sm text-muted-foreground">
+                {items?.length || 0} {items?.length === 1 ? "товар" : items && items.length < 5 ? "товара" : "товаров"} в каталоге
+              </p>
+            </div>
+            <Button onClick={openCreateDialog} className="gap-2 shadow-lg shadow-primary/20">
+              <Plus className="w-4 h-4" />
+              Добавить товар
+            </Button>
+          </div>
+
+          {itemsLoading ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+            </div>
+          ) : !items || items.length === 0 ? (
+            <Card className="border-border/50 shadow-sm border-dashed">
+              <CardContent className="p-12 flex flex-col items-center justify-center text-center space-y-4">
+                <div className="w-16 h-16 rounded-full bg-muted/50 flex items-center justify-center">
+                  <Store className="w-8 h-8 text-muted-foreground opacity-40" />
+                </div>
+                <div>
+                  <h4 className="font-medium text-muted-foreground">Магазин пуст</h4>
+                  <p className="text-sm text-muted-foreground mt-1">Добавьте первый товар, чтобы начать продажи</p>
+                </div>
+                <Button variant="outline" onClick={openCreateDialog} className="gap-2">
+                  <Plus className="w-4 h-4" />
+                  Добавить товар
+                </Button>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {items.map((item) => (
+                <Card key={item.id} className={cn(
+                  "border-border/50 shadow-sm overflow-hidden group transition-all hover:shadow-md",
+                  !item.isActive && "opacity-60"
+                )}>
+                  <div className="aspect-[4/3] bg-muted/30 relative overflow-hidden">
+                    {item.image ? (
+                      <img
+                        src={item.image}
+                        alt={item.name}
+                        className="w-full h-full object-cover transition-transform group-hover:scale-105"
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center">
+                        <Package className="w-12 h-12 text-muted-foreground/30" />
+                      </div>
+                    )}
+                    {!item.isActive && (
+                      <div className="absolute inset-0 bg-background/60 flex items-center justify-center">
+                        <Badge variant="secondary" className="text-xs">Неактивен</Badge>
+                      </div>
+                    )}
+                    <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="secondary" size="icon" className="h-8 w-8 bg-background/90 backdrop-blur-sm">
+                            <MoreVertical className="w-3.5 h-3.5" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={() => openEditDialog(item)}>
+                            <Pencil className="w-3.5 h-3.5 mr-2" />
+                            Редактировать
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem
+                            className="text-destructive focus:text-destructive"
+                            onClick={() => {
+                              setItemToDelete(item);
+                              setIsDeleteDialogOpen(true);
+                            }}
+                          >
+                            <Trash2 className="w-3.5 h-3.5 mr-2" />
+                            Удалить
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
+                  </div>
+                  <CardContent className="p-4 space-y-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <h4 className="font-medium text-sm truncate">{item.name}</h4>
+                        {item.category && (
+                          <Badge variant="outline" className="text-[10px] mt-1 font-normal">
+                            {item.category}
+                          </Badge>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1 text-primary font-bold text-sm shrink-0">
+                        <Coins className="w-3.5 h-3.5" />
+                        {item.cost}
+                      </div>
+                    </div>
+                    {item.description && (
+                      <p className="text-xs text-muted-foreground line-clamp-2">{item.description}</p>
+                    )}
+                    <div className="flex items-center justify-between text-xs text-muted-foreground pt-1 border-t border-border/40">
+                      <span className="flex items-center gap-1">
+                        <Package className="w-3 h-3" />
+                        Остаток: {item.stock ?? 0}
+                      </span>
+                      <span className={cn(
+                        "w-2 h-2 rounded-full",
+                        (item.stock ?? 0) > 10 ? "bg-emerald-500" : (item.stock ?? 0) > 0 ? "bg-amber-500" : "bg-red-500"
+                      )} />
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+        </TabsContent>
+
+        <TabsContent value="orders" className="space-y-6 mt-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-lg font-bold">Заявки на покупку</h3>
+              <p className="text-sm text-muted-foreground">
+                {purchases?.length || 0} заявок, {pendingCount} на рассмотрении
+              </p>
+            </div>
+          </div>
+
+          {purchasesLoading ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+            </div>
+          ) : !purchases || purchases.length === 0 ? (
+            <Card className="border-border/50 shadow-sm border-dashed">
+              <CardContent className="p-12 flex flex-col items-center justify-center text-center space-y-4">
+                <div className="w-16 h-16 rounded-full bg-muted/50 flex items-center justify-center">
+                  <ShoppingBag className="w-8 h-8 text-muted-foreground opacity-40" />
+                </div>
+                <div>
+                  <h4 className="font-medium text-muted-foreground">Нет заявок</h4>
+                  <p className="text-sm text-muted-foreground mt-1">Здесь появятся заявки от сотрудников</p>
+                </div>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="space-y-3">
+              {purchases.map((purchase) => (
+                <Card key={purchase.id} className={cn(
+                  "border-border/50 shadow-sm overflow-hidden",
+                  purchase.status === "pending" && "border-amber-500/30"
+                )}>
+                  <CardContent className="p-4">
+                    <div className="flex items-center gap-4">
+                      <div className="w-14 h-14 rounded-lg bg-muted/30 overflow-hidden shrink-0">
+                        {purchase.item?.image ? (
+                          <img src={purchase.item.image} alt={purchase.item.name} className="w-full h-full object-cover" />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center">
+                            <Package className="w-6 h-6 text-muted-foreground/30" />
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <h4 className="font-medium text-sm truncate">{purchase.item?.name || "Товар"}</h4>
+                          <Badge
+                            variant={purchase.status === "pending" ? "outline" : purchase.status === "approved" ? "default" : "secondary"}
+                            className={cn(
+                              "text-[10px] h-4 px-1.5",
+                              purchase.status === "pending" && "border-amber-500 text-amber-600",
+                              purchase.status === "approved" && "bg-emerald-500 text-white",
+                              purchase.status === "rejected" && "bg-red-500 text-white"
+                            )}
+                          >
+                            {purchase.status === "pending" ? "На рассмотрении" : purchase.status === "approved" ? "Одобрена" : "Отклонена"}
+                          </Badge>
+                        </div>
+                        <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
+                          <span className="flex items-center gap-1">
+                            <Avatar className="w-4 h-4">
+                              <AvatarImage src={purchase.user?.avatar || undefined} />
+                              <AvatarFallback className="text-[8px]">{(formatUserName(purchase.user) || "?")[0]}</AvatarFallback>
+                            </Avatar>
+                            {formatUserName(purchase.user)}
+                          </span>
+                          <span className="flex items-center gap-1">
+                            <Coins className="w-3 h-3 text-amber-500" />
+                            {purchase.totalCost} баллов
+                          </span>
+                          <span>× {purchase.quantity || 1} шт.</span>
+                        </div>
+                      </div>
+                      {purchase.status === "pending" && (
+                        <div className="flex items-center gap-2 shrink-0">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-8 text-xs gap-1 border-red-300 text-red-600 hover:bg-red-50 hover:text-red-700"
+                            onClick={() => updatePurchaseMutation.mutate({ id: purchase.id, status: "rejected" })}
+                            disabled={updatePurchaseMutation.isPending}
+                          >
+                            <X className="w-3 h-3" />
+                            Отклонить
+                          </Button>
+                          <Button
+                            size="sm"
+                            className="h-8 text-xs gap-1 bg-emerald-500 hover:bg-emerald-600"
+                            onClick={() => updatePurchaseMutation.mutate({ id: purchase.id, status: "approved" })}
+                            disabled={updatePurchaseMutation.isPending}
+                          >
+                            <Check className="w-3 h-3" />
+                            Одобрить
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+        </TabsContent>
+      </Tabs>
+
+      {/* Create/Edit Dialog */}
+      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{editingItem ? "Редактировать товар" : "Добавить товар"}</DialogTitle>
+            <DialogDescription>
+              {editingItem ? "Измените информацию о товаре" : "Заполните данные нового товара для магазина"}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="item-name">Название <span className="text-red-500">*</span></Label>
+              <Input
+                id="item-name"
+                placeholder="Например, Худи TeamSync"
+                value={formData.name}
+                onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="item-description">Описание</Label>
+              <Textarea
+                id="item-description"
+                placeholder="Описание товара..."
+                rows={3}
+                value={formData.description}
+                onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="item-cost">Цена (баллы) <span className="text-red-500">*</span></Label>
+                <Input
+                  id="item-cost"
+                  type="number"
+                  min={0}
+                  placeholder="1000"
+                  value={formData.cost}
+                  onChange={(e) => setFormData(prev => ({ ...prev, cost: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="item-stock">Лимит (шт.)</Label>
+                <Input
+                  id="item-stock"
+                  type="number"
+                  min={0}
+                  placeholder="10"
+                  value={formData.stock}
+                  onChange={(e) => setFormData(prev => ({ ...prev, stock: e.target.value }))}
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="item-category">Категория</Label>
+              <div className="flex gap-2">
+                <Input
+                  id="item-category"
+                  list="categories"
+                  placeholder="Например, Мерч"
+                  value={formData.category}
+                  onChange={(e) => setFormData(prev => ({ ...prev, category: e.target.value }))}
+                  className="flex-1"
+                />
+                <datalist id="categories">
+                  {categories.filter((c): c is string => !!c).map(cat => (
+                    <option key={cat} value={cat} />
+                  ))}
+                </datalist>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="item-image">Изображение</Label>
+              <div className="flex gap-3 items-start">
+                {formData.image ? (
+                  <div className="relative w-20 h-20 rounded-lg overflow-hidden border border-border shrink-0">
+                    <img src={formData.image} alt="Preview" className="w-full h-full object-cover" />
+                    <button
+                      onClick={() => setFormData(prev => ({ ...prev, image: "" }))}
+                      className="absolute top-0.5 right-0.5 w-5 h-5 rounded-full bg-destructive text-white flex items-center justify-center text-xs hover:bg-destructive/90"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                ) : (
+                  <div className="w-20 h-20 rounded-lg border border-dashed border-border flex flex-col items-center justify-center text-muted-foreground shrink-0">
+                    <ImageIcon className="w-6 h-6 mb-1" />
+                    <span className="text-[10px]">Нет фото</span>
+                  </div>
+                )}
+                <div className="flex-1 space-y-2">
+                  <Input
+                    id="item-image-file"
+                    type="file"
+                    accept="image/*"
+                    onChange={handleImageUpload}
+                    disabled={uploadingImage}
+                    className="text-sm"
+                  />
+                  <p className="text-[10px] text-muted-foreground">Или введите URL вручную:</p>
+                  <Input
+                    placeholder="https://..."
+                    value={formData.image}
+                    onChange={(e) => setFormData(prev => ({ ...prev, image: e.target.value }))}
+                    className="text-sm"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between rounded-lg border border-border/50 p-3">
+              <div className="space-y-0.5">
+                <Label htmlFor="item-active" className="text-sm font-medium">Активен</Label>
+                <p className="text-xs text-muted-foreground">Товар будет виден в магазине</p>
+              </div>
+              <Switch
+                id="item-active"
+                checked={formData.isActive}
+                onCheckedChange={(checked) => setFormData(prev => ({ ...prev, isActive: checked }))}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
+              Отмена
+            </Button>
+            <Button
+              onClick={handleSave}
+              disabled={createMutation.isPending || updateMutation.isPending || !formData.name.trim() || !formData.cost.trim()}
+            >
+              {createMutation.isPending || updateMutation.isPending ? (
+                <Loader2 className="w-4 h-4 animate-spin mr-2" />
+              ) : null}
+              {editingItem ? "Сохранить" : "Создать"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Удалить товар?</DialogTitle>
+            <DialogDescription>
+              Вы уверены, что хотите удалить товар <strong>"{itemToDelete?.name}"</strong>? Это действие нельзя отменить.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setIsDeleteDialogOpen(false)}>
+              Отмена
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => itemToDelete && deleteMutation.mutate(itemToDelete.id)}
+              disabled={deleteMutation.isPending}
+            >
+              {deleteMutation.isPending && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
+              Удалить
             </Button>
           </DialogFooter>
         </DialogContent>

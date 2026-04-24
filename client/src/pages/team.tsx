@@ -1,5 +1,5 @@
 import { Layout } from "@/components/layout/Layout";
-import { useState, useEffect, useMemo, useDeferredValue, useRef } from "react";
+import { useState, useEffect, useMemo, useDeferredValue, useRef, Fragment } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { 
@@ -158,9 +158,7 @@ export default function EmployeesPage() {
   const [departments, setDepartments] = useState<Department[]>(mockDepartments);
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
-  const [isCreateDeptOpen, setIsCreateDeptOpen] = useState(false);
   const [isCreateEmployeeOpen, setIsCreateEmployeeOpen] = useState(false);
-  const [newDeptName, setNewDeptName] = useState("");
   const [activeTab, setActiveTab] = useState(initialTab);
 
   // New employee form state
@@ -211,7 +209,7 @@ export default function EmployeesPage() {
   }, [employees]);
 
   // User roles - fetch when modal is open and employee is selected
-  const { data: userRoles = [] } = useQuery<Role[]>({
+  const { data: userRoles = [], isPending: userRolesLoading } = useQuery<Role[]>({
     queryKey: ["/api/users", selectedEmployee?.id, "roles"],
     queryFn: async () => {
       if (!selectedEmployee?.id) return [];
@@ -332,6 +330,7 @@ export default function EmployeesPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/users"] });
       queryClient.invalidateQueries({ queryKey: ["/api/user"] });
       queryClient.invalidateQueries({ queryKey: ["/api/users", selectedEmployee?.id, "roles"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/users/me/permissions"] });
       toast({ title: "Успешно", description: "Данные сотрудника обновлены" });
       setIsDetailsOpen(false);
     },
@@ -383,9 +382,20 @@ export default function EmployeesPage() {
 
   // Initialize editing employee when modal opens
   const prevSelectedIdRef = useRef<string | null>(null);
+  const rolesSyncedRef = useRef(false);
+
+  // Reset sync state when modal opens so reopening same employee reinitializes correctly
+  useEffect(() => {
+    if (isDetailsOpen && selectedEmployee) {
+      prevSelectedIdRef.current = null;
+      rolesSyncedRef.current = false;
+    }
+  }, [isDetailsOpen]);
+
   useEffect(() => {
     if (selectedEmployee && selectedEmployee.id !== prevSelectedIdRef.current) {
       prevSelectedIdRef.current = selectedEmployee.id;
+      rolesSyncedRef.current = false;
       setEditingEmployee({
         firstName: selectedEmployee.firstName || "",
         lastName: selectedEmployee.lastName || "",
@@ -395,10 +405,18 @@ export default function EmployeesPage() {
         telegram: selectedEmployee.telegram || "",
         notes: selectedEmployee.notes || "",
         status: selectedEmployee.status || "",
-        roleIds: userRoles.map(r => r.id),
+        roleIds: [],
       });
     }
-  }, [selectedEmployee, userRoles]);
+  }, [selectedEmployee]);
+
+  // Sync roleIds when userRoles loads (separate effect to avoid overwriting manual changes)
+  useEffect(() => {
+    if (selectedEmployee && editingEmployee && !rolesSyncedRef.current && !userRolesLoading) {
+      rolesSyncedRef.current = true;
+      setEditingEmployee(prev => prev ? { ...prev, roleIds: userRoles.map(r => r.id) } : null);
+    }
+  }, [userRoles, selectedEmployee, editingEmployee, userRolesLoading]);
 
   // Sync API employees when loaded
   useEffect(() => {
@@ -490,19 +508,6 @@ export default function EmployeesPage() {
     setActiveTab(tab);
   }, [window.location.search]);
 
-  const handleCreateDepartment = () => {
-    if (!newDeptName.trim()) return;
-    const colors = ["bg-blue-500", "bg-purple-500", "bg-emerald-500", "bg-amber-500", "bg-rose-500", "bg-indigo-500"];
-    const newDept: Department = {
-      id: Date.now().toString(),
-      name: newDeptName,
-      color: colors[departments.length % colors.length]
-    };
-    setDepartments(prev => [...prev, newDept]);
-    setNewDeptName("");
-    setIsCreateDeptOpen(false);
-  };
-
   return (
     <Layout>
       <div className="p-6 space-y-6 animate-in fade-in duration-500">
@@ -514,9 +519,7 @@ export default function EmployeesPage() {
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full sm:w-auto">
             <TabsList className="bg-secondary/50">
               <TabsTrigger value="list">Список</TabsTrigger>
-              <TabsTrigger value="departments">Отделы</TabsTrigger>
               <TabsTrigger value="analytics">Аналитика</TabsTrigger>
-              <TabsTrigger value="roles">Роли</TabsTrigger>
             </TabsList>
           </Tabs>
         </div>
@@ -845,103 +848,178 @@ export default function EmployeesPage() {
               </Dialog>
             </div>
 
-            <div className="border border-border/50 rounded-xl bg-card/50 backdrop-blur-sm overflow-hidden shadow-sm">
-              <Table>
-                <TableHeader className="bg-secondary/20">
-                  <TableRow>
-                    <TableHead className="w-[300px]">Сотрудник</TableHead>
-                    <TableHead>Должность</TableHead>
-                    <TableHead>Статус</TableHead>
-                    <TableHead>Комментарий</TableHead>
-                    <TableHead>Баллы</TableHead>
-                    <TableHead className="text-right">Действия</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {processedEmployees.map((employee) => {
-                    const fullName = `${employee.firstName || ""} ${employee.lastName || ""}`.trim();
-                    return (
-                    <TableRow 
-                      key={employee.id} 
-                      className="cursor-pointer hover:bg-secondary/30 transition-colors"
-                      onClick={() => {
-                        setSelectedEmployee(employee);
-                        setIsDetailsOpen(true);
-                      }}
-                    >
-                       <TableCell className="font-medium text-foreground">
-                        <div className="flex items-center gap-3">
-                          <Avatar className="h-9 w-9 border border-border">
-                            <AvatarImage src={employee.avatar || undefined} />
-                            <AvatarFallback>{fullName.split(" ").map(n => n[0]).join("")}</AvatarFallback>
-                          </Avatar>
-                          <div className="flex flex-col">
-                            <span className="text-sm font-semibold text-foreground">{fullName}</span>
-                            <span className="text-xs text-foreground">{employee.email}</span>
-                          </div>
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-sm text-foreground">{employee.position}</TableCell>
-                      <TableCell>
-                        {customStatuses.length > 0 && employee.status ? (
-                          <StatusBadge status={employee.status} color={customStatuses.find(s => s.name === employee.status)?.color} />
-                        ) : customStatuses.length === 0 ? (
-                          <span className="text-xs text-muted-foreground">—</span>
-                        ) : null}
-                      </TableCell>
-                      <TableCell>
-                        {employee.statusComment ? (
-                          <span className="text-sm text-muted-foreground max-w-[150px] truncate block" title={employee.statusComment}>
-                            {employee.statusComment}
-                          </span>
-                        ) : (
-                          <span className="text-xs text-muted-foreground">—</span>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-1.5 font-medium text-foreground">
-                          <Coins className="w-4 h-4 text-amber-500" />
-                          {employee.pointsBalance}
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-                            <Button variant="ghost" size="icon" className="h-8 w-8">
-                              <MoreVertical className="w-4 h-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end" className="w-48">
-                            <DropdownMenuItem className="gap-2">
-                              <UserCog className="w-4 h-4" /> Редактировать
-                            </DropdownMenuItem>
-                            {employee.isActive ? (
-                              <DropdownMenuItem 
-                                className="gap-2 text-rose-500 cursor-pointer"
-                                onClick={() => {
-                                  updateEmployeeMutation.mutate({ id: employee.id, isActive: false });
-                                }}
-                              >
-                                <UserMinus className="w-4 h-4" /> Заблокировать
-                              </DropdownMenuItem>
-                            ) : (
-                              <DropdownMenuItem 
-                                className="gap-2 text-emerald-500 cursor-pointer"
-                                onClick={() => {
-                                  updateEmployeeMutation.mutate({ id: employee.id, isActive: true });
-                                }}
-                              >
-                                <UserCheck className="w-4 h-4" /> Разблокировать
-                              </DropdownMenuItem>
+            {(() => {
+              // Group employees by department
+              const grouped = processedEmployees.reduce<Record<string, Employee[]>>((acc, emp) => {
+                const dept = emp.department || "Без отдела";
+                if (!acc[dept]) acc[dept] = [];
+                acc[dept].push(emp);
+                return acc;
+              }, {});
+
+              // Sort department names: existing departments first (in their original order), then "Без отдела"
+              const deptOrder = departments
+                .filter(d => grouped[d.name])
+                .map(d => d.name);
+              if (grouped["Без отдела"] && !deptOrder.includes("Без отдела")) {
+                deptOrder.push("Без отдела");
+              }
+
+              return (
+                <div className="border border-border/50 rounded-xl bg-card/50 backdrop-blur-sm overflow-hidden shadow-sm">
+                  <Table>
+                    <TableHeader className="bg-secondary/20">
+                      <TableRow>
+                        <TableHead className="w-[300px]">Сотрудник</TableHead>
+                        <TableHead>Должность</TableHead>
+                        <TableHead>Статус</TableHead>
+                        <TableHead>Комментарий</TableHead>
+                        <TableHead className="text-center">Удаленка</TableHead>
+                        <TableHead>Баллы</TableHead>
+                        <TableHead className="text-right">Действия</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {deptOrder.map((deptName, deptIndex) => {
+                        const dept = departments.find(d => d.name === deptName);
+                        const groupEmployees = grouped[deptName];
+                        return (
+                          <Fragment key={deptName}>
+                            {/* Compact department separator */}
+                            {deptIndex > 0 && (
+                              <TableRow className="border-t-2 border-border/80">
+                                <TableCell colSpan={7} className="py-1.5 px-4 bg-muted/20">
+                                  <div className="flex items-center gap-2">
+                                    {dept ? (
+                                      <span className="w-2 h-2 rounded-full" style={{ backgroundColor: dept.color }} />
+                                    ) : (
+                                      <span className="w-2 h-2 rounded-full bg-slate-400" />
+                                    )}
+                                    <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                                      {deptName}
+                                    </span>
+                                    <span className="text-[10px] text-muted-foreground">({groupEmployees.length})</span>
+                                  </div>
+                                </TableCell>
+                              </TableRow>
                             )}
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </TableCell>
-                    </TableRow>
-                  );})}
-                </TableBody>
-              </Table>
-            </div>
+                            {/* First department header (inline with first row) */}
+                            {deptIndex === 0 && (
+                              <TableRow className="border-b border-border/40">
+                                <TableCell colSpan={7} className="py-1.5 px-4 bg-muted/20">
+                                  <div className="flex items-center gap-2">
+                                    {dept ? (
+                                      <span className="w-2 h-2 rounded-full" style={{ backgroundColor: dept.color }} />
+                                    ) : (
+                                      <span className="w-2 h-2 rounded-full bg-slate-400" />
+                                    )}
+                                    <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                                      {deptName}
+                                    </span>
+                                    <span className="text-[10px] text-muted-foreground">({groupEmployees.length})</span>
+                                  </div>
+                                </TableCell>
+                              </TableRow>
+                            )}
+                            {groupEmployees.map((employee) => {
+                              const fullName = `${employee.firstName || ""} ${employee.lastName || ""}`.trim();
+                              return (
+                                <TableRow
+                                  key={employee.id}
+                                  className="cursor-pointer hover:bg-secondary/30 transition-colors"
+                                  onClick={() => {
+                                    setSelectedEmployee(employee);
+                                    setIsDetailsOpen(true);
+                                  }}
+                                >
+                                  <TableCell className="font-medium text-foreground">
+                                    <div className="flex items-center gap-3">
+                                      <Avatar className="h-9 w-9 border border-border">
+                                        <AvatarImage src={employee.avatar || undefined} />
+                                        <AvatarFallback>{fullName.split(" ").map(n => n[0]).join("")}</AvatarFallback>
+                                      </Avatar>
+                                      <div className="flex flex-col">
+                                        <span className="text-sm font-semibold text-foreground">{fullName}</span>
+                                        <span className="text-xs text-foreground">{employee.email}</span>
+                                      </div>
+                                    </div>
+                                  </TableCell>
+                                  <TableCell className="text-sm text-foreground">{employee.position}</TableCell>
+                                  <TableCell>
+                                    {customStatuses.length > 0 && employee.status ? (
+                                      <StatusBadge status={employee.status} color={customStatuses.find(s => s.name === employee.status)?.color} />
+                                    ) : customStatuses.length === 0 ? (
+                                      <span className="text-xs text-muted-foreground">—</span>
+                                    ) : null}
+                                  </TableCell>
+                                  <TableCell>
+                                    {employee.statusComment ? (
+                                      <span className="text-sm text-muted-foreground max-w-[150px] truncate block" title={employee.statusComment}>
+                                        {employee.statusComment}
+                                      </span>
+                                    ) : (
+                                      <span className="text-xs text-muted-foreground">—</span>
+                                    )}
+                                  </TableCell>
+                                  <TableCell className="text-center">
+                                    {employee.isRemote ? (
+                                      <span title="Работает удаленно">
+                                        <Monitor className="w-4 h-4 text-blue-500 mx-auto" />
+                                      </span>
+                                    ) : (
+                                      <span className="text-xs text-muted-foreground">—</span>
+                                    )}
+                                  </TableCell>
+                                  <TableCell>
+                                    <div className="flex items-center gap-1.5 font-medium text-foreground">
+                                      <Coins className="w-4 h-4 text-amber-500" />
+                                      {employee.pointsBalance}
+                                    </div>
+                                  </TableCell>
+                                  <TableCell className="text-right">
+                                    <DropdownMenu>
+                                      <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                                        <Button variant="ghost" size="icon" className="h-8 w-8">
+                                          <MoreVertical className="w-4 h-4" />
+                                        </Button>
+                                      </DropdownMenuTrigger>
+                                      <DropdownMenuContent align="end" className="w-48">
+                                        <DropdownMenuItem className="gap-2">
+                                          <UserCog className="w-4 h-4" /> Редактировать
+                                        </DropdownMenuItem>
+                                        {employee.isActive ? (
+                                          <DropdownMenuItem
+                                            className="gap-2 text-rose-500 cursor-pointer"
+                                            onClick={() => {
+                                              updateEmployeeMutation.mutate({ id: employee.id, isActive: false });
+                                            }}
+                                          >
+                                            <UserMinus className="w-4 h-4" /> Заблокировать
+                                          </DropdownMenuItem>
+                                        ) : (
+                                          <DropdownMenuItem
+                                            className="gap-2 text-emerald-500 cursor-pointer"
+                                            onClick={() => {
+                                              updateEmployeeMutation.mutate({ id: employee.id, isActive: true });
+                                            }}
+                                          >
+                                            <UserCheck className="w-4 h-4" /> Разблокировать
+                                          </DropdownMenuItem>
+                                        )}
+                                      </DropdownMenuContent>
+                                    </DropdownMenu>
+                                  </TableCell>
+                                </TableRow>
+                              );
+                            })}
+                          </Fragment>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </div>
+              );
+            })()}
 
             {/* Blocked Employees Section - after main list */}
             {blockedEmployees.length > 0 && (
@@ -1027,92 +1105,7 @@ export default function EmployeesPage() {
                 </div>
               )}
             </>
-          ) : activeTab === "departments" ? (
-          <div className="space-y-6">
-            <div className="flex items-center justify-between">
-              <div className="relative flex-1 max-w-sm">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                <Input placeholder="Поиск отделов..." className="pl-9 bg-secondary/30 border-border/50" />
-              </div>
-              <Dialog open={isCreateDeptOpen} onOpenChange={setIsCreateDeptOpen}>
-                <DialogTrigger asChild>
-                  <Button className="gap-2">
-                    <Plus className="w-4 h-4" />
-                    Создать отдел
-                  </Button>
-                </DialogTrigger>
-                <DialogContent>
-                  <DialogHeader>
-                    <DialogTitle>Создать новый отдел</DialogTitle>
-                    <DialogDescription>Укажите название нового отдела для управления командой.</DialogDescription>
-                  </DialogHeader>
-                  <div className="space-y-4 py-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="dept-name">Название отдела</Label>
-                      <Input 
-                        id="dept-name" 
-                        placeholder="Напр: Разработка" 
-                        value={newDeptName}
-                        onChange={(e) => setNewDeptName(e.target.value)}
-                        onKeyDown={(e) => e.key === 'Enter' && handleCreateDepartment()}
-                      />
-                    </div>
-                  </div>
-                  <DialogFooter>
-                    <Button variant="outline" onClick={() => setIsCreateDeptOpen(false)}>Отмена</Button>
-                    <Button onClick={handleCreateDepartment} disabled={!newDeptName.trim()}>Создать</Button>
-                  </DialogFooter>
-                </DialogContent>
-              </Dialog>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {departments.map((dept) => (
-                <div key={dept.id} className="group p-6 rounded-2xl bg-card border border-border/50 hover:shadow-lg hover:border-primary/30 transition-all">
-                  <div className="flex items-start justify-between mb-4">
-                    <div className={cn("p-3 rounded-xl bg-opacity-10", dept.color.replace('bg-', 'bg-opacity-10 text-'))}>
-                      <Users className="w-6 h-6" />
-                    </div>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon" className="h-8 w-8 opacity-0 group-hover:opacity-100">
-                          <MoreVertical className="w-4 h-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem className="gap-2">
-                          <Pencil className="w-3 h-3" /> Переименовать
-                        </DropdownMenuItem>
-                        <DropdownMenuItem className="gap-2 text-rose-500">
-                          <Trash2 className="w-3 h-3" /> Удалить
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </div>
-                  <h3 className="text-lg font-bold mb-1">{dept.name}</h3>
-                  <p className="text-sm text-muted-foreground mb-4">
-                    {employees.filter(e => e.department === dept.name).length} сотрудников
-                  </p>
-                  <div className="flex -space-x-2 overflow-hidden">
-                    {employees.filter(e => e.department === dept.name).slice(0, 5).map((e) => {
-                      const empFullName = `${e.firstName || ""} ${e.lastName || ""}`.trim();
-                      return (
-                      <Avatar key={e.id} className="inline-block h-8 w-8 rounded-full ring-2 ring-background">
-                        <AvatarImage src={e.avatar || undefined} />
-                        <AvatarFallback>{empFullName[0]}</AvatarFallback>
-                      </Avatar>
-                    )})}
-                    {employees.filter(e => e.department === dept.name).length > 5 && (
-                      <div className="flex items-center justify-center h-8 w-8 rounded-full bg-secondary text-[10px] font-bold ring-2 ring-background">
-                        +{employees.filter(e => e.department === dept.name).length - 5}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        ) : activeTab === "analytics" ? (
+          ) : activeTab === "analytics" ? (
           <div className="space-y-4">
             <div className="flex items-center gap-4">
               <div className="relative flex-1 max-w-sm">
@@ -1140,15 +1133,24 @@ export default function EmployeesPage() {
                 <TableBody>
                   {allActiveEmployees.map((employee) => {
                     const fullName = `${employee.firstName || ""} ${employee.lastName || ""}`.trim();
+                    const displayName = fullName || employee.email || "Без имени";
+                    const initials = fullName
+                      ? fullName.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()
+                      : (employee.email?.substring(0, 2).toUpperCase() || "??");
                     return (
                     <TableRow key={employee.id} className="hover:bg-secondary/30 transition-colors">
                       <TableCell className="font-medium text-foreground">
                         <div className="flex items-center gap-3">
                           <Avatar className="h-8 w-8 border border-border">
                             <AvatarImage src={employee.avatar || undefined} />
-                            <AvatarFallback>{fullName.split(' ').map(n => n[0]).join('')}</AvatarFallback>
+                            <AvatarFallback>{initials}</AvatarFallback>
                           </Avatar>
-                          <span className="text-sm font-semibold text-foreground">{fullName}</span>
+                          <div className="flex flex-col">
+                            <span className="text-sm font-semibold text-foreground">{displayName}</span>
+                            {!fullName && employee.email && (
+                              <span className="text-[10px] text-muted-foreground">{employee.email}</span>
+                            )}
+                          </div>
                         </div>
                       </TableCell>
                       <TableCell className="text-sm font-medium text-emerald-500">—</TableCell>
@@ -1157,10 +1159,14 @@ export default function EmployeesPage() {
                           <Input
                             type="time"
                             value={employee.workStartTime || ""}
-                            onChange={(e) => {
+                            onChange={async (e) => {
                               const newTime = e.target.value;
-                              apiRequest("PUT", `/api/users/${employee.id}`, { workStartTime: newTime });
-                              queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+                              try {
+                                await apiRequest("PUT", `/api/users/${employee.id}`, { workStartTime: newTime });
+                                queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+                              } catch (err) {
+                                toast({ title: "Ошибка", description: "Не удалось сохранить время", variant: "destructive" });
+                              }
                             }}
                             className="h-7 w-28 text-xs"
                           />
@@ -1171,10 +1177,14 @@ export default function EmployeesPage() {
                           <Input
                             type="time"
                             value={employee.workEndTime || ""}
-                            onChange={(e) => {
+                            onChange={async (e) => {
                               const newTime = e.target.value;
-                              apiRequest("PUT", `/api/users/${employee.id}`, { workEndTime: newTime });
-                              queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+                              try {
+                                await apiRequest("PUT", `/api/users/${employee.id}`, { workEndTime: newTime });
+                                queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+                              } catch (err) {
+                                toast({ title: "Ошибка", description: "Не удалось сохранить время", variant: "destructive" });
+                              }
                             }}
                             className="h-7 w-28 text-xs"
                           />

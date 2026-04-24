@@ -127,6 +127,7 @@ export const SidebarContentComponent = React.memo(({
     try {
       await apiRequest("POST", "/api/logout");
       queryClient.setQueryData(["/api/user"], null);
+      queryClient.invalidateQueries({ queryKey: ["/api/users/me/permissions"] });
       navigate("/auth");
     } catch (error) {
       console.error("Logout failed:", error);
@@ -171,7 +172,7 @@ export const SidebarContentComponent = React.memo(({
             <div className="w-10 h-10 rounded-lg bg-primary flex items-center justify-center text-primary-foreground font-bold text-lg shrink-0 logo-animated">
               m4
             </div>
-            {!isCollapsed && <span className="font-sans font-bold text-lg animate-in fade-in duration-300">m4portal</span>}
+            {!isCollapsed && <span className="font-sans font-bold text-lg animate-in fade-in duration-300">portal</span>}
           </div>
         </div>
       </div>

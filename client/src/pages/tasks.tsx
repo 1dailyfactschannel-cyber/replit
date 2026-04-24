@@ -85,6 +85,21 @@ export default function Tasks() {
     return () => clearInterval(interval);
   }, []);
 
+  // Handle taskId from URL query params
+  const hasHandledUrlRef = useRef(false);
+  useEffect(() => {
+    if (hasHandledUrlRef.current || isLoading || tasks.length === 0) return;
+    const params = new URLSearchParams(window.location.search);
+    const taskId = params.get('taskId');
+    if (taskId) {
+      const task = tasks.find((t: any) => String(t.id) === taskId);
+      if (task) {
+        handleTaskClick(task);
+        hasHandledUrlRef.current = true;
+      }
+    }
+  }, [tasks, isLoading]);
+
   const updateTaskMutation = useMutation({
     mutationFn: async ({ id, updates }: { id: string; updates: any }) => {
       const res = await apiRequest("PATCH", `/api/tasks/${id}`, updates);
@@ -92,6 +107,8 @@ export default function Tasks() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/tasks/my-tasks"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks/all"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/boards"] });
       toast.success("Задача обновлена");
     },
     onError: () => {
@@ -254,6 +271,8 @@ export default function Tasks() {
 
   const handleUpdateTask = (updatedTask: Task) => {
     queryClient.invalidateQueries({ queryKey: ["/api/tasks/my-tasks"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/tasks/all"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/boards"] });
     setSelectedTask(updatedTask);
   };
 

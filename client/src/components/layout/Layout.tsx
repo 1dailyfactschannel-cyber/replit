@@ -29,7 +29,8 @@ import {
   BarChart2,
   Coins,
   User,
-  Monitor
+  Monitor,
+  Star
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -160,6 +161,21 @@ const SidebarContentComponent = React.memo(({
   const { hasPermission } = usePermission();
   const sidebarItems = sidebarItemsBase.filter(item => !item.permission || hasPermission(item.permission));
 
+  // Fetch favorite projects
+  const { data: userSettings = [] } = useQuery<any[]>({
+    queryKey: ["/api/user/settings"],
+    enabled: !!user?.id,
+    staleTime: 1000 * 60 * 5,
+  });
+  const { data: projects = [] } = useQuery<any[]>({
+    queryKey: ["/api/projects"],
+    enabled: !!user?.id,
+    staleTime: 1000 * 60 * 5,
+  });
+
+  const favoriteProjectIds = (userSettings?.find((s: any) => s.key === 'favorite_projects')?.value as string[]) || [];
+  const favoriteProjects = projects.filter((p: any) => favoriteProjectIds.includes(p.id));
+
   return (
     <div className={cn(
       "flex flex-col h-full bg-sidebar text-sidebar-foreground border-r border-sidebar-border transition-all duration-300 ease-in-out relative group/sidebar",
@@ -171,7 +187,7 @@ const SidebarContentComponent = React.memo(({
             <div className="w-10 h-10 rounded-lg bg-primary flex items-center justify-center text-primary-foreground font-bold text-lg shrink-0 logo-animated">
               m4
             </div>
-            {!isCollapsed && <span className="font-sans font-bold text-lg animate-in fade-in duration-300">m4portal</span>}
+            {!isCollapsed && <span className="font-sans font-bold text-lg animate-in fade-in duration-300">portal</span>}
           </div>
         </div>
 
@@ -217,32 +233,40 @@ const SidebarContentComponent = React.memo(({
         </div>
 
         <div className="mt-8 space-y-1">
-          {!isCollapsed && <p className="text-xs font-medium text-muted-foreground px-2 mb-2 uppercase tracking-wider animate-in fade-in duration-300">Проекты</p>}
-          {[
-            { name: "m4portal Web", priority: "Высокий" },
-            { name: "Mobile App", priority: "Средний" },
-            { name: "Internal API", priority: "Низкий" }
-          ].map((project, i) => (
-            <button 
-              key={i} 
-              onClick={() => {
-                setLocation("/projects");
-              }}
-              className={cn(
-                "w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-all text-left overflow-hidden whitespace-nowrap",
-                isCollapsed && "px-0 justify-center w-10 h-10 mx-auto rounded-xl hover:scale-105"
-              )}
-              title={isCollapsed ? project.name : ""}
-            >
+          {!isCollapsed && <p className="text-xs font-medium text-muted-foreground px-2 mb-2 uppercase tracking-wider animate-in fade-in duration-300">Избранное</p>}
+          {favoriteProjects.length === 0 ? (
+            !isCollapsed && (
+              <p className="px-3 py-2 text-xs text-muted-foreground/60">
+                Нет избранных проектов
+              </p>
+            )
+          ) : (
+            favoriteProjects.map((project: any) => (
+              <button
+                key={project.id}
+                onClick={() => {
+                  setLocation(`/projects?projectId=${project.id}`);
+                }}
+                className={cn(
+                  "w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-all text-left overflow-hidden whitespace-nowrap",
+                  isCollapsed && "px-0 justify-center w-10 h-10 mx-auto rounded-xl hover:scale-105"
+                )}
+                title={isCollapsed ? project.name : ""}
+              >
                 <div className={cn(
                   "w-2 h-2 rounded-full shrink-0 shadow-sm",
-                  project.priority === "Высокий" ? "bg-rose-500 shadow-rose-500/40" :
+                  project.priority === "Высокий" || project.priority === "Критический" ? "bg-rose-500 shadow-rose-500/40" :
                   project.priority === "Средний" ? "bg-amber-500 shadow-amber-500/40" :
                   "bg-emerald-500 shadow-emerald-500/40"
                 )} />
-                {!isCollapsed && <span className="animate-in fade-in duration-300">{project.name}</span>}
-            </button>
-          ))}
+                {isCollapsed ? (
+                  <Star className="w-4 h-4 shrink-0" />
+                ) : (
+                  <span className="animate-in fade-in duration-300 truncate">{project.name}</span>
+                )}
+              </button>
+            ))
+          )}
         </div>
       </ScrollArea>
 
@@ -334,6 +358,7 @@ const SidebarContentComponent = React.memo(({
                 try {
                   await apiRequest("POST", "/api/logout");
                   queryClient.setQueryData(["/api/user"], null);
+                  queryClient.invalidateQueries({ queryKey: ["/api/users/me/permissions"] });
                   setLocation("/auth");
                 } catch (error) {
                   console.error("Logout failed:", error);

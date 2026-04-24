@@ -323,14 +323,14 @@ export default function NotificationsPage() {
     isFetchingNextPage,
     isLoading,
   } = useInfiniteQuery({
-    queryKey: ["/api/notifications"],
+    queryKey: ["/api/notifications", "paginated"],
     queryFn: async ({ pageParam = 1 }) => {
       const res = await fetch(`/api/notifications?page=${pageParam}&limit=20`, { credentials: 'include' });
       if (!res.ok) throw new Error('Failed to fetch notifications');
       return res.json() as Promise<{ notifications: Notification[]; pagination: { page: number; total: number; totalPages: number } }>;
     },
     getNextPageParam: (lastPage) => {
-      if (lastPage.pagination.page < lastPage.pagination.totalPages) {
+      if (lastPage?.pagination?.page < lastPage?.pagination?.totalPages) {
         return lastPage.pagination.page + 1;
       }
       return undefined;
@@ -338,14 +338,14 @@ export default function NotificationsPage() {
     initialPageParam: 1,
   });
 
-  const notifications = data?.pages.flatMap((page) => page.notifications) || [];
+  const notifications = data?.pages?.flatMap((page) => page?.notifications || []) || [];
 
   const markAsReadMutation = useMutation({
     mutationFn: async (id: string) => {
       await apiRequest("PATCH", `/api/notifications/${id}/read`);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/notifications", "paginated"] });
     },
   });
 
@@ -354,7 +354,7 @@ export default function NotificationsPage() {
       await apiRequest("POST", "/api/notifications/read-all");
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/notifications", "paginated"] });
       toast.success("Все уведомления отмечены как прочитанные");
     },
   });
@@ -364,7 +364,7 @@ export default function NotificationsPage() {
       await apiRequest("DELETE", `/api/notifications/${id}`);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/notifications", "paginated"] });
       toast.success("Уведомление удалено");
     },
   });
@@ -375,7 +375,7 @@ export default function NotificationsPage() {
       await Promise.all(readNotifications.map((n: Notification) => apiRequest("DELETE", `/api/notifications/${n.id}`)));
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/notifications", "paginated"] });
       toast.success("Прочитанные уведомления удалены");
     },
   });
@@ -390,7 +390,7 @@ export default function NotificationsPage() {
     });
 
     socket.on("new-notification", (notification: Notification) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/notifications", "paginated"] });
       // Show browser notification if page is not visible
       if (document.hidden) {
         const content = formatNotificationContent(notification);
