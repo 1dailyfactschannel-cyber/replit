@@ -263,10 +263,11 @@ export function RolesManagement() {
 
   const handleSave = () => {
     if (!selectedRole) return;
-    if (selectedRole.isSystem) {
+    // Prevent renaming system roles, but allow editing permissions/description/color
+    if (selectedRole.isSystem && editName.trim() !== selectedRole.name) {
       toast({
         title: "Ошибка",
-        description: "Системные роли нельзя редактировать.",
+        description: "Нельзя переименовывать системные роли.",
         variant: "destructive"
       });
       return;
@@ -443,7 +444,7 @@ export function RolesManagement() {
             <Card className="border-border/50 bg-card/50 backdrop-blur-sm shadow-sm flex flex-col overflow-hidden border-none ring-1 ring-border/50">
               <CardHeader className="flex flex-row items-start justify-between bg-muted/20 border-b border-border/50 py-6">
                 <div className="space-y-2 flex-1">
-                  {isEditing && !selectedRole.isSystem ? (
+                  {isEditing ? (
                     <>
                       <div className="flex items-center gap-3">
                         <input
@@ -455,7 +456,8 @@ export function RolesManagement() {
                         <Input
                           value={editName}
                           onChange={(e) => setEditName(e.target.value)}
-                          className="h-9 text-lg font-bold bg-background/50 border-border/50"
+                          disabled={selectedRole.isSystem}
+                          className="h-9 text-lg font-bold bg-background/50 border-border/50 disabled:opacity-60"
                           placeholder="Название роли"
                         />
                       </div>
@@ -484,43 +486,34 @@ export function RolesManagement() {
                   )}
                 </div>
                 <div className="flex items-center gap-2 ml-4">
-                  {!selectedRole.isSystem && (
+                  {isEditing ? (
                     <>
-                      {isEditing ? (
-                        <>
-                          <Button variant="outline" size="sm" className="h-9 gap-2 text-xs font-bold" onClick={() => setIsEditing(false)}>
-                            Отмена
-                          </Button>
-                          <Button
-                            size="sm"
-                            className="h-9 gap-2 text-xs font-bold shadow-lg shadow-primary/20"
-                            disabled={updateRoleMutation.isPending || !editName.trim()}
-                            onClick={handleSave}
-                          >
-                            {updateRoleMutation.isPending ? (
-                              <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" />
-                            ) : (
-                              <Save className="w-3.5 h-3.5" />
-                            )}
-                            Сохранить
-                          </Button>
-                        </>
-                      ) : (
-                        <>
-                          <Button variant="outline" size="sm" className="h-9 gap-2 text-xs font-bold border-border/50 bg-background/50" onClick={() => setIsEditing(true)}>
-                            Редактировать
-                          </Button>
-                          <Button variant="outline" size="sm" className="h-9 gap-2 text-xs font-bold border-border/50 bg-background/50">
-                            <Copy className="w-3.5 h-3.5" /> Копировать
-                          </Button>
-                        </>
-                      )}
+                      <Button variant="outline" size="sm" className="h-9 gap-2 text-xs font-bold" onClick={() => setIsEditing(false)}>
+                        Отмена
+                      </Button>
+                      <Button
+                        size="sm"
+                        className="h-9 gap-2 text-xs font-bold shadow-lg shadow-primary/20"
+                        disabled={updateRoleMutation.isPending || !editName.trim()}
+                        onClick={handleSave}
+                      >
+                        {updateRoleMutation.isPending ? (
+                          <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" />
+                        ) : (
+                          <Save className="w-3.5 h-3.5" />
+                        )}
+                        Сохранить
+                      </Button>
                     </>
-                  )}
-                  {selectedRole.isSystem && (
-                    <Button variant="outline" size="sm" className="h-9 gap-2 text-xs font-bold border-border/50 bg-background/50">
-                      <Copy className="w-3.5 h-3.5" /> Копировать
-                    </Button>
+                  ) : (
+                    <>
+                      <Button variant="outline" size="sm" className="h-9 gap-2 text-xs font-bold border-border/50 bg-background/50" onClick={() => setIsEditing(true)}>
+                        Редактировать
+                      </Button>
+                      <Button variant="outline" size="sm" className="h-9 gap-2 text-xs font-bold border-border/50 bg-background/50">
+                        <Copy className="w-3.5 h-3.5" /> Копировать
+                      </Button>
+                    </>
                   )}
                 </div>
               </CardHeader>
