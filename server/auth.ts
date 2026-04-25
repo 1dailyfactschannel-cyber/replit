@@ -7,6 +7,7 @@ import { type User as SelectUser } from "@shared/schema";
 import createMemoryStore from "memorystore";
 import crypto from "crypto";
 import { promisify } from "util";
+import bcrypt from "bcrypt";
 import rateLimit from "express-rate-limit";
 import Redis from "ioredis";
 import { RedisStore } from "connect-redis";
@@ -73,6 +74,11 @@ async function hashPassword(password: string) {
 
 async function comparePasswords(supplied: string, stored: string) {
   try {
+    // Support bcrypt hashes (used by API-created users and password resets)
+    if (stored.startsWith("$2")) {
+      return await bcrypt.compare(supplied, stored);
+    }
+    // Legacy scrypt format: hash.salt
     const [hashed, salt] = stored.split(".");
     if (!hashed || !salt) return false;
     const hashedBuf = Buffer.from(hashed, "hex");
