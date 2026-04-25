@@ -254,11 +254,17 @@ export async function ensureAdminUsers() {
       console.log("[ensureAdminUsers] User already has admin role");
     }
 
+    // Only assign owner role to qw1e1@mail.ru if no owner is set at all
     if (ownerRole && !hasOwnerRole) {
-      console.log(`[ensureAdminUsers] Assigning owner role to ${adminUser.email} (${adminUser.id})`);
-      await storage.assignRoleToUser(adminUser.id, ownerRole.id);
-      await storage.setSiteSetting("owner_user_id", adminUser.id);
-      console.log("[ensureAdminUsers] Owner role assigned successfully");
+      const ownerSetting = await storage.getSiteSetting("owner_user_id");
+      if (!ownerSetting) {
+        console.log(`[ensureAdminUsers] Assigning owner role to ${adminUser.email} (${adminUser.id})`);
+        await storage.assignRoleToUser(adminUser.id, ownerRole.id);
+        await storage.setSiteSetting("owner_user_id", adminUser.id);
+        console.log("[ensureAdminUsers] Owner role assigned successfully");
+      } else {
+        console.log("[ensureAdminUsers] Owner already exists, skipping owner assignment for fallback user");
+      }
     } else if (ownerRole && hasOwnerRole) {
       console.log("[ensureAdminUsers] User already has owner role");
     }
