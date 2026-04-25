@@ -1180,11 +1180,19 @@ function TeamManagement() {
       }
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       refetchInvitations();
       setInviteEmail("");
       setInviteRole("");
-      toast({ title: "Приглашение отправлено", description: "Письмо с приглашением отправлено на указанный email" });
+      if (data.emailSent) {
+        toast({ title: "Приглашение отправлено", description: "Письмо с приглашением отправлено на указанный email" });
+      } else {
+        toast({
+          title: "Приглашение создано",
+          description: "SMTP не настроен — письмо не отправлено. Перейдите в раздел «Управление → Email SMTP» для настройки почты.",
+          variant: "destructive"
+        });
+      }
     },
     onError: (error: any) => {
       toast({ title: "Ошибка", description: error?.message || "Не удалось отправить приглашение", variant: "destructive" });
