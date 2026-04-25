@@ -1923,9 +1923,10 @@ function ProjectsManagement() {
     },
   });
 
-  const { data: workspaces = [] } = useQuery<any[]>({
+  const { data: workspacesRaw } = useQuery<any[]>({
     queryKey: ["/api/workspaces"],
   });
+  const workspaces = workspacesRaw ?? [];
 
   const { data: users = [] } = useQuery<User[]>({
     queryKey: ["/api/users"],
