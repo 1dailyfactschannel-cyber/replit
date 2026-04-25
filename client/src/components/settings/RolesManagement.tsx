@@ -498,50 +498,50 @@ export function RolesManagement() {
               />
             </div>
 
-            <div className="space-y-2">
+            <div className="space-y-1.5">
               {filteredRoles.map((role) => (
                 <div
                   key={role.id}
                   onClick={() => setSelectedRoleId(role.id)}
                   className={cn(
-                    "group flex flex-col p-4 rounded-xl cursor-pointer transition-all border relative overflow-hidden",
+                    "group flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer transition-all border relative overflow-hidden",
                     (selectedRoleId === role.id || (!selectedRoleId && role === selectedRole))
                       ? "bg-primary/5 border-primary shadow-sm ring-1 ring-primary/20"
                       : "bg-card/50 border-border/50 hover:border-primary/30 hover:bg-muted/30"
                   )}
                 >
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-3">
-                      <div
-                        className="w-2.5 h-2.5 rounded-full shadow-sm"
-                        style={{ backgroundColor: role.color || "#6366f1" }}
-                      />
-                      <span className="font-bold text-sm tracking-tight">{role.name}</span>
+                  <div
+                    className="w-2 h-2 rounded-full shrink-0"
+                    style={{ backgroundColor: role.color || "#6366f1" }}
+                  />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-semibold text-xs tracking-tight truncate">{role.name}</span>
+                      {role.isSystem && (
+                        <Badge variant="secondary" className="text-[8px] font-bold uppercase tracking-widest bg-muted/50 text-muted-foreground border-none h-3 px-1 shrink-0">
+                          Система
+                        </Badge>
+                      )}
                     </div>
-                    {role.isSystem && (
-                      <Badge variant="secondary" className="text-[9px] font-bold uppercase tracking-widest bg-muted/50 text-muted-foreground border-none h-4 px-1.5">
-                        Система
-                      </Badge>
-                    )}
+                    <p className="text-[10px] text-muted-foreground truncate leading-tight">
+                      {role.description || "Без описания"}
+                    </p>
                   </div>
-                  <p className="text-[11px] text-muted-foreground line-clamp-1 mb-3 font-medium">
-                    {role.description || ""}
-                  </p>
-                  <div className="flex items-center justify-between mt-auto">
-                    <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-tighter">
-                      {role.memberCount !== undefined ? `${role.memberCount} участников` : ""}
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <span className="text-[9px] font-medium text-muted-foreground">
+                      {role.memberCount !== undefined ? `${role.memberCount}` : ""}
                     </span>
                     {!role.isSystem && (
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="h-6 w-6 opacity-0 group-hover:opacity-100 text-rose-500 hover:text-rose-600 hover:bg-rose-50 transition-all"
+                        className="h-5 w-5 opacity-0 group-hover:opacity-100 text-rose-500 hover:text-rose-600 hover:bg-rose-50 transition-all"
                         onClick={(e) => {
                           e.stopPropagation();
                           handleDeleteRole(role.id);
                         }}
                       >
-                        <Trash2 className="w-3.5 h-3.5" />
+                        <Trash2 className="w-3 h-3" />
                       </Button>
                     )}
                   </div>
