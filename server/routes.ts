@@ -1728,7 +1728,7 @@ export async function registerRoutes(
         name: req.body.name,
         priority: req.body.priority?.toLowerCase() || "medium",
         color: req.body.color || "#3b82f6",
-        ownerId: req.body.ownerId || user.id,
+        ownerId: user.id,
         status: "active",
         workspaceId: req.body.workspaceId || null
       };
@@ -1777,7 +1777,7 @@ export async function registerRoutes(
   app.patch("/api/projects/:id", async (req, res) => {
     try {
       // Whitelist allowed fields for security
-      const allowedFields = ['name', 'description', 'status', 'priorityId', 'workspaceId', 'startDate', 'endDate', 'budget', 'currency', 'color', 'isPublic', 'ownerId'];
+      const allowedFields = ['name', 'description', 'status', 'priorityId', 'workspaceId', 'startDate', 'endDate', 'budget', 'currency', 'color', 'isPublic'];
       const updateData: Record<string, any> = {};
       
       for (const field of allowedFields) {

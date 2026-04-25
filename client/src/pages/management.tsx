@@ -1895,7 +1895,7 @@ function ProjectsManagement() {
   const [isCreateProjectOpen, setIsCreateProjectOpen] = useState(false);
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(null);
   const [newProjectWorkspaceId, setNewProjectWorkspaceId] = useState<string | null>(null);
-  const [newProject, setNewProject] = useState<{ name: string; color: string; priority: string; ownerId?: string }>({ name: "", color: "bg-blue-500", priority: "Средний" });
+  const [newProject, setNewProject] = useState({ name: "", color: "bg-blue-500", priority: "Средний" });
   const [projectToDelete, setProjectToDelete] = useState<{ id: string; name: string } | null>(null);
   const [deleteMasterPassword, setDeleteMasterPassword] = useState("");
   const [editingProject, setEditingProject] = useState<any>(null);
@@ -1970,7 +1970,7 @@ function ProjectsManagement() {
       });
       
       setIsCreateProjectOpen(false);
-      setNewProject({ name: "", color: "bg-blue-500", priority: "Средний", ownerId: undefined });
+      setNewProject({ name: "", color: "bg-blue-500", priority: "Средний" });
       setNewProjectWorkspaceId(null);
       toast({
         title: "Проект создан",
@@ -2171,8 +2171,7 @@ function ProjectsManagement() {
       data: {
         name: editingProject.name,
         priority: priorityMap[editingProject.priority] || editingProject.priority,
-        workspaceId: editingProject.workspaceId,
-        ownerId: editingProject.ownerId
+        workspaceId: editingProject.workspaceId
       }
     };
     updateProjectMutation.mutate(updateData);
@@ -2480,28 +2479,6 @@ function ProjectsManagement() {
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="space-y-2">
-                  <Label>Владелец проекта</Label>
-                  <Select 
-                    value={newProject.ownerId || "current"} 
-                    onValueChange={(val) => setNewProject({ ...newProject, ownerId: val === "current" ? undefined : val })}
-                  >
-                    <SelectTrigger className="bg-background text-foreground">
-                      <SelectValue placeholder="Выберите владельца" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="current">Текущий пользователь</SelectItem>
-                      {users.map((user: any) => (
-                        <SelectItem key={user.id} value={user.id}>
-                          <div className="flex items-center gap-2">
-                            <span>{user.firstName} {user.lastName}</span>
-                            <span className="text-muted-foreground text-xs">({user.email})</span>
-                          </div>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
               </div>
               <DialogFooter>
                 <Button variant="outline" onClick={() => setIsCreateProjectOpen(false)}>Отмена</Button>
@@ -2717,28 +2694,6 @@ function ProjectsManagement() {
                     <SelectItem value="Средний">Средний</SelectItem>
                     <SelectItem value="Высокий">Высокий</SelectItem>
                     <SelectItem value="Критический">Критический</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label>Владелец проекта</Label>
-                <Select 
-                  value={editingProject?.ownerId || "none"} 
-                  onValueChange={(val) => setEditingProject({ ...editingProject, ownerId: val === "none" ? null : val })}
-                >
-                  <SelectTrigger className="bg-background text-foreground">
-                    <SelectValue placeholder="Выберите владельца" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">Не назначен</SelectItem>
-                    {users.map((user: any) => (
-                      <SelectItem key={user.id} value={user.id}>
-                        <div className="flex items-center gap-2">
-                          <span>{user.firstName} {user.lastName}</span>
-                          <span className="text-muted-foreground text-xs">({user.email})</span>
-                        </div>
-                      </SelectItem>
-                    ))}
                   </SelectContent>
                 </Select>
               </div>
