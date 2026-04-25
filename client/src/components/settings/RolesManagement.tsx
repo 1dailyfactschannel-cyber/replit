@@ -132,6 +132,11 @@ export function RolesManagement() {
   const [transferCode, setTransferCode] = useState("");
   const [selectedNewOwnerId, setSelectedNewOwnerId] = useState("");
 
+  // Delete role with transfer state
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [roleToDelete, setRoleToDelete] = useState<Role | null>(null);
+  const [transferToRoleId, setTransferToRoleId] = useState("");
+
   const { data: apiRoles = [], isLoading: rolesLoading } = useQuery<Role[]>({
     queryKey: ["/api/roles"],
     queryFn: async () => {
@@ -213,24 +218,38 @@ export function RolesManagement() {
   });
 
   const deleteRoleMutation = useMutation({
-    mutationFn: async (id: string) => {
-      const res = await apiRequest("DELETE", `/api/roles/${id}`);
+    mutationFn: async ({ id, transferToRoleId }: { id: string; transferToRoleId?: string }) => {
+      const res = await apiRequest("DELETE", `/api/roles/${id}`, transferToRoleId ? { transferToRoleId } : undefined);
+      if (!res.ok) {
+        const error = await res.json();
+        throw error;
+      }
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/roles"] });
-      if (selectedRoleId) {
-        setSelectedRoleId(apiRoles.find(r => r.id !== selectedRoleId)?.id || null);
+      queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+      if (selectedRoleId === roleToDelete?.id) {
+        setSelectedRoleId(apiRoles.find(r => r.id !== roleToDelete?.id)?.id || null);
       }
+      setIsDeleteDialogOpen(false);
+      setRoleToDelete(null);
+      setTransferToRoleId("");
       toast({
         title: "Роль удалена",
-        description: "Роль была успешно удалена из системы.",
+        description: data.transferredUsers > 0
+          ? `Роль удалена. ${data.transferredUsers} пользователей перенесено в выбранную роль.`
+          : "Роль была успешно удалена из системы.",
       });
     },
-    onError: () => {
+    onError: (error: any) => {
+      if (error.requiresTransfer) {
+        // This is handled by opening the transfer dialog
+        return;
+      }
       toast({
         title: "Ошибка",
-        description: "Не удалось удалить роль.",
+        description: error.message || "Не удалось удалить роль.",
         variant: "destructive",
       });
     },
@@ -344,7 +363,26 @@ export function RolesManagement() {
       });
       return;
     }
-    deleteRoleMutation.mutate(id);
+    setRoleToDelete(role || null);
+    setTransferToRoleId("");
+    setIsDeleteDialogOpen(true);
+  };
+
+  const confirmDeleteRole = () => {
+    if (!roleToDelete) return;
+    // If role has members, require transfer target
+    if ((roleToDelete.memberCount || 0) > 0 && !transferToRoleId) {
+      toast({
+        title: "Требуется перенос",
+        description: "Выберите роль для переноса пользователей перед удалением.",
+        variant: "destructive",
+      });
+      return;
+    }
+    deleteRoleMutation.mutate({
+      id: roleToDelete.id,
+      transferToRoleId: transferToRoleId || undefined,
+    });
   };
 
   const handleSave = () => {
@@ -835,6 +873,118 @@ export function RolesManagement() {
                 Подтвердить передачу
               </Button>
             )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Role with Transfer Dialog */}
+      <Dialog open={isDeleteDialogOpen} onOpenChange={(open) => {
+        if (!open) {
+          setIsDeleteDialogOpen(false);
+          setRoleToDelete(null);
+          setTransferToRoleId("");
+        }
+      }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-rose-600">
+              <Trash2 className="w-5 h-5" />
+              Удаление роли
+            </DialogTitle>
+            <DialogDescription>
+              {roleToDelete?.memberCount && roleToDelete.memberCount > 0
+                ? `Роль «${roleToDelete?.name}» содержит ${roleToDelete.memberCount} пользователей. Выберите роль для переноса.`
+                : `Подтвердите удаление роли «${roleToDelete?.name}». Роль не содержит пользователей.`}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            {/* Role info card */}
+            <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/50 border border-border/50">
+              <div
+                className="w-3 h-3 rounded-full"
+                style={{ backgroundColor: roleToDelete?.color || "#6366f1" }}
+              />
+              <div>
+                <p className="text-sm font-semibold">{roleToDelete?.name}</p>
+                <p className="text-xs text-muted-foreground">
+                  {roleToDelete?.memberCount || 0} пользователей
+                </p>
+              </div>
+            </div>
+
+            {/* Transfer selection - only show if role has members */}
+            {(roleToDelete?.memberCount || 0) > 0 && (
+              <div className="space-y-3">
+                <div className="space-y-2">
+                  <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                    Перенести пользователей в роль
+                  </Label>
+                  <Select value={transferToRoleId} onValueChange={setTransferToRoleId}>
+                    <SelectTrigger className="bg-background/50 border-border/50">
+                      <SelectValue placeholder="Выберите роль..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {roles
+                        .filter((r) => r.id !== roleToDelete?.id && !r.isSystem)
+                        .map((r) => (
+                          <SelectItem key={r.id} value={r.id}>
+                            <div className="flex items-center gap-2">
+                              <span className="w-2 h-2 rounded-full" style={{ backgroundColor: r.color || "#6366f1" }} />
+                              {r.name}
+                              <span className="text-muted-foreground text-xs">({r.memberCount || 0} пользователей)</span>
+                            </div>
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Hint */}
+                <div className="bg-amber-500/5 border border-amber-500/20 rounded-lg p-3 flex gap-3">
+                  <AlertCircle className="w-5 h-5 text-amber-500 shrink-0" />
+                  <div className="space-y-0.5">
+                    <p className="text-xs font-bold text-amber-800">Важно</p>
+                    <p className="text-[11px] text-amber-700 leading-relaxed">
+                      Все пользователи из удаляемой роли получат права выбранной роли. Это действие нельзя отменить.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Empty role hint */}
+            {(roleToDelete?.memberCount || 0) === 0 && (
+              <div className="bg-emerald-500/5 border border-emerald-500/20 rounded-lg p-3 flex gap-3">
+                <AlertCircle className="w-5 h-5 text-emerald-500 shrink-0" />
+                <p className="text-[11px] text-emerald-700 leading-relaxed">
+                  Роль не содержит пользователей. Удаление произойдет без переноса.
+                </p>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setIsDeleteDialogOpen(false);
+                setRoleToDelete(null);
+                setTransferToRoleId("");
+              }}
+            >
+              Отмена
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={deleteRoleMutation.isPending}
+              onClick={confirmDeleteRole}
+              className="gap-2"
+            >
+              {deleteRoleMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
+              <Trash2 className="w-4 h-4" />
+              Удалить роль
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

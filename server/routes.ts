@@ -406,7 +406,23 @@ export async function registerRoutes(
   app.get("/api/roles", async (req, res) => {
     try {
       const roles = await storage.getAllRoles();
-      res.json(roles);
+      const db = (storage as any).db;
+
+      // Get member counts for each role
+      const rolesWithCounts = await Promise.all(
+        roles.map(async (role) => {
+          const countResult = await db
+            .select({ count: sql<number>`count(*)` })
+            .from(schema.userRoles)
+            .where(eq(schema.userRoles.roleId, role.id));
+          return {
+            ...role,
+            memberCount: Number(countResult[0]?.count || 0),
+          };
+        })
+      );
+
+      res.json(rolesWithCounts);
     } catch (error: any) {
       console.error("GET /api/roles error:", error);
       res.status(500).json({ message: "Failed to fetch roles", error: error.message });
@@ -510,7 +526,7 @@ export async function registerRoutes(
     }
   });
 
-  // Delete role
+  // Delete role (with optional user transfer)
   app.delete("/api/roles/:id", async (req, res) => {
     if (!req.isAuthenticated()) {
       return res.status(401).json({ message: "Unauthorized" });
@@ -525,8 +541,38 @@ export async function registerRoutes(
         return res.status(403).json({ message: "Cannot delete system role" });
       }
 
+      // Find all users with this role
+      const db = (storage as any).db;
+      const userRolesRecords = await db.select().from(schema.userRoles).where(eq(schema.userRoles.roleId, req.params.id));
+      const userIds = userRolesRecords.map((ur: any) => ur.userId);
+
+      // If role has users, require transferToRoleId
+      if (userIds.length > 0) {
+        const { transferToRoleId } = req.body;
+        if (!transferToRoleId) {
+          return res.status(400).json({
+            message: "Role has users",
+            userCount: userIds.length,
+            requiresTransfer: true,
+          });
+        }
+
+        // Verify target role exists
+        const targetRole = await storage.getRole(transferToRoleId);
+        if (!targetRole) {
+          return res.status(400).json({ message: "Target role not found" });
+        }
+
+        // Transfer users to new role
+        for (const userId of userIds) {
+          await storage.removeRoleFromUser(userId, req.params.id);
+          await storage.assignRoleToUser(userId, transferToRoleId);
+        }
+      }
+
       await storage.deleteRole(req.params.id);
-      res.json({ message: "Role deleted successfully" });
+      await delCache("users:all");
+      res.json({ message: "Role deleted successfully", transferredUsers: userIds.length });
     } catch (error: any) {
       console.error("DELETE /api/roles/:id error:", error);
       res.status(500).json({ message: "Failed to delete role", error: error.message });
