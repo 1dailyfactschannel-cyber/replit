@@ -62,7 +62,8 @@ import {
   Eye,
   EyeOff,
   TrendingUp,
-  ShoppingBag
+  ShoppingBag,
+  Copy
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useLocation } from "wouter";
@@ -382,6 +383,24 @@ export default function EmployeesPage() {
     },
   });
 
+  // Reset password mutation
+  const [resetPasswordResult, setResetPasswordResult] = useState<string | null>(null);
+  const resetPasswordMutation = useMutation({
+    mutationFn: async (userId: string) => {
+      const res = await apiRequest("POST", `/api/users/${userId}/reset-password`);
+      return res.json();
+    },
+    onSuccess: (data) => {
+      if (data.newPassword) {
+        setResetPasswordResult(data.newPassword);
+        toast({ title: "Пароль сброшен", description: "Новый пароль сгенерирован и отображён ниже" });
+      }
+    },
+    onError: (error: any) => {
+      toast({ title: "Ошибка", description: "Не удалось сбросить пароль", variant: "destructive" });
+    },
+  });
+
   // Initialize editing employee when modal opens
   const prevSelectedIdRef = useRef<string | null>(null);
   const rolesSyncedRef = useRef(false);
@@ -391,8 +410,9 @@ export default function EmployeesPage() {
     if (isDetailsOpen && selectedEmployee) {
       prevSelectedIdRef.current = null;
       rolesSyncedRef.current = false;
+      setResetPasswordResult(null);
     }
-  }, [isDetailsOpen]);
+  }, [isDetailsOpen, selectedEmployee?.id]);
 
   useEffect(() => {
     if (selectedEmployee && selectedEmployee.id !== prevSelectedIdRef.current) {
@@ -1404,6 +1424,50 @@ export default function EmployeesPage() {
                       />
                     </div>
                   </div>
+
+                  {/* Password Reset Section */}
+                  <div className="pt-4 border-t border-border/50 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Пароль</Label>
+                        <p className="text-xs text-muted-foreground mt-0.5">Сгенерировать новый пароль для входа сотрудника</p>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="gap-2"
+                        disabled={resetPasswordMutation.isPending}
+                        onClick={() => {
+                          if (selectedEmployee?.id) {
+                            resetPasswordMutation.mutate(selectedEmployee.id);
+                          }
+                        }}
+                      >
+                        {resetPasswordMutation.isPending && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                        <RefreshCw className="w-3.5 h-3.5" />
+                        Сбросить пароль
+                      </Button>
+                    </div>
+                    {resetPasswordResult && (
+                      <div className="flex items-center gap-2 p-3 rounded-lg bg-emerald-500/5 border border-emerald-500/20">
+                        <Key className="w-4 h-4 text-emerald-500 shrink-0" />
+                        <code className="text-sm font-mono text-emerald-700 dark:text-emerald-300 flex-1">{resetPasswordResult}</code>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 px-2 gap-1 text-xs"
+                          onClick={() => {
+                            navigator.clipboard.writeText(resetPasswordResult);
+                            toast({ title: "Скопировано", description: "Пароль скопирован в буфер обмена" });
+                          }}
+                        >
+                          <Copy className="w-3.5 h-3.5" />
+                          Копировать
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+
                   <div className="flex justify-end gap-3 pt-4 border-t border-border/50">
                     <Button variant="outline" onClick={() => setIsDetailsOpen(false)}>Отмена</Button>
                     <Button 

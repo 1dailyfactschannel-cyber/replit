@@ -1007,6 +1007,34 @@ export async function registerRoutes(
     }
   });
 
+  // Admin reset user password
+  app.post("/api/users/:id/reset-password", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+    try {
+      const userId = req.params.id;
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      // Generate random password
+      const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*";
+      let newPassword = "";
+      for (let i = 0; i < 12; i++) {
+        newPassword += chars[Math.floor(Math.random() * chars.length)];
+      }
+
+      const hashedPassword = await bcrypt.hash(newPassword, 10);
+      await storage.updateUser(userId, { password: hashedPassword });
+      await delCache("users:all");
+
+      res.json({ success: true, newPassword });
+    } catch (error) {
+      console.error("[RESET PASSWORD] Error:", error);
+      res.status(500).json({ message: "Failed to reset password" });
+    }
+  });
+
   app.delete("/api/users/:id", async (req, res) => {
     if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
     try {
