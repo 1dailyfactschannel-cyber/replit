@@ -63,6 +63,33 @@ function requireAnyPermission(...permissions: string[]) {
 const storage = getStorage();
 let io: SocketIOServer;
 
+// Workspace access helper
+async function canManageWorkspace(workspaceId: string, userId: string): Promise<boolean> {
+  const userRoles = await storage.getUserRoles(userId);
+  const isAdminOrOwner = userRoles.some(r => r.name === "Администратор" || r.name === "Владелец");
+  if (isAdminOrOwner) return true;
+
+  const [workspace] = await storage.db.select().from(schema.workspaces).where(eq(schema.workspaces.id, workspaceId)).limit(1);
+  if (workspace?.ownerId === userId) return true;
+
+  const hasPermission = await storage.hasPermission(userId, "management:workspace_members");
+  return hasPermission;
+}
+
+async function getAccessibleWorkspaceIds(userId: string): Promise<string[] | null> {
+  const userRoles = await storage.getUserRoles(userId);
+  const isAdminOrOwner = userRoles.some(r => r.name === "Администратор" || r.name === "Владелец");
+  if (isAdminOrOwner) return null; // null means all workspaces
+
+  const owned = await storage.db.select({ id: schema.workspaces.id }).from(schema.workspaces).where(eq(schema.workspaces.ownerId, userId));
+  const memberOf = await storage.db.select({ workspaceId: schema.workspaceMembers.workspaceId }).from(schema.workspaceMembers).where(eq(schema.workspaceMembers.userId, userId));
+
+  const ids = new Set<string>();
+  owned.forEach(o => ids.add(o.id));
+  memberOf.forEach(m => ids.add(m.workspaceId));
+  return Array.from(ids);
+}
+
 // Rate limiters for sensitive operations
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
@@ -1775,10 +1802,33 @@ export async function registerRoutes(
   app.get("/api/workspaces", async (req, res) => {
     if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
     try {
-      const workspaces = await storage.db.select().from(schema.workspaces).orderBy(schema.workspaces.name);
+      const accessibleIds = await getAccessibleWorkspaceIds(req.user!.id);
+      let query = storage.db.select().from(schema.workspaces).orderBy(schema.workspaces.name);
+      if (accessibleIds !== null) {
+        if (accessibleIds.length === 0) {
+          return res.json([]);
+        }
+        query = query.where(inArray(schema.workspaces.id, accessibleIds)) as any;
+      }
+      const workspaces = await query;
       res.json(workspaces);
     } catch (error) {
       console.error("Error fetching workspaces:", error);
+      res.status(500).json({ message: "Failed to fetch workspaces" });
+    }
+  });
+
+  app.get("/api/workspaces/all", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
+    try {
+      const hasAccess = await storage.hasPermission(req.user!.id, "management:workspace_members");
+      if (!hasAccess) {
+        return res.status(403).json({ message: "Недостаточно прав" });
+      }
+      const workspaces = await storage.db.select().from(schema.workspaces).orderBy(schema.workspaces.name);
+      res.json(workspaces);
+    } catch (error) {
+      console.error("Error fetching all workspaces:", error);
       res.status(500).json({ message: "Failed to fetch workspaces" });
     }
   });
@@ -1794,6 +1844,14 @@ export async function registerRoutes(
         color: color || "#3b82f6",
         ownerId: user.id
       }).returning();
+
+      // Add owner as workspace member
+      await storage.db.insert(schema.workspaceMembers).values({
+        workspaceId: workspace.id,
+        userId: user.id,
+        role: "owner",
+      }).onConflictDoNothing();
+
       res.status(201).json(workspace);
     } catch (error) {
       console.error("Error creating workspace:", error);
@@ -1801,16 +1859,40 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/workspaces/:id", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
+    try {
+      const workspaceId = req.params.id;
+      const accessibleIds = await getAccessibleWorkspaceIds(req.user!.id);
+      if (accessibleIds !== null && !accessibleIds.includes(workspaceId)) {
+        return res.status(403).json({ message: "Нет доступа к этому пространству" });
+      }
+      const [workspace] = await storage.db.select().from(schema.workspaces).where(eq(schema.workspaces.id, workspaceId)).limit(1);
+      if (!workspace) {
+        return res.status(404).json({ message: "Пространство не найдено" });
+      }
+      res.json(workspace);
+    } catch (error) {
+      console.error("Error fetching workspace:", error);
+      res.status(500).json({ message: "Failed to fetch workspace" });
+    }
+  });
+
   app.patch("/api/workspaces/:id", async (req, res) => {
     if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
     try {
+      const workspaceId = req.params.id;
+      const canManage = await canManageWorkspace(workspaceId, req.user!.id);
+      if (!canManage) {
+        return res.status(403).json({ message: "Недостаточно прав для управления этим пространством" });
+      }
       const { name, description, color } = req.body;
       const [workspace] = await storage.db.update(schema.workspaces).set({
         name,
         description,
         color,
         updatedAt: new Date()
-      }).where(eq(schema.workspaces.id, req.params.id)).returning();
+      }).where(eq(schema.workspaces.id, workspaceId)).returning();
       res.json(workspace);
     } catch (error) {
       console.error("Error updating workspace:", error);
@@ -1829,14 +1911,128 @@ export async function registerRoutes(
     }
   });
 
+  // Workspace members routes
+  app.get("/api/workspaces/:id/members", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
+    try {
+      const workspaceId = req.params.id;
+      const canManage = await canManageWorkspace(workspaceId, req.user!.id);
+      if (!canManage) {
+        return res.status(403).json({ message: "Недостаточно прав для управления этим пространством" });
+      }
+
+      const members = await storage.db.select({
+        workspaceId: schema.workspaceMembers.workspaceId,
+        userId: schema.workspaceMembers.userId,
+        role: schema.workspaceMembers.role,
+        joinedAt: schema.workspaceMembers.joinedAt,
+      }).from(schema.workspaceMembers).where(eq(schema.workspaceMembers.workspaceId, workspaceId));
+
+      // Fetch user details for each member
+      const userIds = members.map(m => m.userId);
+      let users: any[] = [];
+      if (userIds.length > 0) {
+        users = await storage.db.select().from(schema.users).where(inArray(schema.users.id, userIds));
+      }
+
+      const result = members.map(m => ({
+        ...m,
+        user: users.find((u: any) => u.id === m.userId) || null,
+      }));
+
+      res.json(result);
+    } catch (error) {
+      console.error("Error fetching workspace members:", error);
+      res.status(500).json({ message: "Failed to fetch workspace members" });
+    }
+  });
+
+  app.post("/api/workspaces/:id/members", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
+    try {
+      const workspaceId = req.params.id;
+      const { userId, role = "member" } = req.body;
+
+      if (!userId) {
+        return res.status(400).json({ message: "userId обязателен" });
+      }
+
+      const canManage = await canManageWorkspace(workspaceId, req.user!.id);
+      if (!canManage) {
+        return res.status(403).json({ message: "Недостаточно прав для управления этим пространством" });
+      }
+
+      await storage.db.insert(schema.workspaceMembers).values({
+        workspaceId,
+        userId,
+        role,
+      }).onConflictDoNothing();
+
+      const [member] = await storage.db.select().from(schema.workspaceMembers)
+        .where(and(
+          eq(schema.workspaceMembers.workspaceId, workspaceId),
+          eq(schema.workspaceMembers.userId, userId)
+        )).limit(1);
+
+      res.status(201).json(member);
+    } catch (error) {
+      console.error("Error adding workspace member:", error);
+      res.status(500).json({ message: "Failed to add workspace member" });
+    }
+  });
+
+  app.delete("/api/workspaces/:id/members/:userId", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
+    try {
+      const workspaceId = req.params.id;
+      const userId = req.params.userId;
+
+      const canManage = await canManageWorkspace(workspaceId, req.user!.id);
+      if (!canManage) {
+        return res.status(403).json({ message: "Недостаточно прав для управления этим пространством" });
+      }
+
+      // Prevent removing the workspace owner
+      const [workspace] = await storage.db.select().from(schema.workspaces).where(eq(schema.workspaces.id, workspaceId)).limit(1);
+      if (workspace?.ownerId === userId) {
+        return res.status(400).json({ message: "Нельзя удалить владельца пространства" });
+      }
+
+      await storage.db.delete(schema.workspaceMembers)
+        .where(and(
+          eq(schema.workspaceMembers.workspaceId, workspaceId),
+          eq(schema.workspaceMembers.userId, userId)
+        ));
+
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error removing workspace member:", error);
+      res.status(500).json({ message: "Failed to remove workspace member" });
+    }
+  });
+
   // Project routes
   app.get("/api/projects", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
     try {
       const workspaceId = req.query.workspaceId as string | undefined;
       const status = req.query.status as string | undefined;
       const projectsWithStats = await storage.getProjectsWithStats(workspaceId, status);
+
+      // Filter projects by workspace access
+      const accessibleIds = await getAccessibleWorkspaceIds(req.user!.id);
+      if (accessibleIds !== null) {
+        const filtered = projectsWithStats.filter((p: any) => {
+          // Projects without workspace are public
+          if (!p.workspaceId) return true;
+          return accessibleIds.includes(p.workspaceId);
+        });
+        return res.json(filtered);
+      }
+
       res.json(projectsWithStats);
     } catch (error) {
+      console.error("Error fetching projects:", error);
       res.status(500).json({ message: "Failed to fetch projects" });
     }
   });

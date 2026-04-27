@@ -2111,6 +2111,110 @@ export default function Projects() {
 
           <ScrollArea className="flex-1">
             <div className="px-2 space-y-1 py-2">
+              {/* Sprints section */}
+              {activeProject && (
+                <div className="mb-3 space-y-1">
+                  <div className="px-2 py-1 flex items-center justify-between">
+                    <span className="text-[10px] font-semibold text-muted-foreground/60 uppercase tracking-wider">
+                      Спринты
+                    </span>
+                    <button
+                      onClick={() => setIsCreateSprintOpen(true)}
+                      className="text-muted-foreground/60 hover:text-foreground transition-colors"
+                      title="Создать спринт"
+                    >
+                      <Plus className="w-3 h-3" />
+                    </button>
+                  </div>
+
+                  <button
+                    onClick={() => {
+                      setSelectedSprintId("backlog");
+                      setShowAllTasks(false);
+                      handleBoardChange(activeBoard?.id || boards[0]?.id);
+                    }}
+                    className={cn(
+                      "w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-[13px] transition-colors text-left cursor-pointer",
+                      selectedSprintId === "backlog"
+                        ? "bg-secondary text-foreground font-medium"
+                        : "text-foreground hover:bg-secondary/30"
+                    )}
+                  >
+                    <LayoutGrid className="w-3.5 h-3.5 shrink-0 opacity-50" />
+                    <span className="truncate flex-1">Бэклог</span>
+                    <span className="text-[10px] text-muted-foreground">
+                      {activeBoard?.tasks?.filter((t: any) => !t.sprintId).length || 0}
+                    </span>
+                  </button>
+                  {projectSprints.map((sprint: any) => (
+                    <div key={sprint.id} className="group/sprint relative">
+                      <button
+                        onClick={() => {
+                          setSelectedSprintId(sprint.id);
+                          setShowAllTasks(false);
+                          handleBoardChange(activeBoard?.id || boards[0]?.id);
+                        }}
+                        className={cn(
+                          "w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-[13px] transition-colors text-left cursor-pointer",
+                          selectedSprintId === sprint.id
+                            ? "bg-secondary text-foreground font-medium"
+                            : "text-foreground hover:bg-secondary/30"
+                        )}
+                      >
+                        <Flag className={cn(
+                          "w-3.5 h-3.5 shrink-0",
+                          sprint.status === "active" ? "text-emerald-500" : "opacity-50"
+                        )} />
+                        <span className="truncate flex-1">{sprint.name}</span>
+                        {sprint.status === "active" && (
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+                        )}
+                      </button>
+                      {/* Sprint action buttons */}
+                      <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5 opacity-0 group-hover/sprint:opacity-100 transition-opacity">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleToggleFavoriteSprint(sprint.id);
+                          }}
+                          className="p-1 rounded-md hover:bg-secondary"
+                          title={favoriteSprintIds.includes(sprint.id) ? "Удалить из избранного" : "Добавить в избранное"}
+                        >
+                          <Star className={cn("w-3 h-3", favoriteSprintIds.includes(sprint.id) ? "fill-amber-400 text-amber-400" : "text-muted-foreground")} />
+                        </button>
+                        {sprint.status === "planned" && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-5 px-1.5 text-[10px] text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              updateSprintStatusMutation.mutate({ sprintId: sprint.id, status: "active" });
+                            }}
+                            disabled={updateSprintStatusMutation.isPending}
+                          >
+                            Старт
+                          </Button>
+                        )}
+                        {sprint.status === "active" && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-5 px-1.5 text-[10px] text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              updateSprintStatusMutation.mutate({ sprintId: sprint.id, status: "completed" });
+                            }}
+                            disabled={updateSprintStatusMutation.isPending}
+                          >
+                            Завершить
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
               {isLoadingProjects && filteredProjects.length === 0 ? (
                 <ProjectListLoading />
               ) : filteredProjects.length === 0 ? (
@@ -2222,111 +2326,6 @@ export default function Projects() {
                             </div>
                           </div>
                         ))
-                      )}
-
-                      {/* Sprints section */}
-                      {activeProject && (
-                        <div className="mt-2 space-y-1">
-                          <div className="px-2 py-1 flex items-center justify-between">
-                            <span className="text-[10px] font-semibold text-muted-foreground/60 uppercase tracking-wider">
-                              Спринты
-                            </span>
-                            <button
-                              onClick={() => setIsCreateSprintOpen(true)}
-                              className="text-muted-foreground/60 hover:text-foreground transition-colors"
-                              title="Создать спринт"
-                            >
-                              <Plus className="w-3 h-3" />
-                            </button>
-                          </div>
-
-                          <button
-                            onClick={() => {
-                              setSelectedSprintId("backlog");
-                              setShowAllTasks(false);
-                              handleBoardChange(activeBoard?.id || boards[0]?.id);
-                            }}
-                            className={cn(
-                              "w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-[13px] transition-colors text-left cursor-pointer",
-                              selectedSprintId === "backlog"
-                                ? "bg-secondary text-foreground font-medium"
-                                : "text-foreground hover:bg-secondary/30"
-                            )}
-                          >
-                            <LayoutGrid className="w-3.5 h-3.5 shrink-0 opacity-50" />
-                            <span className="truncate flex-1">Бэклог</span>
-                            <span className="text-[10px] text-muted-foreground">
-                              {activeBoard?.tasks?.filter((t: any) => !t.sprintId).length || 0}
-                            </span>
-                          </button>
-                          {projectSprints.map((sprint: any) => (
-                            <div key={sprint.id} className="group/sprint relative">
-                              <button
-                                onClick={() => {
-                                  setSelectedSprintId(sprint.id);
-                                  setShowAllTasks(false);
-                                  handleBoardChange(activeBoard?.id || boards[0]?.id);
-                                }}
-                                className={cn(
-                                  "w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-[13px] transition-colors text-left cursor-pointer",
-                                  selectedSprintId === sprint.id
-                                    ? "bg-secondary text-foreground font-medium"
-                                    : "text-foreground hover:bg-secondary/30"
-                                )}
-                              >
-                                <Flag className={cn(
-                                  "w-3.5 h-3.5 shrink-0",
-                                  sprint.status === "active" ? "text-emerald-500" : "opacity-50"
-                                )} />
-                                <span className="truncate flex-1">{sprint.name}</span>
-                                {sprint.status === "active" && (
-                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
-                                )}
-                              </button>
-                              {/* Sprint action buttons */}
-                              <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5 opacity-0 group-hover/sprint:opacity-100 transition-opacity">
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleToggleFavoriteSprint(sprint.id);
-                                  }}
-                                  className="p-1 rounded-md hover:bg-secondary"
-                                  title={favoriteSprintIds.includes(sprint.id) ? "Удалить из избранного" : "Добавить в избранное"}
-                                >
-                                  <Star className={cn("w-3 h-3", favoriteSprintIds.includes(sprint.id) ? "fill-amber-400 text-amber-400" : "text-muted-foreground")} />
-                                </button>
-                                {sprint.status === "planned" && (
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    className="h-5 px-1.5 text-[10px] text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      updateSprintStatusMutation.mutate({ sprintId: sprint.id, status: "active" });
-                                    }}
-                                    disabled={updateSprintStatusMutation.isPending}
-                                  >
-                                    Старт
-                                  </Button>
-                                )}
-                                {sprint.status === "active" && (
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    className="h-5 px-1.5 text-[10px] text-blue-600 hover:text-blue-700 hover:bg-blue-50"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      updateSprintStatusMutation.mutate({ sprintId: sprint.id, status: "completed" });
-                                    }}
-                                    disabled={updateSprintStatusMutation.isPending}
-                                  >
-                                    Завершить
-                                  </Button>
-                                )}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
                       )}
 
                       {/* Dialog подтверждения удаления доски */}

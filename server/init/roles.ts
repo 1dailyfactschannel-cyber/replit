@@ -66,6 +66,7 @@ const systemPermissions = [
   { key: "management:archive", name: "Архив", category: "management" },
   { key: "management:departments", name: "Управление отделами", category: "management" },
   { key: "management:shop", name: "Управление магазином", category: "management" },
+  { key: "management:workspace_members", name: "Управление доступом к пространствам", category: "management" },
 
   // Roles
   { key: "roles:create", name: "Создание ролей", category: "roles" },
