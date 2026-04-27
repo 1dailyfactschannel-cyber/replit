@@ -1899,7 +1899,7 @@ export async function registerRoutes(
               fieldName: 'Проект',
               newValue: project.name,
             },
-            `/projects/${project.id}`
+            `/projects?projectId=${project.id}`
           );
         }
       } catch (error) {
@@ -2756,7 +2756,7 @@ export async function registerRoutes(
               taskTitle: task.title,
               boardName: board?.name,
             },
-            `/boards/${task.boardId}`
+            `/projects?projectId=${board?.projectId || task.boardId}`
           );
         }
       }
@@ -2778,7 +2778,7 @@ export async function registerRoutes(
             taskTitle: task.title,
             boardName: board?.name,
           },
-          `/boards/${task.boardId}`
+          `/projects?projectId=${board?.projectId || task.boardId}`
         );
       }
 
@@ -2808,7 +2808,7 @@ export async function registerRoutes(
               taskTitle: task.title,
               boardName: board?.name,
             },
-            `/boards/${task.boardId}`
+            `/projects?projectId=${board?.projectId || task.boardId}`
           );
         }
       }
@@ -3268,7 +3268,7 @@ export async function registerRoutes(
             taskTitle: task.title,
             boardName: board?.name,
           },
-          `/boards/${task.boardId}`
+          `/projects?projectId=${board?.projectId || task.boardId}`
         ));
       }
 
@@ -3290,7 +3290,7 @@ export async function registerRoutes(
                 newValue: task.title,
                 boardName: board?.name,
               },
-              `/boards/${task.boardId}`
+              `/projects?projectId=${board?.projectId || task.boardId}`
             ));
           }
         }
@@ -3798,7 +3798,7 @@ export async function registerRoutes(
                 fieldName: 'Сообщение',
                 commentPreview: message.content.substring(0, 100),
               },
-              `/chat?id=${req.params.chatId}`
+              `/chat?room=${req.params.chatId}`
             );
           }
         }
@@ -4039,6 +4039,9 @@ export async function registerRoutes(
       // Notify user via socket
       io.to(`user:${parsed.data.userId}`).emit("new-notification", notification);
       
+      // Invalidate notification cache for the user
+      await invalidatePattern(`user:${parsed.data.userId}:notifications:*`);
+      
       res.status(201).json(notification);
     } catch (error) {
       console.error("Error creating notification:", error);
@@ -4050,6 +4053,8 @@ export async function registerRoutes(
     if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
     try {
       const notification = await storage.markNotificationAsRead(req.params.id);
+      // Invalidate notification cache for the user
+      await invalidatePattern(`user:${notification.userId}:notifications:*`);
       res.json(notification);
     } catch (error) {
       console.error("Error marking notification as read:", error);
@@ -4062,6 +4067,8 @@ export async function registerRoutes(
     try {
       const user = req.user!;
       await storage.markAllNotificationsAsRead(user.id);
+      // Invalidate notification cache for the user
+      await invalidatePattern(`user:${user.id}:notifications:*`);
       res.json({ success: true });
     } catch (error) {
       console.error("Error marking all notifications as read:", error);
@@ -4072,7 +4079,13 @@ export async function registerRoutes(
   app.delete("/api/notifications/:id", async (req, res) => {
     if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
     try {
+      // Get notification before deleting to know the userId
+      const notification = await storage.getNotification(req.params.id);
       await storage.deleteNotification(req.params.id);
+      // Invalidate notification cache for the user
+      if (notification) {
+        await invalidatePattern(`user:${notification.userId}:notifications:*`);
+      }
       res.status(204).end();
     } catch (error) {
       console.error("Error deleting notification:", error);
@@ -4380,7 +4393,7 @@ export async function registerRoutes(
               taskTitle: task.title,
               boardName: board?.name,
             },
-            `/boards/${task.boardId}`
+            `/projects?projectId=${board?.projectId || task.boardId}`
           );
         }
 
@@ -4399,7 +4412,7 @@ export async function registerRoutes(
               taskTitle: task.title,
               boardName: board?.name,
             },
-            `/boards/${task.boardId}`
+            `/projects?projectId=${board?.projectId || task.boardId}`
           );
         }
 
@@ -4427,7 +4440,7 @@ export async function registerRoutes(
                   taskTitle: task.title,
                   boardName: board?.name,
                 },
-                `/boards/${task.boardId}`
+                `/projects?projectId=${board?.projectId || task.boardId}`
               );
               notifiedUserIds.add(mentionedUser.id);
             }

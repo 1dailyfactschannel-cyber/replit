@@ -1575,6 +1575,20 @@ export class PostgresStorage {
     }
   }
 
+  async getNotification(id: string): Promise<Notification | undefined> {
+    try {
+      const [notification] = await this.db
+        .select()
+        .from(schema.notifications)
+        .where(eq(schema.notifications.id, id))
+        .limit(1);
+      return notification;
+    } catch (error) {
+      console.error("Error getting notification:", error);
+      return undefined;
+    }
+  }
+
   async createNotification(notification: any): Promise<Notification> {
     try {
       const [newNotification] = await this.db
