@@ -266,8 +266,11 @@ function SecurityManagement() {
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [confirmationCode, setConfirmationCode] = useState("");
   const [isChanging, setIsChanging] = useState(false);
   const [isPasswordSet, setIsPasswordSet] = useState<boolean | null>(null);
+  const [codeSent, setCodeSent] = useState(false);
+  const [countdown, setCountdown] = useState(0);
 
   const { data: hasMasterPassword } = useQuery<any>({
     queryKey: ["/api/settings/master_password_set"],
@@ -280,7 +283,14 @@ function SecurityManagement() {
     }
   }, [hasMasterPassword]);
 
-  const changePasswordMutation = useMutation({
+  useEffect(() => {
+    if (countdown > 0) {
+      const timer = setTimeout(() => setCountdown(c => c - 1), 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [countdown]);
+
+  const requestCodeMutation = useMutation({
     mutationFn: async () => {
       if (newPassword !== confirmPassword) {
         throw new Error("Пароли не совпадают");
@@ -288,35 +298,85 @@ function SecurityManagement() {
       if (newPassword.length < 6) {
         throw new Error("Пароль должен быть не менее 6 символов");
       }
-      await apiRequest("POST", "/api/settings/change-master-password", {
+      const res = await apiRequest("POST", "/api/settings/request-password-change", {
         currentPassword: isPasswordSet ? currentPassword : null,
-        newPassword
       });
+      return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       toast({
-        title: "Пароль сохранен",
-        description: isPasswordSet ? "Мастер-пароль успешно изменен." : "Мастер-пароль установлен.",
+        title: "Код отправлен",
+        description: data.message || "Проверьте вашу почту",
+      });
+      setCodeSent(true);
+      setCountdown(60);
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Ошибка",
+        description: error.message || "Не удалось отправить код.",
+        variant: "destructive",
+      });
+    }
+  });
+
+  const confirmChangeMutation = useMutation({
+    mutationFn: async () => {
+      if (!confirmationCode || confirmationCode.length !== 6) {
+        throw new Error("Введите 6-значный код");
+      }
+      const res = await apiRequest("POST", "/api/settings/confirm-password-change", {
+        code: confirmationCode,
+        newPassword,
+      });
+      return res.json();
+    },
+    onSuccess: (data) => {
+      toast({
+        title: "Пароль изменен",
+        description: data.message || "Мастер-пароль успешно обновлен.",
       });
       setCurrentPassword("");
       setNewPassword("");
       setConfirmPassword("");
+      setConfirmationCode("");
       setIsChanging(false);
+      setCodeSent(false);
       setIsPasswordSet(true);
       queryClient.invalidateQueries({ queryKey: ["/api/settings/master_password_set"] });
     },
     onError: (error: any) => {
       toast({
         title: "Ошибка",
-        description: error.message || "Не удалось сохранить пароль.",
+        description: error.message || "Не удалось подтвердить смену пароля.",
         variant: "destructive",
       });
     }
   });
 
-  const handleSubmit = () => {
-    changePasswordMutation.mutate();
+  const handleRequestCode = () => {
+    requestCodeMutation.mutate();
   };
+
+  const handleConfirm = () => {
+    confirmChangeMutation.mutate();
+  };
+
+  const handleCancel = () => {
+    setIsChanging(false);
+    setCodeSent(false);
+    setCurrentPassword("");
+    setNewPassword("");
+    setConfirmPassword("");
+    setConfirmationCode("");
+  };
+
+  const canRequestCode =
+    newPassword &&
+    confirmPassword &&
+    newPassword === confirmPassword &&
+    newPassword.length >= 6 &&
+    (!isPasswordSet || currentPassword.length > 0);
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
@@ -329,7 +389,7 @@ function SecurityManagement() {
             <div>
               <CardTitle className="text-base">Мастер пароль</CardTitle>
               <CardDescription className="text-xs">
-                {isPasswordSet 
+                {isPasswordSet
                   ? "Защитите свои данные дополнительным паролем"
                   : "Установите мастер-пароль для защиты данных"
                 }
@@ -344,65 +404,121 @@ function SecurityManagement() {
             </div>
           ) : isChanging || !isPasswordSet ? (
             <div className="space-y-3">
-              {isPasswordSet && (
-                <div className="space-y-2">
-                  <Label htmlFor="current-password" className="text-xs font-medium">Текущий пароль</Label>
-                  <Input 
-                    id="current-password" 
-                    type="password"
-                    placeholder="Введите текущий пароль" 
-                    value={currentPassword}
-                    onChange={(e) => setCurrentPassword(e.target.value)}
-                    className="bg-background text-foreground"
-                  />
-                </div>
+              {!codeSent ? (
+                <>
+                  {isPasswordSet && (
+                    <div className="space-y-2">
+                      <Label htmlFor="current-password" className="text-xs font-medium">Текущий пароль</Label>
+                      <Input
+                        id="current-password"
+                        type="password"
+                        placeholder="Введите текущий пароль"
+                        value={currentPassword}
+                        onChange={(e) => setCurrentPassword(e.target.value)}
+                        className="bg-background text-foreground"
+                      />
+                    </div>
+                  )}
+                  <div className="space-y-2">
+                    <Label htmlFor="new-password" className="text-xs font-medium">Новый пароль</Label>
+                    <Input
+                      id="new-password"
+                      type="password"
+                      placeholder="Введите новый пароль"
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      className="bg-background text-foreground"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="confirm-password" className="text-xs font-medium">Подтвердите пароль</Label>
+                    <Input
+                      id="confirm-password"
+                      type="password"
+                      placeholder="Повторите пароль"
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      className="bg-background text-foreground"
+                    />
+                  </div>
+                  <div className="flex gap-2 pt-2">
+                    {isPasswordSet && (
+                      <Button
+                        variant="outline"
+                        onClick={handleCancel}
+                        className="flex-1"
+                      >
+                        Отмена
+                      </Button>
+                    )}
+                    <Button
+                      onClick={handleRequestCode}
+                      disabled={requestCodeMutation.isPending || !canRequestCode}
+                      className="flex-1"
+                    >
+                      {requestCodeMutation.isPending && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
+                      <Mail className="w-4 h-4 mr-2" />
+                      Получить код
+                    </Button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="rounded-lg bg-primary/5 border border-primary/20 p-3 flex items-start gap-3">
+                    <Mail className="w-5 h-5 text-primary shrink-0 mt-0.5" />
+                    <div className="space-y-1">
+                      <p className="text-sm font-medium">Код подтверждения отправлен</p>
+                      <p className="text-xs text-muted-foreground">
+                        На вашу почту отправлен 6-значный код. Введите его ниже, чтобы подтвердить смену пароля.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="confirmation-code" className="text-xs font-medium">Код подтверждения</Label>
+                    <Input
+                      id="confirmation-code"
+                      type="text"
+                      inputMode="numeric"
+                      maxLength={6}
+                      placeholder="000000"
+                      value={confirmationCode}
+                      onChange={(e) => setConfirmationCode(e.target.value.replace(/\D/g, ""))}
+                      className="bg-background text-foreground text-center tracking-[0.5em] font-mono text-lg"
+                    />
+                  </div>
+                  <div className="flex gap-2 pt-2">
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        setCodeSent(false);
+                        setConfirmationCode("");
+                      }}
+                      className="flex-1"
+                    >
+                      Назад
+                    </Button>
+                    <Button
+                      onClick={handleConfirm}
+                      disabled={confirmChangeMutation.isPending || confirmationCode.length !== 6}
+                      className="flex-1"
+                    >
+                      {confirmChangeMutation.isPending && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
+                      Изменить пароль
+                    </Button>
+                  </div>
+                  <div className="text-center">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={handleRequestCode}
+                      disabled={countdown > 0 || requestCodeMutation.isPending}
+                      className="text-xs text-muted-foreground"
+                    >
+                      {countdown > 0 ? `Отправить повторно через ${countdown}с` : "Отправить код повторно"}
+                    </Button>
+                  </div>
+                </>
               )}
-              <div className="space-y-2">
-                <Label htmlFor="new-password" className="text-xs font-medium">Новый пароль</Label>
-                <Input 
-                  id="new-password" 
-                  type="password"
-                  placeholder="Введите новый пароль" 
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  className="bg-background text-foreground"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="confirm-password" className="text-xs font-medium">Подтвердите пароль</Label>
-                <Input 
-                  id="confirm-password" 
-                  type="password"
-                  placeholder="Повторите пароль" 
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  className="bg-background text-foreground"
-                />
-              </div>
-              <div className="flex gap-2 pt-2">
-                {isPasswordSet && (
-                  <Button 
-                    variant="outline" 
-                    onClick={() => {
-                      setIsChanging(false);
-                      setCurrentPassword("");
-                      setNewPassword("");
-                      setConfirmPassword("");
-                    }}
-                    className="flex-1"
-                  >
-                    Отмена
-                  </Button>
-                )}
-                <Button 
-                  onClick={handleSubmit}
-                  disabled={changePasswordMutation.isPending || !newPassword || !confirmPassword || (!isPasswordSet && (!newPassword || !confirmPassword))}
-                  className="flex-1"
-                >
-                  {changePasswordMutation.isPending && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
-                  {isPasswordSet ? "Изменить пароль" : "Установить пароль"}
-                </Button>
-              </div>
             </div>
           ) : (
             <div className="flex items-center justify-between py-2">
@@ -410,8 +526,8 @@ function SecurityManagement() {
                 <Check className="w-4 h-4 text-emerald-500" />
                 <span className="text-sm text-muted-foreground">Мастер-пароль установлен</span>
               </div>
-              <Button 
-                variant="outline" 
+              <Button
+                variant="outline"
                 size="sm"
                 onClick={() => setIsChanging(true)}
               >
@@ -1064,11 +1180,19 @@ function TeamManagement() {
       }
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       refetchInvitations();
       setInviteEmail("");
       setInviteRole("");
-      toast({ title: "Приглашение отправлено", description: "Письмо с приглашением отправлено на указанный email" });
+      if (data.emailSent) {
+        toast({ title: "Приглашение отправлено", description: "Письмо с приглашением отправлено на указанный email" });
+      } else {
+        toast({
+          title: "Приглашение создано",
+          description: "SMTP не настроен — письмо не отправлено. Перейдите в раздел «Управление → Email SMTP» для настройки почты.",
+          variant: "destructive"
+        });
+      }
     },
     onError: (error: any) => {
       toast({ title: "Ошибка", description: error?.message || "Не удалось отправить приглашение", variant: "destructive" });
@@ -1799,9 +1923,10 @@ function ProjectsManagement() {
     },
   });
 
-  const { data: workspaces = [] } = useQuery<any[]>({
+  const { data: workspacesRaw } = useQuery<any[]>({
     queryKey: ["/api/workspaces"],
   });
+  const workspaces = workspacesRaw ?? [];
 
   const { data: users = [] } = useQuery<User[]>({
     queryKey: ["/api/users"],

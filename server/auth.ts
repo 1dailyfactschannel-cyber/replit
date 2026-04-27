@@ -7,6 +7,7 @@ import { type User as SelectUser } from "@shared/schema";
 import createMemoryStore from "memorystore";
 import crypto from "crypto";
 import { promisify } from "util";
+import bcrypt from "bcrypt";
 import rateLimit from "express-rate-limit";
 import Redis from "ioredis";
 import { RedisStore } from "connect-redis";
@@ -65,14 +66,27 @@ const loginLimiter = rateLimit({
   message: { message: "Too many login attempts, please try again later" }
 });
 
+// Security: Registration rate limiter
+const registerLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 3, // 3 registrations per IP per hour
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: "Слишком много попыток регистрации, попробуйте позже" }
+});
+
+// Unified password hashing using bcrypt (consistent with API routes)
 async function hashPassword(password: string) {
-  const salt = crypto.randomBytes(16).toString("hex");
-  const derivedKey = (await scrypt(password, salt, 64)) as Buffer;
-  return `${derivedKey.toString("hex")}.${salt}`;
+  return await bcrypt.hash(password, 10);
 }
 
 async function comparePasswords(supplied: string, stored: string) {
   try {
+    // Support bcrypt hashes (used by API-created users and password resets)
+    if (stored.startsWith("$2")) {
+      return await bcrypt.compare(supplied, stored);
+    }
+    // Legacy scrypt format: hash.salt
     const [hashed, salt] = stored.split(".");
     if (!hashed || !salt) return false;
     const hashedBuf = Buffer.from(hashed, "hex");
@@ -200,7 +214,7 @@ export function setupAuth(app: Express) {
     }
   });
 
-  app.post("/api/register", async (req, res, next) => {
+  app.post("/api/register", registerLimiter, async (req, res, next) => {
     try {
       const { email, password, username, inviteToken } = req.body;
       const existingUser = await storage.getUserByEmail(email);

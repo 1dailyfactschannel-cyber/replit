@@ -14,18 +14,21 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npm run build
 
-# Production stage - минимальный alpine образ без Python
+# Удаляем devDependencies перед копированием в продакшен
+RUN npm prune --production && rm -rf /app/node_modules/.cache
+
+# Production stage - минимальный alpine образ
 FROM node:22-alpine AS runner
 WORKDIR /app
 
 ENV NODE_ENV=production
 ENV PORT=3000
 
-# Создание непривилегированного пользователя (alpine syntax)
+# Создание непривилегированного пользователя
 RUN addgroup -g 1001 -S nodejs && \
     adduser -S nodejs -u 1001 -G nodejs
 
-# Копирование собранного проекта
+# Копирование только необходимых файлов
 COPY --from=builder --chown=nodejs:nodejs /app/dist ./dist
 COPY --from=builder --chown=nodejs:nodejs /app/package.json ./package.json
 COPY --from=builder --chown=nodejs:nodejs /app/node_modules ./node_modules

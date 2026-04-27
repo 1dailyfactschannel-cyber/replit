@@ -1074,9 +1074,9 @@ export function TeamRooms({ autoJoinRoomId }: { autoJoinRoomId?: string }) {
       try {
         console.log('[ScreenShare] Starting screen share...');
         const screenStream = await navigator.mediaDevices.getDisplayMedia({
-          video: { cursor: "always" },
+          video: true,
           audio: false
-        });
+        } as any);
         
         console.log('[ScreenShare] Got screen stream, tracks:', screenStream.getVideoTracks().length);
         mediasoupRef.current.screenShareStream = screenStream;
@@ -1096,7 +1096,7 @@ export function TeamRooms({ autoJoinRoomId }: { autoJoinRoomId?: string }) {
           console.log('[ScreenShare] Producing screen track...');
           sendTransport.produce({ track: screenTrack, kind: 'video' })
             .then(() => console.log('[ScreenShare] Screen track produced'))
-            .catch(e => console.error('[ScreenShare] Produce error:', e));
+            .catch((e: Error) => console.error('[ScreenShare] Produce error:', e));
         } else {
           console.warn('[ScreenShare] No send transport!');
         }

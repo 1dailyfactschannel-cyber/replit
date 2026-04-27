@@ -1,6 +1,6 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
-import { getStorage, getReportOverview, getReportWorkspaces, getReportProjects, getReportBoards, getReportUsers } from "./postgres-storage";
+import { getStorage, getReportOverview, getReportWorkspaces, getReportProjects, getReportBoards, getReportUsers, getReportWorkload } from "./postgres-storage";
 import { insertSiteSettingsSchema, insertUserSchema, insertNotificationSchema, insertLabelSchema, insertCustomStatusSchema, insertDepartmentSchema, priorities, taskTypes } from "@shared/schema";
 import * as schema from "@shared/schema";
 import { getStatusByColumnName } from "../shared/column-status-mapping";
@@ -18,7 +18,7 @@ import rateLimit from "express-rate-limit";
 import bcrypt from "bcrypt";
 import yandexCalendarRoutes from "./routes/yandex-calendar";
 import { sendTelegramMessage, handleTelegramUpdate, escapeHtml, setTelegramWebhook } from "./services/telegram";
-import { sendEmail, testEmailConnection, getEmailConfig, getWelcomeEmailTemplate, getPasswordChangedTemplate } from "./services/email";
+import { sendEmail, testEmailConnection, getEmailConfig, getWelcomeEmailTemplate, getPasswordChangedTemplate, getPasswordChangeCodeTemplate, getOwnerTransferCodeTemplate } from "./services/email";
 
 // Permission middleware
 function requirePermission(...permissions: string[]) {
@@ -62,6 +62,48 @@ function requireAnyPermission(...permissions: string[]) {
 
 const storage = getStorage();
 let io: SocketIOServer;
+
+// Rate limiters for sensitive operations
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // 100 requests per IP
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: "Слишком много запросов, попробуйте позже" }
+});
+
+const mutationLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 20, // 20 mutations per IP per minute
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: "Слишком много изменений, попробуйте позже" }
+});
+
+// Audit logging helper
+async function logAudit(
+  req: any,
+  action: string,
+  entityType?: string,
+  entityId?: string,
+  details?: any
+) {
+  try {
+    const db = (storage as any).db;
+    if (!db) return;
+    await db.insert(schema.auditLogs).values({
+      userId: req.user?.id || null,
+      action,
+      entityType: entityType || null,
+      entityId: entityId || null,
+      details: details || null,
+      ipAddress: req.ip || req.connection?.remoteAddress || null,
+      userAgent: req.headers["user-agent"] || null,
+    });
+  } catch (err) {
+    console.error("[AUDIT] Failed to log action:", action, err);
+  }
+}
 
 /**
  * Обеспечивает соответствие статуса задачи названию колонки
@@ -261,39 +303,6 @@ export async function registerRoutes(
   await mediasoupServer.init();
   
   io = setupWebSockets(httpServer);
-  console.log("Registering API routes...");
-
-  // TEST ROUTES - проверка доступности API (без авторизации для отладки)
-  app.get("/api/test", (req, res) => {
-    console.log("[TEST] API TEST ROUTE HIT!");
-    res.json({ status: "ok", timestamp: new Date().toISOString() });
-  });
-
-  app.put("/api/test/update/:id", async (req, res) => {
-    console.log("[TEST] UPDATE TEST ROUTE HIT!");
-    console.log("[TEST] ID:", req.params.id);
-    console.log("[TEST] Body:", JSON.stringify(req.body));
-    
-    try {
-      const { isRemote, ...updateData } = req.body;
-      console.log("[TEST] isRemote:", isRemote);
-      console.log("[TEST] updateData:", JSON.stringify(updateData));
-      
-      // Only test the database update part
-      if (isRemote !== undefined) {
-        console.log("[TEST] Updating is_remote column...");
-        await storage.db.execute(sql`
-          UPDATE users SET is_remote = ${Boolean(isRemote)} WHERE id = ${req.params.id}
-        `);
-        console.log("[TEST] Update successful!");
-      }
-      
-      res.json({ status: "ok", message: "Test update completed" });
-    } catch (error) {
-      console.error("[TEST] Error:", error);
-      res.status(500).json({ message: (error as Error).message });
-    }
-  });
 
   // Apply global rate limiter to all /api routes
   app.use("/api", globalLimiter);
@@ -310,9 +319,8 @@ export async function registerRoutes(
 
   app.patch("/api/user", async (req, res) => {
     if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
-    console.log("PATCH /api/user hit!");
     try {
-      const user = req.user;
+      const user = req.user!;
       
       // Whitelist allowed fields for security
       const allowedFields = ['firstName', 'lastName', 'avatar', 'department', 'position', 'phone', 'timezone', 'language', 'telegram', 'telegramId', 'telegramConnected', 'notes'];
@@ -324,12 +332,7 @@ export async function registerRoutes(
         }
       }
       
-      if (updateData.telegram !== undefined) {
-        console.log("Updating telegram field to:", updateData.telegram);
-      }
-      
       const updatedUser = await storage.updateUser(user.id, updateData);
-      console.log("PATCH /api/user: User updated successfully", updatedUser.id);
       res.json(updatedUser);
     } catch (error: any) {
       console.error("PATCH /api/user error:", error);
@@ -388,18 +391,9 @@ export async function registerRoutes(
   });
 
   // Create new user (admin only)
-  app.post("/api/users", async (req, res) => {
-    if (!req.isAuthenticated()) {
-      return res.status(401).json({ message: "Unauthorized" });
-    }
-    
-    // Check if user is admin
-    if (req.user.role !== "admin") {
-      return res.status(403).json({ message: "Forbidden - Admin access required" });
-    }
-
+  app.post("/api/users", mutationLimiter, requirePermission("team:create"), async (req, res) => {
     try {
-      const { firstName, lastName, email, phone, position, department, telegram, password, roleIds } = req.body;
+      const { firstName, lastName, email, phone, position, department, password, roleIds } = req.body;
 
       if (!email) {
         return res.status(400).json({ message: "Email is required" });
@@ -415,18 +409,9 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Пользователь с таким email уже существует" });
       }
 
-      // Determine role name for the role column (legacy)
-      let roleName = "user"; // default
-      if (roleIds && Array.isArray(roleIds) && roleIds.length > 0) {
-        const role = await storage.getRoleById(roleIds[0]);
-        if (role) {
-          roleName = role.name;
-        }
-      }
-
       // Use provided password or generate random one
       const passwordToUse = password || Math.random().toString(36).slice(-10);
-      const hashedPassword = await hashPassword(passwordToUse);
+      const hashedPassword = await bcrypt.hash(passwordToUse, 10);
 
       // Create user
       const newUser = await storage.createUser({
@@ -438,18 +423,17 @@ export async function registerRoutes(
         phone: phone || "",
         position: position || "",
         department: department || "",
-        telegram: telegram || "",
-        isActive: true,
-        role: roleName,
       });
 
       // Assign roles if provided (many-to-many)
       if (roleIds && Array.isArray(roleIds) && roleIds.length > 0) {
-        await storage.setUserRoles(newUser.id, roleIds, req.user.id);
+        await storage.setUserRoles(newUser.id, roleIds, req.user!.id);
       }
 
       // Invalidate cache
       await delCache("users:all");
+
+      await logAudit(req, "user.create", "user", newUser.id, { email, firstName, lastName, roleIds });
 
       const { password: _, ...userWithoutPassword } = newUser;
       res.status(201).json({
@@ -466,7 +450,23 @@ export async function registerRoutes(
   app.get("/api/roles", async (req, res) => {
     try {
       const roles = await storage.getAllRoles();
-      res.json(roles);
+      const db = (storage as any).db;
+
+      // Get member counts for each role
+      const rolesWithCounts = await Promise.all(
+        roles.map(async (role) => {
+          const countResult = await db
+            .select({ count: sql<number>`count(*)` })
+            .from(schema.userRoles)
+            .where(eq(schema.userRoles.roleId, role.id));
+          return {
+            ...role,
+            memberCount: Number(countResult[0]?.count || 0),
+          };
+        })
+      );
+
+      res.json(rolesWithCounts);
     } catch (error: any) {
       console.error("GET /api/roles error:", error);
       res.status(500).json({ message: "Failed to fetch roles", error: error.message });
@@ -570,8 +570,8 @@ export async function registerRoutes(
     }
   });
 
-  // Delete role
-  app.delete("/api/roles/:id", async (req, res) => {
+  // Delete role (with optional user transfer)
+  app.delete("/api/roles/:id", mutationLimiter, async (req, res) => {
     if (!req.isAuthenticated()) {
       return res.status(401).json({ message: "Unauthorized" });
     }
@@ -585,11 +585,231 @@ export async function registerRoutes(
         return res.status(403).json({ message: "Cannot delete system role" });
       }
 
+      // Find all users with this role
+      const db = (storage as any).db;
+      const userRolesRecords = await db.select().from(schema.userRoles).where(eq(schema.userRoles.roleId, req.params.id));
+      const userIds = userRolesRecords.map((ur: any) => ur.userId);
+
+      // If role has users, require transferToRoleId
+      if (userIds.length > 0) {
+        const { transferToRoleId } = req.body;
+        if (!transferToRoleId) {
+          return res.status(400).json({
+            message: "Role has users",
+            userCount: userIds.length,
+            requiresTransfer: true,
+          });
+        }
+
+        // Verify target role exists
+        const targetRole = await storage.getRole(transferToRoleId);
+        if (!targetRole) {
+          return res.status(400).json({ message: "Target role not found" });
+        }
+
+        // Transfer users to new role
+        for (const userId of userIds) {
+          await storage.removeRoleFromUser(userId, req.params.id);
+          await storage.assignRoleToUser(userId, transferToRoleId);
+        }
+      }
+
       await storage.deleteRole(req.params.id);
-      res.json({ message: "Role deleted successfully" });
+      await delCache("users:all");
+
+      await logAudit(req, "role.delete", "role", req.params.id, {
+        roleName: existing.name,
+        transferredUsers: userIds.length,
+        transferToRoleId: req.body.transferToRoleId,
+      });
+
+      res.json({ message: "Role deleted successfully", transferredUsers: userIds.length });
     } catch (error: any) {
       console.error("DELETE /api/roles/:id error:", error);
       res.status(500).json({ message: "Failed to delete role", error: error.message });
+    }
+  });
+
+  // ==================== OWNER TRANSFER ENDPOINTS ====================
+  const ownerTransferCodes = new Map<string, { code: string; expiresAt: number; newOwnerUserId: string }>();
+
+  // Get current owner
+  app.get("/api/owner", async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    try {
+      // Try to get from site settings first
+      const ownerSetting = await storage.getSiteSetting("owner_user_id");
+      if (ownerSetting) {
+        const user = await storage.getUser(ownerSetting.value);
+        if (user) {
+          return res.json({
+            id: user.id,
+            firstName: user.firstName,
+            lastName: user.lastName,
+            email: user.email,
+            avatar: user.avatar,
+          });
+        }
+      }
+
+      // Fallback: find user with Owner role
+      const allRoles = await storage.getAllRoles();
+      const ownerRole = allRoles.find(r => r.name === "Владелец");
+      if (ownerRole) {
+        const allUsers = await storage.getAllUsers();
+        for (const u of allUsers) {
+          const userRoles = await storage.getUserRoles(u.id);
+          if (userRoles.some(r => r.id === ownerRole.id)) {
+            // Cache for next time
+            await storage.setSiteSetting("owner_user_id", u.id);
+            return res.json({
+              id: u.id,
+              firstName: u.firstName,
+              lastName: u.lastName,
+              email: u.email,
+              avatar: u.avatar,
+            });
+          }
+        }
+      }
+
+      res.json(null);
+    } catch (error: any) {
+      console.error("GET /api/owner error:", error);
+      res.status(500).json({ message: "Failed to fetch owner", error: error.message });
+    }
+  });
+
+  // Step 1: Verify master password and send email code
+  app.post("/api/owner/verify", mutationLimiter, async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    const { masterPassword, newOwnerUserId } = req.body;
+    const currentUser = req.user!;
+
+    try {
+      // Verify current user is the owner
+      const ownerSetting = await storage.getSiteSetting("owner_user_id");
+      if (ownerSetting && ownerSetting.value !== currentUser.id) {
+        return res.status(403).json({ message: "Only the owner can transfer ownership" });
+      }
+
+      // Verify master password
+      const existingHash = await storage.getSiteSetting("master_password_hash");
+      if (!existingHash) {
+        return res.status(400).json({ message: "Master password not set" });
+      }
+
+      const isValid = await bcrypt.compare(masterPassword, existingHash.value);
+      if (!isValid) {
+        return res.status(400).json({ message: "Неверный мастер-пароль" });
+      }
+
+      // Verify new owner user exists
+      const newOwner = await storage.getUser(newOwnerUserId);
+      if (!newOwner) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      // Generate 6-digit code
+      const code = Math.floor(100000 + Math.random() * 900000).toString();
+      const expiresAt = Date.now() + 10 * 60 * 1000; // 10 minutes
+
+      // Store transfer request
+      ownerTransferCodes.set(currentUser.id, { code, expiresAt, newOwnerUserId });
+
+      // Send email with code
+      const name = currentUser.firstName || currentUser.username || currentUser.email.split("@")[0];
+      const template = getOwnerTransferCodeTemplate(name, code, 10);
+      const result = await sendEmail({
+        to: currentUser.email,
+        subject: "Код подтверждения передачи прав владельца",
+        html: template.html,
+        text: template.text,
+      });
+
+      if (!result.success) {
+        ownerTransferCodes.delete(currentUser.id);
+        return res.status(500).json({ message: result.message || "Не удалось отправить email" });
+      }
+
+      res.json({ message: "Код подтверждения отправлен на ваш email", expiresIn: 600 });
+    } catch (error) {
+      console.error("POST /api/owner/verify error:", error);
+      res.status(500).json({ message: "Failed to verify owner transfer" });
+    }
+  });
+
+  // Step 2: Confirm transfer with code
+  app.post("/api/owner/confirm", mutationLimiter, async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    const { code } = req.body;
+    const currentUser = req.user!;
+
+    try {
+      const record = ownerTransferCodes.get(currentUser.id);
+      if (!record) {
+        return res.status(400).json({ message: "Код не найден или истёк. Начните процедуру заново." });
+      }
+
+      if (record.code !== code) {
+        return res.status(400).json({ message: "Неверный код подтверждения" });
+      }
+
+      if (Date.now() > record.expiresAt) {
+        ownerTransferCodes.delete(currentUser.id);
+        return res.status(400).json({ message: "Код истёк. Начните процедуру заново." });
+      }
+
+      // Find owner role
+      const allRoles = await storage.getAllRoles();
+      const ownerRole = allRoles.find(r => r.name === "Владелец");
+      const adminRole = allRoles.find(r => r.name === "Администратор");
+
+      if (!ownerRole) {
+        return res.status(500).json({ message: "Owner role not found" });
+      }
+
+      // Remove owner role from current user
+      await storage.removeRoleFromUser(currentUser.id, ownerRole.id);
+
+      // Add admin role to current user if not already present
+      if (adminRole) {
+        const currentUserRoles = await storage.getUserRoles(currentUser.id);
+        if (!currentUserRoles.some(r => r.id === adminRole.id)) {
+          await storage.assignRoleToUser(currentUser.id, adminRole.id);
+        }
+      }
+
+      // Assign owner role to new user
+      await storage.assignRoleToUser(record.newOwnerUserId, ownerRole.id);
+
+      // Update site setting
+      await storage.setSiteSetting("owner_user_id", record.newOwnerUserId);
+
+      // Clean up
+      ownerTransferCodes.delete(currentUser.id);
+
+      // Invalidate cache
+      await delCache("users:all");
+
+      await logAudit(req, "owner.transfer", "user", record.newOwnerUserId, {
+        previousOwnerId: currentUser.id,
+        previousOwnerEmail: currentUser.email,
+      });
+
+      res.json({ success: true, message: "Права владельца успешно переданы" });
+    } catch (error) {
+      console.error("POST /api/owner/confirm error:", error);
+      res.status(500).json({ message: "Failed to confirm owner transfer" });
     }
   });
 
@@ -615,7 +835,7 @@ export async function registerRoutes(
   });
 
   // Set user roles
-  app.put("/api/users/:id/roles", async (req, res) => {
+  app.put("/api/users/:id/roles", mutationLimiter, async (req, res) => {
     if (!req.isAuthenticated()) {
       return res.status(401).json({ message: "Unauthorized" });
     }
@@ -627,6 +847,9 @@ export async function registerRoutes(
       }
 
       await storage.setUserRoles(req.params.id, roleIds, req.user!.id);
+
+      await logAudit(req, "user.roles.update", "user", req.params.id, { roleIds });
+
       const roles = await storage.getUserRoles(req.params.id);
       res.json(roles.map(r => ({
         id: r.id,
@@ -889,7 +1112,37 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/users/:id", async (req, res) => {
+  // Admin reset user password
+  app.post("/api/users/:id/reset-password", mutationLimiter, async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+    try {
+      const userId = req.params.id;
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      // Generate random password
+      const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*";
+      let newPassword = "";
+      for (let i = 0; i < 12; i++) {
+        newPassword += chars[Math.floor(Math.random() * chars.length)];
+      }
+
+      const hashedPassword = await bcrypt.hash(newPassword, 10);
+      await storage.updateUser(userId, { password: hashedPassword });
+      await delCache("users:all");
+
+      await logAudit(req, "password.reset", "user", userId, { targetEmail: user.email });
+
+      res.json({ success: true, newPassword });
+    } catch (error) {
+      console.error("[RESET PASSWORD] Error:", error);
+      res.status(500).json({ message: "Failed to reset password" });
+    }
+  });
+
+  app.delete("/api/users/:id", mutationLimiter, async (req, res) => {
     if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
     try {
       // Check if user exists
@@ -908,6 +1161,8 @@ export async function registerRoutes(
       
       // Invalidate cache
       await delCache("users:all");
+
+      await logAudit(req, "user.delete", "user", req.params.id, { email: user.email });
       
       res.json({ message: "User deleted successfully" });
     } catch (error) {
@@ -1247,8 +1502,113 @@ export async function registerRoutes(
     }
   });
 
+  // In-memory store for password change confirmation codes
+  const passwordChangeCodes = new Map<string, { code: string; expiresAt: number; newPassword: string }>();
+
+  // Request password change confirmation code
+  app.post("/api/settings/request-password-change", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
+
+    const { currentPassword } = req.body;
+    const user = req.user!;
+
+    try {
+      // Verify current master password
+      const existingHash = await storage.getSiteSetting("master_password_hash");
+      if (existingHash) {
+        if (!currentPassword) {
+          return res.status(400).json({ message: "Введите текущий пароль" });
+        }
+        const isValid = await bcrypt.compare(currentPassword, existingHash.value);
+        if (!isValid) {
+          return res.status(400).json({ message: "Неверный текущий пароль" });
+        }
+      }
+
+      // Generate 6-digit code
+      const code = Math.floor(100000 + Math.random() * 900000).toString();
+      const expiresAt = Date.now() + 10 * 60 * 1000; // 10 minutes
+
+      // Store temporarily (without password yet)
+      passwordChangeCodes.set(user.id, { code, expiresAt, newPassword: "" });
+
+      // Send email with code
+      const name = user.firstName || user.username || user.email.split("@")[0];
+      const template = getPasswordChangeCodeTemplate(name, code, 10);
+      const result = await sendEmail({
+        to: user.email,
+        subject: "Код подтверждения смены пароля",
+        html: template.html,
+        text: template.text,
+      });
+
+      if (!result.success) {
+        passwordChangeCodes.delete(user.id);
+        return res.status(500).json({ message: result.message || "Не удалось отправить email" });
+      }
+
+      res.json({ message: "Код подтверждения отправлен на ваш email", expiresIn: 600 });
+    } catch (error) {
+      console.error("Error requesting password change:", error);
+      res.status(500).json({ message: "Failed to request password change" });
+    }
+  });
+
+  // Confirm password change with code
+  app.post("/api/settings/confirm-password-change", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
+
+    const { code, newPassword } = req.body;
+    const user = req.user!;
+
+    if (!newPassword || newPassword.length < 6) {
+      return res.status(400).json({ message: "Пароль должен быть не менее 6 символов" });
+    }
+
+    try {
+      const record = passwordChangeCodes.get(user.id);
+      if (!record) {
+        return res.status(400).json({ message: "Код не найден. Запросите новый код." });
+      }
+      if (Date.now() > record.expiresAt) {
+        passwordChangeCodes.delete(user.id);
+        return res.status(400).json({ message: "Код истек. Запросите новый код." });
+      }
+      if (record.code !== code) {
+        return res.status(400).json({ message: "Неверный код подтверждения" });
+      }
+
+      // Hash and save new password
+      const saltRounds = 10;
+      const hashedPassword = await bcrypt.hash(newPassword, saltRounds);
+      await storage.setSiteSetting("master_password_hash", hashedPassword);
+
+      // Clean up code
+      passwordChangeCodes.delete(user.id);
+
+      // Send confirmation email
+      try {
+        const name = user.firstName || user.username || user.email.split("@")[0];
+        const template = getPasswordChangedTemplate(name);
+        await sendEmail({
+          to: user.email,
+          subject: "Пароль изменен",
+          html: template.html,
+          text: template.text,
+        });
+      } catch (emailError) {
+        console.error("Failed to send password change confirmation email:", emailError);
+      }
+
+      res.json({ message: "Пароль успешно изменен" });
+    } catch (error) {
+      console.error("Error confirming password change:", error);
+      res.status(500).json({ message: "Failed to confirm password change" });
+    }
+  });
+
   // User password change
-  app.post("/api/user/change-password", async (req, res) => {
+  app.post("/api/user/change-password", mutationLimiter, async (req, res) => {
     if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
     
     const { currentPassword, newPassword } = req.body;
@@ -1281,6 +1641,8 @@ export async function registerRoutes(
       const hashedPassword = await bcrypt.hash(newPassword, saltRounds);
       await storage.updateUser(user.id, { password: hashedPassword });
 
+      await logAudit(req, "password.change", "user", user.id);
+
       // Send password change notification (non-blocking)
       try {
         const name = user.firstName || user.username || user.email.split("@")[0];
@@ -1302,6 +1664,113 @@ export async function registerRoutes(
     }
   });
 
+  // In-memory store for user password change confirmation codes
+  const userPasswordChangeCodes = new Map<string, { code: string; expiresAt: number }>();
+
+  // Request user password change confirmation code
+  app.post("/api/user/request-password-change", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
+
+    const { currentPassword } = req.body;
+    const user = req.user!;
+
+    try {
+      const dbUser = await storage.getUser(user.id);
+      if (!dbUser) {
+        return res.status(404).json({ message: "Пользователь не найден" });
+      }
+
+      // Verify current password
+      const isValid = dbUser.password.startsWith('$2') || dbUser.password.startsWith('$')
+        ? await bcrypt.compare(currentPassword, dbUser.password)
+        : dbUser.password === currentPassword;
+
+      if (!isValid) {
+        return res.status(400).json({ message: "Неверный текущий пароль" });
+      }
+
+      // Generate 6-digit code
+      const code = Math.floor(100000 + Math.random() * 900000).toString();
+      const expiresAt = Date.now() + 10 * 60 * 1000; // 10 minutes
+
+      // Store temporarily
+      userPasswordChangeCodes.set(user.id, { code, expiresAt });
+
+      // Send email with code
+      const name = user.firstName || user.username || user.email.split("@")[0];
+      const template = getPasswordChangeCodeTemplate(name, code, 10);
+      const result = await sendEmail({
+        to: user.email,
+        subject: "Код подтверждения смены пароля",
+        html: template.html,
+        text: template.text,
+      });
+
+      if (!result.success) {
+        userPasswordChangeCodes.delete(user.id);
+        return res.status(500).json({ message: result.message || "Не удалось отправить email" });
+      }
+
+      res.json({ message: "Код подтверждения отправлен на ваш email", expiresIn: 600 });
+    } catch (error) {
+      console.error("Error requesting user password change:", error);
+      res.status(500).json({ message: "Failed to request password change" });
+    }
+  });
+
+  // Confirm user password change with code
+  app.post("/api/user/confirm-password-change", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
+
+    const { code, newPassword } = req.body;
+    const user = req.user!;
+
+    if (!newPassword || newPassword.length < 6) {
+      return res.status(400).json({ message: "Пароль должен быть не менее 6 символов" });
+    }
+
+    try {
+      const record = userPasswordChangeCodes.get(user.id);
+      if (!record) {
+        return res.status(400).json({ message: "Код не найден. Запросите новый код." });
+      }
+      if (Date.now() > record.expiresAt) {
+        userPasswordChangeCodes.delete(user.id);
+        return res.status(400).json({ message: "Код истек. Запросите новый код." });
+      }
+      if (record.code !== code) {
+        return res.status(400).json({ message: "Неверный код подтверждения" });
+      }
+
+      // Hash and save new password
+      const saltRounds = 10;
+      const hashedPassword = await bcrypt.hash(newPassword, saltRounds);
+      await storage.updateUser(user.id, { password: hashedPassword });
+
+      // Clean up code
+      userPasswordChangeCodes.delete(user.id);
+
+      // Send confirmation email
+      try {
+        const name = user.firstName || user.username || user.email.split("@")[0];
+        const template = getPasswordChangedTemplate(name);
+        await sendEmail({
+          to: user.email,
+          subject: "Пароль изменен",
+          html: template.html,
+          text: template.text,
+        });
+      } catch (emailError) {
+        console.error("Failed to send password change confirmation email:", emailError);
+      }
+
+      res.json({ message: "Пароль успешно изменен" });
+    } catch (error) {
+      console.error("Error confirming user password change:", error);
+      res.status(500).json({ message: "Failed to confirm password change" });
+    }
+  });
+
   // Workspace routes
   app.get("/api/workspaces", async (req, res) => {
     if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
@@ -1318,7 +1787,7 @@ export async function registerRoutes(
     if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
     try {
       const { name, description, color } = req.body;
-      const user = req.user;
+      const user = req.user!;
       const [workspace] = await storage.db.insert(schema.workspaces).values({
         name,
         description,
@@ -1392,7 +1861,7 @@ export async function registerRoutes(
   app.post("/api/projects", requirePermission("projects:create"), async (req, res) => {
     // console.log("POST /api/projects hit with body:", req.body);
     try {
-      const user = req.user;
+      const user = req.user!;
       
       const projectData = { 
         name: req.body.name,
@@ -1464,9 +1933,6 @@ export async function registerRoutes(
   });
 
   app.delete("/api/projects/:id", requirePermission("projects:delete"), async (req, res) => {
-    
-    console.log("[API] Delete project request body:", req.body);
-    
     const masterPassword = req.body?.masterPassword;
     
     if (!masterPassword) {
@@ -1478,7 +1944,6 @@ export async function registerRoutes(
       
       // If master password is not set, allow deletion without verification
       if (!masterPasswordHash) {
-        console.log("[API] No master password set, allowing deletion");
         await storage.deleteProject(req.params.id);
         await delCache("projects:stats:all");
         return res.status(204).send();
@@ -1496,6 +1961,117 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error deleting project:", error);
       res.status(500).json({ message: "Failed to delete project" });
+    }
+  });
+
+  // Sprint routes
+  app.get("/api/projects/:projectId/sprints", async (req, res) => {
+    try {
+      if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+      const sprints = await storage.getSprintsByProject(req.params.projectId);
+      res.json(sprints);
+    } catch (error) {
+      console.error("Error getting sprints:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  app.get("/api/sprints", async (req, res) => {
+    try {
+      if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+      const idsParam = req.query.ids as string;
+      if (idsParam) {
+        const ids = idsParam.split(',').filter(Boolean);
+        const sprints = await storage.getSprintsByIds(ids);
+        res.json(sprints);
+      } else {
+        res.json([]);
+      }
+    } catch (error) {
+      console.error("Error getting sprints:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  app.get("/api/projects/:projectId/sprints/active", async (req, res) => {
+    try {
+      if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+      const sprint = await storage.getActiveSprintByProject(req.params.projectId);
+      res.json(sprint || null);
+    } catch (error) {
+      console.error("Error getting active sprint:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  app.post("/api/projects/:projectId/sprints", async (req, res) => {
+    try {
+      if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+      const { name, goal, startDate, endDate } = req.body;
+      if (!name) return res.status(400).json({ message: "Name is required" });
+
+      console.log("[SPRINT CREATE] projectId:", req.params.projectId, "body:", req.body);
+      const sprint = await storage.createSprint({
+        projectId: req.params.projectId,
+        name,
+        goal: goal || null,
+        startDate: startDate ? new Date(startDate) : null,
+        endDate: endDate ? new Date(endDate) : null,
+      });
+      console.log("[SPRINT CREATE] success:", sprint.id);
+      res.status(201).json(sprint);
+    } catch (error) {
+      console.error("[SPRINT CREATE] Error:", error);
+      res.status(500).json({ message: error instanceof Error ? error.message : "Internal server error" });
+    }
+  });
+
+  app.patch("/api/sprints/:id", async (req, res) => {
+    try {
+      if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+      const updates: any = {};
+      if (req.body.name !== undefined) updates.name = req.body.name;
+      if (req.body.goal !== undefined) updates.goal = req.body.goal;
+      if (req.body.startDate !== undefined) updates.startDate = req.body.startDate ? new Date(req.body.startDate) : null;
+      if (req.body.endDate !== undefined) updates.endDate = req.body.endDate ? new Date(req.body.endDate) : null;
+      if (req.body.status !== undefined) updates.status = req.body.status;
+
+      const sprint = await storage.updateSprint(req.params.id, updates);
+      if (!sprint) return res.status(404).json({ message: "Sprint not found" });
+      res.json(sprint);
+    } catch (error) {
+      console.error("Error updating sprint:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  app.delete("/api/sprints/:id", async (req, res) => {
+    try {
+      if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+      await storage.deleteSprint(req.params.id);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting sprint:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  app.patch("/api/tasks/:id/sprint", async (req, res) => {
+    try {
+      if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+      const { sprintId } = req.body;
+      const taskId = req.params.id;
+      const task = await storage.getTask(taskId);
+      await storage.updateTaskSprint(taskId, sprintId || null);
+      // Invalidate caches
+      if (task?.boardId) {
+        await invalidatePattern(`board:full:${task.boardId}`);
+      }
+      await delCache(`task:${taskId}`);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error updating task sprint:", error);
+      res.status(500).json({ message: "Internal server error" });
     }
   });
 
@@ -1523,7 +2099,10 @@ export async function registerRoutes(
         status: task.status === "todo" ? "В планах" : task.status
       }));
       
-      const boardData = { columns, tasks: enrichedTasks };
+      // Get board info for projectId
+      const board = await storage.getBoard(boardId);
+      
+      const boardData = { columns, tasks: enrichedTasks, projectId: board?.projectId || null };
       
       // Сохраняем в кэш на 5 минут
       await setCache(cacheKey, boardData, 300);
@@ -2336,6 +2915,156 @@ export async function registerRoutes(
     }
   });
 
+  // Task dependencies endpoints
+  app.get("/api/tasks/:id/dependencies", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+    try {
+      const deps = await storage.getTaskDependencies(req.params.id);
+      res.json(deps);
+    } catch (error: any) {
+      console.error("GET /api/tasks/:id/dependencies error:", error);
+      res.status(500).json({ message: "Failed to fetch dependencies", error: error.message });
+    }
+  });
+
+  app.post("/api/tasks/:id/dependencies", mutationLimiter, async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+    try {
+      const { targetTaskId, type } = req.body;
+      if (!targetTaskId || !type) {
+        return res.status(400).json({ message: "targetTaskId and type are required" });
+      }
+      if (!["blocks", "relates_to"].includes(type)) {
+        return res.status(400).json({ message: "Invalid dependency type" });
+      }
+      if (req.params.id === targetTaskId) {
+        return res.status(400).json({ message: "Cannot link task to itself" });
+      }
+
+      // Check for reverse/circular dependency
+      const existingReverse = await (storage as any).db
+        .select()
+        .from(schema.taskDependencies)
+        .where(
+          and(
+            eq(schema.taskDependencies.sourceTaskId, targetTaskId),
+            eq(schema.taskDependencies.targetTaskId, req.params.id),
+            eq(schema.taskDependencies.type, "blocks")
+          )
+        )
+        .limit(1);
+
+      if (existingReverse.length > 0 && type === "blocks") {
+        return res.status(400).json({ message: "Circular dependency detected" });
+      }
+
+      const dep = await storage.addTaskDependency(req.params.id, targetTaskId, type);
+
+      await logAudit(req, "task.dependency.create", "task", req.params.id, { targetTaskId, type });
+
+      res.status(201).json(dep);
+    } catch (error: any) {
+      console.error("POST /api/tasks/:id/dependencies error:", error);
+      res.status(500).json({ message: "Failed to create dependency", error: error.message });
+    }
+  });
+
+  app.delete("/api/tasks/:id/dependencies/:depId", mutationLimiter, async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+    try {
+      await storage.removeTaskDependency(req.params.depId);
+
+      await logAudit(req, "task.dependency.delete", "task", req.params.id, { depId: req.params.depId });
+
+      res.json({ message: "Dependency removed successfully" });
+    } catch (error: any) {
+      console.error("DELETE /api/tasks/:id/dependencies/:depId error:", error);
+      res.status(500).json({ message: "Failed to remove dependency", error: error.message });
+    }
+  });
+
+  // Global task search for linking (fallback when workspace is unknown)
+  app.get("/api/tasks/search-for-link", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+    try {
+      const query = req.query.q as string;
+      const excludeTaskId = req.query.excludeTaskId as string;
+      if (!query || query.length < 1) {
+        return res.json([]);
+      }
+
+      const db = (storage as any).db;
+      const searchLower = `%${query.toLowerCase()}%`;
+
+      const conditions = [
+        sql`LOWER(${schema.tasks.title}) LIKE ${searchLower}`
+      ];
+      if (excludeTaskId) {
+        conditions.push(ne(schema.tasks.id, excludeTaskId));
+      }
+
+      const results = await db
+        .select({
+          id: schema.tasks.id,
+          title: schema.tasks.title,
+          number: schema.tasks.number,
+          status: schema.tasks.status,
+          boardName: schema.boards.name,
+          projectName: schema.projects.name,
+        })
+        .from(schema.tasks)
+        .innerJoin(schema.boards, eq(schema.tasks.boardId, schema.boards.id))
+        .innerJoin(schema.projects, eq(schema.boards.projectId, schema.projects.id))
+        .where(and(...conditions))
+        .limit(20);
+
+      res.json(results);
+    } catch (error: any) {
+      console.error("GET /api/tasks/search-for-link error:", error);
+      res.status(500).json({ message: "Failed to search tasks", error: error.message });
+    }
+  });
+
+  // Workspace-scoped task search for linking
+  app.get("/api/workspaces/:workspaceId/tasks/search", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+    try {
+      const { workspaceId } = req.params;
+      const query = req.query.q as string;
+      if (!query || query.length < 1) {
+        return res.json([]);
+      }
+
+      const db = (storage as any).db;
+      const searchLower = `%${query.toLowerCase()}%`;
+
+      const results = await db
+        .select({
+          id: schema.tasks.id,
+          title: schema.tasks.title,
+          number: schema.tasks.number,
+          status: schema.tasks.status,
+          boardName: schema.boards.name,
+          projectName: schema.projects.name,
+        })
+        .from(schema.tasks)
+        .innerJoin(schema.boards, eq(schema.tasks.boardId, schema.boards.id))
+        .innerJoin(schema.projects, eq(schema.boards.projectId, schema.projects.id))
+        .where(
+          and(
+            eq(schema.projects.workspaceId, workspaceId),
+            sql`LOWER(${schema.tasks.title}) LIKE ${searchLower}`
+          )
+        )
+        .limit(20);
+
+      res.json(results);
+    } catch (error: any) {
+      console.error("GET /api/workspaces/:workspaceId/tasks/search error:", error);
+      res.status(500).json({ message: "Failed to search tasks", error: error.message });
+    }
+  });
+
   app.get("/api/tasks/all", async (req, res) => {
     if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
     try {
@@ -2424,8 +3153,7 @@ export async function registerRoutes(
 
   app.post("/api/boards/:boardId/tasks", requirePermission("tasks:create"), async (req, res) => {
     try {
-      const user = req.user;
-      console.log("[API] Creating task with data:", req.body);
+      const user = req.user!;
 
       // Validate required fields
       if (!req.body.title || typeof req.body.title !== 'string' || req.body.title.trim() === '') {
@@ -2459,16 +3187,13 @@ export async function registerRoutes(
         reporterId: user.id,
         status: req.body.status || determinedStatus
       } as any;
-      console.log("[API] Task data prepared:", taskData);
 
       const task = await storage.createTask(taskData);
-      console.log("[API] Task created:", task);
       
       // Start timer for initial status
       try {
         const initialStatus = task.status || "В планах";
         await storage.recordTaskStatusEntry(task.id, initialStatus);
-        console.log("[API] Started timer for status:", initialStatus);
       } catch (error) {
         console.error("Error starting task timer:", error);
       }
@@ -2477,7 +3202,6 @@ export async function registerRoutes(
       if (task.assigneeId) {
         try {
           await storage.startUserTimeTracking(task.id, task.assigneeId, task.status || "В планах");
-          console.log("[API] Started user time tracking for assignee:", task.assigneeId);
         } catch (error) {
           console.error("Error starting user time tracking:", error);
         }
@@ -2506,8 +3230,6 @@ export async function registerRoutes(
             
             // Update user points
             await storage.updateUserPoints(task.assigneeId, points);
-            
-            console.log("[API] Awarded", points, "points to user", task.assigneeId, "for initial status", task.status);
           }
         } catch (error) {
           console.error("Error awarding initial points:", error);
@@ -2657,25 +3379,18 @@ export async function registerRoutes(
   });
 
   app.patch("/api/board-columns/:columnId", async (req, res) => {
-    console.log("[API] PATCH /api/board-columns/:columnId - Received request");
-    console.log("[API] Column ID:", req.params.columnId);
-    console.log("[API] Body:", req.body);
-    
     if (!req.isAuthenticated()) {
-      console.log("[API] Unauthorized request");
       return res.status(401).json({ message: "Не авторизован" });
     }
     
     try {
       const { name, color, description } = req.body;
-      console.log("[API] Attempting to update column with name:", name, "color:", color, "description:", description);
       
       // Get board ID before updating
       const column = await storage.db.select().from(schema.boardColumns).where(eq(schema.boardColumns.id, req.params.columnId));
       const boardId = column[0]?.boardId;
       
       const updated = await storage.updateBoardColumn(req.params.columnId, { name, color, description: description || null });
-      console.log("[API] Column updated successfully:", updated);
       
       // Invalidate board cache
       if (boardId) {
@@ -2837,7 +3552,7 @@ export async function registerRoutes(
   app.get("/api/chats", async (req, res) => {
     if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
     try {
-      const user = req.user;
+      const user = req.user!;
       const cacheKey = `user:${user.id}:chats`;
       const cached = await getCache(cacheKey);
       if (cached) {
@@ -2920,7 +3635,7 @@ export async function registerRoutes(
   app.post("/api/chats", async (req, res) => {
     if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
     try {
-      const user = req.user;
+      const user = req.user!;
       
       const { name, type, participantIds, description, avatar } = req.body;
       
@@ -3043,7 +3758,7 @@ export async function registerRoutes(
   app.post("/api/chats/:chatId/messages", async (req, res) => {
     if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
     try {
-      const user = req.user;
+      const user = req.user!;
       
       const message = await storage.createMessage({
         chatId: req.params.chatId,
@@ -3156,7 +3871,7 @@ export async function registerRoutes(
   app.post("/api/chats/:chatId/read", async (req, res) => {
     if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
     try {
-      const user = req.user;
+      const user = req.user!;
 
       await storage.markChatMessagesAsRead(req.params.chatId, user.id);
       
@@ -3177,7 +3892,7 @@ export async function registerRoutes(
   app.get("/api/chat-folders", async (req, res) => {
     if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
     try {
-      const user = req.user;
+      const user = req.user!;
       const foldersWithItems = await storage.getChatFolders(user.id);
       res.json(foldersWithItems);
     } catch (error) {
@@ -3188,7 +3903,7 @@ export async function registerRoutes(
   app.post("/api/chat-folders", async (req, res) => {
     if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
     try {
-      const user = req.user;
+      const user = req.user!;
       
       const { name, icon, chatIds } = req.body;
       const folder = await storage.createChatFolder({
@@ -3237,7 +3952,7 @@ export async function registerRoutes(
   app.get("/api/calls", async (req, res) => {
     if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
     try {
-      const user = req.user;
+      const user = req.user!;
       const calls = await storage.getCallsForUser(user.id);
       res.json(calls);
     } catch (error) {
@@ -3248,7 +3963,7 @@ export async function registerRoutes(
   app.post("/api/calls", async (req, res) => {
     if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
     try {
-      const user = req.user;
+      const user = req.user!;
       
       const call = await storage.createCall({
         ...req.body,
@@ -3277,7 +3992,7 @@ export async function registerRoutes(
   app.get("/api/notifications", async (req, res) => {
     if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
     try {
-      const user = req.user;
+      const user = req.user!;
       const page = Math.max(1, parseInt(req.query.page as string) || 1);
       const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string) || 20));
       const offset = (page - 1) * limit;
@@ -3345,7 +4060,7 @@ export async function registerRoutes(
   app.post("/api/notifications/read-all", async (req, res) => {
     if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
     try {
-      const user = req.user;
+      const user = req.user!;
       await storage.markAllNotificationsAsRead(user.id);
       res.json({ success: true });
     } catch (error) {
@@ -3899,6 +4614,23 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error fetching users report:", error);
       res.status(500).json({ message: "Failed to fetch users report" });
+    }
+  });
+
+  app.get("/api/reports/workload", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+    try {
+      const { workspaceId, projectId, boardId } = req.query;
+      const data = await getReportWorkload(
+        storage.db,
+        workspaceId as string | undefined,
+        projectId as string | undefined,
+        boardId as string | undefined
+      );
+      res.json(data);
+    } catch (error) {
+      console.error("Error fetching workload report:", error);
+      res.status(500).json({ message: "Failed to fetch workload report" });
     }
   });
 

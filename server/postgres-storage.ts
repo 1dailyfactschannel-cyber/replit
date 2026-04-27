@@ -61,7 +61,7 @@ import {
   type InsertUserSetting
 } from "@shared/schema";
 import { drizzle } from "drizzle-orm/postgres-js";
-import { eq, and, or, desc, ne, sql, inArray, isNull, gte, lte, lt } from "drizzle-orm";
+import { eq, and, or, desc, asc, ne, sql, inArray, isNull, gte, lte, lt } from "drizzle-orm";
 import postgres from "postgres";
 import * as schema from "@shared/schema";
 import dotenv from "dotenv";
@@ -1862,6 +1862,33 @@ export class PostgresStorage {
           return acc;
         }, {} as Record<string, number>);
       }
+
+      // Get blocking dependency counts for all tasks
+      let blockingCounts: Record<string, number> = {};
+      if (taskIds.length > 0) {
+        const blockingResults = await this.db
+          .select({
+            taskId: schema.taskDependencies.targetTaskId,
+            count: sql<number>`count(*)::int`
+          })
+          .from(schema.taskDependencies)
+          .innerJoin(schema.tasks, eq(schema.tasks.id, schema.taskDependencies.sourceTaskId))
+          .where(
+            and(
+              inArray(schema.taskDependencies.targetTaskId, taskIds),
+              eq(schema.taskDependencies.type, "blocks"),
+              ne(schema.tasks.status, "Готово")
+            )
+          )
+          .groupBy(schema.taskDependencies.targetTaskId);
+
+        blockingCounts = blockingResults.reduce((acc, row) => {
+          if (row.taskId) {
+            acc[row.taskId] = row.count;
+          }
+          return acc;
+        }, {} as Record<string, number>);
+      }
       
       const duration = Date.now() - startTime;
       console.log(`[DB] getTasksByBoardWithUsers: ${tasks.length} tasks, ${subtasks.length} subtasks in ${duration}ms`);
@@ -1879,6 +1906,7 @@ export class PostgresStorage {
         return {
           ...task,
           commentCount: commentCounts[task.id] || 0,
+          blockingCount: blockingCounts[task.id] || 0,
           assignee: assignee ? { 
             name: formatName(assignee), 
             avatar: assignee.avatar 
@@ -1962,6 +1990,199 @@ export class PostgresStorage {
     } catch (error) {
       console.error("Error getting subtask:", error);
       return undefined;
+    }
+  }
+
+  // Task dependency methods
+  async getTaskDependencies(taskId: string): Promise<any[]> {
+    try {
+      // Get dependencies where this task is source or target
+      const sourceDeps = await this.db
+        .select({
+          id: schema.taskDependencies.id,
+          type: schema.taskDependencies.type,
+          createdAt: schema.taskDependencies.createdAt,
+          taskId: schema.taskDependencies.targetTaskId,
+          taskTitle: schema.tasks.title,
+          taskStatus: schema.tasks.status,
+          taskNumber: schema.tasks.number,
+          direction: sql<string>`'outgoing'`,
+        })
+        .from(schema.taskDependencies)
+        .innerJoin(schema.tasks, eq(schema.tasks.id, schema.taskDependencies.targetTaskId))
+        .where(eq(schema.taskDependencies.sourceTaskId, taskId));
+
+      const targetDeps = await this.db
+        .select({
+          id: schema.taskDependencies.id,
+          type: schema.taskDependencies.type,
+          createdAt: schema.taskDependencies.createdAt,
+          taskId: schema.taskDependencies.sourceTaskId,
+          taskTitle: schema.tasks.title,
+          taskStatus: schema.tasks.status,
+          taskNumber: schema.tasks.number,
+          direction: sql<string>`'incoming'`,
+        })
+        .from(schema.taskDependencies)
+        .innerJoin(schema.tasks, eq(schema.tasks.id, schema.taskDependencies.sourceTaskId))
+        .where(eq(schema.taskDependencies.targetTaskId, taskId));
+
+      return [...sourceDeps, ...targetDeps];
+    } catch (error) {
+      console.error("Error getting task dependencies:", error);
+      return [];
+    }
+  }
+
+  async addTaskDependency(sourceTaskId: string, targetTaskId: string, type: string): Promise<schema.TaskDependency> {
+    try {
+      const [dep] = await this.db.insert(schema.taskDependencies)
+        .values({ sourceTaskId, targetTaskId, type })
+        .returning();
+      return dep;
+    } catch (error) {
+      console.error("Error adding task dependency:", error);
+      throw error;
+    }
+  }
+
+  async removeTaskDependency(id: string): Promise<void> {
+    try {
+      await this.db.delete(schema.taskDependencies).where(eq(schema.taskDependencies.id, id));
+    } catch (error) {
+      console.error("Error removing task dependency:", error);
+      throw error;
+    }
+  }
+
+  async getBlockingTasks(taskId: string): Promise<any[]> {
+    try {
+      const blocking = await this.db
+        .select({
+          id: schema.tasks.id,
+          title: schema.tasks.title,
+          status: schema.tasks.status,
+          number: schema.tasks.number,
+        })
+        .from(schema.taskDependencies)
+        .innerJoin(schema.tasks, eq(schema.tasks.id, schema.taskDependencies.sourceTaskId))
+        .where(
+          and(
+            eq(schema.taskDependencies.targetTaskId, taskId),
+            eq(schema.taskDependencies.type, "blocks"),
+            ne(schema.tasks.status, "Готово")
+          )
+        );
+      return blocking;
+    } catch (error) {
+      console.error("Error getting blocking tasks:", error);
+      return [];
+    }
+  }
+
+  // Sprint methods
+  async getSprintsByProject(projectId: string): Promise<schema.Sprint[]> {
+    try {
+      return await this.db.select().from(schema.sprints)
+        .where(eq(schema.sprints.projectId, projectId))
+        .orderBy(desc(schema.sprints.createdAt));
+    } catch (error) {
+      console.error("Error getting sprints by project:", error);
+      return [];
+    }
+  }
+
+  async getSprintById(id: string): Promise<schema.Sprint | undefined> {
+    try {
+      const [sprint] = await this.db.select().from(schema.sprints)
+        .where(eq(schema.sprints.id, id))
+        .limit(1);
+      return sprint;
+    } catch (error) {
+      console.error("Error getting sprint by id:", error);
+      return undefined;
+    }
+  }
+
+  async getSprintsByIds(ids: string[]): Promise<schema.Sprint[]> {
+    try {
+      if (ids.length === 0) return [];
+      return await this.db.select().from(schema.sprints)
+        .where(inArray(schema.sprints.id, ids));
+    } catch (error) {
+      console.error("Error getting sprints by ids:", error);
+      return [];
+    }
+  }
+
+  async createSprint(sprint: schema.InsertSprint): Promise<schema.Sprint> {
+    try {
+      const [created] = await this.db.insert(schema.sprints).values(sprint).returning();
+      return created;
+    } catch (error) {
+      console.error("Error creating sprint:", error);
+      throw error;
+    }
+  }
+
+  async updateSprint(id: string, updates: Partial<schema.Sprint>): Promise<schema.Sprint | undefined> {
+    try {
+      const [updated] = await this.db.update(schema.sprints)
+        .set({ ...updates, updatedAt: new Date() })
+        .where(eq(schema.sprints.id, id))
+        .returning();
+      return updated;
+    } catch (error) {
+      console.error("Error updating sprint:", error);
+      return undefined;
+    }
+  }
+
+  async deleteSprint(id: string): Promise<void> {
+    try {
+      await this.db.delete(schema.sprints).where(eq(schema.sprints.id, id));
+    } catch (error) {
+      console.error("Error deleting sprint:", error);
+      throw error;
+    }
+  }
+
+  async getActiveSprintByProject(projectId: string): Promise<schema.Sprint | undefined> {
+    try {
+      const [sprint] = await this.db.select().from(schema.sprints)
+        .where(
+          and(
+            eq(schema.sprints.projectId, projectId),
+            eq(schema.sprints.status, "active")
+          )
+        )
+        .limit(1);
+      return sprint;
+    } catch (error) {
+      console.error("Error getting active sprint:", error);
+      return undefined;
+    }
+  }
+
+  async updateTaskSprint(taskId: string, sprintId: string | null): Promise<void> {
+    try {
+      await this.db.update(schema.tasks)
+        .set({ sprintId: sprintId })
+        .where(eq(schema.tasks.id, taskId));
+    } catch (error) {
+      console.error("Error updating task sprint:", error);
+      throw error;
+    }
+  }
+
+  async getTasksBySprint(sprintId: string): Promise<schema.Task[]> {
+    try {
+      return await this.db.select().from(schema.tasks)
+        .where(eq(schema.tasks.sprintId, sprintId))
+        .orderBy(asc(schema.tasks.order));
+    } catch (error) {
+      console.error("Error getting tasks by sprint:", error);
+      return [];
     }
   }
 
@@ -3988,6 +4209,92 @@ export async function getReportUsers(
     return { users: result };
   } catch (error) {
     console.error("Error getting users report:", error);
+    throw error;
+  }
+}
+
+export async function getReportWorkload(
+  db: any,
+  workspaceId?: string,
+  projectId?: string,
+  boardId?: string,
+) {
+  try {
+    // Get active users
+    const usersList = await db.select().from(schema.users).where(eq(schema.users.isActive, true));
+
+    // Build task query with optional scope filters
+    let taskQuery = db.select().from(schema.tasks).where(eq(schema.tasks.archived, false));
+
+    if (boardId) {
+      taskQuery = db.select().from(schema.tasks).where(
+        and(eq(schema.tasks.archived, false), eq(schema.tasks.boardId, boardId))
+      );
+    } else if (projectId) {
+      const projectBoards = await db.select({ id: schema.boards.id }).from(schema.boards).where(eq(schema.boards.projectId, projectId));
+      const boardIds = projectBoards.map((b: any) => b.id);
+      if (boardIds.length === 0) return { users: [] };
+      taskQuery = db.select().from(schema.tasks).where(
+        and(eq(schema.tasks.archived, false), inArray(schema.tasks.boardId, boardIds))
+      );
+    } else if (workspaceId) {
+      const workspaceProjects = await db.select({ id: schema.projects.id }).from(schema.projects).where(eq(schema.projects.workspaceId, workspaceId));
+      const projectIds = workspaceProjects.map((p: any) => p.id);
+      if (projectIds.length === 0) return { users: [] };
+      const workspaceBoards = await db.select({ id: schema.boards.id }).from(schema.boards).where(inArray(schema.boards.projectId, projectIds));
+      const boardIds = workspaceBoards.map((b: any) => b.id);
+      if (boardIds.length === 0) return { users: [] };
+      taskQuery = db.select().from(schema.tasks).where(
+        and(eq(schema.tasks.archived, false), inArray(schema.tasks.boardId, boardIds))
+      );
+    }
+
+    const allTasks = await taskQuery;
+    const now = new Date();
+
+    const result = usersList.map((user: any) => {
+      const userTasks = allTasks.filter((t: any) => t.assigneeId === user.id);
+      const totalTasks = userTasks.length;
+
+      let planned = 0, inProgress = 0, review = 0, done = 0, overdue = 0;
+      for (const task of userTasks) {
+        const status = task.status || 'В планах';
+        if (status === 'Готово' || status === 'done') done++;
+        else if (status === 'В работе' || status === 'in_progress') inProgress++;
+        else if (status === 'На проверке' || status === 'review') review++;
+        else planned++;
+
+        if (task.dueDate && new Date(task.dueDate) < now && status !== 'Готово' && status !== 'done') {
+          overdue++;
+        }
+      }
+
+      const activeTasks = planned + inProgress + review;
+      const utilization = Math.min(100, Math.round((activeTasks / 5) * 100)); // 5 tasks = 100%
+      let riskLevel: 'low' | 'medium' | 'high' = 'low';
+      if (activeTasks > 8) riskLevel = 'high';
+      else if (activeTasks > 5) riskLevel = 'medium';
+
+      return {
+        id: user.id,
+        name: user.firstName ? `${user.firstName} ${user.lastName || ''}`.trim() : user.username,
+        avatar: user.avatar,
+        position: user.position || '',
+        totalTasks,
+        byStatus: { planned, inProgress, review, done, overdue },
+        overdueCount: overdue,
+        activeTasks,
+        utilization,
+        riskLevel,
+      };
+    });
+
+    // Sort by total tasks descending
+    result.sort((a: any, b: any) => b.totalTasks - a.totalTasks);
+
+    return { users: result };
+  } catch (error) {
+    console.error("Error getting workload report:", error);
     throw error;
   }
 }

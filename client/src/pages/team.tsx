@@ -60,7 +60,10 @@ import {
   Key,
   RefreshCw,
   Eye,
-  EyeOff
+  EyeOff,
+  TrendingUp,
+  ShoppingBag,
+  Copy
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useLocation } from "wouter";
@@ -380,6 +383,24 @@ export default function EmployeesPage() {
     },
   });
 
+  // Reset password mutation
+  const [resetPasswordResult, setResetPasswordResult] = useState<string | null>(null);
+  const resetPasswordMutation = useMutation({
+    mutationFn: async (userId: string) => {
+      const res = await apiRequest("POST", `/api/users/${userId}/reset-password`);
+      return res.json();
+    },
+    onSuccess: (data) => {
+      if (data.newPassword) {
+        setResetPasswordResult(data.newPassword);
+        toast({ title: "Пароль сброшен", description: "Новый пароль сгенерирован и отображён ниже" });
+      }
+    },
+    onError: (error: any) => {
+      toast({ title: "Ошибка", description: "Не удалось сбросить пароль", variant: "destructive" });
+    },
+  });
+
   // Initialize editing employee when modal opens
   const prevSelectedIdRef = useRef<string | null>(null);
   const rolesSyncedRef = useRef(false);
@@ -389,8 +410,9 @@ export default function EmployeesPage() {
     if (isDetailsOpen && selectedEmployee) {
       prevSelectedIdRef.current = null;
       rolesSyncedRef.current = false;
+      setResetPasswordResult(null);
     }
-  }, [isDetailsOpen]);
+  }, [isDetailsOpen, selectedEmployee?.id]);
 
   useEffect(() => {
     if (selectedEmployee && selectedEmployee.id !== prevSelectedIdRef.current) {
@@ -808,31 +830,6 @@ export default function EmployeesPage() {
                           <RefreshCw className="w-4 h-4" />
                         </Button>
                       </div>
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="new-role">Роль</Label>
-                      <Select 
-                        value={newEmployee.roleIds[0] || "__empty__"} 
-                        onValueChange={(value) => setNewEmployee(prev => ({ 
-                          ...prev, 
-                          roleIds: value === "__empty__" ? [] : [value] 
-                        }))}
-                      >
-                        <SelectTrigger id="new-role">
-                          <SelectValue placeholder="Выберите роль" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="__empty__">Без роли</SelectItem>
-                          {apiRoles.map((role) => (
-                            <SelectItem key={role.id} value={role.id}>
-                              <div className="flex items-center gap-2">
-                                <span className="w-2 h-2 rounded-full" style={{ backgroundColor: role.color || '#6b7280' }} />
-                                {role.name}
-                              </div>
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
                     </div>
                   </div>
                   <DialogFooter>
@@ -1427,6 +1424,50 @@ export default function EmployeesPage() {
                       />
                     </div>
                   </div>
+
+                  {/* Password Reset Section */}
+                  <div className="pt-4 border-t border-border/50 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Пароль</Label>
+                        <p className="text-xs text-muted-foreground mt-0.5">Сгенерировать новый пароль для входа сотрудника</p>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="gap-2"
+                        disabled={resetPasswordMutation.isPending}
+                        onClick={() => {
+                          if (selectedEmployee?.id) {
+                            resetPasswordMutation.mutate(selectedEmployee.id);
+                          }
+                        }}
+                      >
+                        {resetPasswordMutation.isPending && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                        <RefreshCw className="w-3.5 h-3.5" />
+                        Сбросить пароль
+                      </Button>
+                    </div>
+                    {resetPasswordResult && (
+                      <div className="flex items-center gap-2 p-3 rounded-lg bg-emerald-500/5 border border-emerald-500/20">
+                        <Key className="w-4 h-4 text-emerald-500 shrink-0" />
+                        <code className="text-sm font-mono text-emerald-700 dark:text-emerald-300 flex-1">{resetPasswordResult}</code>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 px-2 gap-1 text-xs"
+                          onClick={() => {
+                            navigator.clipboard.writeText(resetPasswordResult);
+                            toast({ title: "Скопировано", description: "Пароль скопирован в буфер обмена" });
+                          }}
+                        >
+                          <Copy className="w-3.5 h-3.5" />
+                          Копировать
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+
                   <div className="flex justify-end gap-3 pt-4 border-t border-border/50">
                     <Button variant="outline" onClick={() => setIsDetailsOpen(false)}>Отмена</Button>
                     <Button 
@@ -1488,6 +1529,83 @@ export default function EmployeesPage() {
                           </TableRow>
                         ))}
                       </TableBody>
+                      </Table>
+                    </div>
+                  )}
+                </TabsContent>
+
+                <TabsContent value="audit_points" className="mt-0">
+                  {pointsHistory.length === 0 ? (
+                    <div className="text-center py-8 text-muted-foreground">
+                      <Coins className="w-8 h-8 mx-auto mb-2 opacity-20" />
+                      <p className="text-sm">История баллов пуста</p>
+                    </div>
+                  ) : (
+                    <div className="max-h-[400px] overflow-y-auto">
+                      <Table>
+                        <TableHeader className="bg-secondary/20 sticky top-0">
+                          <TableRow>
+                            <TableHead className="w-[100px]">Тип</TableHead>
+                            <TableHead>Описание</TableHead>
+                            <TableHead className="w-[100px]">Баллы</TableHead>
+                            <TableHead className="w-[140px]">Кем выполнено</TableHead>
+                            <TableHead className="w-[120px]">Дата и время</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {pointsHistory.map((entry) => (
+                            <TableRow key={entry.id}>
+                              <TableCell>
+                                <div className="flex items-center gap-1.5">
+                                  {entry.type === 'earned' ? (
+                                    <TrendingUp className="w-4 h-4 text-emerald-500" />
+                                  ) : entry.type === 'spent' ? (
+                                    <ShoppingBag className="w-4 h-4 text-rose-500" />
+                                  ) : entry.type === 'reverted' ? (
+                                    <Coins className="w-4 h-4 text-amber-500" />
+                                  ) : (
+                                    <Coins className="w-4 h-4 text-muted-foreground" />
+                                  )}
+                                  <span className="text-xs capitalize">
+                                    {entry.type === 'earned' ? 'Начисление' : entry.type === 'spent' ? 'Списание' : entry.type === 'reverted' ? 'Возврат' : entry.type}
+                                  </span>
+                                </div>
+                              </TableCell>
+                              <TableCell className="text-sm">
+                                {entry.description || '—'}
+                                {entry.task && (
+                                  <span className="block text-xs text-muted-foreground mt-0.5">
+                                    Задача: {entry.task.title}
+                                  </span>
+                                )}
+                              </TableCell>
+                              <TableCell>
+                                <span className={`font-bold ${
+                                  entry.type === 'earned' ? 'text-emerald-600' : 
+                                  entry.type === 'spent' ? 'text-rose-600' : 
+                                  entry.type === 'reverted' ? 'text-amber-600' : 'text-muted-foreground'
+                                }`}>
+                                  {entry.type === 'earned' ? '+' : entry.type === 'spent' || entry.type === 'reverted' ? '-' : ''}
+                                  {Math.abs(entry.amount)}
+                                </span>
+                              </TableCell>
+                              <TableCell className="text-sm text-muted-foreground">
+                                {entry.changedByUser 
+                                  ? `${entry.changedByUser.firstName || ''} ${entry.changedByUser.lastName || ''}`.trim() || 'Система'
+                                  : 'Система'}
+                              </TableCell>
+                              <TableCell className="text-sm text-muted-foreground">
+                                {entry.createdAt ? new Date(entry.createdAt).toLocaleString('ru-RU', { 
+                                  day: '2-digit', 
+                                  month: '2-digit', 
+                                  year: 'numeric', 
+                                  hour: '2-digit', 
+                                  minute: '2-digit'
+                                }) : '—'}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
                       </Table>
                     </div>
                   )}

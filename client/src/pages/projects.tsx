@@ -46,7 +46,9 @@ import {
   Clock,
   GripVertical,
   Info,
-  Star
+  Star,
+  AlertTriangle,
+  Link2
 } from "lucide-react";
 import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd";
 import { Button } from "@/components/ui/button";
@@ -240,6 +242,12 @@ const TaskCard = React.memo(({ task, index, onClick, columnColor, availableLabel
                 <div className="text-[10px] font-medium flex items-center gap-1 text-muted-foreground/70">
                   <MessageSquare className="w-3 h-3" />
                   {task.commentCount}
+                </div>
+              )}
+              {task.blockingCount > 0 && (
+                <div className="text-[10px] font-medium flex items-center gap-1 text-amber-600" title="Задача заблокирована">
+                  <AlertTriangle className="w-3 h-3" />
+                  {task.blockingCount}
                 </div>
               )}
             </div>
@@ -784,10 +792,12 @@ export default function Projects() {
   const [modalOpen, setModalOpen] = useState(false);
   const [isCreateProjectOpen, setIsCreateProjectOpen] = useState(false);
   const [isCreateBoardOpen, setIsCreateBoardOpen] = useState(false);
+  const [isCreateSprintOpen, setIsCreateSprintOpen] = useState(false);
   const [isCreateWorkspaceOpen, setIsCreateWorkspaceOpen] = useState(false);
   const [isWorkspaceDropdownOpen, setIsWorkspaceDropdownOpen] = useState(false);
   const [newProject, setNewProject] = useState({ name: "", color: "bg-blue-500", priority: "Средний" });
   const [newBoardName, setNewBoardName] = useState("");
+  const [newSprint, setNewSprint] = useState({ name: "", goal: "", startDate: "", endDate: "" });
   const [newWorkspaceName, setNewWorkspaceName] = useState("");
   const [editingColumn, setEditingColumn] = useState<{ originalName: string, currentName: string } | null>(null);
   const [showAllTasks, setShowAllTasks] = useState(false);
@@ -912,16 +922,21 @@ export default function Projects() {
     }
   }, [activeProjectId, projects, handleProjectChange]);
 
-  // Handle projectId from URL query params
+  // Handle projectId and sprintId from URL query params
   const hasHandledUrlRef = useRef(false);
   useEffect(() => {
     if (hasHandledUrlRef.current || projects.length === 0) return;
     const params = new URLSearchParams(window.location.search);
     const projectId = params.get('projectId');
+    const sprintId = params.get('sprintId');
     if (projectId) {
       const project = projects.find((p: any) => p.id === projectId);
       if (project) {
         handleProjectChange(projectId);
+        if (sprintId) {
+          setSelectedSprintId(sprintId);
+          setShowAllTasks(false);
+        }
         hasHandledUrlRef.current = true;
       }
     }
@@ -941,6 +956,25 @@ export default function Projects() {
     staleTime: 1000 * 60 * 10, // 10 minutes
   });
 
+  // Fetch sprints for active project
+  const { data: projectSprints = [] } = useQuery<any[]>({
+    queryKey: ["/api/projects", activeProject?.id, "sprints"],
+    enabled: !!activeProject?.id,
+    staleTime: 1000 * 60 * 5,
+  });
+
+  const activeSprint = useMemo(() => 
+    projectSprints.find((s: any) => s.status === "active"),
+    [projectSprints]
+  );
+
+  const [selectedSprintId, setSelectedSprintId] = useState<string | null | undefined>(undefined);
+
+  // Reset sprint selection when project changes
+  useEffect(() => {
+    setSelectedSprintId(undefined);
+  }, [activeProject?.id]);
+
   // User settings for favorites
   const { data: userSettings = [] } = useQuery<any[]>({
     queryKey: ["/api/user/settings"],
@@ -949,7 +983,12 @@ export default function Projects() {
   });
 
   const favoriteProjectIds = useMemo(() => {
-    const setting = userSettings.find((s: any) => s.key === 'favorite_projects');
+    const setting = (userSettings || []).find((s: any) => s.key === 'favorite_projects');
+    return (setting?.value as string[]) || [];
+  }, [userSettings]);
+
+  const favoriteSprintIds = useMemo(() => {
+    const setting = (userSettings || []).find((s: any) => s.key === 'favorite_sprints');
     return (setting?.value as string[]) || [];
   }, [userSettings]);
 
@@ -1152,6 +1191,46 @@ export default function Projects() {
     toggleFavoriteMutation.mutate({ projectId, isFavorite: !isFavorite });
   };
 
+  const toggleFavoriteSprintMutation = useMutation({
+    mutationFn: async ({ sprintId, isFavorite }: { sprintId: string; isFavorite: boolean }) => {
+      const currentIds = favoriteSprintIds;
+      const newIds = isFavorite
+        ? [...currentIds, sprintId]
+        : currentIds.filter((id: string) => id !== sprintId);
+      const res = await apiRequest("PUT", "/api/user/settings", { key: 'favorite_sprints', value: newIds });
+      return res.json();
+    },
+    onMutate: async ({ sprintId, isFavorite }) => {
+      await queryClient.cancelQueries({ queryKey: ["/api/user/settings"] });
+      const previousSettings = queryClient.getQueryData(["/api/user/settings"]);
+
+      queryClient.setQueryData(["/api/user/settings"], (old: any[] = []) => {
+        const others = old.filter((s: any) => s.key !== 'favorite_sprints');
+        const currentIds = (old.find((s: any) => s.key === 'favorite_sprints')?.value as string[]) || [];
+        const newIds = isFavorite
+          ? [...currentIds, sprintId]
+          : currentIds.filter((id: string) => id !== sprintId);
+        return [...others, { key: 'favorite_sprints', value: newIds }];
+      });
+
+      return { previousSettings };
+    },
+    onError: (error, variables, context) => {
+      if (context?.previousSettings) {
+        queryClient.setQueryData(["/api/user/settings"], context.previousSettings);
+      }
+      toast.error("Не удалось обновить избранное");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/user/settings"] });
+    }
+  });
+
+  const handleToggleFavoriteSprint = (sprintId: string) => {
+    const isFavorite = favoriteSprintIds.includes(sprintId);
+    toggleFavoriteSprintMutation.mutate({ sprintId, isFavorite: !isFavorite });
+  };
+
   const createBoardMutation = useMutation({
     mutationFn: async ({ projectId, name }: { projectId: string, name: string }) => {
       const res = await apiRequest("POST", `/api/projects/${projectId}/boards`, { name });
@@ -1200,6 +1279,43 @@ export default function Projects() {
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects", activeProject?.id, "boards"] });
     }
+  });
+
+  const createSprintMutation = useMutation({
+    mutationFn: async ({ name, goal, startDate, endDate }: { name: string; goal?: string; startDate?: string; endDate?: string }) => {
+      if (!activeProject) throw new Error("No active project");
+      const res = await apiRequest("POST", `/api/projects/${activeProject.id}/sprints`, {
+        name,
+        goal,
+        startDate,
+        endDate,
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      setIsCreateSprintOpen(false);
+      setNewSprint({ name: "", goal: "", startDate: "", endDate: "" });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", activeProject?.id, "sprints"] });
+      toast.success("Спринт создан");
+    },
+    onError: (error: any) => {
+      console.error("Create sprint error:", error);
+      toast.error(error?.message || "Не удалось создать спринт");
+    },
+  });
+
+  const updateSprintStatusMutation = useMutation({
+    mutationFn: async ({ sprintId, status }: { sprintId: string; status: string }) => {
+      const res = await apiRequest("PATCH", `/api/sprints/${sprintId}`, { status });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", activeProject?.id, "sprints"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/boards", activeBoard?.id, "full"] });
+    },
+    onError: () => {
+      toast.error("Ошибка обновления спринта");
+    },
   });
 
   const updateBoardMutation = useMutation({
@@ -1278,7 +1394,7 @@ export default function Projects() {
 
   const handleSaveEditColumn = () => {
     if (editingKanbanColumn && editColumnName.trim()) {
-      handleEditColumn(editingKanbanColumn.id, editColumnName.trim(), editColumnColor, editColumnDescription || null);
+      handleEditColumn(editingKanbanColumn.id, editColumnName.trim(), editColumnColor, editColumnDescription || undefined);
       setIsEditColumnOpen(false);
       setEditingKanbanColumn(null);
       setEditColumnName("");
@@ -1464,7 +1580,12 @@ export default function Projects() {
   }, [allColumns, showAllTasks]);
 
   const [columns, setColumns] = useState(showAllTasks ? uniqueColumns : (boardData?.columns || []));
-  const tasks = showAllTasks ? allTasks : (boardData?.tasks || []);
+  const rawTasks = showAllTasks ? allTasks : (boardData?.tasks || []);
+  const tasks = useMemo(() => {
+    if (selectedSprintId === undefined || selectedSprintId === null) return rawTasks;
+    if (selectedSprintId === "backlog") return rawTasks.filter((t: any) => !t.sprintId);
+    return rawTasks.filter((t: any) => t.sprintId === selectedSprintId);
+  }, [rawTasks, selectedSprintId]);
   const isLoadingColumns = showAllTasks ? false : isLoadingBoard;
   const isLoadingTasks = showAllTasks ? false : isLoadingBoard;
 
@@ -2103,6 +2224,111 @@ export default function Projects() {
                         ))
                       )}
 
+                      {/* Sprints section */}
+                      {activeProject && (
+                        <div className="mt-2 space-y-1">
+                          <div className="px-2 py-1 flex items-center justify-between">
+                            <span className="text-[10px] font-semibold text-muted-foreground/60 uppercase tracking-wider">
+                              Спринты
+                            </span>
+                            <button
+                              onClick={() => setIsCreateSprintOpen(true)}
+                              className="text-muted-foreground/60 hover:text-foreground transition-colors"
+                              title="Создать спринт"
+                            >
+                              <Plus className="w-3 h-3" />
+                            </button>
+                          </div>
+
+                          <button
+                            onClick={() => {
+                              setSelectedSprintId("backlog");
+                              setShowAllTasks(false);
+                              handleBoardChange(activeBoard?.id || boards[0]?.id);
+                            }}
+                            className={cn(
+                              "w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-[13px] transition-colors text-left cursor-pointer",
+                              selectedSprintId === "backlog"
+                                ? "bg-secondary text-foreground font-medium"
+                                : "text-foreground hover:bg-secondary/30"
+                            )}
+                          >
+                            <LayoutGrid className="w-3.5 h-3.5 shrink-0 opacity-50" />
+                            <span className="truncate flex-1">Бэклог</span>
+                            <span className="text-[10px] text-muted-foreground">
+                              {activeBoard?.tasks?.filter((t: any) => !t.sprintId).length || 0}
+                            </span>
+                          </button>
+                          {projectSprints.map((sprint: any) => (
+                            <div key={sprint.id} className="group/sprint relative">
+                              <button
+                                onClick={() => {
+                                  setSelectedSprintId(sprint.id);
+                                  setShowAllTasks(false);
+                                  handleBoardChange(activeBoard?.id || boards[0]?.id);
+                                }}
+                                className={cn(
+                                  "w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-[13px] transition-colors text-left cursor-pointer",
+                                  selectedSprintId === sprint.id
+                                    ? "bg-secondary text-foreground font-medium"
+                                    : "text-foreground hover:bg-secondary/30"
+                                )}
+                              >
+                                <Flag className={cn(
+                                  "w-3.5 h-3.5 shrink-0",
+                                  sprint.status === "active" ? "text-emerald-500" : "opacity-50"
+                                )} />
+                                <span className="truncate flex-1">{sprint.name}</span>
+                                {sprint.status === "active" && (
+                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+                                )}
+                              </button>
+                              {/* Sprint action buttons */}
+                              <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5 opacity-0 group-hover/sprint:opacity-100 transition-opacity">
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleToggleFavoriteSprint(sprint.id);
+                                  }}
+                                  className="p-1 rounded-md hover:bg-secondary"
+                                  title={favoriteSprintIds.includes(sprint.id) ? "Удалить из избранного" : "Добавить в избранное"}
+                                >
+                                  <Star className={cn("w-3 h-3", favoriteSprintIds.includes(sprint.id) ? "fill-amber-400 text-amber-400" : "text-muted-foreground")} />
+                                </button>
+                                {sprint.status === "planned" && (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-5 px-1.5 text-[10px] text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      updateSprintStatusMutation.mutate({ sprintId: sprint.id, status: "active" });
+                                    }}
+                                    disabled={updateSprintStatusMutation.isPending}
+                                  >
+                                    Старт
+                                  </Button>
+                                )}
+                                {sprint.status === "active" && (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-5 px-1.5 text-[10px] text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      updateSprintStatusMutation.mutate({ sprintId: sprint.id, status: "completed" });
+                                    }}
+                                    disabled={updateSprintStatusMutation.isPending}
+                                  >
+                                    Завершить
+                                  </Button>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
                       {/* Dialog подтверждения удаления доски */}
                       <Dialog open={!!deletingBoardId} onOpenChange={(open) => !open && setDeletingBoardId(null)}>
                         <DialogContent>
@@ -2188,6 +2414,62 @@ export default function Projects() {
                           </DialogFooter>
                         </DialogContent>
                       </Dialog>
+
+                      {/* Create Sprint Dialog */}
+                      <Dialog open={isCreateSprintOpen} onOpenChange={setIsCreateSprintOpen}>
+                        <DialogContent>
+                          <DialogHeader>
+                            <DialogTitle>Создать спринт</DialogTitle>
+                            <DialogDescription>Создайте новый спринт для планирования задач.</DialogDescription>
+                          </DialogHeader>
+                          <div className="space-y-3 py-4">
+                            <div className="space-y-1.5">
+                              <Label className="text-xs">Название</Label>
+                              <Input
+                                placeholder="Спринт 1"
+                                value={newSprint.name}
+                                onChange={(e) => setNewSprint(prev => ({ ...prev, name: e.target.value }))}
+                              />
+                            </div>
+                            <div className="space-y-1.5">
+                              <Label className="text-xs">Цель (опционально)</Label>
+                              <Input
+                                placeholder="Цель спринта..."
+                                value={newSprint.goal}
+                                onChange={(e) => setNewSprint(prev => ({ ...prev, goal: e.target.value }))}
+                              />
+                            </div>
+                            <div className="grid grid-cols-2 gap-3">
+                              <div className="space-y-1.5">
+                                <Label className="text-xs">Начало</Label>
+                                <Input
+                                  type="date"
+                                  value={newSprint.startDate}
+                                  onChange={(e) => setNewSprint(prev => ({ ...prev, startDate: e.target.value }))}
+                                />
+                              </div>
+                              <div className="space-y-1.5">
+                                <Label className="text-xs">Окончание</Label>
+                                <Input
+                                  type="date"
+                                  value={newSprint.endDate}
+                                  onChange={(e) => setNewSprint(prev => ({ ...prev, endDate: e.target.value }))}
+                                />
+                              </div>
+                            </div>
+                          </div>
+                          <DialogFooter>
+                            <Button variant="outline" onClick={() => setIsCreateSprintOpen(false)}>Отмена</Button>
+                            <Button
+                              onClick={() => createSprintMutation.mutate(newSprint)}
+                              disabled={!newSprint.name.trim() || createSprintMutation.isPending}
+                            >
+                              {createSprintMutation.isPending && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
+                              Создать
+                            </Button>
+                          </DialogFooter>
+                        </DialogContent>
+                      </Dialog>
                     </div>
                   )}
                 </div>
@@ -2224,6 +2506,63 @@ export default function Projects() {
                       {activeBoard.name}
                     </Badge>
                   </>
+                )}
+
+                {/* Sprint selector */}
+                {projectSprints.length > 0 && (
+                  <>
+                    <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
+                    <Select
+                      value={selectedSprintId ?? "all"}
+                      onValueChange={(value) => {
+                        if (value === "all") setSelectedSprintId(undefined);
+                        else if (value === "backlog") setSelectedSprintId("backlog");
+                        else setSelectedSprintId(value);
+                      }}
+                    >
+                      <SelectTrigger className="h-7 text-xs w-auto min-w-[140px] border-none bg-secondary/30 hover:bg-secondary/50">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Все задачи</SelectItem>
+                        <SelectItem value="backlog">Бэклог</SelectItem>
+                        {projectSprints.map((sprint: any) => (
+                          <SelectItem key={sprint.id} value={sprint.id}>
+                            <div className="flex items-center gap-2">
+                              {sprint.status === "active" && (
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                              )}
+                              {sprint.name}
+                            </div>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </>
+                )}
+
+                {/* Sprint stats badge */}
+                {selectedSprintId && selectedSprintId !== "backlog" && (
+                  (() => {
+                    const sprint = projectSprints.find((s: any) => s.id === selectedSprintId);
+                    if (!sprint) return null;
+                    const sprintTasks = rawTasks.filter((t: any) => t.sprintId === sprint.id);
+                    const doneCount = sprintTasks.filter((t: any) => t.status === "Готово").length;
+                    const totalCount = sprintTasks.length;
+                    const daysLeft = sprint.endDate
+                      ? Math.max(0, Math.ceil((new Date(sprint.endDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24)))
+                      : null;
+                    return (
+                      <Badge variant="secondary" className="text-[10px] h-6 gap-1.5 px-2">
+                        <span className={doneCount === totalCount && totalCount > 0 ? "text-emerald-600" : "text-amber-600"}>
+                          {doneCount}/{totalCount}
+                        </span>
+                        {daysLeft !== null && (
+                          <span className="text-muted-foreground">· {daysLeft}д</span>
+                        )}
+                      </Badge>
+                    );
+                  })()
                 )}
               </div>
             ) : (
@@ -2842,6 +3181,7 @@ export default function Projects() {
           open={modalOpen}
           onOpenChange={setModalOpen}
           onUpdate={onTaskUpdate}
+          workspaceId={selectedWorkspaceId}
         />
       )}
     </Layout>

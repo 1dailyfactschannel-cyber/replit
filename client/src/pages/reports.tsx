@@ -22,7 +22,8 @@ import {
   Timer,
   Activity,
   Percent,
-  Award
+  Award,
+  AlertTriangle
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
@@ -226,6 +227,13 @@ export default function ReportsPage() {
     staleTime: 1000 * 60 * 2,
   });
 
+  // Fetch workload report
+  const { data: workloadReport, isLoading: isLoadingWorkload } = useQuery<any>({
+    queryKey: [`/api/reports/workload?${queryParams}`],
+    enabled: activeReport === "workload",
+    staleTime: 1000 * 60 * 2,
+  });
+
   const reports = [
     { id: "overview", label: "Обзор", icon: BarChart2, description: "Общая статистика" },
     { id: "workspaces", label: "По пространствам", icon: Folder, description: "Статистика по пространствам" },
@@ -233,9 +241,10 @@ export default function ReportsPage() {
     { id: "boards", label: "По доскам", icon: Calendar, description: "Статистика по доскам" },
     { id: "tasks", label: "По задачам", icon: CheckSquare, description: "Время в статусах" },
     { id: "users", label: "По сотрудникам", icon: Users, description: "Аналитика сотрудников" },
+    { id: "workload", label: "Нагрузка", icon: Activity, description: "Загруженность команды" },
   ];
 
-  const isLoading = isLoadingOverview || isLoadingWorkspaces || isLoadingProjects || isLoadingBoards || isLoadingTasksTime || isLoadingUsers;
+  const isLoading = isLoadingOverview || isLoadingWorkspaces || isLoadingProjects || isLoadingBoards || isLoadingTasksTime || isLoadingUsers || isLoadingWorkload;
 
   const formatDuration = (seconds: number): string => {
     const hours = Math.floor(seconds / 3600);
@@ -1110,6 +1119,163 @@ export default function ReportsPage() {
                             />
                             <Bar dataKey="completedCount" fill="#10b981" name="Выполнено" radius={[4, 4, 0, 0]} />
                             <Bar dataKey="inProgressCount" fill="#3b82f6" name="В работе" radius={[4, 4, 0, 0]} />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </CardContent>
+                    </Card>
+                  </div>
+                )}
+
+                {/* Workload Report */}
+                {activeReport === "workload" && workloadReport && (
+                  <div className="space-y-6">
+                    {/* KPI Cards */}
+                    {(() => {
+                      const users = workloadReport.users || [];
+                      const totalOverdue = users.reduce((sum: number, u: any) => sum + (u.overdueCount || 0), 0);
+                      const overloaded = users.filter((u: any) => u.riskLevel === "high").length;
+                      const free = users.filter((u: any) => u.totalTasks === 0).length;
+                      const avgLoad = users.length > 0 ? Math.round(users.reduce((sum: number, u: any) => sum + (u.activeTasks || 0), 0) / users.length) : 0;
+                      return (
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                          <StatCard
+                            title="Средняя загрузка"
+                            value={`${avgLoad} задач`}
+                            icon={Activity}
+                            color="blue"
+                          />
+                          <StatCard
+                            title="Перегружено"
+                            value={overloaded}
+                            icon={AlertTriangle}
+                            color="red"
+                          />
+                          <StatCard
+                            title="Свободно"
+                            value={free}
+                            icon={Users}
+                            color="green"
+                          />
+                          <StatCard
+                            title="Просрочено всего"
+                            value={totalOverdue}
+                            icon={Clock}
+                            color="amber"
+                          />
+                        </div>
+                      );
+                    })()}
+
+                    {/* Workload List */}
+                    <Card className="border-border/50 shadow-sm">
+                      <CardHeader>
+                        <CardTitle className="text-base font-semibold flex items-center gap-2">
+                          <Activity className="w-4 h-4 text-primary" />
+                          Загруженность команды
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="space-y-4">
+                          {(workloadReport.users || []).map((u: any) => {
+                            const barColor = u.activeTasks > 8 ? "bg-red-500" : u.activeTasks > 5 ? "bg-amber-500" : "bg-emerald-500";
+                            const textColor = u.activeTasks > 8 ? "text-red-600" : u.activeTasks > 5 ? "text-amber-600" : "text-emerald-600";
+                            return (
+                              <div key={u.id} className="flex items-center gap-4 p-3 rounded-lg hover:bg-muted/30 transition-colors">
+                                <Avatar className="w-10 h-10">
+                                  <AvatarImage src={u.avatar || undefined} />
+                                  <AvatarFallback className="bg-primary/10 text-primary text-sm">
+                                    {u.name?.split(' ').map((n: string) => n[0]).join('').slice(0, 2)}
+                                  </AvatarFallback>
+                                </Avatar>
+                                <div className="flex-1 min-w-0 space-y-1.5">
+                                  <div className="flex items-center justify-between">
+                                    <div>
+                                      <p className="text-sm font-medium">{u.name}</p>
+                                      <p className="text-xs text-muted-foreground">{u.position || 'Сотрудник'}</p>
+                                    </div>
+                                    <div className="flex items-center gap-3">
+                                      <span className={cn("text-xs font-bold", textColor)}>
+                                        {u.activeTasks} активных
+                                      </span>
+                                      {u.overdueCount > 0 && (
+                                        <Badge variant="destructive" className="text-[10px] h-5 px-1.5">
+                                          {u.overdueCount} просрочено
+                                        </Badge>
+                                      )}
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
+                                      <div
+                                        className={cn("h-full rounded-full transition-all", barColor)}
+                                        style={{ width: `${Math.min(100, u.utilization || 0)}%` }}
+                                      />
+                                    </div>
+                                    <span className="text-[10px] text-muted-foreground w-8 text-right">{u.utilization}%</span>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    {u.byStatus?.planned > 0 && (
+                                      <Badge variant="secondary" className="text-[9px] h-4 px-1 bg-slate-100 text-slate-600 border-slate-200">
+                                        В планах: {u.byStatus.planned}
+                                      </Badge>
+                                    )}
+                                    {u.byStatus?.inProgress > 0 && (
+                                      <Badge variant="secondary" className="text-[9px] h-4 px-1 bg-blue-50 text-blue-600 border-blue-200">
+                                        В работе: {u.byStatus.inProgress}
+                                      </Badge>
+                                    )}
+                                    {u.byStatus?.review > 0 && (
+                                      <Badge variant="secondary" className="text-[9px] h-4 px-1 bg-amber-50 text-amber-600 border-amber-200">
+                                        На проверке: {u.byStatus.review}
+                                      </Badge>
+                                    )}
+                                    {u.byStatus?.done > 0 && (
+                                      <Badge variant="secondary" className="text-[9px] h-4 px-1 bg-emerald-50 text-emerald-600 border-emerald-200">
+                                        Готово: {u.byStatus.done}
+                                      </Badge>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    {/* Stacked Bar Chart */}
+                    <Card className="border-border/50 shadow-sm">
+                      <CardHeader>
+                        <CardTitle className="text-base font-semibold flex items-center gap-2">
+                          <BarChart2 className="w-4 h-4 text-primary" />
+                          Распределение задач по статусам
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <ResponsiveContainer width="100%" height={320}>
+                          <BarChart data={workloadReport.users || []} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
+                            <XAxis
+                              dataKey="name"
+                              tick={{ fontSize: 12, fill: 'hsl(var(--muted-foreground))' }}
+                              tickLine={false}
+                              axisLine={false}
+                            />
+                            <YAxis
+                              tick={{ fontSize: 12, fill: 'hsl(var(--muted-foreground))' }}
+                              tickLine={false}
+                              axisLine={false}
+                            />
+                            <Tooltip content={<CustomTooltip />} />
+                            <Legend
+                              iconType="circle"
+                              iconSize={8}
+                              formatter={(value: string) => <span className="text-sm text-muted-foreground ml-1">{value}</span>}
+                            />
+                            <Bar dataKey="byStatus.planned" fill="#94a3b8" name="В планах" stackId="a" radius={[0, 0, 4, 4]} />
+                            <Bar dataKey="byStatus.inProgress" fill="#3b82f6" name="В работе" stackId="a" />
+                            <Bar dataKey="byStatus.review" fill="#f59e0b" name="На проверке" stackId="a" />
+                            <Bar dataKey="byStatus.done" fill="#10b981" name="Готово" stackId="a" radius={[4, 4, 0, 0]} />
                           </BarChart>
                         </ResponsiveContainer>
                       </CardContent>
