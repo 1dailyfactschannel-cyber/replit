@@ -1892,6 +1892,7 @@ function StatusesManagement() {
 
 function ProjectsManagement() {
   const { toast } = useToast();
+  const { hasPermission, isAdmin } = usePermission();
   const [isCreateProjectOpen, setIsCreateProjectOpen] = useState(false);
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(null);
   const [newProjectWorkspaceId, setNewProjectWorkspaceId] = useState<string | null>(null);
@@ -1904,6 +1905,9 @@ function ProjectsManagement() {
   const [isEditWorkspaceOpen, setIsEditWorkspaceOpen] = useState(false);
   const [isCreateWorkspaceOpen, setIsCreateWorkspaceOpen] = useState(false);
   const [newWorkspace, setNewWorkspace] = useState({ name: "", color: "#3b82f6" });
+  const [selectedWorkspaceForMembers, setSelectedWorkspaceForMembers] = useState<any>(null);
+  const [selectedMemberUserId, setSelectedMemberUserId] = useState<string>("");
+  const [memberSearchQuery, setMemberSearchQuery] = useState<string>("");
 
   const priorityDisplayMap: Record<string, string> = {
     "low": "Низкий",
@@ -1924,13 +1928,78 @@ function ProjectsManagement() {
   });
 
   const { data: workspacesRaw } = useQuery<any[]>({
-    queryKey: ["/api/workspaces"],
+    queryKey: ["/api/workspaces", isAdmin || hasPermission("management:workspace_members") ? "all" : "filtered"],
+    queryFn: async () => {
+      const useAdminEndpoint = isAdmin || hasPermission("management:workspace_members");
+      const res = await apiRequest("GET", useAdminEndpoint ? "/api/workspaces/all" : "/api/workspaces");
+      return res.json();
+    },
   });
   const workspaces = workspacesRaw ?? [];
 
   const { data: users = [] } = useQuery<User[]>({
     queryKey: ["/api/users"],
   });
+
+  const { data: currentUser } = useQuery({
+    queryKey: ["/api/user"],
+    queryFn: async () => {
+      const res = await fetch("/api/user", { credentials: "include" });
+      if (!res.ok) return null;
+      return res.json();
+    },
+  });
+
+  const { data: workspaceMembers = [] } = useQuery<any[]>({
+    queryKey: ["/api/workspaces", selectedWorkspaceForMembers?.id, "members"],
+    queryFn: async () => {
+      if (!selectedWorkspaceForMembers?.id) return [];
+      const res = await apiRequest("GET", `/api/workspaces/${selectedWorkspaceForMembers.id}/members`);
+      return res.json();
+    },
+    enabled: !!selectedWorkspaceForMembers?.id,
+  });
+
+  const addWorkspaceMemberMutation = useMutation({
+    mutationFn: async ({ workspaceId, userId, role }: { workspaceId: string; userId: string; role?: string }) => {
+      const res = await apiRequest("POST", `/api/workspaces/${workspaceId}/members`, { userId, role });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/workspaces", selectedWorkspaceForMembers?.id, "members"] });
+      setSelectedMemberUserId("");
+      toast({ title: "Участник добавлен", description: "Пользователь успешно добавлен в пространство." });
+    },
+    onError: (error: any) => {
+      toast({ title: "Ошибка", description: error.message || "Не удалось добавить участника", variant: "destructive" });
+    },
+  });
+
+  const removeWorkspaceMemberMutation = useMutation({
+    mutationFn: async ({ workspaceId, userId }: { workspaceId: string; userId: string }) => {
+      await apiRequest("DELETE", `/api/workspaces/${workspaceId}/members/${userId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/workspaces", selectedWorkspaceForMembers?.id, "members"] });
+      toast({ title: "Участник удален", description: "Пользователь удален из пространства." });
+    },
+    onError: (error: any) => {
+      toast({ title: "Ошибка", description: error.message || "Не удалось удалить участника", variant: "destructive" });
+    },
+  });
+
+  const canManageWorkspaceMembers = (workspace: any) => {
+    if (isAdmin) return true;
+    if (workspace.ownerId === currentUser?.id) return true;
+    return hasPermission("management:workspace_members");
+  };
+
+  useEffect(() => {
+    if (!selectedWorkspaceForMembers) {
+      setMemberSearchQuery("");
+      setSelectedMemberUserId("");
+    }
+  }, [selectedWorkspaceForMembers]);
 
   const createProjectMutation = useMutation({
     mutationFn: async (project: any) => {
@@ -2363,6 +2432,17 @@ function ProjectsManagement() {
                         </div>
                       </div>
                       <div className="flex items-center gap-1">
+                        {canManageWorkspaceMembers(workspace) && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                            onClick={() => setSelectedWorkspaceForMembers(workspace)}
+                            title="Участники"
+                          >
+                            <Users className="w-3.5 h-3.5" />
+                          </Button>
+                        )}
                         <Button 
                           variant="ghost" 
                           size="icon" 
@@ -2827,6 +2907,150 @@ function ProjectsManagement() {
           </DialogContent>
         </Dialog>
       </section>
+
+      {/* Workspace Members Dialog */}
+      <Dialog open={!!selectedWorkspaceForMembers} onOpenChange={(open) => !open && setSelectedWorkspaceForMembers(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Участники пространства "{selectedWorkspaceForMembers?.name}"</DialogTitle>
+            <DialogDescription>Управление доступом пользователей к пространству</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            {/* Add member */}
+            <div className="space-y-2">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+                <Input
+                  placeholder="Поиск пользователя..."
+                  className="h-9 pl-9 bg-secondary/50 border-none text-xs"
+                  value={memberSearchQuery}
+                  onChange={(e) => setMemberSearchQuery(e.target.value)}
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <Select value={selectedMemberUserId} onValueChange={setSelectedMemberUserId}>
+                  <SelectTrigger className="flex-1 bg-background text-foreground">
+                    <SelectValue placeholder="Выберите пользователя..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {users
+                      .filter((u: any) => u.id !== selectedWorkspaceForMembers?.ownerId)
+                      .filter((u: any) => !workspaceMembers.some((m: any) => m.userId === u.id))
+                      .filter((u: any) => {
+                        const query = memberSearchQuery.toLowerCase();
+                        const name = `${u.firstName || ""} ${u.lastName || ""}`.toLowerCase();
+                        const email = (u.email || "").toLowerCase();
+                        return name.includes(query) || email.includes(query);
+                      })
+                      .map((user: any) => (
+                        <SelectItem key={user.id} value={user.id}>
+                          <div className="flex items-center gap-2">
+                            <Avatar className="w-5 h-5">
+                              <AvatarImage src={user.avatar || undefined} />
+                              <AvatarFallback className="text-[10px]">
+                                {user.firstName?.[0] || user.email?.[0]}
+                                {user.lastName?.[0] || ""}
+                              </AvatarFallback>
+                            </Avatar>
+                            {user.firstName && user.lastName ? `${user.firstName} ${user.lastName}` : user.email}
+                          </div>
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+                <Button
+                  size="sm"
+                  disabled={!selectedMemberUserId || addWorkspaceMemberMutation.isPending}
+                  onClick={() => {
+                    if (selectedWorkspaceForMembers && selectedMemberUserId) {
+                      addWorkspaceMemberMutation.mutate({
+                        workspaceId: selectedWorkspaceForMembers.id,
+                        userId: selectedMemberUserId,
+                      });
+                    }
+                  }}
+                >
+                  {addWorkspaceMemberMutation.isPending && <Loader2 className="w-3 h-3 animate-spin mr-1" />}
+                  Добавить
+                </Button>
+              </div>
+            </div>
+
+            {/* Members list */}
+            <div className="space-y-2 max-h-64 overflow-y-auto">
+              {/* Owner */}
+              {selectedWorkspaceForMembers?.ownerId && (
+                <div className="flex items-center justify-between p-2 rounded-md bg-secondary/30">
+                  <div className="flex items-center gap-2">
+                    <Avatar className="w-7 h-7">
+                      <AvatarImage src={users.find((u: any) => u.id === selectedWorkspaceForMembers.ownerId)?.avatar ?? undefined} />
+                      <AvatarFallback className="text-xs">
+                        {users.find((u: any) => u.id === selectedWorkspaceForMembers.ownerId)?.firstName?.[0] || users.find((u: any) => u.id === selectedWorkspaceForMembers.ownerId)?.email?.[0]}
+                        {users.find((u: any) => u.id === selectedWorkspaceForMembers.ownerId)?.lastName?.[0] || ""}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className="flex flex-col">
+                      <span className="text-sm font-medium">
+                        {(() => {
+                          const owner = users.find((u: any) => u.id === selectedWorkspaceForMembers.ownerId);
+                          return owner?.firstName && owner?.lastName ? `${owner.firstName} ${owner.lastName}` : owner?.email;
+                        })()}
+                      </span>
+                      <span className="text-[10px] text-muted-foreground">Владелец</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+              {/* Members */}
+              {workspaceMembers.map((member: any) => (
+                <div key={member.userId} className="flex items-center justify-between p-2 rounded-md border border-border/50">
+                  <div className="flex items-center gap-2">
+                    <Avatar className="w-7 h-7">
+                      <AvatarImage src={member.user?.avatar || undefined} />
+                      <AvatarFallback className="text-xs">
+                        {member.user?.firstName?.[0] || member.user?.email?.[0]}
+                        {member.user?.lastName?.[0] || ""}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className="flex flex-col">
+                      <span className="text-sm font-medium">
+                        {member.user?.firstName && member.user?.lastName ? `${member.user.firstName} ${member.user.lastName}` : member.user?.email}
+                      </span>
+                      <span className="text-[10px] text-muted-foreground capitalize">{member.role}</span>
+                    </div>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                    onClick={() => {
+                      if (selectedWorkspaceForMembers) {
+                        removeWorkspaceMemberMutation.mutate({
+                          workspaceId: selectedWorkspaceForMembers.id,
+                          userId: member.userId,
+                        });
+                      }
+                    }}
+                    disabled={removeWorkspaceMemberMutation.isPending}
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </Button>
+                </div>
+              ))}
+              {workspaceMembers.length === 0 && (
+                <div className="text-center py-4 text-sm text-muted-foreground">
+                  Кроме владельца, участников пока нет
+                </div>
+              )}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSelectedWorkspaceForMembers(null)}>
+              Закрыть
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <PrioritiesManagement />
 
