@@ -116,7 +116,7 @@ export function NotificationAlertDialog() {
             await apiRequest("PATCH", `/api/notifications/${id}/read`)
         },
         onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ["/api/notifications", "dropdown"] })
+            queryClient.invalidateQueries({ queryKey: ["/api/notifications"] })
         },
     })
 
@@ -125,13 +125,13 @@ export function NotificationAlertDialog() {
             await apiRequest("POST", "/api/notifications/read-all")
         },
         onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ["/api/notifications", "dropdown"] })
+            queryClient.invalidateQueries({ queryKey: ["/api/notifications"] })
         },
     })
 
     useEffect(() => {
         const socket: Socket = io({
-            transports: ["websocket"],
+            transports: ["websocket", "polling"],
         })
 
         socket.on("connect", () => {
@@ -139,7 +139,7 @@ export function NotificationAlertDialog() {
         })
 
         socket.on("new-notification", (notification: Notification) => {
-            queryClient.invalidateQueries({ queryKey: ["/api/notifications", "dropdown"] })
+            queryClient.invalidateQueries({ queryKey: ["/api/notifications"] })
             // Show browser notification
             const content = formatNotificationContent(notification)
             notify(notification.title, {

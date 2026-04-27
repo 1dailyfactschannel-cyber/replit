@@ -345,7 +345,7 @@ export default function NotificationsPage() {
       await apiRequest("PATCH", `/api/notifications/${id}/read`);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/notifications", "paginated"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
     },
   });
 
@@ -354,7 +354,7 @@ export default function NotificationsPage() {
       await apiRequest("POST", "/api/notifications/read-all");
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/notifications", "paginated"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
       toast.success("Все уведомления отмечены как прочитанные");
     },
   });
@@ -364,7 +364,7 @@ export default function NotificationsPage() {
       await apiRequest("DELETE", `/api/notifications/${id}`);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/notifications", "paginated"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
       toast.success("Уведомление удалено");
     },
   });
@@ -375,14 +375,14 @@ export default function NotificationsPage() {
       await Promise.all(readNotifications.map((n: Notification) => apiRequest("DELETE", `/api/notifications/${n.id}`)));
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/notifications", "paginated"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
       toast.success("Прочитанные уведомления удалены");
     },
   });
 
   useEffect(() => {
     const socket: Socket = io({
-      transports: ["websocket"],
+      transports: ["websocket", "polling"],
     });
 
     socket.on("connect", () => {
@@ -390,7 +390,7 @@ export default function NotificationsPage() {
     });
 
     socket.on("new-notification", (notification: Notification) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/notifications", "paginated"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
       // Show browser notification if page is not visible
       if (document.hidden) {
         const content = formatNotificationContent(notification);
