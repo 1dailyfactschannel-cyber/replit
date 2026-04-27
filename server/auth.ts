@@ -66,10 +66,18 @@ const loginLimiter = rateLimit({
   message: { message: "Too many login attempts, please try again later" }
 });
 
+// Security: Registration rate limiter
+const registerLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 3, // 3 registrations per IP per hour
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: "Слишком много попыток регистрации, попробуйте позже" }
+});
+
+// Unified password hashing using bcrypt (consistent with API routes)
 async function hashPassword(password: string) {
-  const salt = crypto.randomBytes(16).toString("hex");
-  const derivedKey = (await scrypt(password, salt, 64)) as Buffer;
-  return `${derivedKey.toString("hex")}.${salt}`;
+  return await bcrypt.hash(password, 10);
 }
 
 async function comparePasswords(supplied: string, stored: string) {
@@ -206,7 +214,7 @@ export function setupAuth(app: Express) {
     }
   });
 
-  app.post("/api/register", async (req, res, next) => {
+  app.post("/api/register", registerLimiter, async (req, res, next) => {
     try {
       const { email, password, username, inviteToken } = req.body;
       const existingUser = await storage.getUserByEmail(email);

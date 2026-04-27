@@ -199,6 +199,25 @@ export const projectMembers = pgTable("project_members", {
   pk: primaryKey({ columns: [table.projectId, table.userId] }),
 }));
 
+// Sprints table (Agile sprints)
+export const sprints = pgTable("sprints", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  projectId: uuid("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  goal: text("goal"),
+  startDate: timestamp("start_date"),
+  endDate: timestamp("end_date"),
+  status: text("status").notNull().default("planned"), // planned, active, completed
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  projectIdIdx: index("sprints_project_id_idx").on(table.projectId),
+  statusIdx: index("sprints_status_idx").on(table.status),
+}));
+
+export type Sprint = typeof sprints.$inferSelect;
+export type InsertSprint = typeof sprints.$inferInsert;
+
 // Boards table (Kanban boards)
 export const boards = pgTable("boards", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -247,6 +266,7 @@ export const tasks = pgTable("tasks", {
   order: integer("order").notNull().default(0),
   number: text("number"),
   parentId: uuid("parent_id").references((): any => tasks.id),
+  sprintId: uuid("sprint_id").references((): any => sprints.id, { onDelete: "set null" }),
   tags: jsonb("tags").default(sql`'[]'::jsonb`), // This will be replaced with task_labels junction table
   attachments: jsonb("attachments").default(sql`'[]'::jsonb`),
   archived: boolean("archived").default(false),
@@ -260,6 +280,7 @@ export const tasks = pgTable("tasks", {
   taskTypeIdIdx: index("tasks_task_type_id_idx").on(table.taskTypeId),
   reporterIdIdx: index("tasks_reporter_id_idx").on(table.reporterId),
   boardColumnOrderIdx: index("tasks_board_column_order_idx").on(table.boardId, table.columnId, table.order),
+  sprintIdIdx: index("tasks_sprint_id_idx").on(table.sprintId),
 }));
 
 // Task status history table for tracking time in each status
@@ -305,6 +326,22 @@ export const taskHistory = pgTable("task_history", {
   createdAtIdx: index("task_history_created_at_idx").on(table.createdAt),
 }));
 
+
+// Task dependencies table
+export const taskDependencies = pgTable("task_dependencies", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  sourceTaskId: uuid("source_task_id").notNull().references(() => tasks.id, { onDelete: "cascade" }),
+  targetTaskId: uuid("target_task_id").notNull().references(() => tasks.id, { onDelete: "cascade" }),
+  type: text("type").notNull(), // 'blocks', 'relates_to'
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  sourceIdx: index("idx_task_deps_source").on(table.sourceTaskId),
+  targetIdx: index("idx_task_deps_target").on(table.targetTaskId),
+  uniqueIdx: index("idx_task_deps_unique").on(table.sourceTaskId, table.targetTaskId, table.type),
+}));
+
+export type TaskDependency = typeof taskDependencies.$inferSelect;
+export type InsertTaskDependency = typeof taskDependencies.$inferInsert;
 
 // Subtasks table
 export const subtasks = pgTable("subtasks", {
@@ -1333,6 +1370,26 @@ export const userInvitations = pgTable("user_invitations", {
   statusIdx: index("idx_user_invitations_status").on(table.status),
   emailIdx: index("idx_user_invitations_email").on(table.email),
 }));
+
+// Audit logs table
+export const auditLogs = pgTable("audit_logs", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").references(() => users.id, { onDelete: "set null" }),
+  action: text("action").notNull(), // e.g. 'user.create', 'role.delete', 'password.reset'
+  entityType: text("entity_type"), // e.g. 'user', 'role', 'project'
+  entityId: text("entity_id"), // UUID or identifier of affected entity
+  details: jsonb("details"), // Additional context as JSON
+  ipAddress: text("ip_address"),
+  userAgent: text("user_agent"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  userIdIdx: index("idx_audit_logs_user_id").on(table.userId),
+  actionIdx: index("idx_audit_logs_action").on(table.action),
+  createdAtIdx: index("idx_audit_logs_created_at").on(table.createdAt),
+}));
+
+export type AuditLog = typeof auditLogs.$inferSelect;
+export type InsertAuditLog = typeof auditLogs.$inferInsert;
 
 export type CallSettings = typeof callSettings.$inferSelect;
 export type InsertCallSettings = z.infer<typeof insertCallSettingsSchema>;

@@ -1,6 +1,6 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
-import { getStorage, getReportOverview, getReportWorkspaces, getReportProjects, getReportBoards, getReportUsers } from "./postgres-storage";
+import { getStorage, getReportOverview, getReportWorkspaces, getReportProjects, getReportBoards, getReportUsers, getReportWorkload } from "./postgres-storage";
 import { insertSiteSettingsSchema, insertUserSchema, insertNotificationSchema, insertLabelSchema, insertCustomStatusSchema, insertDepartmentSchema, priorities, taskTypes } from "@shared/schema";
 import * as schema from "@shared/schema";
 import { getStatusByColumnName } from "../shared/column-status-mapping";
@@ -62,6 +62,48 @@ function requireAnyPermission(...permissions: string[]) {
 
 const storage = getStorage();
 let io: SocketIOServer;
+
+// Rate limiters for sensitive operations
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // 100 requests per IP
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: "Слишком много запросов, попробуйте позже" }
+});
+
+const mutationLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 20, // 20 mutations per IP per minute
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: "Слишком много изменений, попробуйте позже" }
+});
+
+// Audit logging helper
+async function logAudit(
+  req: any,
+  action: string,
+  entityType?: string,
+  entityId?: string,
+  details?: any
+) {
+  try {
+    const db = (storage as any).db;
+    if (!db) return;
+    await db.insert(schema.auditLogs).values({
+      userId: req.user?.id || null,
+      action,
+      entityType: entityType || null,
+      entityId: entityId || null,
+      details: details || null,
+      ipAddress: req.ip || req.connection?.remoteAddress || null,
+      userAgent: req.headers["user-agent"] || null,
+    });
+  } catch (err) {
+    console.error("[AUDIT] Failed to log action:", action, err);
+  }
+}
 
 /**
  * Обеспечивает соответствие статуса задачи названию колонки
@@ -349,7 +391,7 @@ export async function registerRoutes(
   });
 
   // Create new user (admin only)
-  app.post("/api/users", requirePermission("team:create"), async (req, res) => {
+  app.post("/api/users", mutationLimiter, requirePermission("team:create"), async (req, res) => {
     try {
       const { firstName, lastName, email, phone, position, department, password, roleIds } = req.body;
 
@@ -390,6 +432,8 @@ export async function registerRoutes(
 
       // Invalidate cache
       await delCache("users:all");
+
+      await logAudit(req, "user.create", "user", newUser.id, { email, firstName, lastName, roleIds });
 
       const { password: _, ...userWithoutPassword } = newUser;
       res.status(201).json({
@@ -527,7 +571,7 @@ export async function registerRoutes(
   });
 
   // Delete role (with optional user transfer)
-  app.delete("/api/roles/:id", async (req, res) => {
+  app.delete("/api/roles/:id", mutationLimiter, async (req, res) => {
     if (!req.isAuthenticated()) {
       return res.status(401).json({ message: "Unauthorized" });
     }
@@ -572,6 +616,13 @@ export async function registerRoutes(
 
       await storage.deleteRole(req.params.id);
       await delCache("users:all");
+
+      await logAudit(req, "role.delete", "role", req.params.id, {
+        roleName: existing.name,
+        transferredUsers: userIds.length,
+        transferToRoleId: req.body.transferToRoleId,
+      });
+
       res.json({ message: "Role deleted successfully", transferredUsers: userIds.length });
     } catch (error: any) {
       console.error("DELETE /api/roles/:id error:", error);
@@ -633,7 +684,7 @@ export async function registerRoutes(
   });
 
   // Step 1: Verify master password and send email code
-  app.post("/api/owner/verify", async (req, res) => {
+  app.post("/api/owner/verify", mutationLimiter, async (req, res) => {
     if (!req.isAuthenticated()) {
       return res.status(401).json({ message: "Unauthorized" });
     }
@@ -695,7 +746,7 @@ export async function registerRoutes(
   });
 
   // Step 2: Confirm transfer with code
-  app.post("/api/owner/confirm", async (req, res) => {
+  app.post("/api/owner/confirm", mutationLimiter, async (req, res) => {
     if (!req.isAuthenticated()) {
       return res.status(401).json({ message: "Unauthorized" });
     }
@@ -750,6 +801,11 @@ export async function registerRoutes(
       // Invalidate cache
       await delCache("users:all");
 
+      await logAudit(req, "owner.transfer", "user", record.newOwnerUserId, {
+        previousOwnerId: currentUser.id,
+        previousOwnerEmail: currentUser.email,
+      });
+
       res.json({ success: true, message: "Права владельца успешно переданы" });
     } catch (error) {
       console.error("POST /api/owner/confirm error:", error);
@@ -779,7 +835,7 @@ export async function registerRoutes(
   });
 
   // Set user roles
-  app.put("/api/users/:id/roles", async (req, res) => {
+  app.put("/api/users/:id/roles", mutationLimiter, async (req, res) => {
     if (!req.isAuthenticated()) {
       return res.status(401).json({ message: "Unauthorized" });
     }
@@ -791,6 +847,9 @@ export async function registerRoutes(
       }
 
       await storage.setUserRoles(req.params.id, roleIds, req.user!.id);
+
+      await logAudit(req, "user.roles.update", "user", req.params.id, { roleIds });
+
       const roles = await storage.getUserRoles(req.params.id);
       res.json(roles.map(r => ({
         id: r.id,
@@ -1054,7 +1113,7 @@ export async function registerRoutes(
   });
 
   // Admin reset user password
-  app.post("/api/users/:id/reset-password", async (req, res) => {
+  app.post("/api/users/:id/reset-password", mutationLimiter, async (req, res) => {
     if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
     try {
       const userId = req.params.id;
@@ -1074,6 +1133,8 @@ export async function registerRoutes(
       await storage.updateUser(userId, { password: hashedPassword });
       await delCache("users:all");
 
+      await logAudit(req, "password.reset", "user", userId, { targetEmail: user.email });
+
       res.json({ success: true, newPassword });
     } catch (error) {
       console.error("[RESET PASSWORD] Error:", error);
@@ -1081,7 +1142,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/users/:id", async (req, res) => {
+  app.delete("/api/users/:id", mutationLimiter, async (req, res) => {
     if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
     try {
       // Check if user exists
@@ -1100,6 +1161,8 @@ export async function registerRoutes(
       
       // Invalidate cache
       await delCache("users:all");
+
+      await logAudit(req, "user.delete", "user", req.params.id, { email: user.email });
       
       res.json({ message: "User deleted successfully" });
     } catch (error) {
@@ -1545,7 +1608,7 @@ export async function registerRoutes(
   });
 
   // User password change
-  app.post("/api/user/change-password", async (req, res) => {
+  app.post("/api/user/change-password", mutationLimiter, async (req, res) => {
     if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
     
     const { currentPassword, newPassword } = req.body;
@@ -1577,6 +1640,8 @@ export async function registerRoutes(
       const saltRounds = 10;
       const hashedPassword = await bcrypt.hash(newPassword, saltRounds);
       await storage.updateUser(user.id, { password: hashedPassword });
+
+      await logAudit(req, "password.change", "user", user.id);
 
       // Send password change notification (non-blocking)
       try {
@@ -1899,6 +1964,117 @@ export async function registerRoutes(
     }
   });
 
+  // Sprint routes
+  app.get("/api/projects/:projectId/sprints", async (req, res) => {
+    try {
+      if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+      const sprints = await storage.getSprintsByProject(req.params.projectId);
+      res.json(sprints);
+    } catch (error) {
+      console.error("Error getting sprints:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  app.get("/api/sprints", async (req, res) => {
+    try {
+      if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+      const idsParam = req.query.ids as string;
+      if (idsParam) {
+        const ids = idsParam.split(',').filter(Boolean);
+        const sprints = await storage.getSprintsByIds(ids);
+        res.json(sprints);
+      } else {
+        res.json([]);
+      }
+    } catch (error) {
+      console.error("Error getting sprints:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  app.get("/api/projects/:projectId/sprints/active", async (req, res) => {
+    try {
+      if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+      const sprint = await storage.getActiveSprintByProject(req.params.projectId);
+      res.json(sprint || null);
+    } catch (error) {
+      console.error("Error getting active sprint:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  app.post("/api/projects/:projectId/sprints", async (req, res) => {
+    try {
+      if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+      const { name, goal, startDate, endDate } = req.body;
+      if (!name) return res.status(400).json({ message: "Name is required" });
+
+      console.log("[SPRINT CREATE] projectId:", req.params.projectId, "body:", req.body);
+      const sprint = await storage.createSprint({
+        projectId: req.params.projectId,
+        name,
+        goal: goal || null,
+        startDate: startDate ? new Date(startDate) : null,
+        endDate: endDate ? new Date(endDate) : null,
+      });
+      console.log("[SPRINT CREATE] success:", sprint.id);
+      res.status(201).json(sprint);
+    } catch (error) {
+      console.error("[SPRINT CREATE] Error:", error);
+      res.status(500).json({ message: error instanceof Error ? error.message : "Internal server error" });
+    }
+  });
+
+  app.patch("/api/sprints/:id", async (req, res) => {
+    try {
+      if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+      const updates: any = {};
+      if (req.body.name !== undefined) updates.name = req.body.name;
+      if (req.body.goal !== undefined) updates.goal = req.body.goal;
+      if (req.body.startDate !== undefined) updates.startDate = req.body.startDate ? new Date(req.body.startDate) : null;
+      if (req.body.endDate !== undefined) updates.endDate = req.body.endDate ? new Date(req.body.endDate) : null;
+      if (req.body.status !== undefined) updates.status = req.body.status;
+
+      const sprint = await storage.updateSprint(req.params.id, updates);
+      if (!sprint) return res.status(404).json({ message: "Sprint not found" });
+      res.json(sprint);
+    } catch (error) {
+      console.error("Error updating sprint:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  app.delete("/api/sprints/:id", async (req, res) => {
+    try {
+      if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+      await storage.deleteSprint(req.params.id);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting sprint:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  app.patch("/api/tasks/:id/sprint", async (req, res) => {
+    try {
+      if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+      const { sprintId } = req.body;
+      const taskId = req.params.id;
+      const task = await storage.getTask(taskId);
+      await storage.updateTaskSprint(taskId, sprintId || null);
+      // Invalidate caches
+      if (task?.boardId) {
+        await invalidatePattern(`board:full:${task.boardId}`);
+      }
+      await delCache(`task:${taskId}`);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error updating task sprint:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
   // Board routes
   app.get("/api/boards/:id/full", async (req, res) => {
     try {
@@ -1923,7 +2099,10 @@ export async function registerRoutes(
         status: task.status === "todo" ? "В планах" : task.status
       }));
       
-      const boardData = { columns, tasks: enrichedTasks };
+      // Get board info for projectId
+      const board = await storage.getBoard(boardId);
+      
+      const boardData = { columns, tasks: enrichedTasks, projectId: board?.projectId || null };
       
       // Сохраняем в кэш на 5 минут
       await setCache(cacheKey, boardData, 300);
@@ -2733,6 +2912,156 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error getting task history:", error);
       res.status(500).json({ message: "Failed to get task history" });
+    }
+  });
+
+  // Task dependencies endpoints
+  app.get("/api/tasks/:id/dependencies", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+    try {
+      const deps = await storage.getTaskDependencies(req.params.id);
+      res.json(deps);
+    } catch (error: any) {
+      console.error("GET /api/tasks/:id/dependencies error:", error);
+      res.status(500).json({ message: "Failed to fetch dependencies", error: error.message });
+    }
+  });
+
+  app.post("/api/tasks/:id/dependencies", mutationLimiter, async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+    try {
+      const { targetTaskId, type } = req.body;
+      if (!targetTaskId || !type) {
+        return res.status(400).json({ message: "targetTaskId and type are required" });
+      }
+      if (!["blocks", "relates_to"].includes(type)) {
+        return res.status(400).json({ message: "Invalid dependency type" });
+      }
+      if (req.params.id === targetTaskId) {
+        return res.status(400).json({ message: "Cannot link task to itself" });
+      }
+
+      // Check for reverse/circular dependency
+      const existingReverse = await (storage as any).db
+        .select()
+        .from(schema.taskDependencies)
+        .where(
+          and(
+            eq(schema.taskDependencies.sourceTaskId, targetTaskId),
+            eq(schema.taskDependencies.targetTaskId, req.params.id),
+            eq(schema.taskDependencies.type, "blocks")
+          )
+        )
+        .limit(1);
+
+      if (existingReverse.length > 0 && type === "blocks") {
+        return res.status(400).json({ message: "Circular dependency detected" });
+      }
+
+      const dep = await storage.addTaskDependency(req.params.id, targetTaskId, type);
+
+      await logAudit(req, "task.dependency.create", "task", req.params.id, { targetTaskId, type });
+
+      res.status(201).json(dep);
+    } catch (error: any) {
+      console.error("POST /api/tasks/:id/dependencies error:", error);
+      res.status(500).json({ message: "Failed to create dependency", error: error.message });
+    }
+  });
+
+  app.delete("/api/tasks/:id/dependencies/:depId", mutationLimiter, async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+    try {
+      await storage.removeTaskDependency(req.params.depId);
+
+      await logAudit(req, "task.dependency.delete", "task", req.params.id, { depId: req.params.depId });
+
+      res.json({ message: "Dependency removed successfully" });
+    } catch (error: any) {
+      console.error("DELETE /api/tasks/:id/dependencies/:depId error:", error);
+      res.status(500).json({ message: "Failed to remove dependency", error: error.message });
+    }
+  });
+
+  // Global task search for linking (fallback when workspace is unknown)
+  app.get("/api/tasks/search-for-link", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+    try {
+      const query = req.query.q as string;
+      const excludeTaskId = req.query.excludeTaskId as string;
+      if (!query || query.length < 1) {
+        return res.json([]);
+      }
+
+      const db = (storage as any).db;
+      const searchLower = `%${query.toLowerCase()}%`;
+
+      const conditions = [
+        sql`LOWER(${schema.tasks.title}) LIKE ${searchLower}`
+      ];
+      if (excludeTaskId) {
+        conditions.push(ne(schema.tasks.id, excludeTaskId));
+      }
+
+      const results = await db
+        .select({
+          id: schema.tasks.id,
+          title: schema.tasks.title,
+          number: schema.tasks.number,
+          status: schema.tasks.status,
+          boardName: schema.boards.name,
+          projectName: schema.projects.name,
+        })
+        .from(schema.tasks)
+        .innerJoin(schema.boards, eq(schema.tasks.boardId, schema.boards.id))
+        .innerJoin(schema.projects, eq(schema.boards.projectId, schema.projects.id))
+        .where(and(...conditions))
+        .limit(20);
+
+      res.json(results);
+    } catch (error: any) {
+      console.error("GET /api/tasks/search-for-link error:", error);
+      res.status(500).json({ message: "Failed to search tasks", error: error.message });
+    }
+  });
+
+  // Workspace-scoped task search for linking
+  app.get("/api/workspaces/:workspaceId/tasks/search", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+    try {
+      const { workspaceId } = req.params;
+      const query = req.query.q as string;
+      if (!query || query.length < 1) {
+        return res.json([]);
+      }
+
+      const db = (storage as any).db;
+      const searchLower = `%${query.toLowerCase()}%`;
+
+      const results = await db
+        .select({
+          id: schema.tasks.id,
+          title: schema.tasks.title,
+          number: schema.tasks.number,
+          status: schema.tasks.status,
+          boardName: schema.boards.name,
+          projectName: schema.projects.name,
+        })
+        .from(schema.tasks)
+        .innerJoin(schema.boards, eq(schema.tasks.boardId, schema.boards.id))
+        .innerJoin(schema.projects, eq(schema.boards.projectId, schema.projects.id))
+        .where(
+          and(
+            eq(schema.projects.workspaceId, workspaceId),
+            sql`LOWER(${schema.tasks.title}) LIKE ${searchLower}`
+          )
+        )
+        .limit(20);
+
+      res.json(results);
+    } catch (error: any) {
+      console.error("GET /api/workspaces/:workspaceId/tasks/search error:", error);
+      res.status(500).json({ message: "Failed to search tasks", error: error.message });
     }
   });
 
@@ -4285,6 +4614,23 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error fetching users report:", error);
       res.status(500).json({ message: "Failed to fetch users report" });
+    }
+  });
+
+  app.get("/api/reports/workload", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+    try {
+      const { workspaceId, projectId, boardId } = req.query;
+      const data = await getReportWorkload(
+        storage.db,
+        workspaceId as string | undefined,
+        projectId as string | undefined,
+        boardId as string | undefined
+      );
+      res.json(data);
+    } catch (error) {
+      console.error("Error fetching workload report:", error);
+      res.status(500).json({ message: "Failed to fetch workload report" });
     }
   });
 

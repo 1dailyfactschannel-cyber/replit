@@ -63,6 +63,8 @@ import {
   RotateCcw,
   ListChecks,
   Coins,
+  Link2,
+  AlertTriangle,
 } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { ru } from "date-fns/locale";
@@ -468,6 +470,7 @@ interface TaskDetailsModalProps {
   onOpenChange: (open: boolean) => void;
   onUpdate?: (task: Task) => void;
   onAccept?: (taskId: number) => void;
+  workspaceId?: string | null;
 }
 
 export function TaskDetailsModal({
@@ -476,6 +479,7 @@ export function TaskDetailsModal({
   onOpenChange,
   onUpdate,
   onAccept,
+  workspaceId,
 }: TaskDetailsModalProps) {
   const queryClient = useQueryClient();
   
@@ -523,6 +527,43 @@ export function TaskDetailsModal({
     queryKey: ["/api/points-settings"],
     enabled: open,
     staleTime: 60000,
+  });
+
+  // Fetch task dependencies
+  const { data: taskDependencies = [] } = useQuery<any[]>({
+    queryKey: [`/api/tasks/${task?.id}/dependencies`],
+    enabled: !!task?.id && !isTempTask && open,
+    staleTime: 30000,
+  });
+
+  // Fetch sprints for the task's project
+  const projectId = boardData?.projectId;
+  const { data: projectSprints = [] } = useQuery<any[]>({
+    queryKey: [`/api/projects/${projectId}/sprints`],
+    enabled: !!projectId && open,
+    staleTime: 60000,
+  });
+
+  // Mutation to update task sprint
+  const updateTaskSprintMutation = useMutation({
+    mutationFn: async ({ sprintId }: { sprintId: string | null }) => {
+      const res = await fetch(`/api/tasks/${task?.id}/sprint`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sprintId }),
+      });
+      if (!res.ok) throw new Error("Failed to update sprint");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/boards", task?.boardId, "full"] });
+      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/sprints`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks", task?.id] });
+      sonnerToast.success("Спринт обновлен");
+    },
+    onError: () => {
+      sonnerToast.error("Ошибка обновления спринта");
+    },
   });
 
   const effectiveTask: any = serverTask || task;
@@ -708,6 +749,14 @@ export function TaskDetailsModal({
   
   // Image viewer state
   const [selectedImage, setSelectedImage] = useState<{ url: string; name: string } | null>(null);
+
+  // Dependency search state
+  const [depSearchQuery, setDepSearchQuery] = useState("");
+  const [depSearchResults, setDepSearchResults] = useState<any[]>([]);
+  const [isSearchingDeps, setIsSearchingDeps] = useState(false);
+  const [selectedDepTask, setSelectedDepTask] = useState<any | null>(null);
+  const [selectedDepType, setSelectedDepType] = useState<"blocks" | "relates_to">("blocks");
+  const [showAddDepPopover, setShowAddDepPopover] = useState(false);
   
   // Mentions functionality
   const [showMentions, setShowMentions] = useState(false);
@@ -746,6 +795,7 @@ export function TaskDetailsModal({
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [showSubtasks, setShowSubtasks] = useState(false);
+  const [showDependencies, setShowDependencies] = useState(false);
   const [showAttachments, setShowAttachments] = useState(false);
 
   // Auto-expand sections if task has subtasks or attachments
@@ -819,6 +869,53 @@ export function TaskDetailsModal({
       }
     }
   });
+
+  // Dependency mutations
+  const addDependencyMutation = useMutation({
+    mutationFn: async ({ targetTaskId, type }: { targetTaskId: string; type: string }) => {
+      const res = await apiRequest("POST", `/api/tasks/${task?.id}/dependencies`, { targetTaskId, type });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/tasks/${task?.id}/dependencies`] });
+      sonnerToast.success("Связь добавлена");
+    },
+    onError: (error: any) => {
+      sonnerToast.error(`Ошибка: ${error.message || 'Не удалось добавить связь'}`);
+    },
+  });
+
+  const removeDependencyMutation = useMutation({
+    mutationFn: async (depId: string) => {
+      await apiRequest("DELETE", `/api/tasks/${task?.id}/dependencies/${depId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/tasks/${task?.id}/dependencies`] });
+      sonnerToast.success("Связь удалена");
+    },
+    onError: (error: any) => {
+      sonnerToast.error(`Ошибка: ${error.message || 'Не удалось удалить связь'}`);
+    },
+  });
+
+  // Search tasks for dependency linking
+  const searchTasksForLink = async (query: string) => {
+    if (!query || query.length < 1 || !task?.id) return [];
+    setIsSearchingDeps(true);
+    try {
+      const url = workspaceId
+        ? `/api/workspaces/${workspaceId}/tasks/search?q=${encodeURIComponent(query)}`
+        : `/api/tasks/search-for-link?q=${encodeURIComponent(query)}&excludeTaskId=${task.id}`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error("Search failed");
+      return await res.json();
+    } catch (error) {
+      console.error("Error searching tasks:", error);
+      return [];
+    } finally {
+      setIsSearchingDeps(false);
+    }
+  };
 
   const handleUpdate = (updates: Partial<Task>) => {
     console.log("[TaskDetails] handleUpdate called with updates:", updates);
@@ -1580,6 +1677,20 @@ export function TaskDetailsModal({
           </div>
         </div>
 
+        {/* Blocked task warning */}
+        {taskDependencies.some((d: any) => d.type === "blocks" && d.direction === "incoming" && d.taskStatus !== "Готово") && (
+          <div className="px-6 py-2 bg-amber-50/80 border-b border-amber-200/50 flex items-center gap-2 shrink-0">
+            <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+            <span className="text-xs text-amber-800">
+              Задача заблокирована: {" "}
+              {taskDependencies
+                .filter((d: any) => d.type === "blocks" && d.direction === "incoming" && d.taskStatus !== "Готово")
+                .map((d: any) => `#${d.taskNumber || d.taskId.slice(-4)} ${d.taskTitle}`)
+                .join(", ")}
+            </span>
+          </div>
+        )}
+
         <div className="flex flex-1 overflow-hidden">
           {/* Main Content Scroll Area */}
           <ScrollArea className="flex-1 border-r border-border/40 bg-card/30 relative">
@@ -1742,6 +1853,159 @@ export function TaskDetailsModal({
                 )}
               </div>
 
+              )}
+
+              {/* Dependencies Section */}
+              {(showDependencies || taskDependencies.length > 0) && (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between group">
+                  <div className="flex items-center gap-2 text-muted-foreground/80">
+                    <Link2 className="w-3.5 h-3.5" />
+                    <span className="text-xs font-semibold tracking-tight uppercase">
+                      Связи
+                      <span className="ml-1.5 text-foreground/60">
+                        {taskDependencies.length}
+                      </span>
+                    </span>
+                  </div>
+                </div>
+                
+                <Separator className="opacity-40" />
+
+                <div className="space-y-1.5">
+                  {taskDependencies.map((dep: any) => {
+                    const isBlocked = dep.type === "blocks" && dep.direction === "incoming";
+                    const isBlocks = dep.type === "blocks" && dep.direction === "outgoing";
+                    const label = isBlocks
+                      ? "Блокирует"
+                      : isBlocked
+                      ? "Заблокирована"
+                      : "Связана";
+                    const isDone = dep.taskStatus === "Готово";
+                    const badgeColor = isBlocks || isBlocked
+                      ? "bg-red-100 text-red-700 border-red-200"
+                      : "bg-blue-100 text-blue-700 border-blue-200";
+
+                    return (
+                      <div
+                        key={dep.id}
+                        className="flex items-center justify-between px-2 py-1.5 rounded-lg hover:bg-secondary/30 transition-all group"
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className={cn("text-[9px] font-semibold px-1 py-0.5 rounded border shrink-0", badgeColor)}>
+                            {label}
+                          </span>
+                          <span className={cn("text-xs truncate", isDone && "line-through text-muted-foreground/60")}>
+                            #{dep.taskNumber || dep.taskId.slice(-4)} {dep.taskTitle}
+                          </span>
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 w-6 p-0 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                          onClick={() => removeDependencyMutation.mutate(dep.id)}
+                        >
+                          <X className="w-3 h-3" />
+                        </Button>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Add dependency inline */}
+                <Popover open={showAddDepPopover} onOpenChange={setShowAddDepPopover}>
+                  <PopoverTrigger asChild>
+                    <Button 
+                      variant="ghost" 
+                      size="sm" 
+                      className="h-7 px-2.5 gap-1.5 text-muted-foreground/70 hover:text-foreground hover:bg-primary/5 transition-all -ml-1"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span className="text-xs font-medium">Добавить связь</span>
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-72 p-3" align="start">
+                    <div className="space-y-3">
+                      <div className="text-xs font-semibold">Новая связь</div>
+                      <Input
+                        placeholder="Поиск задачи по названию..."
+                        value={depSearchQuery}
+                        onChange={(e) => {
+                          setDepSearchQuery(e.target.value);
+                          if (e.target.value.length >= 2) {
+                            searchTasksForLink(e.target.value).then(setDepSearchResults);
+                          } else {
+                            setDepSearchResults([]);
+                          }
+                        }}
+                        className="h-8 text-xs"
+                      />
+                      {isSearchingDeps && (
+                        <div className="text-xs text-muted-foreground">Поиск...</div>
+                      )}
+                      {depSearchResults.length > 0 && (
+                        <div className="max-h-32 overflow-y-auto space-y-1">
+                          {depSearchResults.map((result: any) => (
+                            <button
+                              key={result.id}
+                              onClick={() => setSelectedDepTask(result)}
+                              className={cn(
+                                "w-full text-left px-2 py-1.5 rounded-md text-xs transition-colors",
+                                selectedDepTask?.id === result.id
+                                  ? "bg-primary/10 text-primary"
+                                  : "hover:bg-muted"
+                              )}
+                            >
+                              <div className={cn("font-medium truncate", selectedDepTask?.id === result.id && "text-primary")}>{result.title}</div>
+                              <div className="text-[10px] text-muted-foreground">
+                                #{result.number || result.id.slice(-4)} · {result.projectName}
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                      <Select
+                        value={selectedDepType}
+                        onValueChange={(v: any) => setSelectedDepType(v)}
+                      >
+                        <SelectTrigger className="h-8 text-xs">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="blocks">Блокирует</SelectItem>
+                          <SelectItem value="relates_to">Связана с</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <Button
+                        size="sm"
+                        className="w-full text-xs"
+                        disabled={!selectedDepTask || addDependencyMutation.isPending}
+                        onClick={() => {
+                          if (selectedDepTask) {
+                            addDependencyMutation.mutate(
+                              { targetTaskId: selectedDepTask.id, type: selectedDepType },
+                              {
+                                onSuccess: () => {
+                                  setShowAddDepPopover(false);
+                                  setDepSearchQuery("");
+                                  setDepSearchResults([]);
+                                  setSelectedDepTask(null);
+                                },
+                              }
+                            );
+                          }
+                        }}
+                      >
+                        {addDependencyMutation.isPending ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          "Создать связь"
+                        )}
+                      </Button>
+                    </div>
+                  </PopoverContent>
+                </Popover>
+              </div>
               )}
 
               {/* Attachments Section */}
@@ -2389,6 +2653,12 @@ export function TaskDetailsModal({
                     isSubtasks: true 
                   },
                   { 
+                    icon: Link2, 
+                    label: "Связи", 
+                    value: taskDependencies.length > 0 ? `${taskDependencies.length}` : "0",
+                    isDependencies: true 
+                  },
+                  { 
                     icon: Eye, 
                     label: "Наблюдатели", 
                     value: localObservers.length > 0 ? `${localObservers.length}` : "0",
@@ -2424,6 +2694,19 @@ export function TaskDetailsModal({
                       >
                         <item.icon className={cn("w-3.5 h-3.5 shrink-0", showSubtasks ? "text-primary" : "text-muted-foreground/60")} />
                         <span className={cn("text-[12px] font-bold flex-1 truncate", showSubtasks ? "text-primary" : "text-foreground/70")}>{item.label}</span>
+                        <span className="text-[10px] font-bold text-muted-foreground/50 shrink-0">{item.value}</span>
+                      </button>
+                    ) : (item as any).isDependencies ? (
+                      <button 
+                        type="button" 
+                        onClick={() => setShowDependencies(!showDependencies)}
+                        className={cn(
+                          "flex items-center gap-2.5 p-2 rounded-lg transition-colors w-full text-left",
+                          showDependencies ? "bg-secondary/25" : "bg-secondary/15 hover:bg-secondary/25"
+                        )}
+                      >
+                        <item.icon className={cn("w-3.5 h-3.5 shrink-0", showDependencies ? "text-primary" : "text-muted-foreground/60")} />
+                        <span className={cn("text-[12px] font-bold flex-1 truncate", showDependencies ? "text-primary" : "text-foreground/70")}>{item.label}</span>
                         <span className="text-[10px] font-bold text-muted-foreground/50 shrink-0">{item.value}</span>
                       </button>
                     ) : (item as any).isAttachments ? (
@@ -2566,6 +2849,66 @@ export function TaskDetailsModal({
                     )}
                   </div>
                 ))}
+
+                {/* Sprint selector */}
+                {projectSprints.length > 0 && (
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <button
+                        type="button"
+                        className="flex items-center gap-2.5 p-2 rounded-lg bg-secondary/15 hover:bg-secondary/25 transition-colors group cursor-pointer border border-transparent hover:border-border/20 w-full text-left"
+                      >
+                        <Flag className="w-3.5 h-3.5 shrink-0 text-muted-foreground/60" />
+                        <span className="text-[12px] font-bold text-foreground/70 flex-1 truncate">Спринт</span>
+                        <span className="text-[10px] font-bold text-muted-foreground/50 shrink-0">
+                          {effectiveTask?.sprintId
+                            ? projectSprints.find((s: any) => s.id === effectiveTask.sprintId)?.name || "—"
+                            : "Бэклог"
+                          }
+                        </span>
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-64 p-2 rounded-xl overflow-hidden" align="end" style={{ zIndex: 9999, pointerEvents: 'auto' }}>
+                      <div className="max-h-64 overflow-y-auto" style={{ pointerEvents: 'auto' }}>
+                        <div className="text-xs font-medium text-muted-foreground px-2 py-1.5">Выберите спринт</div>
+                        <button
+                          type="button"
+                          onClick={() => updateTaskSprintMutation.mutate({ sprintId: null })}
+                          className={cn(
+                            "w-full flex items-center gap-2 px-2 py-2 rounded-lg hover:bg-secondary/50 transition-colors text-left cursor-pointer",
+                            !effectiveTask?.sprintId && "bg-secondary/30"
+                          )}
+                        >
+                          <span className="text-sm font-medium flex-1">Бэклог</span>
+                          {!effectiveTask?.sprintId && <Check className="w-4 h-4 text-foreground" />}
+                        </button>
+                        {projectSprints.map((sprint: any) => {
+                          const isActive = sprint.status === "active";
+                          const isSelected = effectiveTask?.sprintId === sprint.id;
+                          return (
+                            <button
+                              key={sprint.id}
+                              type="button"
+                              onClick={() => updateTaskSprintMutation.mutate({ sprintId: sprint.id })}
+                              className={cn(
+                                "w-full flex items-center gap-2 px-2 py-2 rounded-lg hover:bg-secondary/50 transition-colors text-left cursor-pointer",
+                                isSelected && "bg-secondary/30"
+                              )}
+                            >
+                              <span className="text-sm font-medium flex-1">{sprint.name}</span>
+                              {isActive && (
+                                <Badge variant="secondary" className="text-[9px] h-5 px-1.5 font-normal bg-emerald-100 text-emerald-700 border-emerald-200">
+                                  Активный
+                                </Badge>
+                              )}
+                              {isSelected && <Check className="w-4 h-4 text-foreground" />}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </PopoverContent>
+                  </Popover>
+                )}
               </div>
 
               <Separator className="my-4 opacity-30" />

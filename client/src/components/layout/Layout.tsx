@@ -30,7 +30,8 @@ import {
   Coins,
   User,
   Monitor,
-  Star
+  Star,
+  Flag
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -161,7 +162,7 @@ const SidebarContentComponent = React.memo(({
   const { hasPermission } = usePermission();
   const sidebarItems = sidebarItemsBase.filter(item => !item.permission || hasPermission(item.permission));
 
-  // Fetch favorite projects
+  // Fetch favorite projects and sprints
   const { data: userSettings = [] } = useQuery<any[]>({
     queryKey: ["/api/user/settings"],
     enabled: !!user?.id,
@@ -175,6 +176,18 @@ const SidebarContentComponent = React.memo(({
 
   const favoriteProjectIds = (userSettings?.find((s: any) => s.key === 'favorite_projects')?.value as string[]) || [];
   const favoriteProjects = projects.filter((p: any) => favoriteProjectIds.includes(p.id));
+
+  const favoriteSprintIds = (userSettings?.find((s: any) => s.key === 'favorite_sprints')?.value as string[]) || [];
+  const { data: favoriteSprints = [] } = useQuery<any[]>({
+    queryKey: ["/api/sprints", favoriteSprintIds.join(',')],
+    enabled: !!user?.id && favoriteSprintIds.length > 0,
+    staleTime: 1000 * 60 * 5,
+    queryFn: async () => {
+      const res = await fetch(`/api/sprints?ids=${favoriteSprintIds.join(',')}`, { credentials: 'include' });
+      if (!res.ok) throw new Error('Failed to fetch sprints');
+      return res.json();
+    },
+  });
 
   return (
     <div className={cn(
@@ -234,38 +247,63 @@ const SidebarContentComponent = React.memo(({
 
         <div className="mt-8 space-y-1">
           {!isCollapsed && <p className="text-xs font-medium text-muted-foreground px-2 mb-2 uppercase tracking-wider animate-in fade-in duration-300">Избранное</p>}
-          {favoriteProjects.length === 0 ? (
+          {favoriteProjects.length === 0 && favoriteSprints.length === 0 ? (
             !isCollapsed && (
               <p className="px-3 py-2 text-xs text-muted-foreground/60">
-                Нет избранных проектов
+                Нет избранного
               </p>
             )
           ) : (
-            favoriteProjects.map((project: any) => (
-              <button
-                key={project.id}
-                onClick={() => {
-                  setLocation(`/projects?projectId=${project.id}`);
-                }}
-                className={cn(
-                  "w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-all text-left overflow-hidden whitespace-nowrap",
-                  isCollapsed && "px-0 justify-center w-10 h-10 mx-auto rounded-xl hover:scale-105"
-                )}
-                title={isCollapsed ? project.name : ""}
-              >
-                <div className={cn(
-                  "w-2 h-2 rounded-full shrink-0 shadow-sm",
-                  project.priority === "Высокий" || project.priority === "Критический" ? "bg-rose-500 shadow-rose-500/40" :
-                  project.priority === "Средний" ? "bg-amber-500 shadow-amber-500/40" :
-                  "bg-emerald-500 shadow-emerald-500/40"
-                )} />
-                {isCollapsed ? (
-                  <Star className="w-4 h-4 shrink-0" />
-                ) : (
-                  <span className="animate-in fade-in duration-300 truncate">{project.name}</span>
-                )}
-              </button>
-            ))
+            <>
+              {favoriteProjects.map((project: any) => (
+                <button
+                  key={project.id}
+                  onClick={() => {
+                    setLocation(`/projects?projectId=${project.id}`);
+                  }}
+                  className={cn(
+                    "w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-all text-left overflow-hidden whitespace-nowrap",
+                    isCollapsed && "px-0 justify-center w-10 h-10 mx-auto rounded-xl hover:scale-105"
+                  )}
+                  title={isCollapsed ? project.name : ""}
+                >
+                  <div className={cn(
+                    "w-2 h-2 rounded-full shrink-0 shadow-sm",
+                    project.priority === "Высокий" || project.priority === "Критический" ? "bg-rose-500 shadow-rose-500/40" :
+                    project.priority === "Средний" ? "bg-amber-500 shadow-amber-500/40" :
+                    "bg-emerald-500 shadow-emerald-500/40"
+                  )} />
+                  {isCollapsed ? (
+                    <Star className="w-4 h-4 shrink-0" />
+                  ) : (
+                    <span className="animate-in fade-in duration-300 truncate">{project.name}</span>
+                  )}
+                </button>
+              ))}
+              {favoriteSprints.map((sprint: any) => (
+                <button
+                  key={sprint.id}
+                  onClick={() => {
+                    setLocation(`/projects?projectId=${sprint.projectId}&sprintId=${sprint.id}`);
+                  }}
+                  className={cn(
+                    "w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-all text-left overflow-hidden whitespace-nowrap",
+                    isCollapsed && "px-0 justify-center w-10 h-10 mx-auto rounded-xl hover:scale-105"
+                  )}
+                  title={isCollapsed ? sprint.name : ""}
+                >
+                  <Flag className={cn(
+                    "w-3.5 h-3.5 shrink-0",
+                    sprint.status === "active" ? "text-emerald-500" : "text-muted-foreground/60"
+                  )} />
+                  {isCollapsed ? (
+                    <Star className="w-4 h-4 shrink-0" />
+                  ) : (
+                    <span className="animate-in fade-in duration-300 truncate">{sprint.name}</span>
+                  )}
+                </button>
+              ))}
+            </>
           )}
         </div>
       </ScrollArea>
