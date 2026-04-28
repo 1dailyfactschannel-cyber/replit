@@ -910,9 +910,10 @@ export default function ChatPage() {
                                          (u.firstName && u.firstName.toLowerCase().includes(query)) ||
                                          (u.lastName && u.lastName.toLowerCase().includes(query));
                                 }).length === 0 && searchQuery && (
-                                  <div className="text-center py-8 text-muted-foreground">
-                                    <p className="text-sm">Пользователи не найдены</p>
-                                    <p className="text-xs mt-1">Попробуйте изменить запрос</p>
+                                  <div className="empty-state py-8">
+                                    <Search className="w-8 h-8 text-muted-foreground/40 mb-3" />
+                                    <p className="text-sm text-muted-foreground">Пользователи не найдены</p>
+                                    <p className="text-xs text-muted-foreground mt-1">Попробуйте изменить запрос</p>
                                   </div>
                                 )}
                             </div>

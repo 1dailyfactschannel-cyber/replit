@@ -30,7 +30,7 @@ export default defineConfig(async ({ mode }): Promise<UserConfig> => ({
         plugins: [],
       },
     }),
-    runtimeErrorOverlay(),
+    // runtimeErrorOverlay(), // Disabled to see real errors instead of masked "(unknown runtime error)"
     metaImagesPlugin(),
     ...(mode === "production" ? [
       gzipPlugin({

@@ -58,6 +58,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 // import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { TaskDetailsModal, Task } from "@/components/kanban/TaskDetailsModal";
 import {
   Dialog,
@@ -250,6 +251,12 @@ const TaskCard = React.memo(({ task, index, onClick, columnColor, availableLabel
                   {task.blockingCount}
                 </div>
               )}
+              {task.storyPoints > 0 && (
+                <div className="text-[10px] font-medium flex items-center gap-1 text-primary bg-primary/10 px-1.5 py-0.5 rounded">
+                  <Zap className="w-3 h-3" />
+                  {task.storyPoints}
+                </div>
+              )}
             </div>
             {task.dueDate && (
               <div className={cn(
@@ -299,22 +306,35 @@ const TaskCard = React.memo(({ task, index, onClick, columnColor, availableLabel
             </div>
           )}
 
+          {/* Subtasks progress */}
+          {task.subtasks && task.subtasks.length > 0 && (
+            <div className="mb-2">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-[10px] text-muted-foreground">
+                  Подзадачи
+                </span>
+                <span className="text-[10px] font-medium text-muted-foreground">
+                  {task.subtasks.filter((s: any) => s.isCompleted ?? s.completed).length}/{task.subtasks.length}
+                </span>
+              </div>
+              <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+                <div 
+                  className="h-full bg-primary rounded-full transition-all duration-500"
+                  style={{ width: `${(task.subtasks.filter((s: any) => s.isCompleted ?? s.completed).length / task.subtasks.length) * 100}%` }}
+                />
+              </div>
+            </div>
+          )}
+
           <div className="flex items-center justify-between">
             {task.assignee ? (
               <div className="flex items-center gap-2">
-                {task.assignee.avatar ? (
-                  <img 
-                    src={task.assignee.avatar} 
-                    alt="" 
-                    className="w-5 h-5 rounded-full object-cover ring-1 ring-border"
-                  />
-                ) : (
-                  <div className="w-5 h-5 rounded-full bg-primary/10 flex items-center justify-center ring-1 ring-border">
-                    <span className="text-[10px] font-medium text-primary">
-                      {task.assignee.name?.charAt(0).toUpperCase()}
-                    </span>
-                  </div>
-                )}
+                <Avatar className="w-5 h-5 ring-1 ring-border">
+                  <AvatarImage src={task.assignee.avatar} alt={task.assignee.name} />
+                  <AvatarFallback className="text-[10px] bg-primary/10 text-primary">
+                    {task.assignee.name?.charAt(0)?.toUpperCase() || "?"}
+                  </AvatarFallback>
+                </Avatar>
                 <span className="text-xs font-medium text-foreground/80 truncate max-w-[140px]">
                   {task.assignee.name}
                 </span>
@@ -2045,7 +2065,7 @@ export default function Projects() {
                 >
                   <h2 className="font-semibold text-lg text-foreground">
                     {selectedWorkspaceId 
-                      ? workspaces.find((w: any) => w.id === selectedWorkspaceId)?.name || "Проекты"
+                      ? (workspaces || []).find((w: any) => w.id === selectedWorkspaceId)?.name || "Проекты"
                       : "Проекты"
                     }
                   </h2>
@@ -2064,7 +2084,7 @@ export default function Projects() {
                   Все проекты
                   {selectedWorkspaceId === null && <Check className="w-4 h-4 ml-auto" />}
                 </DropdownMenuItem>
-                {workspaces.map((workspace: any) => (
+                {(workspaces || []).map((workspace: any) => (
                   <DropdownMenuItem 
                     key={workspace.id}
                     onClick={() => {
@@ -2218,8 +2238,11 @@ export default function Projects() {
               {isLoadingProjects && filteredProjects.length === 0 ? (
                 <ProjectListLoading />
               ) : filteredProjects.length === 0 ? (
-                <div className="p-4 text-center text-xs text-foreground">
-                  {debouncedProjectSearch ? "Проекты не найдены" : "Нет проектов"}
+                <div className="empty-state py-6">
+                  <LayoutGrid className="w-10 h-10 text-muted-foreground/40 mb-3" />
+                  <p className="text-sm text-muted-foreground">
+                    {debouncedProjectSearch ? "Проекты не найдены" : "Нет проектов"}
+                  </p>
                 </div>
                 ) : (
                 filteredProjects.map((project: any) => (

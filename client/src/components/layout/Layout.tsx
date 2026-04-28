@@ -98,7 +98,7 @@ function SidebarCollapsibleItem({ item, isActive, setLocation, setIsMobileOpen, 
           )}
         >
           <div className="flex items-center gap-3">
-            <item.icon className={cn("w-5 h-5 shrink-0", isActive ? "text-sidebar-primary-foreground" : "text-muted-foreground group-hover:text-sidebar-accent-foreground")} />
+            <item.icon className={cn("w-5 h-5 shrink-0 sidebar-icon", isActive ? "text-sidebar-primary-foreground" : "text-muted-foreground group-hover:text-sidebar-accent-foreground")} />
             <span className="animate-in fade-in duration-300">{item.label}</span>
           </div>
           {isOpen ? (
@@ -175,7 +175,7 @@ const SidebarContentComponent = React.memo(({
   });
 
   const favoriteProjectIds = (userSettings?.find((s: any) => s.key === 'favorite_projects')?.value as string[]) || [];
-  const favoriteProjects = projects.filter((p: any) => favoriteProjectIds.includes(p.id));
+  const favoriteProjects = (projects || []).filter((p: any) => favoriteProjectIds.includes(p.id));
 
   const favoriteSprintIds = (userSettings?.find((s: any) => s.key === 'favorite_sprints')?.value as string[]) || [];
   const { data: favoriteSprints = [] } = useQuery<any[]>({
@@ -238,7 +238,7 @@ const SidebarContentComponent = React.memo(({
                 )}
                 title={isCollapsed ? item.label : ""}
               >
-                <item.icon className={cn("w-5 h-5 shrink-0", isActive ? "text-sidebar-primary-foreground" : "text-muted-foreground group-hover:text-sidebar-accent-foreground")} />
+                <item.icon className={cn("w-5 h-5 shrink-0 sidebar-icon", isActive ? "text-sidebar-primary-foreground" : "text-muted-foreground group-hover:text-sidebar-accent-foreground")} />
                 {!isCollapsed && <span className="animate-in fade-in duration-300">{item.label}</span>}
               </div>
             );

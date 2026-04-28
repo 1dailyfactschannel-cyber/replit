@@ -8,6 +8,27 @@ import { TextStyle } from '@tiptap/extension-text-style';
 import { TextAlign } from '@tiptap/extension-text-align';
 import { Highlight } from '@tiptap/extension-highlight';
 import { Color } from '@tiptap/extension-color';
+
+// Custom extension to support font-size via textStyle mark
+const FontSize = TextStyle.extend({
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      fontSize: {
+        default: null,
+        parseHTML: (element) => element.style.fontSize || null,
+        renderHTML: (attributes) => {
+          if (!attributes.fontSize) {
+            return {};
+          }
+          return {
+            style: `font-size: ${attributes.fontSize}`,
+          };
+        },
+      },
+    };
+  },
+});
 import { Button } from '@/components/ui/button';
 import {
   Bold,
@@ -65,39 +86,11 @@ const MenuBar = ({ editor }: { editor: any }) => {
 
   const getCurrentFontSize = () => {
     try {
-      // Check selection for marks
-      const { from, to } = editor.state.selection;
-      if (from !== to) {
-        // Get marks from selection
-        const marks = editor.state.storedMarks || editor.state.selection.$from.marks();
-        for (const mark of marks) {
-          if (mark.type.name === 'textStyle') {
-            const fontSize = mark.attrs.fontSize;
-            if (fontSize) {
-              const parsed = parseInt(fontSize.replace('px', ''));
-              if (!isNaN(parsed)) return parsed;
-            }
-          }
-        }
-      }
-      // Try to get from textStyle mark
       const attrs = editor.getAttributes('textStyle');
       const fontSize = attrs.fontSize;
       if (fontSize) {
-        const parsed = parseInt(fontSize.replace('px', ''));
+        const parsed = parseInt(String(fontSize).replace('px', ''));
         if (!isNaN(parsed)) return parsed;
-      }
-      // Try to get from DOM element
-      const dom = editor.view.domAtPos(from);
-      if (dom.node) {
-        const el = dom.node.nodeType === Node.ELEMENT_NODE ? dom.node as Element : dom.node.parentElement;
-        if (el) {
-          const style = el.getAttribute('style');
-          if (style && style.includes('font-size')) {
-            const match = style.match(/font-size:\s*(\d+)px/);
-            if (match) return parseInt(match[1]);
-          }
-        }
       }
     } catch (e) {
       console.log('getCurrentFontSize error:', e);
@@ -232,20 +225,30 @@ const MenuBar = ({ editor }: { editor: any }) => {
                   e.preventDefault();
                   e.stopPropagation();
                   const { from, to } = editor.state.selection;
-                  const selectedText = editor.state.doc.textBetween(from, to);
-                  
                   if (from === to) {
-                    editor.chain().focus().insertContent('<span style="font-size:' + size + 'px"> </span>').run();
+                    // No selection: insert a space with the font size mark
+                    editor.chain().focus().insertContent([{ type: 'text', text: ' ', marks: [{ type: 'textStyle', attrs: { fontSize: size + 'px' } }] }]).run();
                   } else {
-                    const html = '<span style="font-size:' + size + 'px">' + selectedText + '</span>';
-                    editor.chain().focus().insertContent(html).run();
+                    editor.chain().focus().setMark('textStyle', { fontSize: size + 'px' }).run();
                   }
+                  setFontSizeOpen(false);
                   console.log('Font size applied:', size);
                 }}
               >
                 {size}
               </button>
             ))}
+            <Button
+              variant="ghost"
+              size="sm"
+              className="w-full h-6 text-xs mt-1 col-span-4"
+              onClick={() => {
+                editor.chain().focus().unsetMark('textStyle').run();
+                setFontSizeOpen(false);
+              }}
+            >
+              Сбросить
+            </Button>
           </div>
         </PopoverContent>
       </Popover>
@@ -273,7 +276,7 @@ const MenuBar = ({ editor }: { editor: any }) => {
                 )}
                 style={{ backgroundColor: color }}
                 onClick={() => {
-                  editor.chain().focus().extendMarkRange('color').setColor(color).run();
+                  editor.chain().focus().extendMarkRange('textStyle').setColor(color).run();
                   setTextColorOpen(false);
                 }}
               />
@@ -283,7 +286,7 @@ const MenuBar = ({ editor }: { editor: any }) => {
               size="sm"
               className="w-full h-6 text-xs mt-1"
                 onClick={() => {
-                  editor.chain().focus().extendMarkRange('color').unsetColor().run();
+                  editor.chain().focus().extendMarkRange('textStyle').unsetColor().run();
                   setTextColorOpen(false);
                 }}
             >
@@ -474,7 +477,7 @@ export function RichTextEditor({ content, onChange, onBlur, placeholder }: RichT
       underline: false,
     }),
     Underline,
-    TextStyle.configure({
+    FontSize.configure({
       HTMLAttributes: {
         class: 'text-style',
       },
@@ -505,14 +508,18 @@ export function RichTextEditor({ content, onChange, onBlur, placeholder }: RichT
     },
     editorProps: {
       attributes: {
-        class: 'max-w-none min-h-[40px] p-3 focus:outline-none text-black dark:text-white leading-relaxed',
+        class: 'tiptap max-w-none min-h-[40px] p-3 focus:outline-none text-black dark:text-white leading-relaxed',
       },
     },
   });
 
   useEffect(() => {
-    if (editor && content !== editor.getHTML()) {
-      editor.commands.setContent(content);
+    if (editor && !editor.isDestroyed && content !== editor.getHTML()) {
+      try {
+        editor.commands.setContent(content);
+      } catch (e) {
+        console.warn('[RichTextEditor] setContent failed:', e);
+      }
     }
   }, [content, editor]);
 

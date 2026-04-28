@@ -396,9 +396,16 @@ export default function Tasks() {
         </div>
 
         {filteredTasks.length === 0 ? (
-          <div className="text-center py-12 text-muted-foreground">
-            <Briefcase className="w-12 h-12 mx-auto mb-4 opacity-50" />
-            <p>У вас пока нет назначенных задач</p>
+          <div className="empty-state py-12">
+            <Briefcase className="empty-state-icon" />
+            <h4 className="empty-state-title">
+              {taskFilters.search ? "Задачи не найдены" : "У вас пока нет задач"}
+            </h4>
+            <p className="empty-state-desc">
+              {taskFilters.search
+                ? "Попробуйте изменить параметры поиска"
+                : "Создайте первую задачу в проекте"}
+            </p>
           </div>
         ) : (
           <div className="rounded-xl border border-border/50 shadow-sm bg-card overflow-hidden font-sans">

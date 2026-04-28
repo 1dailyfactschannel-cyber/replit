@@ -2408,8 +2408,14 @@ function ProjectsManagement() {
           <CardContent className="p-4">
             <div className="space-y-3">
               {workspaces.length === 0 ? (
-                <div className="text-center py-6 text-sm text-muted-foreground">
-                  Пространств пока нет. Нажмите "Создать" чтобы добавить первое пространство.
+                <div className="empty-state py-8">
+                  <Folder className="empty-state-icon" />
+                  <h4 className="empty-state-title">Пространств пока нет</h4>
+                  <p className="empty-state-desc">Создайте первое пространство, чтобы начать организовывать проекты</p>
+                  <Button size="sm" onClick={() => setIsCreateWorkspaceOpen(true)}>
+                    <Plus className="w-4 h-4 mr-1" />
+                    Создать пространство
+                  </Button>
                 </div>
               ) : (
                 workspaces.map((workspace: any) => {
@@ -2579,8 +2585,10 @@ function ProjectsManagement() {
                 <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
               </div>
             ) : projects.length === 0 ? (
-              <div className="p-8 text-center text-sm text-muted-foreground italic">
-                Проектов пока нет. Создайте первый проект!
+              <div className="empty-state py-8">
+                <LayoutGrid className="empty-state-icon" />
+                <h4 className="empty-state-title">Проектов пока нет</h4>
+                <p className="empty-state-desc">Создайте первый проект и начните работу с командой</p>
               </div>
             ) : (
               projects.map((project) => (
@@ -2910,7 +2918,7 @@ function ProjectsManagement() {
 
       {/* Workspace Members Dialog */}
       <Dialog open={!!selectedWorkspaceForMembers} onOpenChange={(open) => !open && setSelectedWorkspaceForMembers(null)}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-xl">
           <DialogHeader>
             <DialogTitle>Участники пространства "{selectedWorkspaceForMembers?.name}"</DialogTitle>
             <DialogDescription>Управление доступом пользователей к пространству</DialogDescription>
@@ -2935,32 +2943,39 @@ function ProjectsManagement() {
                   <SelectContent>
                     {users
                       .filter((u: any) => u.id !== selectedWorkspaceForMembers?.ownerId)
-                      .filter((u: any) => !workspaceMembers.some((m: any) => m.userId === u.id))
                       .filter((u: any) => {
                         const query = memberSearchQuery.toLowerCase();
                         const name = `${u.firstName || ""} ${u.lastName || ""}`.toLowerCase();
                         const email = (u.email || "").toLowerCase();
                         return name.includes(query) || email.includes(query);
                       })
-                      .map((user: any) => (
-                        <SelectItem key={user.id} value={user.id}>
-                          <div className="flex items-center gap-2">
-                            <Avatar className="w-5 h-5">
-                              <AvatarImage src={user.avatar || undefined} />
-                              <AvatarFallback className="text-[10px]">
-                                {user.firstName?.[0] || user.email?.[0]}
-                                {user.lastName?.[0] || ""}
-                              </AvatarFallback>
-                            </Avatar>
-                            {user.firstName && user.lastName ? `${user.firstName} ${user.lastName}` : user.email}
-                          </div>
-                        </SelectItem>
-                      ))}
+                      .map((user: any) => {
+                        const isAlreadyMember = workspaceMembers.some((m: any) => m.userId === user.id);
+                        return (
+                          <SelectItem key={user.id} value={user.id} disabled={isAlreadyMember}>
+                            <div className="flex items-center gap-2">
+                              <Avatar className="w-5 h-5">
+                                <AvatarImage src={user.avatar || undefined} />
+                                <AvatarFallback className="text-[10px]">
+                                  {user.firstName?.[0] || user.email?.[0]}
+                                  {user.lastName?.[0] || ""}
+                                </AvatarFallback>
+                              </Avatar>
+                              <span className={isAlreadyMember ? "text-muted-foreground" : ""}>
+                                {user.firstName && user.lastName ? `${user.firstName} ${user.lastName}` : user.email}
+                                {isAlreadyMember && (
+                                  <span className="ml-1 text-[10px] text-muted-foreground">(уже добавлен)</span>
+                                )}
+                              </span>
+                            </div>
+                          </SelectItem>
+                        );
+                      })}
                   </SelectContent>
                 </Select>
                 <Button
                   size="sm"
-                  disabled={!selectedMemberUserId || addWorkspaceMemberMutation.isPending}
+                  disabled={!selectedMemberUserId || workspaceMembers.some((m: any) => m.userId === selectedMemberUserId) || addWorkspaceMemberMutation.isPending}
                   onClick={() => {
                     if (selectedWorkspaceForMembers && selectedMemberUserId) {
                       addWorkspaceMemberMutation.mutate({
@@ -2977,7 +2992,7 @@ function ProjectsManagement() {
             </div>
 
             {/* Members list */}
-            <div className="space-y-2 max-h-64 overflow-y-auto">
+            <div className="space-y-2 max-h-[400px] overflow-y-auto">
               {/* Owner */}
               {selectedWorkspaceForMembers?.ownerId && (
                 <div className="flex items-center justify-between p-2 rounded-md bg-secondary/30">
