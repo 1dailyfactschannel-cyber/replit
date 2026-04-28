@@ -488,7 +488,7 @@ export default function NotificationsPage() {
           <div className="flex items-center gap-1.5">
             {unreadCount > 0 && (
               <Button
-                variant="outline"
+                variant="secondary"
                 size="sm"
                 className="h-8 text-xs"
                 onClick={() => markAllAsReadMutation.mutate()}
@@ -499,7 +499,7 @@ export default function NotificationsPage() {
               </Button>
             )}
             <Button
-              variant="outline"
+              variant="secondary"
               size="icon"
               className={cn("h-8 w-8", showSettings && "bg-accent")}
               onClick={() => setShowSettings(!showSettings)}
@@ -509,7 +509,7 @@ export default function NotificationsPage() {
             </Button>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm" className="h-8 text-xs">
+                <Button variant="secondary" size="sm" className="h-8 text-xs">
                   <Filter className="h-3.5 w-3.5 mr-1.5" />
                   Фильтры
                 </Button>
@@ -588,7 +588,7 @@ export default function NotificationsPage() {
           </div>
 
           <Tabs value={typeFilter} onValueChange={(v) => setTypeFilter(v as NotificationType | "all")}>
-            <TabsList className="h-9 border border-border/50">
+            <TabsList className="h-9 bg-secondary border border-border shadow-sm">
               <TabsTrigger value="all" className="text-xs">Все</TabsTrigger>
               {Object.entries(notificationTypeConfig).map(([key, config]) => (
                 <TabsTrigger key={key} value={key} className="text-xs px-2.5">
