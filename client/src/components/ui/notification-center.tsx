@@ -123,7 +123,7 @@ export function NotificationCenter({
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-80 p-0" align="end">
-        <div className="flex items-center justify-between p-3 border-b">
+        <div className="flex items-center justify-between p-3 border-b bg-popover text-popover-foreground">
           <h3 className="font-semibold">Уведомления</h3>
           {unreadCount > 0 && (
             <Button 
