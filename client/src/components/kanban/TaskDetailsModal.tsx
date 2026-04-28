@@ -1278,7 +1278,7 @@ export function TaskDetailsModal({
       if (onUpdate && task) {
         onUpdate({
           ...task,
-          subtasks: updatedSubtasks
+          subtasks: updatedSubtasks.map((s) => ({ ...s, isCompleted: s.completed }))
         });
       }
       
@@ -1304,7 +1304,7 @@ export function TaskDetailsModal({
     if (onUpdate && task) {
       onUpdate({
         ...task,
-        subtasks: updatedSubtasks
+        subtasks: updatedSubtasks.map((s) => ({ ...s, isCompleted: s.completed }))
       });
     }
 
@@ -1323,7 +1323,7 @@ export function TaskDetailsModal({
       if (onUpdate && task) {
         onUpdate({
           ...task,
-          subtasks: previousSubtasks
+          subtasks: previousSubtasks.map((s) => ({ ...s, isCompleted: s.completed }))
         });
       }
       sonnerToast.error("Не удалось удалить подзадачу");

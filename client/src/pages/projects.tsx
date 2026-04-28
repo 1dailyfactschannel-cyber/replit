@@ -314,13 +314,13 @@ const TaskCard = React.memo(({ task, index, onClick, columnColor, availableLabel
                   Подзадачи
                 </span>
                 <span className="text-[10px] font-medium text-muted-foreground">
-                  {task.subtasks.filter((s: any) => s.isCompleted).length}/{task.subtasks.length}
+                  {task.subtasks.filter((s: any) => s.isCompleted ?? s.completed).length}/{task.subtasks.length}
                 </span>
               </div>
               <div className="h-1.5 bg-muted rounded-full overflow-hidden">
                 <div 
                   className="h-full bg-primary rounded-full transition-all duration-500"
-                  style={{ width: `${(task.subtasks.filter((s: any) => s.isCompleted).length / task.subtasks.length) * 100}%` }}
+                  style={{ width: `${(task.subtasks.filter((s: any) => s.isCompleted ?? s.completed).length / task.subtasks.length) * 100}%` }}
                 />
               </div>
             </div>
