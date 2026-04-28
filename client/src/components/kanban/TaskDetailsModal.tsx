@@ -925,8 +925,11 @@ export function TaskDetailsModal({
       return;
     }
 
-    if (updates.priorityId) {
+    if (updates.priorityId !== undefined) {
       console.log("[TaskDetails] Updating priority to:", updates.priorityId);
+      if (updates.priorityId === "") {
+        updates.priorityId = null as any;
+      }
     }
     
     const isTempTask = typeof task.id === 'string' && task.id.startsWith('temp-');
@@ -2917,31 +2920,37 @@ export function TaskDetailsModal({
               <div className="space-y-1.5">
                 <label className="text-[10px] font-semibold text-muted-foreground/60 uppercase tracking-wider">Приоритет</label>
                 <Select
-                  value={effectiveTask.priorityId}
-                  onValueChange={(value) => handleUpdate({ priorityId: value })}
+                  value={effectiveTask.priorityId || ""}
+                  onValueChange={(value) => handleUpdate({ priorityId: value || null })}
                 >
                   <SelectTrigger className="w-full h-10 bg-secondary/15 border-none rounded-lg px-3 hover:bg-secondary/25 transition-all font-bold text-[13px]">
                     <div className="flex items-center gap-3">
-                      {availablePriorities.find(p => p.id === effectiveTask.priorityId) ? (
+                      {effectiveTask.priorityId && availablePriorities?.find(p => p.id === effectiveTask.priorityId) ? (
                         <>
-                          <div className={cn("w-3 h-3 rounded-full", availablePriorities.find(p => p.id === effectiveTask.priorityId)?.color)} />
+                          <div className={cn("w-3 h-3 rounded-full", availablePriorities.find(p => p.id === effectiveTask.priorityId)?.color || "bg-muted")} />
                           <span className="text-foreground font-medium">
                             {availablePriorities.find(p => p.id === effectiveTask.priorityId)?.name}
                           </span>
                         </>
                       ) : (
                         <>
-                          <span className="w-5 h-5" />
-                          <span className="text-foreground/70">Без приоритета</span>
+                          <div className="w-3 h-3 rounded-full bg-muted border border-border" />
+                          <span className="text-muted-foreground font-medium">Без приоритета</span>
                         </>
                       )}
                     </div>
                   </SelectTrigger>
                   <SelectContent className="rounded-xl min-w-[220px]">
-                    {availablePriorities.map((priority: any) => (
+                    <SelectItem value="" className="text-[14px] py-3">
+                      <div className="flex items-center gap-3">
+                        <div className="w-3 h-3 rounded-full bg-muted border border-border" />
+                        <span className="text-muted-foreground font-medium">Без приоритета</span>
+                      </div>
+                    </SelectItem>
+                    {availablePriorities?.map((priority: any) => (
                       <SelectItem key={priority.id} value={priority.id} className="text-[14px] py-3">
                         <div className="flex items-center gap-3">
-                          <div className={cn("w-3 h-3 rounded-full", priority.color)} />
+                          <div className={cn("w-3 h-3 rounded-full", priority.color || "bg-muted")} />
                           <span className="text-foreground font-medium">{priority.name}</span>
                         </div>
                       </SelectItem>
