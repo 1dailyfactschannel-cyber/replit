@@ -2920,7 +2920,7 @@ export function TaskDetailsModal({
               <div className="space-y-1.5">
                 <label className="text-[10px] font-semibold text-muted-foreground/60 uppercase tracking-wider">Приоритет</label>
                 <Select
-                  value={effectiveTask.priorityId || ""}
+                  value={effectiveTask.priorityId || undefined}
                   onValueChange={(value) => handleUpdate({ priorityId: value || null })}
                 >
                   <SelectTrigger className="w-full h-10 bg-secondary/15 border-none rounded-lg px-3 hover:bg-secondary/25 transition-all font-bold text-[13px]">
@@ -2941,12 +2941,6 @@ export function TaskDetailsModal({
                     </div>
                   </SelectTrigger>
                   <SelectContent className="rounded-xl min-w-[220px]">
-                    <SelectItem value="" className="text-[14px] py-3">
-                      <div className="flex items-center gap-3">
-                        <div className="w-3 h-3 rounded-full bg-muted border border-border" />
-                        <span className="text-muted-foreground font-medium">Без приоритета</span>
-                      </div>
-                    </SelectItem>
                     {availablePriorities?.map((priority: any) => (
                       <SelectItem key={priority.id} value={priority.id} className="text-[14px] py-3">
                         <div className="flex items-center gap-3">
