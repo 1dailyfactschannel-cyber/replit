@@ -236,7 +236,7 @@ function TaskStatusTimer({ taskId }: { taskId: string | number | undefined }) {
                         />
                       ) : (
                         <div className="w-5 h-5 rounded-full bg-primary/10 flex items-center justify-center text-[10px] font-medium">
-                          {user.userName.charAt(0).toUpperCase()}
+                          {user.userName?.charAt(0)?.toUpperCase() || "?"}
                         </div>
                       )}
                       <span className="text-[11px] text-foreground">{user.userName}</span>
@@ -441,7 +441,7 @@ export interface Task {
   title: string;
   description: string;
   status: string;
-  priorityId: string;
+  priorityId: string | null;
   type: string;
   boardId: string;
   columnId: string;
@@ -508,7 +508,7 @@ export function TaskDetailsModal({
   });
 
   // Fetch subtasks for the task
-  const { data: serverSubtasks = [] } = useQuery<any[]>({
+  const { data: serverSubtasks = [], isFetched: isSubtasksFetched } = useQuery<any[]>({
     queryKey: [`/api/tasks/${task?.id}/subtasks`],
     enabled: !!task?.id && !isTempTask && open,
     staleTime: 30000, // Cache for 30 seconds
@@ -592,7 +592,11 @@ export function TaskDetailsModal({
         lastServerDescriptionRef.current = serverDesc;
       }
       
-      setLocalSubtasks(effectiveTask.subtasks || []);
+      // Only overwrite subtasks if server returned actual data
+      const incomingSubtasks = effectiveTask.subtasks || [];
+      if (incomingSubtasks.length > 0) {
+        setLocalSubtasks(incomingSubtasks);
+      }
       setAttachments(effectiveTask.attachments || []);
       setTaskNumber(effectiveTask.number || (effectiveTask.id ? effectiveTask.id.toString().slice(-4) : ''));
     }
@@ -613,7 +617,7 @@ export function TaskDetailsModal({
 
   // Sync subtasks - при изменении serverSubtasks
   useEffect(() => {
-    if (!open) return;
+    if (!open || !isSubtasksFetched) return;
     
     console.log("[Subtask] Checking serverSubtasks:", serverSubtasks);
     
@@ -635,7 +639,7 @@ export function TaskDetailsModal({
     
     console.log("[Subtask] Setting localSubtasks to:", mappedSubtasks);
     setLocalSubtasks(mappedSubtasks);
-  }, [open, serverSubtasks]);
+  }, [open, serverSubtasks, isSubtasksFetched]);
 
   // Sync labels with task data (tags field in database)
   useEffect(() => {
@@ -963,7 +967,7 @@ export function TaskDetailsModal({
 
     // Update individual task query cache
     queryClient.setQueryData(["/api/tasks", task.id], (old: any) => {
-      if (!old) return old;
+      if (!old || !old.id) return old;
       return { ...old, ...updates, ...newDisplayData };
     });
 
@@ -981,7 +985,10 @@ export function TaskDetailsModal({
         // Handle both array and object formats for columns
         let newColumns = old.columns;
         const taskToMove = old.columns?.flatMap((c: any) => c.tasks || []).find((t: any) => t.id === task.id);
-        const enrichedTask = taskToMove ? { ...taskToMove, ...updates, ...newDisplayData } : { ...updates, ...newDisplayData };
+        // Fallback to flat tasks array if columns don't contain nested tasks
+        const fallbackTask = old.tasks?.find((t: any) => t.id === task.id);
+        const baseTask = taskToMove || fallbackTask || task;
+        const enrichedTask = { ...baseTask, ...updates, ...newDisplayData };
         
         if (Array.isArray(newColumns)) {
           // When status changes, move task between columns
@@ -2522,7 +2529,7 @@ export function TaskDetailsModal({
                             )}
                           >
                             <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center text-sm font-semibold">
-                              {displayName.charAt(0).toUpperCase()}
+                              {displayName?.charAt(0)?.toUpperCase() || "?"}
                             </div>
                             <div className="flex flex-col">
                               <span className="font-medium truncate">{displayName}</span>
@@ -2920,8 +2927,8 @@ export function TaskDetailsModal({
               <div className="space-y-1.5">
                 <label className="text-[10px] font-semibold text-muted-foreground/60 uppercase tracking-wider">Приоритет</label>
                 <Select
-                  value={effectiveTask.priorityId || undefined}
-                  onValueChange={(value) => handleUpdate({ priorityId: value || null })}
+                  value={effectiveTask.priorityId || ""}
+                  onValueChange={(value) => handleUpdate({ priorityId: (value || null) as string | null })}
                 >
                   <SelectTrigger className="w-full h-10 bg-secondary/15 border-none rounded-lg px-3 hover:bg-secondary/25 transition-all font-bold text-[13px]">
                     <div className="flex items-center gap-3">

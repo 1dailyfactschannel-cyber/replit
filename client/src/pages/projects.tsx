@@ -332,7 +332,7 @@ const TaskCard = React.memo(({ task, index, onClick, columnColor, availableLabel
                 <Avatar className="w-5 h-5 ring-1 ring-border">
                   <AvatarImage src={task.assignee.avatar} alt={task.assignee.name} />
                   <AvatarFallback className="text-[10px] bg-primary/10 text-primary">
-                    {task.assignee.name?.charAt(0).toUpperCase()}
+                    {task.assignee.name?.charAt(0)?.toUpperCase() || "?"}
                   </AvatarFallback>
                 </Avatar>
                 <span className="text-xs font-medium text-foreground/80 truncate max-w-[140px]">
@@ -2065,7 +2065,7 @@ export default function Projects() {
                 >
                   <h2 className="font-semibold text-lg text-foreground">
                     {selectedWorkspaceId 
-                      ? workspaces.find((w: any) => w.id === selectedWorkspaceId)?.name || "Проекты"
+                      ? (workspaces || []).find((w: any) => w.id === selectedWorkspaceId)?.name || "Проекты"
                       : "Проекты"
                     }
                   </h2>
@@ -2084,7 +2084,7 @@ export default function Projects() {
                   Все проекты
                   {selectedWorkspaceId === null && <Check className="w-4 h-4 ml-auto" />}
                 </DropdownMenuItem>
-                {workspaces.map((workspace: any) => (
+                {(workspaces || []).map((workspace: any) => (
                   <DropdownMenuItem 
                     key={workspace.id}
                     onClick={() => {

@@ -341,7 +341,7 @@ export default function ReportsPage() {
                   </SelectTrigger>
                   <SelectContent className="bg-background text-foreground">
                     <SelectItem value="all">Все проекты</SelectItem>
-                    {projects.filter((p: any) => selectedWorkspace === "all" || p.workspaceId === selectedWorkspace).map((p: any) => (
+                    {(projects || []).filter((p: any) => selectedWorkspace === "all" || p.workspaceId === selectedWorkspace).map((p: any) => (
                       <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
                     ))}
                   </SelectContent>
@@ -355,7 +355,7 @@ export default function ReportsPage() {
                     <SelectItem value="all">Все доски</SelectItem>
                     {boards.filter((b: any) => 
                       (selectedProject === "all" || b.projectId === selectedProject) &&
-                      (selectedWorkspace === "all" || projects.find((p: any) => p.id === b.projectId)?.workspaceId === selectedWorkspace)
+                      (selectedWorkspace === "all" || (projects || []).find((p: any) => p.id === b.projectId)?.workspaceId === selectedWorkspace)
                     ).map((b: any) => (
                       <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>
                     ))}

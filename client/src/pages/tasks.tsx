@@ -399,10 +399,10 @@ export default function Tasks() {
           <div className="empty-state py-12">
             <Briefcase className="empty-state-icon" />
             <h4 className="empty-state-title">
-              {debouncedSearchQuery ? "Задачи не найдены" : "У вас пока нет задач"}
+              {taskFilters.search ? "Задачи не найдены" : "У вас пока нет задач"}
             </h4>
             <p className="empty-state-desc">
-              {debouncedSearchQuery
+              {taskFilters.search
                 ? "Попробуйте изменить параметры поиска"
                 : "Создайте первую задачу в проекте"}
             </p>
