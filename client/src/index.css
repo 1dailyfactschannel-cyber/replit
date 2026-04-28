@@ -138,253 +138,151 @@
   --sidebar-ring: 217 91% 60%;
 }
 
-.purple {
-  --background: 270 50% 10%;
-  --foreground: 270 20% 98%;
-  --card: 270 50% 8%;
-  --card-foreground: 270 20% 98%;
-  --popover: 270 50% 8%;
-  --popover-foreground: 270 20% 98%;
-  --primary: 270 70% 65%;
-  --primary-foreground: 270 50% 10%;
-  --secondary: 270 40% 15%;
-  --secondary-foreground: 270 20% 98%;
-  --muted: 270 40% 15%;
-  --muted-foreground: 270 20% 70%;
-  --accent: 270 40% 15%;
-  --accent-foreground: 270 20% 98%;
-  --destructive: 0 70% 40%;
-  --destructive-foreground: 270 20% 98%;
-  --border: 270 40% 20%;
-  --input: 270 40% 20%;
-  --ring: 270 70% 65%;
-  --sidebar: 270 50% 8%;
-  --sidebar-foreground: 270 20% 90%;
-  --sidebar-primary: 270 70% 65%;
-  --sidebar-primary-foreground: 270 20% 100%;
-  --sidebar-accent: 270 40% 12%;
-  --sidebar-accent-foreground: 270 20% 90%;
-  --sidebar-border: 270 40% 12%;
-  --sidebar-ring: 270 70% 65%;
+/* ============================================
+   VISUAL POLISH — Quick Wins
+   ============================================ */
+
+/* Smooth scrolling */
+html {
+  scroll-behavior: smooth;
 }
 
-.emerald {
-  --background: 160 50% 10%;
-  --foreground: 160 20% 98%;
-  --card: 160 50% 8%;
-  --card-foreground: 160 20% 98%;
-  --popover: 160 50% 8%;
-  --popover-foreground: 160 20% 98%;
-  --primary: 160 70% 50%;
-  --primary-foreground: 160 50% 10%;
-  --secondary: 160 40% 15%;
-  --secondary-foreground: 160 20% 98%;
-  --muted: 160 40% 15%;
-  --muted-foreground: 160 20% 70%;
-  --accent: 160 40% 15%;
-  --accent-foreground: 160 20% 98%;
-  --destructive: 0 70% 40%;
-  --destructive-foreground: 160 20% 98%;
-  --border: 160 40% 20%;
-  --input: 160 40% 20%;
-  --ring: 160 70% 50%;
-  --sidebar: 160 50% 8%;
-  --sidebar-foreground: 160 20% 90%;
-  --sidebar-primary: 160 70% 50%;
-  --sidebar-primary-foreground: 160 20% 100%;
-  --sidebar-accent: 160 40% 12%;
-  --sidebar-accent-foreground: 160 20% 90%;
-  --sidebar-border: 160 40% 12%;
-  --sidebar-ring: 160 70% 50%;
+/* Custom selection color */
+::selection {
+  background: hsl(var(--primary) / 0.25);
+  color: hsl(var(--foreground));
 }
 
-@layer base {
-  * {
-    @apply border-border;
-  }
-  body {
-    @apply font-body antialiased bg-background text-foreground;
-  }
-  h1, h2, h3, h4, h5, h6 {
-    @apply font-sans font-semibold tracking-tight;
-  }
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
 }
 
-/* Button Ripple Animation */
-@keyframes ripple {
-  0% {
-    width: 0;
-    height: 0;
-    opacity: 0.5;
-  }
-  100% {
-    width: 200px;
-    height: 200px;
-    opacity: 0;
-  }
+::-webkit-scrollbar-track {
+  background: transparent;
 }
 
-.animate-ripple {
-  animation: ripple 0.6s ease-out;
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--muted-foreground) / 0.25);
+  border-radius: 100px;
 }
 
-/* Button Hover Glow Effect */
-.btn-glow {
-  position: relative;
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--muted-foreground) / 0.4);
 }
 
-.btn-glow::before {
-  content: '';
-  position: absolute;
-  inset: -2px;
-  background: linear-gradient(45deg, transparent, rgba(255,255,255,0.2), transparent);
-  border-radius: inherit;
-  opacity: 0;
-  transition: opacity 0.3s ease;
+/* Firefox scrollbar */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: hsl(var(--muted-foreground) / 0.25) transparent;
 }
 
-.btn-glow:hover::before {
-  opacity: 1;
+/* Caret color for inputs */
+input, textarea {
+  caret-color: hsl(var(--primary));
 }
 
-/* Smooth transitions for interactive elements */
-.interactive-element {
-  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1),
-              box-shadow 0.2s cubic-bezier(0.4, 0, 0.2, 1),
-              background-color 0.2s ease,
-              border-color 0.2s ease;
+/* Focus ring improvements */
+*:focus-visible {
+  outline: none;
+  ring: 2px;
+  ring-color: hsl(var(--primary) / 0.5);
+  ring-offset: 2px;
+  ring-offset-color: hsl(var(--background));
 }
 
-/* Card Hover Effects */
+/* ============================================
+   MICRO-ANIMATIONS
+   ============================================ */
+
+/* Card hover lift */
 .card-hover {
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 
 .card-hover:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 25px -5px rgba(0, 0, 0, 0.1), 0 4px 10px -5px rgba(0, 0, 0, 0.04);
+  transform: translateY(-2px) scale(1.005);
+  box-shadow: 0 8px 30px -8px hsl(var(--foreground) / 0.12);
 }
 
-/* Link Hover Effects */
-.link-hover {
-  position: relative;
-  transition: color 0.2s ease;
+.dark .card-hover:hover {
+  box-shadow: 0 8px 30px -8px hsl(var(--primary) / 0.15);
 }
 
-.link-hover::after {
-  content: '';
-  position: absolute;
-  bottom: -2px;
-  left: 0;
-  width: 0;
-  height: 2px;
-  background: currentColor;
-  transition: width 0.3s ease;
+/* Button press effect — global for all buttons */
+button, [role="button"] {
+  transition: transform 0.1s ease;
 }
 
-.link-hover:hover::after {
-  width: 100%;
+button:active:not(:disabled), [role="button"]:active:not(:disabled) {
+  transform: scale(0.97);
 }
 
-/* List Item Hover Effects */
-.list-item-hover {
-  transition: all 0.2s ease;
+/* Sidebar icon hover */
+.sidebar-icon {
+  transition: transform 0.2s ease, color 0.2s ease;
 }
 
-.list-item-hover:hover {
-  background-color: rgba(var(--primary), 0.05);
-  transform: translateX(4px);
-}
-
-/* Icon Button Hover */
-.icon-btn-hover {
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.icon-btn-hover:hover {
+.group:hover .sidebar-icon {
   transform: scale(1.1);
-  background-color: rgba(var(--primary), 0.1);
 }
 
-.icon-btn-hover:active {
-  transform: scale(0.95);
+/* Badge glow on hover */
+.badge-glow {
+  transition: box-shadow 0.2s ease;
 }
 
-/* Floating Animation */
-@keyframes float {
+.badge-glow:hover {
+  box-shadow: 0 0 12px -2px hsl(var(--primary) / 0.3);
+}
+
+/* Avatar online pulse ring */
+@keyframes online-pulse {
   0%, 100% {
-    transform: translateY(0px);
+    box-shadow: 0 0 0 0 hsl(142 76% 36% / 0.4);
   }
   50% {
-    transform: translateY(-5px);
+    box-shadow: 0 0 0 4px hsl(142 76% 36% / 0);
   }
 }
 
-.animate-float {
-  animation: float 3s ease-in-out infinite;
+.status-online {
+  animation: online-pulse 2s ease-in-out infinite;
 }
 
-/* Pulse Animation */
-@keyframes pulse-soft {
-  0%, 100% {
-    opacity: 1;
-    transform: scale(1);
-  }
-  50% {
-    opacity: 0.8;
-    transform: scale(1.05);
-  }
-}
+/* ============================================
+   SHIMMER SKELETON
+   ============================================ */
 
-.animate-pulse-soft {
-  animation: pulse-soft 2s ease-in-out infinite;
-}
-
-/* Shine Effect */
-@keyframes shine {
+@keyframes shimmer {
   0% {
-    background-position: -200% center;
+    background-position: -200% 0;
   }
   100% {
-    background-position: 200% center;
+    background-position: 200% 0;
   }
 }
 
-.shine-effect {
+.animate-shimmer {
   background: linear-gradient(
     90deg,
-    transparent 0%,
-    rgba(255, 255, 255, 0.2) 50%,
-    transparent 100%
+    hsl(var(--muted)) 25%,
+    hsl(var(--muted-foreground) / 0.15) 50%,
+    hsl(var(--muted)) 75%
   );
   background-size: 200% 100%;
-  animation: shine 3s ease-in-out infinite;
+  animation: shimmer 1.5s ease-in-out infinite;
 }
 
-/* Magnetic Button Effect Base */
-.magnetic-btn {
-  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-}
+/* ============================================
+   STAGGER ANIMATIONS
+   ============================================ */
 
-/* Focus Ring Animation */
-@keyframes focus-ring {
-  0% {
-    box-shadow: 0 0 0 0px rgba(var(--primary), 0.4);
-  }
-  100% {
-    box-shadow: 0 0 0 4px rgba(var(--primary), 0);
-  }
-}
-
-.focus-ring-animate:focus-visible {
-  animation: focus-ring 0.4s ease-out;
-}
-
-/* Slide Up Animation */
-@keyframes slide-up {
+@keyframes fade-in-up {
   from {
     opacity: 0;
-    transform: translateY(20px);
+    transform: translateY(8px);
   }
   to {
     opacity: 1;
@@ -392,27 +290,68 @@
   }
 }
 
-.animate-slide-up {
-  animation: slide-up 0.4s ease-out forwards;
+.stagger-1 { animation: fade-in-up 0.4s ease 0.05s both; }
+.stagger-2 { animation: fade-in-up 0.4s ease 0.1s both; }
+.stagger-3 { animation: fade-in-up 0.4s ease 0.15s both; }
+.stagger-4 { animation: fade-in-up 0.4s ease 0.2s both; }
+.stagger-5 { animation: fade-in-up 0.4s ease 0.25s both; }
+.stagger-6 { animation: fade-in-up 0.4s ease 0.3s both; }
+
+/* ============================================
+   EMPTY STATE STYLING
+   ============================================ */
+
+.empty-state {
+  @apply flex flex-col items-center justify-center text-center p-8;
 }
 
-/* Scale In Animation */
-@keyframes scale-in {
-  from {
-    opacity: 0;
-    transform: scale(0.9);
-  }
+.empty-state-icon {
+  @apply w-16 h-16 text-muted-foreground/40 mb-4;
+}
+
+.empty-state-title {
+  @apply text-lg font-semibold text-foreground mb-2;
+}
+
+.empty-state-desc {
+  @apply text-sm text-muted-foreground max-w-sm mb-6;
+}
+
+/* ============================================
+   EXISTING ANIMATIONS (preserved)
+   ============================================ */
+
+@keyframes spin {
   to {
-    opacity: 1;
-    transform: scale(1);
+    transform: rotate(360deg);
   }
 }
 
-.animate-scale-in {
-  animation: scale-in 0.3s ease-out forwards;
+@keyframes ping {
+  75%, 100% {
+    transform: scale(2);
+    opacity: 0;
+  }
 }
 
-/* Bounce Subtle */
+@keyframes pulse {
+  50% {
+    opacity: 0.5;
+  }
+}
+
+@keyframes bounce {
+  0%, 100% {
+    transform: translateY(-25%);
+    animation-timing-function: cubic-bezier(0.8, 0, 1, 1);
+  }
+  50% {
+    transform: translateY(0);
+    animation-timing-function: cubic-bezier(0, 0, 0.2, 1);
+  }
+}
+
+/* Subtle Bounce for Interactive Elements */
 @keyframes bounce-subtle {
   0%, 100% {
     transform: translateY(0);

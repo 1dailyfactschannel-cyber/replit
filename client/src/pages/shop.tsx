@@ -153,18 +153,14 @@ export default function ShopPage() {
             <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
           </div>
         ) : filteredItems.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-20 text-center space-y-4">
-            <div className="w-16 h-16 rounded-full bg-muted/50 flex items-center justify-center">
-              <Package className="w-8 h-8 text-muted-foreground opacity-40" />
-            </div>
-            <div>
-              <h3 className="font-medium text-muted-foreground">Товары не найдены</h3>
-              <p className="text-sm text-muted-foreground mt-1">
-                {items && items.length > 0
-                  ? "Попробуйте изменить параметры поиска"
-                  : "В магазине пока нет товаров. Загляните позже!"}
-              </p>
-            </div>
+          <div className="empty-state py-20">
+            <Package className="empty-state-icon" />
+            <h4 className="empty-state-title">Товары не найдены</h4>
+            <p className="empty-state-desc">
+              {items && items.length > 0
+                ? "Попробуйте изменить параметры поиска"
+                : "В магазине пока нет товаров. Загляните позже!"}
+            </p>
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">

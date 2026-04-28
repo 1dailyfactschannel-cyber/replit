@@ -240,9 +240,10 @@ export default function Dashboard() {
                   <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
                 </div>
               ) : performanceData.length === 0 ? (
-                <div className="h-[180px] flex flex-col items-center justify-center text-muted-foreground">
-                  <CheckCircle2 className="w-12 h-12 mb-2 opacity-30" />
-                  <p>Нет данных о завершенных задачах</p>
+                <div className="h-[180px] empty-state">
+                  <CheckCircle2 className="empty-state-icon" />
+                  <h4 className="empty-state-title">Нет данных</h4>
+                  <p className="empty-state-desc">Завершенные задачи будут отображаться здесь</p>
                 </div>
               ) : (
                 <div className="h-[180px] w-full">
@@ -373,9 +374,10 @@ export default function Dashboard() {
                   ))}
                 </div>
               ) : teamWorkload.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
-                  <Users className="w-12 h-12 mb-2 opacity-30" />
-                  <p>Нет данных о команде</p>
+                <div className="empty-state py-8">
+                  <Users className="empty-state-icon" />
+                  <h4 className="empty-state-title">Нет данных о команде</h4>
+                  <p className="empty-state-desc">Добавьте сотрудников, чтобы видеть их загрузку</p>
                 </div>
               ) : (
                 <div className="space-y-5">

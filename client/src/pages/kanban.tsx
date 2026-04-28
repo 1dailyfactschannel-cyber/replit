@@ -86,7 +86,7 @@ export default function Kanban() {
                 <ScrollArea className="flex-1">
                   <div className="flex flex-col gap-3 pb-4">
                     {col.tasks.map(task => (
-                      <div key={task.id} className="bg-card border border-border/50 rounded-xl p-4 shadow-sm hover:shadow-md transition-all cursor-pointer group relative overflow-hidden">
+                      <div key={task.id} className="bg-card border border-border/50 rounded-xl p-4 shadow-sm hover:shadow-md transition-all cursor-pointer group relative overflow-hidden card-hover">
                         {/* Bottom border indicator for priority */}
                         <div className={cn(
                           "absolute inset-x-0 bottom-0 h-1.5 rounded-b-xl",
