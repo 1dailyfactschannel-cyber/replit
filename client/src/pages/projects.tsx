@@ -2524,7 +2524,7 @@ export default function Projects() {
                 {activeBoard && (
                   <>
                     <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
-                    <Badge variant="outline" className="text-xs font-semibold px-2 py-0.5 whitespace-nowrap uppercase tracking-wider text-foreground">
+                    <Badge variant="secondary" className="text-xs font-semibold px-2 py-0.5 whitespace-nowrap uppercase tracking-wider text-foreground">
                       {activeBoard.name}
                     </Badge>
                   </>

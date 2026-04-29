@@ -26,6 +26,7 @@ const SettingsPage = lazy(() => import("@/pages/settings"));
 const ManagementPage = lazy(() => import("@/pages/management"));
 const ReportsPage = lazy(() => import("@/pages/reports"));
 const NotificationsPage = lazy(() => import("@/pages/notifications"));
+const KnowledgeBasePage = lazy(() => import("@/pages/knowledge-base"));
 
 // Preload function for route prefetching
 const preloadProjects = () => {
@@ -125,6 +126,7 @@ function Router() {
         <ProtectedRoute path="/chat" component={Chat} />
         <ProtectedRoute path="/call" component={Call} />
         <ProtectedRoute path="/notifications" component={NotificationsPage} />
+        <ProtectedRoute path="/knowledge-base" component={KnowledgeBasePage} />
         <Route>
           {(params) => <NotFound {...params} />}
         </Route>

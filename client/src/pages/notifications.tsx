@@ -477,7 +477,7 @@ export default function NotificationsPage() {
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2.5">
             <BellRing className="h-5 w-5 text-primary" />
-            <h1 className="text-xl font-bold">Уведомления</h1>
+            <h1 className="text-xl font-bold text-foreground">Уведомления</h1>
             {unreadCount > 0 && (
               <Badge variant="secondary" className="text-xs">
                 {unreadCount} непрочитанных
@@ -488,7 +488,7 @@ export default function NotificationsPage() {
           <div className="flex items-center gap-1.5">
             {unreadCount > 0 && (
               <Button
-                variant="outline"
+                variant="secondary"
                 size="sm"
                 className="h-8 text-xs"
                 onClick={() => markAllAsReadMutation.mutate()}
@@ -499,7 +499,7 @@ export default function NotificationsPage() {
               </Button>
             )}
             <Button
-              variant="ghost"
+              variant="secondary"
               size="icon"
               className={cn("h-8 w-8", showSettings && "bg-accent")}
               onClick={() => setShowSettings(!showSettings)}
@@ -509,7 +509,7 @@ export default function NotificationsPage() {
             </Button>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm" className="h-8 text-xs">
+                <Button variant="secondary" size="sm" className="h-8 text-xs">
                   <Filter className="h-3.5 w-3.5 mr-1.5" />
                   Фильтры
                 </Button>
@@ -588,7 +588,7 @@ export default function NotificationsPage() {
           </div>
 
           <Tabs value={typeFilter} onValueChange={(v) => setTypeFilter(v as NotificationType | "all")}>
-            <TabsList className="h-9">
+            <TabsList className="h-9 bg-secondary border border-border shadow-sm">
               <TabsTrigger value="all" className="text-xs">Все</TabsTrigger>
               {Object.entries(notificationTypeConfig).map(([key, config]) => (
                 <TabsTrigger key={key} value={key} className="text-xs px-2.5">

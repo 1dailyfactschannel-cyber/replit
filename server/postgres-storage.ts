@@ -4227,6 +4227,117 @@ export async function getReportUsers(
   }
 }
 
+export async function getReportUserDetail(
+  db: any,
+  userId: string
+) {
+  try {
+    // Get user
+    const user = await db.select().from(schema.users).where(eq(schema.users.id, userId)).then((r: any) => r[0]);
+    if (!user) return null;
+
+    // Get all active tasks assigned to user
+    const allTasks = await db.select().from(schema.tasks).where(
+      and(eq(schema.tasks.assigneeId, userId), eq(schema.tasks.archived, false))
+    );
+
+    // Get time tracking records for this user
+    const timeRecords = await db.select().from(schema.taskUserTimeTracking).where(eq(schema.taskUserTimeTracking.userId, userId));
+
+    // Build tasks list with project/board names and time spent
+    const tasksList = [];
+    const now = new Date();
+
+    for (const task of allTasks) {
+      // Get board and project
+      let projectName = "";
+      let boardName = "";
+      if (task.boardId) {
+        const board = await db.select().from(schema.boards).where(eq(schema.boards.id, task.boardId)).then((r: any) => r[0]);
+        if (board) {
+          boardName = board.name;
+          if (board.projectId) {
+            const project = await db.select().from(schema.projects).where(eq(schema.projects.id, board.projectId)).then((r: any) => r[0]);
+            if (project) projectName = project.name;
+          }
+        }
+      }
+
+      // Get priority name
+      let priorityName = "";
+      if (task.priorityId) {
+        const priority = await db.select().from(schema.priorities).where(eq(schema.priorities.id, task.priorityId)).then((r: any) => r[0]);
+        if (priority) priorityName = priority.name;
+      }
+
+      // Calculate time spent on this task by this user
+      const taskTime = timeRecords
+        .filter((tr: any) => tr.taskId === task.id && tr.durationSeconds)
+        .reduce((sum: number, tr: any) => sum + (tr.durationSeconds || 0), 0);
+
+      // Check overdue
+      const isOverdue = task.dueDate ? new Date(task.dueDate) < now && task.status !== 'Готово' && task.status !== 'done' : false;
+
+      tasksList.push({
+        id: task.id,
+        title: task.title,
+        status: task.status || 'В планах',
+        priority: priorityName,
+        dueDate: task.dueDate,
+        projectName,
+        boardName,
+        timeSpentSeconds: taskTime,
+        isOverdue,
+      });
+    }
+
+    // Aggregate time by status
+    const timeByStatusMap = new Map<string, { totalSeconds: number; taskCount: number }>();
+    for (const tr of timeRecords) {
+      if (!tr.durationSeconds) continue;
+      const existing = timeByStatusMap.get(tr.status) || { totalSeconds: 0, taskCount: 0 };
+      existing.totalSeconds += tr.durationSeconds;
+      // Count unique tasks per status
+      const taskIdsInStatus = new Set(timeRecords.filter((r: any) => r.status === tr.status).map((r: any) => r.taskId));
+      existing.taskCount = taskIdsInStatus.size;
+      timeByStatusMap.set(tr.status, existing);
+    }
+    const timeByStatus = Array.from(timeByStatusMap.entries()).map(([status, data]) => ({
+      status,
+      totalSeconds: data.totalSeconds,
+      taskCount: data.taskCount,
+    }));
+
+    // Summary
+    const completedTasks = tasksList.filter((t: any) => t.status === 'Готово' || t.status === 'done').length;
+    const inProgressTasks = tasksList.filter((t: any) => t.status === 'В работе' || t.status === 'in_progress').length;
+    const overdueTasks = tasksList.filter((t: any) => t.isOverdue).length;
+    const totalTimeSeconds = timeRecords.reduce((sum: number, tr: any) => sum + (tr.durationSeconds || 0), 0);
+
+    return {
+      user: {
+        id: user.id,
+        name: user.firstName ? `${user.firstName} ${user.lastName || ''}` : user.username,
+        avatar: user.avatar,
+        position: user.position,
+        department: user.department,
+      },
+      summary: {
+        totalTasks: tasksList.length,
+        completedTasks,
+        inProgressTasks,
+        overdueTasks,
+        totalTimeSeconds,
+      },
+      tasks: tasksList,
+      timeByStatus,
+    };
+  } catch (error) {
+    console.error("Error getting user detail report:", error);
+    throw error;
+  }
+}
+
 export async function getReportWorkload(
   db: any,
   workspaceId?: string,

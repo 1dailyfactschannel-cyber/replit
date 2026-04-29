@@ -149,6 +149,10 @@ const cacheMiddleware = (duration: number) => {
 // Serve static files from the 'uploads' directory
 app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads')));
 
+// Serve E2E test screenshots and reports
+app.use('/test-screenshots', express.static(path.join(__dirname, '..', 'test e2e', 'screenshots')));
+app.use('/test-report', express.static(path.join(__dirname, '..', 'test e2e', 'report')));
+
 // Cache static assets for 1 year (only in production)
 if (process.env.NODE_ENV === "production") {
   app.use('/assets', express.static(path.join(__dirname, '..', 'dist/public/assets'), {
