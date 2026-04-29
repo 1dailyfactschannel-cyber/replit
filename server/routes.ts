@@ -1,6 +1,6 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
-import { getStorage, getReportOverview, getReportWorkspaces, getReportProjects, getReportBoards, getReportUsers, getReportWorkload } from "./postgres-storage";
+import { getStorage, getReportOverview, getReportWorkspaces, getReportProjects, getReportBoards, getReportUsers, getReportWorkload, getReportUserDetail } from "./postgres-storage";
 import { insertSiteSettingsSchema, insertUserSchema, insertNotificationSchema, insertLabelSchema, insertCustomStatusSchema, insertDepartmentSchema, priorities, taskTypes } from "@shared/schema";
 import * as schema from "@shared/schema";
 import { getStatusByColumnName } from "../shared/column-status-mapping";
@@ -4823,6 +4823,18 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error fetching users report:", error);
       res.status(500).json({ message: "Failed to fetch users report" });
+    }
+  });
+
+  app.get("/api/reports/users/:id/detail", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+    try {
+      const data = await getReportUserDetail(storage.db, req.params.id);
+      if (!data) return res.status(404).json({ message: "User not found" });
+      res.json(data);
+    } catch (error) {
+      console.error("Error fetching user detail report:", error);
+      res.status(500).json({ message: "Failed to fetch user detail report" });
     }
   });
 

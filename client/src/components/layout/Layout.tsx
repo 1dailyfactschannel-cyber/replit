@@ -31,7 +31,8 @@ import {
   User,
   Monitor,
   Star,
-  Flag
+  Flag,
+  BookOpen
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -388,6 +389,13 @@ const SidebarContentComponent = React.memo(({
             >
               <Settings className="w-4 h-4" />
               Настройки
+            </DropdownMenuItem>
+            <DropdownMenuItem 
+              className="gap-2 cursor-pointer" 
+              onClick={() => setLocation("/knowledge-base")}
+            >
+              <BookOpen className="w-4 h-4" />
+              База знаний
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem 

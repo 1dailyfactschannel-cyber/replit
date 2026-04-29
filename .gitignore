@@ -11,3 +11,9 @@ client/dist
 server/dist
 nul
 cookies.txt
+
+# Playwright
+test-results/
+playwright-report/
+playwright/.cache/
+playwright/.auth/

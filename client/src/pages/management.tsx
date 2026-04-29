@@ -213,7 +213,7 @@ export default function ManagementPage() {
                       className="pl-9 h-9 bg-muted/20 border-border/50 text-xs"
                     />
                   </div>
-                  <Button size="sm" variant="outline" className="h-9 gap-2 text-xs border-border/50">
+                  <Button size="sm" variant="secondary" className="h-9 gap-2 text-xs border-border/50">
                     <Filter className="w-3.5 h-3.5" />
                     Фильтры
                   </Button>
