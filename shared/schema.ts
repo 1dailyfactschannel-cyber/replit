@@ -884,7 +884,7 @@ export const notifications = pgTable("notifications", {
   id: uuid("id").primaryKey().defaultRandom(),
   userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   senderId: uuid("sender_id").references(() => users.id, { onDelete: "set null" }),
-  type: text("type").$type<"chat" | "task" | "calendar" | "call" | "system">().notNull(),
+  type: text("type").$type<"chat" | "task" | "task_comment" | "calendar" | "call" | "system" | "news">().notNull(),
   title: text("title").notNull(),
   message: text("message").notNull(),
   link: text("link"), // Optional link to redirect
@@ -904,6 +904,25 @@ export const insertNotificationSchema = createInsertSchema(notifications).pick({
   link: true,
   isRead: true,
 });
+
+export const news = pgTable("news", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  title: text("title").notNull(),
+  content: text("content").notNull(),
+  authorId: uuid("author_id").references(() => users.id, { onDelete: "set null" }),
+  isPublished: boolean("is_published").default(false),
+  publishedAt: timestamp("published_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertNewsSchema = createInsertSchema(news).pick({
+  title: true,
+  content: true,
+});
+
+export type News = typeof news.$inferSelect;
+export type InsertNews = z.infer<typeof insertNewsSchema>;
 
 export type Notification = typeof notifications.$inferSelect;
 export type InsertNotification = z.infer<typeof insertNotificationSchema>;

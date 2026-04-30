@@ -1,15 +1,16 @@
 "use client"
 
-import { BellRing, Clock, CheckSquare, MessageSquare, Calendar, Phone, Settings } from "lucide-react"
+import { BellRing, Clock, CheckSquare, MessageSquare, Calendar, Phone, Settings, Newspaper } from "lucide-react"
 import { useState, useEffect } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { apiRequest } from "@/lib/queryClient"
 import type { Notification } from "@shared/schema"
 import { formatDistanceToNow } from "date-fns"
 import { ru } from "date-fns/locale"
-import { io, Socket } from "socket.io-client"
+// Socket connection now handled by useSocket hook
 import { useLocation } from "wouter"
 import { useNotifications } from "@/hooks/use-notifications"
+import { useSocket } from "@/hooks/use-socket"
 
 import {
     AlertDialog,
@@ -27,9 +28,11 @@ import { cn } from "@/lib/utils"
 
 const notificationTypeConfig = {
   task: { icon: CheckSquare, color: "text-blue-500", bgColor: "bg-blue-500/10" },
+  task_comment: { icon: CheckSquare, color: "text-blue-500", bgColor: "bg-blue-500/10" },
   chat: { icon: MessageSquare, color: "text-green-500", bgColor: "bg-green-500/10" },
   calendar: { icon: Calendar, color: "text-purple-500", bgColor: "bg-purple-500/10" },
   call: { icon: Phone, color: "text-orange-500", bgColor: "bg-orange-500/10" },
+  news: { icon: Newspaper, color: "text-red-500", bgColor: "bg-red-500/10" },
   system: { icon: Settings, color: "text-gray-500", bgColor: "bg-gray-500/10" },
 }
 
@@ -129,16 +132,12 @@ export function NotificationAlertDialog() {
         },
     })
 
+    const socket = useSocket();
+
     useEffect(() => {
-        const socket: Socket = io({
-            transports: ["websocket", "polling"],
-        })
+        if (!socket) return;
 
-        socket.on("connect", () => {
-            console.log("Notification socket connected")
-        })
-
-        socket.on("new-notification", (notification: Notification) => {
+        const handleNewNotification = (notification: Notification) => {
             queryClient.invalidateQueries({ queryKey: ["/api/notifications"] })
             // Show browser notification
             const content = formatNotificationContent(notification)
@@ -149,12 +148,14 @@ export function NotificationAlertDialog() {
                 tag: notification.id,
                 data: { url: notification.link || '/notifications' },
             })
-        })
+        }
+
+        socket.on("new-notification", handleNewNotification)
 
         return () => {
-            socket.disconnect()
+            socket.off("new-notification", handleNewNotification)
         }
-    }, [queryClient, notify])
+    }, [socket, queryClient, notify])
 
     const unreadCount = notifications?.filter((n) => !n.isRead).length ?? 0
 
@@ -169,12 +170,17 @@ export function NotificationAlertDialog() {
         }
         setIsDialogOpen(false)
         
+        const type = getNotificationType(notification.type)
+        if (type === "news") {
+            // News notifications are not clickable, just mark as read
+            return
+        }
+        
         if (notification.link) {
             setLocation(notification.link)
             return
         }
 
-        const type = getNotificationType(notification.type)
         switch (type) {
             case "task":
                 setLocation("/tasks")

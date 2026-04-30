@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { getStorage, getReportOverview, getReportWorkspaces, getReportProjects, getReportBoards, getReportUsers, getReportWorkload, getReportUserDetail } from "./postgres-storage";
-import { insertSiteSettingsSchema, insertUserSchema, insertNotificationSchema, insertLabelSchema, insertCustomStatusSchema, insertDepartmentSchema, priorities, taskTypes } from "@shared/schema";
+import { insertSiteSettingsSchema, insertUserSchema, insertNotificationSchema, insertLabelSchema, insertCustomStatusSchema, insertDepartmentSchema, insertNewsSchema, priorities, taskTypes } from "@shared/schema";
 import * as schema from "@shared/schema";
 import { getStatusByColumnName } from "../shared/column-status-mapping";
 import { setupWebSockets, getIO } from "./socket";
@@ -222,14 +222,14 @@ async function sendNotification(
     await storage.createNotification({
       userId,
       senderId,
-      type: type as "chat" | "task" | "calendar" | "call" | "system",
+      type: type as "chat" | "task" | "task_comment" | "calendar" | "call" | "system" | "news",
       title,
       message,
       link: link || null,
     });
 
     // Send Telegram notification for important types
-    const importantTypes = ['chat', 'task', 'calendar', 'call'];
+    const importantTypes = ['chat', 'task', 'task_comment', 'calendar', 'call'];
     const isImportant = importantTypes.includes(type) && (
       data.action === 'mentioned' ||
       data.action === 'status_changed' ||
@@ -1075,7 +1075,7 @@ export async function registerRoutes(
         user = await storage.getUser(req.params.id);
       }
       
-      // If status is being changed, save to history
+      // If status is being changed, save to history and notify user
       if (currentUser && newStatus && newStatus !== currentUser.status) {
         await storage.createUserStatusHistory({
           userId: req.params.id,
@@ -1084,6 +1084,23 @@ export async function registerRoutes(
           comment: newStatusComment || null,
           changedBy: req.user!.id
         });
+
+        // Notify the user whose status was changed
+        const changerName = `${req.user!.firstName || ""} ${req.user!.lastName || ""}`.trim() || req.user!.username;
+        await sendNotification(
+          req.params.id,
+          req.user!.id,
+          'system',
+          'Статус обновлён',
+          {
+            action: 'status_changed',
+            userName: changerName,
+            oldValue: currentUser.status || 'Не указан',
+            newValue: newStatus,
+            fieldName: newStatusComment || 'Статус',
+          },
+          '/profile'
+        );
 
         // Evaluate accrual rules when status changes to online
         const onlineStatuses = ["online", "в сети", "active", "активен", "available", "доступен"];
@@ -6477,6 +6494,110 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error canceling user invitation:", error);
       res.status(500).json({ message: "Failed to cancel invitation" });
+    }
+  });
+
+  // News routes
+  app.get("/api/news", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+    try {
+      const newsList = await storage.getNews();
+      res.json(newsList);
+    } catch (error) {
+      console.error("Error fetching news:", error);
+      res.status(500).json({ message: "Failed to fetch news" });
+    }
+  });
+
+  app.get("/api/news/:id", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+    try {
+      const item = await storage.getNewsById(req.params.id);
+      if (!item) return res.status(404).json({ message: "News not found" });
+      res.json(item);
+    } catch (error) {
+      console.error("Error fetching news item:", error);
+      res.status(500).json({ message: "Failed to fetch news item" });
+    }
+  });
+
+  app.post("/api/news", requirePermission("management:team"), async (req, res) => {
+    try {
+      const data = insertNewsSchema.parse(req.body);
+      const newsItem = await storage.createNews({
+        ...data,
+        authorId: req.user!.id,
+        isPublished: false,
+      });
+      res.status(201).json(newsItem);
+    } catch (error) {
+      console.error("Error creating news:", error);
+      res.status(500).json({ message: "Failed to create news" });
+    }
+  });
+
+  app.patch("/api/news/:id", requirePermission("management:team"), async (req, res) => {
+    try {
+      const existing = await storage.getNewsById(req.params.id);
+      if (!existing) return res.status(404).json({ message: "News not found" });
+      const updated = await storage.updateNews(req.params.id, req.body);
+      res.json(updated);
+    } catch (error) {
+      console.error("Error updating news:", error);
+      res.status(500).json({ message: "Failed to update news" });
+    }
+  });
+
+  app.patch("/api/news/:id/publish", requirePermission("management:team"), async (req, res) => {
+    try {
+      const existing = await storage.getNewsById(req.params.id);
+      if (!existing) return res.status(404).json({ message: "News not found" });
+
+      const updated = await storage.updateNews(req.params.id, {
+        isPublished: true,
+        publishedAt: new Date(),
+      });
+
+      // Create notifications for all users
+      const allUsers = await storage.db.select({ id: schema.users.id }).from(schema.users);
+      const io = req.app.get("io");
+      for (const user of allUsers) {
+        const notification = await storage.createNotification({
+          userId: user.id,
+          type: "news",
+          title: updated.title,
+          message: JSON.stringify({
+            action: "news_published",
+            newsId: updated.id,
+            title: updated.title,
+            content: updated.content,
+            userName: req.user!.firstName || req.user!.username,
+          }),
+          link: null,
+          isRead: false,
+        });
+        // Emit socket event with full notification
+        if (io) {
+          io.to(`user:${user.id}`).emit("new-notification", notification);
+        }
+        // Invalidate notification cache
+        await invalidatePattern(`user:${user.id}:notifications:*`);
+      }
+
+      res.json(updated);
+    } catch (error) {
+      console.error("Error publishing news:", error);
+      res.status(500).json({ message: "Failed to publish news" });
+    }
+  });
+
+  app.delete("/api/news/:id", requirePermission("management:team"), async (req, res) => {
+    try {
+      await storage.deleteNews(req.params.id);
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting news:", error);
+      res.status(500).json({ message: "Failed to delete news" });
     }
   });
 

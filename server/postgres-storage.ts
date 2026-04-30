@@ -1643,6 +1643,73 @@ export class PostgresStorage {
     }
   }
 
+  // News methods
+  async getNews(): Promise<any[]> {
+    try {
+      const newsList = await this.db.select().from(schema.news).orderBy(desc(schema.news.createdAt));
+      const result = [];
+      for (const item of newsList) {
+        const author = item.authorId
+          ? await this.db.select().from(schema.users).where(eq(schema.users.id, item.authorId)).then((r: any) => r[0])
+          : null;
+        result.push({
+          ...item,
+          authorName: author ? `${author.firstName || ""} ${author.lastName || ""}`.trim() || author.username : null,
+        });
+      }
+      return result;
+    } catch (error) {
+      console.error("Error getting news:", error);
+      throw error;
+    }
+  }
+
+  async getNewsById(id: string): Promise<any> {
+    try {
+      const item = await this.db.select().from(schema.news).where(eq(schema.news.id, id)).then((r: any) => r[0]);
+      if (!item) return null;
+      const author = item.authorId
+        ? await this.db.select().from(schema.users).where(eq(schema.users.id, item.authorId)).then((r: any) => r[0])
+        : null;
+      return {
+        ...item,
+        authorName: author ? `${author.firstName || ""} ${author.lastName || ""}`.trim() || author.username : null,
+      };
+    } catch (error) {
+      console.error("Error getting news by id:", error);
+      throw error;
+    }
+  }
+
+  async createNews(data: any): Promise<any> {
+    try {
+      const result = await this.db.insert(schema.news).values(data).returning();
+      return result[0];
+    } catch (error) {
+      console.error("Error creating news:", error);
+      throw error;
+    }
+  }
+
+  async updateNews(id: string, data: any): Promise<any> {
+    try {
+      const result = await this.db.update(schema.news).set(data).where(eq(schema.news.id, id)).returning();
+      return result[0];
+    } catch (error) {
+      console.error("Error updating news:", error);
+      throw error;
+    }
+  }
+
+  async deleteNews(id: string): Promise<void> {
+    try {
+      await this.db.delete(schema.news).where(eq(schema.news.id, id));
+    } catch (error) {
+      console.error("Error deleting news:", error);
+      throw error;
+    }
+  }
+
   async deleteBoard(id: string): Promise<void> {
     try {
       await this.db.delete(schema.boards).where(eq(schema.boards.id, id));
