@@ -1710,6 +1710,116 @@ export class PostgresStorage {
     }
   }
 
+  // Knowledge Base methods
+  async getKnowledgeSections(): Promise<any[]> {
+    try {
+      return await this.db.select().from(schema.knowledgeSections).where(eq(schema.knowledgeSections.isVisible, true)).orderBy(schema.knowledgeSections.sortOrder);
+    } catch (error) {
+      console.error("Error getting knowledge sections:", error);
+      throw error;
+    }
+  }
+
+  async getAllKnowledgeSections(): Promise<any[]> {
+    try {
+      return await this.db.select().from(schema.knowledgeSections).orderBy(schema.knowledgeSections.sortOrder);
+    } catch (error) {
+      console.error("Error getting all knowledge sections:", error);
+      throw error;
+    }
+  }
+
+  async getKnowledgeSectionById(id: string): Promise<any> {
+    try {
+      const result = await this.db.select().from(schema.knowledgeSections).where(eq(schema.knowledgeSections.id, id));
+      return result[0] || null;
+    } catch (error) {
+      console.error("Error getting knowledge section:", error);
+      throw error;
+    }
+  }
+
+  async createKnowledgeSection(data: any): Promise<any> {
+    try {
+      const result = await this.db.insert(schema.knowledgeSections).values(data).returning();
+      return result[0];
+    } catch (error) {
+      console.error("Error creating knowledge section:", error);
+      throw error;
+    }
+  }
+
+  async updateKnowledgeSection(id: string, data: any): Promise<any> {
+    try {
+      const result = await this.db.update(schema.knowledgeSections).set({ ...data, updatedAt: new Date() }).where(eq(schema.knowledgeSections.id, id)).returning();
+      return result[0];
+    } catch (error) {
+      console.error("Error updating knowledge section:", error);
+      throw error;
+    }
+  }
+
+  async deleteKnowledgeSection(id: string): Promise<void> {
+    try {
+      await this.db.delete(schema.knowledgeSections).where(eq(schema.knowledgeSections.id, id));
+    } catch (error) {
+      console.error("Error deleting knowledge section:", error);
+      throw error;
+    }
+  }
+
+  async getKnowledgeArticles(sectionId?: string): Promise<any[]> {
+    try {
+      if (sectionId) {
+        return await this.db.select().from(schema.knowledgeArticles).where(eq(schema.knowledgeArticles.sectionId, sectionId)).orderBy(schema.knowledgeArticles.sortOrder);
+      } else {
+        return await this.db.select().from(schema.knowledgeArticles).orderBy(schema.knowledgeArticles.sortOrder);
+      }
+    } catch (error) {
+      console.error("Error getting knowledge articles:", error);
+      throw error;
+    }
+  }
+
+  async getKnowledgeArticleById(id: string): Promise<any> {
+    try {
+      const result = await this.db.select().from(schema.knowledgeArticles).where(eq(schema.knowledgeArticles.id, id));
+      return result[0] || null;
+    } catch (error) {
+      console.error("Error getting knowledge article:", error);
+      throw error;
+    }
+  }
+
+  async createKnowledgeArticle(data: any): Promise<any> {
+    try {
+      const result = await this.db.insert(schema.knowledgeArticles).values(data).returning();
+      return result[0];
+    } catch (error) {
+      console.error("Error creating knowledge article:", error);
+      throw error;
+    }
+  }
+
+  async updateKnowledgeArticle(id: string, data: any): Promise<any> {
+    try {
+      const result = await this.db.update(schema.knowledgeArticles).set({ ...data, updatedAt: new Date() }).where(eq(schema.knowledgeArticles.id, id)).returning();
+      return result[0];
+    } catch (error) {
+      console.error("Error updating knowledge article:", error);
+      throw error;
+    }
+  }
+
+  async deleteKnowledgeArticle(id: string): Promise<void> {
+    try {
+      await this.db.delete(schema.knowledgeArticles).where(eq(schema.knowledgeArticles.id, id));
+    } catch (error) {
+      console.error("Error deleting knowledge article:", error);
+      throw error;
+    }
+  }
+
   async deleteBoard(id: string): Promise<void> {
     try {
       await this.db.delete(schema.boards).where(eq(schema.boards.id, id));

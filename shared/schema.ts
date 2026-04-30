@@ -927,6 +927,49 @@ export type InsertNews = z.infer<typeof insertNewsSchema>;
 export type Notification = typeof notifications.$inferSelect;
 export type InsertNotification = z.infer<typeof insertNotificationSchema>;
 
+// Knowledge Base tables
+export const knowledgeSections = pgTable("knowledge_sections", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  title: text("title").notNull(),
+  icon: text("icon").default("FileText"),
+  sortOrder: integer("sort_order").default(0),
+  isVisible: boolean("is_visible").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertKnowledgeSectionSchema = createInsertSchema(knowledgeSections).pick({
+  title: true,
+  icon: true,
+  sortOrder: true,
+  isVisible: true,
+});
+
+export type KnowledgeSection = typeof knowledgeSections.$inferSelect;
+export type InsertKnowledgeSection = z.infer<typeof insertKnowledgeSectionSchema>;
+
+export const knowledgeArticles = pgTable("knowledge_articles", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  sectionId: uuid("section_id").references(() => knowledgeSections.id, { onDelete: "cascade" }).notNull(),
+  title: text("title").notNull(),
+  content: text("content").default(""),
+  sortOrder: integer("sort_order").default(0),
+  isVisible: boolean("is_visible").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertKnowledgeArticleSchema = createInsertSchema(knowledgeArticles).pick({
+  sectionId: true,
+  title: true,
+  content: true,
+  sortOrder: true,
+  isVisible: true,
+});
+
+export type KnowledgeArticle = typeof knowledgeArticles.$inferSelect;
+export type InsertKnowledgeArticle = z.infer<typeof insertKnowledgeArticleSchema>;
+
 // Shop items table
 export const shopItems = pgTable("shop_items", {
   id: uuid("id").primaryKey().defaultRandom(),

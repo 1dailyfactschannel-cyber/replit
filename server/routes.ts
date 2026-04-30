@@ -6601,6 +6601,146 @@ export async function registerRoutes(
     }
   });
 
+  // Knowledge Base routes
+  app.get("/api/kb/sections", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+    try {
+      const sections = await storage.getKnowledgeSections();
+      res.json(sections);
+    } catch (error) {
+      console.error("Error fetching knowledge sections:", error);
+      res.status(500).json({ message: "Failed to fetch sections" });
+    }
+  });
+
+  app.get("/api/kb/sections/all", requirePermission("management:team"), async (req, res) => {
+    try {
+      const sections = await storage.getAllKnowledgeSections();
+      res.json(sections);
+    } catch (error) {
+      console.error("Error fetching all knowledge sections:", error);
+      res.status(500).json({ message: "Failed to fetch sections" });
+    }
+  });
+
+  app.get("/api/kb/sections/:id", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+    try {
+      const section = await storage.getKnowledgeSectionById(req.params.id);
+      if (!section) return res.status(404).json({ message: "Section not found" });
+      res.json(section);
+    } catch (error) {
+      console.error("Error fetching knowledge section:", error);
+      res.status(500).json({ message: "Failed to fetch section" });
+    }
+  });
+
+  app.post("/api/kb/sections", requirePermission("management:team"), async (req, res) => {
+    try {
+      const section = await storage.createKnowledgeSection(req.body);
+      res.status(201).json(section);
+    } catch (error) {
+      console.error("Error creating knowledge section:", error);
+      res.status(500).json({ message: "Failed to create section" });
+    }
+  });
+
+  app.patch("/api/kb/sections/:id", requirePermission("management:team"), async (req, res) => {
+    try {
+      const section = await storage.updateKnowledgeSection(req.params.id, req.body);
+      if (!section) return res.status(404).json({ message: "Section not found" });
+      res.json(section);
+    } catch (error) {
+      console.error("Error updating knowledge section:", error);
+      res.status(500).json({ message: "Failed to update section" });
+    }
+  });
+
+  app.delete("/api/kb/sections/:id", requirePermission("management:team"), async (req, res) => {
+    try {
+      await storage.deleteKnowledgeSection(req.params.id);
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting knowledge section:", error);
+      res.status(500).json({ message: "Failed to delete section" });
+    }
+  });
+
+  app.get("/api/kb/articles", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+    try {
+      const sectionId = req.query.sectionId as string | undefined;
+      const articles = await storage.getKnowledgeArticles(sectionId);
+      res.json(articles);
+    } catch (error) {
+      console.error("Error fetching knowledge articles:", error);
+      res.status(500).json({ message: "Failed to fetch articles" });
+    }
+  });
+
+  app.get("/api/kb/articles/:id", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+    try {
+      const article = await storage.getKnowledgeArticleById(req.params.id);
+      if (!article) return res.status(404).json({ message: "Article not found" });
+      res.json(article);
+    } catch (error) {
+      console.error("Error fetching knowledge article:", error);
+      res.status(500).json({ message: "Failed to fetch article" });
+    }
+  });
+
+  app.post("/api/kb/articles", requirePermission("management:team"), async (req, res) => {
+    try {
+      const article = await storage.createKnowledgeArticle(req.body);
+      res.status(201).json(article);
+    } catch (error) {
+      console.error("Error creating knowledge article:", error);
+      res.status(500).json({ message: "Failed to create article" });
+    }
+  });
+
+  app.patch("/api/kb/articles/:id", requirePermission("management:team"), async (req, res) => {
+    try {
+      const article = await storage.updateKnowledgeArticle(req.params.id, req.body);
+      if (!article) return res.status(404).json({ message: "Article not found" });
+      res.json(article);
+    } catch (error) {
+      console.error("Error updating knowledge article:", error);
+      res.status(500).json({ message: "Failed to update article" });
+    }
+  });
+
+  app.delete("/api/kb/articles/:id", requirePermission("management:team"), async (req, res) => {
+    try {
+      await storage.deleteKnowledgeArticle(req.params.id);
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting knowledge article:", error);
+      res.status(500).json({ message: "Failed to delete article" });
+    }
+  });
+
+  app.patch("/api/kb/reorder", requirePermission("management:team"), async (req, res) => {
+    try {
+      const { sections, articles } = req.body;
+      if (sections && Array.isArray(sections)) {
+        for (const s of sections) {
+          await storage.updateKnowledgeSection(s.id, { sortOrder: s.sortOrder });
+        }
+      }
+      if (articles && Array.isArray(articles)) {
+        for (const a of articles) {
+          await storage.updateKnowledgeArticle(a.id, { sortOrder: a.sortOrder, sectionId: a.sectionId });
+        }
+      }
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error reordering knowledge base:", error);
+      res.status(500).json({ message: "Failed to reorder" });
+    }
+  });
+
   // Yandex Calendar routes
   app.use("/api", yandexCalendarRoutes);
 

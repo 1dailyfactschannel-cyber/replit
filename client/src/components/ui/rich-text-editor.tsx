@@ -1,5 +1,5 @@
 import { useEditor, EditorContent } from '@tiptap/react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useRef } from 'react';
 import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
 import Link from '@tiptap/extension-link';
@@ -8,6 +8,7 @@ import { TextStyle } from '@tiptap/extension-text-style';
 import { TextAlign } from '@tiptap/extension-text-align';
 import { Highlight } from '@tiptap/extension-highlight';
 import { Color } from '@tiptap/extension-color';
+import Image from '@tiptap/extension-image';
 
 // Custom extension to support font-size via textStyle mark
 const FontSize = TextStyle.extend({
@@ -47,7 +48,8 @@ import {
   AlignRight,
   Palette,
   Highlighter,
-  ChevronDown
+  ChevronDown,
+  Image as ImageIcon
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
@@ -74,6 +76,58 @@ const HIGHLIGHT_COLORS = [
   '#fef2f2', '#ffedd5', '#fef9c3', '#dcfce7', '#dbeafe',
   '#f3e8ff', '#fce7f3', '#f1f5f9', '#ffffff', '#000000'
 ];
+
+const ImageUploadButton = ({ editor }: { editor: any }) => {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !editor) return;
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      const res = await fetch('/api/upload', {
+        method: 'POST',
+        body: formData,
+        credentials: 'include',
+      });
+      if (!res.ok) throw new Error('Upload failed');
+      const data = await res.json();
+      if (data.url) {
+        editor.chain().focus().setImage({ src: data.url }).run();
+      }
+    } catch (err) {
+      console.error('Image upload failed:', err);
+    }
+
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  return (
+    <>
+      <input
+        type="file"
+        ref={fileInputRef}
+        className="hidden"
+        accept="image/*"
+        onChange={handleFileChange}
+      />
+      <Button
+        variant="ghost"
+        size="icon"
+        className="h-6 w-6 text-muted-foreground hover:text-foreground"
+        onClick={() => fileInputRef.current?.click()}
+        onMouseDown={(e) => e.preventDefault()}
+        type="button"
+        title="Вставить изображение"
+      >
+        <ImageIcon className="h-3.5 w-3.5" />
+      </Button>
+    </>
+  );
+};
 
 const MenuBar = ({ editor }: { editor: any }) => {
   if (!editor) return null;
@@ -436,6 +490,8 @@ const MenuBar = ({ editor }: { editor: any }) => {
 
       <div className="flex-1" />
 
+      <ImageUploadButton editor={editor} />
+
       <Button
         variant="ghost"
         size="icon"
@@ -494,6 +550,9 @@ export function RichTextEditor({ content, onChange, onBlur, placeholder }: RichT
     }),
     Placeholder.configure({
       placeholder: placeholder || 'Начните писать...',
+    }),
+    Image.configure({
+      allowBase64: true,
     }),
   ], [placeholder]);
 
