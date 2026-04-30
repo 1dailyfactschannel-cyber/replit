@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import React, { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Layout } from "@/components/layout/Layout";
 import { Card, CardContent } from "@/components/ui/card";
@@ -484,10 +484,57 @@ export default function KnowledgeBasePage() {
       ],
       ALLOWED_ATTR: [
         "href", "target", "rel", "src", "alt", "title", "class", "style",
-        "width", "height",
+        "width", "height", "data-icon",
       ],
     });
   };
+
+  function domNodeToReact(node: Node, key: number): React.ReactNode {
+    if (node.nodeType === Node.TEXT_NODE) {
+      return node.textContent;
+    }
+    if (node.nodeType !== Node.ELEMENT_NODE) {
+      return null;
+    }
+    const el = node as HTMLElement;
+    const tagName = el.tagName.toLowerCase();
+
+    // Handle icon spans
+    if (tagName === 'span' && el.hasAttribute('data-icon')) {
+      const iconName = el.getAttribute('data-icon');
+      return (
+        <DynamicIcon
+          key={key}
+          name={iconName}
+          className="w-4 h-4 inline-block mr-1.5 align-text-bottom text-primary shrink-0"
+        />
+      );
+    }
+
+    // Build props
+    const props: any = { key };
+    const allowedAttrs = ['class', 'id', 'href', 'target', 'rel', 'src', 'alt', 'title', 'style', 'width', 'height'];
+    allowedAttrs.forEach((attr) => {
+      if (el.hasAttribute(attr)) {
+        props[attr] = el.getAttribute(attr);
+      }
+    });
+
+    // Recursively process children
+    const children = Array.from(el.childNodes).map((child, i) => domNodeToReact(child, i));
+    return React.createElement(tagName, props, children);
+  }
+
+  function ArticleContent({ html }: { html: string }) {
+    const nodes = useMemo(() => {
+      const clean = sanitizedHtml(html);
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(clean, 'text/html');
+      return Array.from(doc.body.childNodes);
+    }, [html]);
+
+    return <>{nodes.map((node, i) => domNodeToReact(node, i))}</>;
+  }
 
   const isLoading = sectionsLoading || articlesLoading || permLoading;
 
@@ -495,7 +542,7 @@ export default function KnowledgeBasePage() {
     <Layout>
       <div className="flex h-[calc(100vh-4rem)] overflow-hidden">
         {/* Sidebar */}
-        <aside className="w-80 border-r bg-card flex flex-col shrink-0">
+        <aside className="w-80 border-r bg-card flex flex-col shrink-0 text-foreground">
           <div className="p-4 border-b space-y-3">
             <div className="flex items-center justify-between">
               <h1 className="font-semibold text-sm flex items-center gap-2">
@@ -700,7 +747,7 @@ export default function KnowledgeBasePage() {
         <main className="flex-1 flex flex-col min-w-0 bg-background overflow-hidden">
           <ScrollArea className="flex-1">
             {activeArticle ? (
-              <article className="max-w-4xl mx-auto p-8">
+              <article className="max-w-4xl mx-auto p-8 text-foreground">
                 <nav className="flex items-center gap-2 text-xs text-muted-foreground mb-6">
                   <BookOpen className="w-3.5 h-3.5" />
                   <span>База знаний</span>
@@ -711,7 +758,7 @@ export default function KnowledgeBasePage() {
                 </nav>
 
                 <div className="flex items-start justify-between gap-4 mb-4">
-                  <h1 className="text-3xl font-bold tracking-tight">{activeArticle.title}</h1>
+                  <h1 className="text-3xl font-bold tracking-tight text-foreground">{activeArticle.title}</h1>
                   {isEditor && (
                     <div className="flex items-center gap-1 shrink-0">
                       <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => activeSection && openArticleDialog(activeSection.id, activeArticle)}>
@@ -725,10 +772,9 @@ export default function KnowledgeBasePage() {
                 </div>
 
                 {activeArticle.content ? (
-                  <div
-                    className="prose prose-sm max-w-none dark:prose-invert prose-headings:font-semibold prose-a:text-primary hover:prose-a:underline prose-img:rounded-lg prose-img:border prose-img:border-border"
-                    dangerouslySetInnerHTML={{ __html: sanitizedHtml(activeArticle.content) }}
-                  />
+                  <div className="prose prose-sm max-w-none">
+                    <ArticleContent html={activeArticle.content} />
+                  </div>
                 ) : (
                   <p className="text-muted-foreground text-sm italic">Статья пока пуста</p>
                 )}

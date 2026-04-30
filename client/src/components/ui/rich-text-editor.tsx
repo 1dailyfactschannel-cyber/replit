@@ -49,7 +49,45 @@ import {
   Palette,
   Highlighter,
   ChevronDown,
-  Image as ImageIcon
+  Image as ImageIcon,
+  Smile,
+  Mail,
+  Key,
+  Check,
+  RefreshCw,
+  UserPlus,
+  LayoutDashboard,
+  Clock,
+  TrendingUp,
+  Calendar,
+  Users,
+  FolderOpen,
+  LayoutGrid,
+  Search,
+  Flag,
+  ListChecks,
+  Plus,
+  Tags,
+  Paperclip,
+  Globe,
+  MessageSquare,
+  Video,
+  Filter,
+  User,
+  Shield,
+  Bell,
+  Zap,
+  Send,
+  Store,
+  Coins,
+  ShoppingBag,
+  BarChart2,
+  Download,
+  Briefcase,
+  BookOpen,
+  Activity,
+  Trash2,
+  Star
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
@@ -135,8 +173,49 @@ const MenuBar = ({ editor }: { editor: any }) => {
   const [fontSizeOpen, setFontSizeOpen] = useState(false);
   const [textColorOpen, setTextColorOpen] = useState(false);
   const [highlightColorOpen, setHighlightColorOpen] = useState(false);
+  const [iconPickerOpen, setIconPickerOpen] = useState(false);
   const [linkUrl, setLinkUrl] = useState('');
   const [showLinkInput, setShowLinkInput] = useState(false);
+
+  const POPULAR_ICONS = [
+    { name: 'Mail', icon: Mail },
+    { name: 'Key', icon: Key },
+    { name: 'Check', icon: Check },
+    { name: 'RefreshCw', icon: RefreshCw },
+    { name: 'UserPlus', icon: UserPlus },
+    { name: 'LayoutDashboard', icon: LayoutDashboard },
+    { name: 'Clock', icon: Clock },
+    { name: 'TrendingUp', icon: TrendingUp },
+    { name: 'Calendar', icon: Calendar },
+    { name: 'Users', icon: Users },
+    { name: 'FolderOpen', icon: FolderOpen },
+    { name: 'LayoutGrid', icon: LayoutGrid },
+    { name: 'Search', icon: Search },
+    { name: 'Flag', icon: Flag },
+    { name: 'ListChecks', icon: ListChecks },
+    { name: 'Plus', icon: Plus },
+    { name: 'Tags', icon: Tags },
+    { name: 'Paperclip', icon: Paperclip },
+    { name: 'Globe', icon: Globe },
+    { name: 'MessageSquare', icon: MessageSquare },
+    { name: 'Video', icon: Video },
+    { name: 'Filter', icon: Filter },
+    { name: 'User', icon: User },
+    { name: 'Shield', icon: Shield },
+    { name: 'Bell', icon: Bell },
+    { name: 'Zap', icon: Zap },
+    { name: 'Send', icon: Send },
+    { name: 'Store', icon: Store },
+    { name: 'Coins', icon: Coins },
+    { name: 'ShoppingBag', icon: ShoppingBag },
+    { name: 'BarChart2', icon: BarChart2 },
+    { name: 'Download', icon: Download },
+    { name: 'Briefcase', icon: Briefcase },
+    { name: 'BookOpen', icon: BookOpen },
+    { name: 'Activity', icon: Activity },
+    { name: 'Trash2', icon: Trash2 },
+    { name: 'Star', icon: Star },
+  ];
 
   const getCurrentFontSize = () => {
     try {
@@ -491,6 +570,37 @@ const MenuBar = ({ editor }: { editor: any }) => {
       <div className="flex-1" />
 
       <ImageUploadButton editor={editor} />
+
+      <Popover open={iconPickerOpen} onOpenChange={setIconPickerOpen}>
+        <PopoverTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-6 w-6 text-muted-foreground hover:text-foreground"
+            onMouseDown={(e) => e.preventDefault()}
+            title="Вставить иконку"
+          >
+            <Smile className="h-3.5 w-3.5" />
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent className="p-2 w-auto" align="end">
+          <div className="grid grid-cols-8 gap-1 w-64">
+            {POPULAR_ICONS.map(({ name, icon: Icon }) => (
+              <button
+                key={name}
+                className="h-7 w-7 rounded hover:bg-secondary flex items-center justify-center text-muted-foreground hover:text-foreground"
+                title={name}
+                onClick={() => {
+                  editor.chain().focus().insertContent(`<span data-icon="${name}"></span>&nbsp;`).run();
+                  setIconPickerOpen(false);
+                }}
+              >
+                <Icon className="h-3.5 w-3.5" />
+              </button>
+            ))}
+          </div>
+        </PopoverContent>
+      </Popover>
 
       <Button
         variant="ghost"

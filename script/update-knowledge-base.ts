@@ -1,44 +1,28 @@
 import { PostgresStorage } from "../server/postgres-storage";
 import * as schema from "../shared/schema";
+import { eq } from "drizzle-orm";
 
-async function seedKnowledgeBase() {
-  console.log("Seeding knowledge base...");
+async function updateKnowledgeBase() {
+  console.log("Updating knowledge base articles with icons...");
   const storage = new PostgresStorage();
   const db = storage.db;
 
-  // Check if already seeded
-  const existing = await db.select().from(schema.knowledgeSections);
-  if (existing.length > 0) {
-    console.log(`Knowledge base already has ${existing.length} sections. Skipping seed.`);
-    return;
+  // Get existing sections
+  const existingSections = await db.select().from(schema.knowledgeSections);
+  if (existingSections.length === 0) {
+    console.log("No existing sections found. Run seed-knowledge-base.ts first.");
+    process.exit(1);
   }
 
-  const sections = [
-    { title: "Авторизация", icon: "Lock", sortOrder: 0, isVisible: true },
-    { title: "Главная страница", icon: "LayoutDashboard", sortOrder: 1, isVisible: true },
-    { title: "Проекты и Kanban", icon: "Kanban", sortOrder: 2, isVisible: true },
-    { title: "Задачи", icon: "CheckSquare", sortOrder: 3, isVisible: true },
-    { title: "Календарь", icon: "Calendar", sortOrder: 4, isVisible: true },
-    { title: "Чат и звонки", icon: "MessageSquare", sortOrder: 5, isVisible: true },
-    { title: "Команда", icon: "Users", sortOrder: 6, isVisible: true },
-    { title: "Уведомления", icon: "Bell", sortOrder: 7, isVisible: true },
-    { title: "Магазин и баллы", icon: "ShoppingBag", sortOrder: 8, isVisible: true },
-    { title: "Отчёты", icon: "BarChart2", sortOrder: 9, isVisible: true },
-    { title: "Управление", icon: "Settings", sortOrder: 10, isVisible: true },
-    { title: "Профиль", icon: "User", sortOrder: 11, isVisible: true },
-  ];
+  const sectionMap = new Map(existingSections.map(s => [s.title, s]));
 
-  const createdSections: { id: string; title: string }[] = [];
-
-  for (const s of sections) {
-    const result = await db.insert(schema.knowledgeSections).values(s).returning();
-    createdSections.push(result[0]);
-    console.log(`Created section: ${s.title}`);
-  }
+  // Delete existing articles
+  await db.delete(schema.knowledgeArticles);
+  console.log("Deleted existing articles.");
 
   const articles: { sectionId: string; title: string; content: string; sortOrder: number; isVisible: boolean }[] = [
     {
-      sectionId: createdSections[0].id,
+      sectionId: sectionMap.get("Авторизация")!.id,
       title: "Форма входа",
       content: `<p>Страница авторизации (маршрут <code>/auth</code>) — единственная публичная страница приложения.</p>
 <h3>Основные элементы</h3>
@@ -52,7 +36,7 @@ async function seedKnowledgeBase() {
       isVisible: true,
     },
     {
-      sectionId: createdSections[0].id,
+      sectionId: sectionMap.get("Авторизация")!.id,
       title: "Регистрация нового пользователя",
       content: `<p>Вкладка «Регистрация» позволяет создать новый аккаунт с указанием email, пароля, имени и фамилии.</p>
 <ul>
@@ -64,7 +48,7 @@ async function seedKnowledgeBase() {
       isVisible: true,
     },
     {
-      sectionId: createdSections[1].id,
+      sectionId: sectionMap.get("Главная страница")!.id,
       title: "Дашборд",
       content: `<p>Главная страница приложения (маршрут <code>/</code>), доступная сразу после авторизации.</p>
 <h3>Виджеты</h3>
@@ -81,7 +65,7 @@ async function seedKnowledgeBase() {
       isVisible: true,
     },
     {
-      sectionId: createdSections[2].id,
+      sectionId: sectionMap.get("Проекты и Kanban")!.id,
       title: "Kanban-доска",
       content: `<p>Центральный рабочий инструмент (маршрут <code>/projects</code>). Kanban-доска с drag-and-drop перемещением задач между колонками.</p>
 <h3>Возможности</h3>
@@ -95,7 +79,7 @@ async function seedKnowledgeBase() {
       isVisible: true,
     },
     {
-      sectionId: createdSections[3].id,
+      sectionId: sectionMap.get("Задачи")!.id,
       title: "Управление задачами",
       content: `<p>Система управления задачами включает создание, редактирование, назначение исполнителей и отслеживание статуса.</p>
 <ul>
@@ -108,7 +92,7 @@ async function seedKnowledgeBase() {
       isVisible: true,
     },
     {
-      sectionId: createdSections[4].id,
+      sectionId: sectionMap.get("Календарь")!.id,
       title: "Календарь событий",
       content: `<p>Календарь (маршрут <code>/calendar</code>) позволяет планировать события, встречи и дедлайны задач.</p>
 <ul>
@@ -121,7 +105,7 @@ async function seedKnowledgeBase() {
       isVisible: true,
     },
     {
-      sectionId: createdSections[5].id,
+      sectionId: sectionMap.get("Чат и звонки")!.id,
       title: "Чат и комнаты",
       content: `<p>Корпоративный чат (маршрут <code>/chat</code>) с поддержкой личных сообщений, групповых комнат и звонков.</p>
 <ul>
@@ -134,7 +118,7 @@ async function seedKnowledgeBase() {
       isVisible: true,
     },
     {
-      sectionId: createdSections[6].id,
+      sectionId: sectionMap.get("Команда")!.id,
       title: "Команда и сотрудники",
       content: `<p>Раздел команды (маршрут <code>/team</code>) отображает список всех сотрудников с их статусами, ролями и контактами.</p>
 <ul>
@@ -147,7 +131,7 @@ async function seedKnowledgeBase() {
       isVisible: true,
     },
     {
-      sectionId: createdSections[7].id,
+      sectionId: sectionMap.get("Уведомления")!.id,
       title: "Центр уведомлений",
       content: `<p>Уведомления доставляются в реальном времени через WebSocket и отображаются в шапке приложения и на странице <code>/notifications</code>.</p>
 <ul>
@@ -160,7 +144,7 @@ async function seedKnowledgeBase() {
       isVisible: true,
     },
     {
-      sectionId: createdSections[8].id,
+      sectionId: sectionMap.get("Магазин и баллы")!.id,
       title: "Магазин и система баллов",
       content: `<p>Магазин (маршрут <code>/shop</code>) позволяет сотрудникам тратить заработанные баллы на различные товары и привилегии.</p>
 <ul>
@@ -173,7 +157,7 @@ async function seedKnowledgeBase() {
       isVisible: true,
     },
     {
-      sectionId: createdSections[9].id,
+      sectionId: sectionMap.get("Отчёты")!.id,
       title: "Отчёты и аналитика",
       content: `<p>Раздел отчётов (маршрут <code>/reports</code>) предоставляет аналитику по задачам, проектам и активности команды.</p>
 <ul>
@@ -186,7 +170,7 @@ async function seedKnowledgeBase() {
       isVisible: true,
     },
     {
-      sectionId: createdSections[10].id,
+      sectionId: sectionMap.get("Управление")!.id,
       title: "Панель управления",
       content: `<p>Панель управления (маршрут <code>/management</code>) доступна только администраторам и позволяет настраивать все аспекты системы.</p>
 <ul>
@@ -200,7 +184,7 @@ async function seedKnowledgeBase() {
       isVisible: true,
     },
     {
-      sectionId: createdSections[11].id,
+      sectionId: sectionMap.get("Профиль")!.id,
       title: "Профиль пользователя",
       content: `<p>Профиль (маршрут <code>/profile</code>) позволяет редактировать личные данные, настройки уведомлений и пароль.</p>
 <ul>
@@ -219,12 +203,12 @@ async function seedKnowledgeBase() {
     console.log(`Created article: ${a.title}`);
   }
 
-  console.log(`Knowledge base seeded successfully: ${sections.length} sections, ${articles.length} articles.`);
+  console.log(`Knowledge base updated successfully: ${articles.length} articles.`);
 }
 
-seedKnowledgeBase()
+updateKnowledgeBase()
   .then(() => process.exit(0))
   .catch((err) => {
-    console.error("Seed failed:", err);
+    console.error("Update failed:", err);
     process.exit(1);
   });
