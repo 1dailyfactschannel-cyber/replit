@@ -140,13 +140,17 @@
 }
 
 /* Knowledge Base screenshot styles */
+.kb-article > div:has(> img) {
+  @apply rounded-lg border border-border shadow-sm overflow-hidden my-4;
+}
 .kb-article img {
-  @apply rounded-lg border border-border shadow-sm;
+  @apply w-full block;
   max-width: 100%;
   height: auto;
 }
+.kb-article > div:has(> img) > div:last-child,
 .kb-article .screenshot-caption {
-  @apply text-xs text-muted-foreground bg-muted/50 px-3 py-1.5 rounded-b-lg -mt-1 mb-4;
+  @apply text-xs text-muted-foreground bg-muted/50 px-3 py-1.5;
 }
 
 :root {

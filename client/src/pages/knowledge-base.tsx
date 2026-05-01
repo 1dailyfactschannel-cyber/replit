@@ -513,7 +513,7 @@ export default function KnowledgeBasePage() {
 
     // Build props
     const props: any = { key };
-    const allowedAttrs = ['class', 'id', 'href', 'target', 'rel', 'src', 'alt', 'title', 'style', 'width', 'height'];
+    const allowedAttrs = ['class', 'id', 'href', 'target', 'rel', 'src', 'alt', 'title', 'width', 'height'];
     allowedAttrs.forEach((attr) => {
       if (el.hasAttribute(attr)) {
         props[attr] = el.getAttribute(attr);
