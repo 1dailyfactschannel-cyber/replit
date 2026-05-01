@@ -139,6 +139,16 @@
   @apply text-lg font-bold my-2;
 }
 
+/* Knowledge Base screenshot styles */
+.kb-article img {
+  @apply rounded-lg border border-border shadow-sm;
+  max-width: 100%;
+  height: auto;
+}
+.kb-article .screenshot-caption {
+  @apply text-xs text-muted-foreground bg-muted/50 px-3 py-1.5 rounded-b-lg -mt-1 mb-4;
+}
+
 :root {
   /* Elegant Light Mode - Soft Indigo/Slate Theme */
   --background: 210 40% 98%; /* Very light cool gray */

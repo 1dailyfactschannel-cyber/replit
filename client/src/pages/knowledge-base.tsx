@@ -772,7 +772,7 @@ export default function KnowledgeBasePage() {
                 </div>
 
                 {activeArticle.content ? (
-                  <div className="prose prose-sm max-w-none">
+                  <div className="prose prose-sm max-w-none kb-article">
                     <ArticleContent html={activeArticle.content} />
                   </div>
                 ) : (
