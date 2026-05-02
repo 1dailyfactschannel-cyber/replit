@@ -520,6 +520,12 @@ export default function KnowledgeBasePage() {
       }
     });
 
+    // Void elements cannot have children in React
+    const voidElements = new Set(['area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'param', 'source', 'track', 'wbr']);
+    if (voidElements.has(tagName)) {
+      return React.createElement(tagName, props);
+    }
+
     // Recursively process children
     const children = Array.from(el.childNodes).map((child, i) => domNodeToReact(child, i));
     return React.createElement(tagName, props, children);
