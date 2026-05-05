@@ -1627,7 +1627,7 @@ export default function ReportsPage() {
               {/* Tasks Table */}
               {(() => {
                 const allTasks = userDetail.tasks || [];
-                const uniqueStatuses = Array.from(new Set(allTasks.map((t: any) => t.status)));
+                const uniqueStatuses = Array.from(new Set(allTasks.map((t: any) => t.status))) as string[];
                 const filteredTasks = allTasks.filter((task: any) => {
                   if (userDetailStatusFilter !== "all" && task.status !== userDetailStatusFilter) return false;
                   if (userDetailDateFrom && task.dueDate) {

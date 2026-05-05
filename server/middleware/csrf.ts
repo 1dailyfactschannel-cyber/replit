@@ -1,7 +1,10 @@
 import { Request, Response, NextFunction } from "express";
 import { doubleCsrf } from "csrf-csrf";
 
-const CSRF_SECRET = process.env.SESSION_SECRET || "default-secret-change-in-production";
+const CSRF_SECRET = process.env.SESSION_SECRET;
+if (!CSRF_SECRET) {
+  throw new Error("SESSION_SECRET environment variable is required for CSRF protection");
+}
 
 const { doubleCsrfProtection, generateCsrfToken, invalidCsrfTokenError } = doubleCsrf({
   getSecret: () => CSRF_SECRET,
@@ -19,38 +22,34 @@ const { doubleCsrfProtection, generateCsrfToken, invalidCsrfTokenError } = doubl
   ignoredMethods: ["GET", "HEAD", "OPTIONS"],
 });
 
-// Apply CSRF protection only to specific endpoints
+// Apply CSRF protection to ALL state-changing API endpoints
 export const csrfProtect = (req: Request, res: Response, next: NextFunction) => {
   const path = req.path;
   const method = req.method;
-  
-  // Skip CSRF in development for API endpoints
-  if (process.env.NODE_ENV === 'development' && path.startsWith('/api/')) {
+
+  // Skip CSRF for non-API routes (static assets, vite HMR, etc.)
+  if (!path.startsWith("/api/")) {
     return next();
   }
-  
-  // Define protected endpoints
-  const protectedEndpoints = [
-    { path: '/api/auth/login', methods: ['POST'] },
-    { path: '/api/auth/register', methods: ['POST'] },
-    { path: '/api/auth/logout', methods: ['POST'] },
-    { path: '/api/roles', methods: ['POST', 'PUT', 'DELETE'] },
-    { path: /^\/api\/roles\/.+$/, methods: ['PUT', 'DELETE'] },
-    { path: '/api/permissions', methods: ['POST', 'DELETE'] },
-    { path: /^\/api\/permissions\/.+$/, methods: ['DELETE'] },
-  ];
-  
-  const shouldProtect = protectedEndpoints.some(p => {
-    const pathMatch = typeof p.path === 'string' 
-      ? path === p.path || (p.path.endsWith('/') && path.startsWith(p.path))
-      : p.path.test(path);
-    return pathMatch && p.methods.includes(method);
-  });
-  
-  if (shouldProtect) {
-    return doubleCsrfProtection(req, res, next);
+
+  // Skip safe methods
+  if (["GET", "HEAD", "OPTIONS"].includes(method)) {
+    return next();
   }
-  next();
+
+  // Skip auth login/register endpoints (they establish the session)
+  const authExempt = [
+    "/api/auth/login",
+    "/api/auth/register",
+    "/api/auth/logout",
+    "/api/webhook/telegram",
+  ];
+  if (authExempt.includes(path)) {
+    return next();
+  }
+
+  // Protect everything else
+  return doubleCsrfProtection(req, res, next);
 };
 
 // Endpoint to get CSRF token for frontend

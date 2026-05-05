@@ -72,8 +72,15 @@ export const roles = pgTable("roles", {
   id: uuid("id").primaryKey().defaultRandom(),
   name: text("name").notNull().unique(),
   description: text("description"),
+  color: text("color").default("#6366f1"),
+  icon: text("icon"),
+  priority: integer("priority").default(100),
+  isDefault: boolean("is_default").default(false),
   permissions: jsonb("permissions").notNull(), // Array of permission strings
   isSystem: boolean("is_system").default(false),
+  isActive: boolean("is_active").default(true),
+  maxUsers: integer("max_users"),
+  scope: text("scope").default("global"), // global | workspace | project
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -82,10 +89,12 @@ export const roles = pgTable("roles", {
 export const userRoles = pgTable("user_roles", {
   userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   roleId: uuid("role_id").notNull().references(() => roles.id, { onDelete: "cascade" }),
+  workspaceId: uuid("workspace_id").references(() => workspaces.id, { onDelete: "cascade" }),
+  projectId: uuid("project_id").references(() => projects.id, { onDelete: "cascade" }),
   assignedAt: timestamp("assigned_at").defaultNow(),
   assignedBy: uuid("assigned_by").references(() => users.id),
 }, (table) => ({
-  pk: primaryKey({ columns: [table.userId, table.roleId] }),
+  pk: primaryKey({ columns: [table.userId, table.roleId, table.workspaceId, table.projectId] }),
 }));
 
 // Permissions table
@@ -488,7 +497,15 @@ export type InsertUserStatusHistory = z.infer<typeof insertUserStatusHistorySche
 export const insertRoleSchema = createInsertSchema(roles).pick({
   name: true,
   description: true,
+  color: true,
+  icon: true,
+  priority: true,
+  isDefault: true,
   permissions: true,
+  isSystem: true,
+  isActive: true,
+  maxUsers: true,
+  scope: true,
 });
 
 export const insertPermissionSchema = createInsertSchema(permissions).pick({

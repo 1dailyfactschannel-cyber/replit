@@ -199,7 +199,7 @@ export function setupAuth(app: Express) {
         (user as any).roles = roles;
         (user as any).permissions = permissions;
         // Set role field for quick admin check
-        const hasAdminRole = roles.some((r: any) => r.name === "Администратор");
+        const hasAdminRole = roles.some((r: any) => (r.priority ?? 100) <= 2);
         (user as any).role = hasAdminRole ? 'admin' : 'user';
       } catch (e) {
         // If roles/permissions fail, continue without them
@@ -244,6 +244,16 @@ export function setupAuth(app: Express) {
         firstName: "",
         lastName: "",
       });
+
+      // Assign default role
+      try {
+        const defaultRole = await storage.getDefaultRole();
+        if (defaultRole) {
+          await storage.assignRoleToUser(user.id, defaultRole.id);
+        }
+      } catch (roleErr) {
+        console.error("Failed to assign default role:", roleErr);
+      }
 
       // If registered via invitation, mark it as accepted and notify inviter
       if (invitation) {

@@ -16,9 +16,18 @@ import { format } from "date-fns";
 import { formatUserName, formatUserBasic } from "./utils";
 import rateLimit from "express-rate-limit";
 import bcrypt from "bcrypt";
+import crypto from "crypto";
 import yandexCalendarRoutes from "./routes/yandex-calendar";
 import { sendTelegramMessage, handleTelegramUpdate, escapeHtml, setTelegramWebhook } from "./services/telegram";
 import { sendEmail, testEmailConnection, getEmailConfig, getWelcomeEmailTemplate, getPasswordChangedTemplate, getPasswordChangeCodeTemplate, getOwnerTransferCodeTemplate } from "./services/email";
+
+// Auth middleware
+function requireAuth(req: any, res: any, next: any) {
+  if (!req.isAuthenticated()) {
+    return res.status(401).json({ message: "Не авторизован" });
+  }
+  next();
+}
 
 // Permission middleware
 function requirePermission(...permissions: string[]) {
@@ -66,7 +75,7 @@ let io: SocketIOServer;
 // Workspace access helper
 async function canManageWorkspace(workspaceId: string, userId: string): Promise<boolean> {
   const userRoles = await storage.getUserRoles(userId);
-  const isAdminOrOwner = userRoles.some(r => r.name === "Администратор" || r.name === "Владелец");
+  const isAdminOrOwner = userRoles.some(r => (r.priority ?? 100) <= 2);
   if (isAdminOrOwner) return true;
 
   const [workspace] = await storage.db.select().from(schema.workspaces).where(eq(schema.workspaces.id, workspaceId)).limit(1);
@@ -78,7 +87,7 @@ async function canManageWorkspace(workspaceId: string, userId: string): Promise<
 
 async function getAccessibleWorkspaceIds(userId: string): Promise<string[] | null> {
   const userRoles = await storage.getUserRoles(userId);
-  const isAdminOrOwner = userRoles.some(r => r.name === "Администратор" || r.name === "Владелец");
+  const isAdminOrOwner = userRoles.some(r => (r.priority ?? 100) <= 2);
   if (isAdminOrOwner) return null; // null means all workspaces
 
   const owned = await storage.db.select({ id: schema.workspaces.id }).from(schema.workspaces).where(eq(schema.workspaces.ownerId, userId));
@@ -400,7 +409,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/users", async (_req, res) => {
+  app.get("/api/users", requireAuth, async (_req, res) => {
     console.log("=== USERS ROUTE HIT ===");
     try {
       const cacheKey = "users:all";
@@ -437,7 +446,7 @@ export async function registerRoutes(
       }
 
       // Use provided password or generate random one
-      const passwordToUse = password || Math.random().toString(36).slice(-10);
+      const passwordToUse = password || crypto.randomBytes(8).toString('base64url').slice(0, 10);
       const hashedPassword = await bcrypt.hash(passwordToUse, 10);
 
       // Create user
@@ -476,7 +485,8 @@ export async function registerRoutes(
   // Get all roles (public endpoint)
   app.get("/api/roles", async (req, res) => {
     try {
-      const roles = await storage.getAllRoles();
+      const includeInactive = req.query.includeInactive === "true";
+      const roles = await storage.getAllRoles(includeInactive);
       const db = (storage as any).db;
 
       // Get member counts for each role
@@ -527,13 +537,28 @@ export async function registerRoutes(
         roles: roles.map(r => ({
           id: r.id,
           name: r.name,
-          color: (r as any).color || "#6366f1",
+          color: r.color || "#6366f1",
           isSystem: r.isSystem,
         })),
       });
     } catch (error: any) {
       console.error("GET /api/users/me/permissions error:", error);
       res.status(500).json({ message: "Failed to fetch permissions", error: error.message });
+    }
+  });
+
+  // Get users daily activity (must be before /api/users/:id/*)
+  app.get("/api/users/daily-activity", async (req, res) => {
+    try {
+      const date = req.query.date as string;
+      if (!date) {
+        return res.status(400).json({ message: "Date parameter is required" });
+      }
+      const activity = await storage.getUsersDailyActivity(date);
+      res.json(activity);
+    } catch (error) {
+      console.error("Error getting users daily activity:", error);
+      res.status(500).json({ message: "Failed to get users daily activity" });
     }
   });
 
@@ -544,7 +569,7 @@ export async function registerRoutes(
     }
 
     try {
-      const { name, description, permissions, color } = req.body;
+      const { name, description, permissions, color, icon, priority, isDefault, isActive, maxUsers, scope } = req.body;
       if (!name) {
         return res.status(400).json({ message: "Role name is required" });
       }
@@ -554,8 +579,14 @@ export async function registerRoutes(
         description: description || null,
         permissions: permissions || [],
         color: color || "#6366f1",
+        icon: icon || null,
+        priority: priority ?? 100,
+        isDefault: isDefault ?? false,
         isSystem: false,
-      } as any);
+        isActive: isActive ?? true,
+        maxUsers: maxUsers ?? null,
+        scope: scope || "global",
+      });
 
       res.status(201).json(role);
     } catch (error: any) {
@@ -574,7 +605,7 @@ export async function registerRoutes(
     }
 
     try {
-      const { name, description, permissions, color } = req.body;
+      const { name, description, permissions, color, icon, priority, isDefault, isActive, maxUsers, scope } = req.body;
       const existing = await storage.getRole(req.params.id);
       if (!existing) {
         return res.status(404).json({ message: "Role not found" });
@@ -588,7 +619,13 @@ export async function registerRoutes(
         description,
         permissions,
         color,
-      } as any);
+        icon,
+        priority,
+        isDefault,
+        isActive,
+        maxUsers,
+        scope,
+      });
 
       res.json(role);
     } catch (error: any) {
@@ -684,7 +721,7 @@ export async function registerRoutes(
 
       // Fallback: find user with Owner role
       const allRoles = await storage.getAllRoles();
-      const ownerRole = allRoles.find(r => r.name === "Владелец");
+      const ownerRole = allRoles.find(r => r.priority === 1);
       if (ownerRole) {
         const allUsers = await storage.getAllUsers();
         for (const u of allUsers) {
@@ -744,7 +781,7 @@ export async function registerRoutes(
       }
 
       // Generate 6-digit code
-      const code = Math.floor(100000 + Math.random() * 900000).toString();
+      const code = crypto.randomInt(100000, 999999).toString();
       const expiresAt = Date.now() + 10 * 60 * 1000; // 10 minutes
 
       // Store transfer request
@@ -798,8 +835,8 @@ export async function registerRoutes(
 
       // Find owner role
       const allRoles = await storage.getAllRoles();
-      const ownerRole = allRoles.find(r => r.name === "Владелец");
-      const adminRole = allRoles.find(r => r.name === "Администратор");
+      const ownerRole = allRoles.find(r => r.priority === 1);
+      const adminRole = allRoles.find(r => r.priority === 2);
 
       if (!ownerRole) {
         return res.status(500).json({ message: "Owner role not found" });
@@ -847,11 +884,14 @@ export async function registerRoutes(
     }
 
     try {
-      const roles = await storage.getUserRoles(req.params.id);
+      const workspaceId = req.query.workspaceId as string | undefined;
+      const projectId = req.query.projectId as string | undefined;
+      const roles = await storage.getUserRoles(req.params.id, workspaceId, projectId);
       res.json(roles.map(r => ({
         id: r.id,
         name: r.name,
-        color: (r as any).color || "#6366f1",
+        color: r.color || "#6366f1",
+        icon: r.icon,
         isSystem: r.isSystem,
         description: r.description,
       })));
@@ -868,20 +908,21 @@ export async function registerRoutes(
     }
 
     try {
-      const { roleIds } = req.body;
+      const { roleIds, workspaceId, projectId } = req.body;
       if (!Array.isArray(roleIds)) {
         return res.status(400).json({ message: "roleIds must be an array" });
       }
 
-      await storage.setUserRoles(req.params.id, roleIds, req.user!.id);
+      await storage.setUserRoles(req.params.id, roleIds, req.user!.id, workspaceId, projectId);
 
-      await logAudit(req, "user.roles.update", "user", req.params.id, { roleIds });
+      await logAudit(req, "user.roles.update", "user", req.params.id, { roleIds, workspaceId, projectId });
 
-      const roles = await storage.getUserRoles(req.params.id);
+      const roles = await storage.getUserRoles(req.params.id, workspaceId, projectId);
       res.json(roles.map(r => ({
         id: r.id,
         name: r.name,
-        color: (r as any).color || "#6366f1",
+        color: r.color || "#6366f1",
+        icon: r.icon,
         isSystem: r.isSystem,
         description: r.description,
       })));
@@ -983,7 +1024,7 @@ export async function registerRoutes(
         
         // Save file to database
         const attachment = await storage.createFileAttachment({
-          filename: req.file.filename || `${Date.now()}-${Math.round(Math.random() * 1E9)}`,
+          filename: req.file.filename || `${Date.now()}-${crypto.randomInt(1, 1000000000)}`,
           originalName: req.file.originalname,
           mimeType: req.file.mimetype,
           size: req.file.size,
@@ -1167,11 +1208,7 @@ export async function registerRoutes(
       }
 
       // Generate random password
-      const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*";
-      let newPassword = "";
-      for (let i = 0; i < 12; i++) {
-        newPassword += chars[Math.floor(Math.random() * chars.length)];
-      }
+      const newPassword = crypto.randomBytes(9).toString('base64');
 
       const hashedPassword = await bcrypt.hash(newPassword, 10);
       await storage.updateUser(userId, { password: hashedPassword });
@@ -1216,7 +1253,7 @@ export async function registerRoutes(
   });
 
   // Custom Statuses Routes
-  app.get("/api/custom-statuses", async (_req, res) => {
+  app.get("/api/custom-statuses", requireAuth, async (_req, res) => {
     try {
       const statuses = await storage.getAllCustomStatuses();
       res.json(statuses);
@@ -1293,7 +1330,7 @@ export async function registerRoutes(
   });
 
   // Department Routes
-  app.get("/api/departments", async (_req, res) => {
+  app.get("/api/departments", requireAuth, async (_req, res) => {
     try {
       const departments = await storage.getAllDepartments();
       res.json(departments);
@@ -1357,7 +1394,7 @@ export async function registerRoutes(
   });
 
   // Site Settings Routes
-  app.get("/api/settings/:key", async (req, res) => {
+  app.get("/api/settings/:key", requireAuth, async (req, res) => {
     const setting = await storage.getSiteSetting(req.params.key);
     res.json(setting || { key: req.params.key, value: "" });
   });
@@ -1371,7 +1408,7 @@ export async function registerRoutes(
     res.json(setting);
   });
 
-  app.get("/api/settings", async (_req, res) => {
+  app.get("/api/settings", requireAuth, async (_req, res) => {
     try {
       const settings = await storage.getAllSiteSettings();
       res.json(settings);
@@ -1381,7 +1418,7 @@ export async function registerRoutes(
   });
 
   // Email settings routes
-  app.get("/api/email-config", async (req, res) => {
+  app.get("/api/email-config", requireAuth, async (req, res) => {
     if (!req.isAuthenticated()) return res.status(401).json({ message: "Не авторизован" });
     try {
       const config = await getEmailConfig();
@@ -1570,7 +1607,7 @@ export async function registerRoutes(
       }
 
       // Generate 6-digit code
-      const code = Math.floor(100000 + Math.random() * 900000).toString();
+      const code = crypto.randomInt(100000, 999999).toString();
       const expiresAt = Date.now() + 10 * 60 * 1000; // 10 minutes
 
       // Store temporarily (without password yet)
@@ -1734,7 +1771,7 @@ export async function registerRoutes(
       }
 
       // Generate 6-digit code
-      const code = Math.floor(100000 + Math.random() * 900000).toString();
+      const code = crypto.randomInt(100000, 999999).toString();
       const expiresAt = Date.now() + 10 * 60 * 1000; // 10 minutes
 
       // Store temporarily
@@ -3709,7 +3746,7 @@ export async function registerRoutes(
   });
 
   // Label routes
-  app.get("/api/labels", async (_req, res) => {
+  app.get("/api/labels", requireAuth, async (_req, res) => {
     try {
       const labels = await storage.getLabels();
       res.json(labels);
@@ -5877,12 +5914,7 @@ export async function registerRoutes(
 
   // Helper function to generate invite code
   function generateInviteCode(): string {
-    const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
-    let code = '';
-    for (let i = 0; i < 8; i++) {
-      code += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
-    return code;
+    return crypto.randomBytes(6).toString('base64url').slice(0, 8);
   }
 
   // Call Settings API

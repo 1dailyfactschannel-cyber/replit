@@ -38,7 +38,70 @@ import {
   Puzzle,
   Crown,
   KeyRound,
-  Mail
+  Mail,
+  LucideIcon,
+  FileText,
+  Lock,
+  Bell,
+  BarChart2,
+  Star,
+  Phone,
+  Video,
+  Paperclip,
+  Send,
+  Check,
+  Download,
+  Camera,
+  Coins,
+  Clock,
+  TrendingUp,
+  FolderOpen,
+  Briefcase,
+  RefreshCw,
+  Play,
+  LayoutGrid,
+  Archive,
+  RotateCcw,
+  Layers,
+  Tags,
+  Palette,
+  Store,
+  Package,
+  Code,
+  Globe,
+  Zap,
+  Flag,
+  Hash,
+  ListChecks,
+  XCircle,
+  Timer,
+  CreditCard,
+  History,
+  AlertTriangle,
+  Wrench,
+  GitBranch,
+  Smartphone,
+  FolderPlus,
+  UserPlus,
+  MessageCircle,
+  ToggleLeft,
+  User,
+  Key,
+  ExternalLink,
+  Monitor,
+  Award,
+  Minus,
+  Image,
+  Eye,
+  EyeOff,
+  Pencil,
+  ArrowUp,
+  ArrowDown,
+  BookOpen,
+  ChevronRight,
+  ChevronDown,
+  GripVertical,
+  X,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -58,6 +121,8 @@ import {
 } from "@/components/ui/dialog";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { ScrollArea } from "@/components/ui/scroll-area";
 
 const categoryIcons: Record<string, any> = {
   pages: LayoutDashboard,
@@ -93,13 +158,102 @@ const categoryLabels: Record<string, string> = {
   integrations: "Интеграции",
 };
 
+const ICON_MAP: Record<string, LucideIcon> = {
+  Lock, LayoutDashboard, Kanban, CheckSquare, Calendar, MessageSquare, Users,
+  Settings, Bell, BarChart2, ShoppingBag, Shield, Star, Phone, Video, Paperclip,
+  Send, Check, Download, Camera, Coins, Clock, TrendingUp, FolderOpen, Briefcase,
+  RefreshCw, Play, Activity, LayoutGrid, Archive, RotateCcw, Layers, Tags,
+  Palette, Store, Package, Code, Globe, Zap, Flag, Hash, ListChecks, XCircle,
+  Timer, CreditCard, History, AlertTriangle, Wrench, GitBranch, Smartphone,
+  FolderPlus, UserPlus, MessageCircle, ToggleLeft, User, Key, Mail, ExternalLink,
+  Monitor, Award, Minus, Image, FileText, Eye, EyeOff, Plus, Pencil, Trash2,
+  ArrowUp, ArrowDown, Search, BookOpen, ChevronRight, ChevronDown, GripVertical,
+  AlertCircle, Loader2, X, Crown, KeyRound,
+};
+
+const POPULAR_ICONS = [
+  "Shield", "Crown", "KeyRound", "Users", "Settings", "LayoutDashboard",
+  "Kanban", "CheckSquare", "Calendar", "MessageSquare", "ShoppingBag",
+  "BarChart2", "Bell", "Star", "Phone", "Video", "Globe", "Zap", "Lock",
+  "Code", "Package", "Store", "Award", "Monitor", "Mail", "FileText",
+];
+
+function DynamicIcon({ name, className }: { name?: string | null; className?: string }) {
+  const Icon = name ? ICON_MAP[name] : null;
+  if (!Icon) return <FileText className={className || "w-4 h-4"} />;
+  return <Icon className={className || "w-4 h-4"} />;
+}
+
+function IconPicker({ value, onChange }: { value: string; onChange: (icon: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const [filter, setFilter] = useState("");
+  const filtered = useMemo(() => {
+    if (!filter.trim()) return POPULAR_ICONS;
+    const q = filter.toLowerCase();
+    return POPULAR_ICONS.filter((name) => name.toLowerCase().includes(q));
+  }, [filter]);
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button variant="outline" className="w-full justify-start gap-2 text-xs h-9">
+          <DynamicIcon name={value} className="w-4 h-4" />
+          <span className="truncate">{value || "Выберите иконку"}</span>
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-64 p-2" align="start">
+        <div className="space-y-2">
+          <div className="relative">
+            <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+            <Input
+              placeholder="Поиск иконки..."
+              className="pl-7 h-7 text-xs"
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+            />
+          </div>
+          <ScrollArea className="h-48">
+            <div className="grid grid-cols-6 gap-1">
+              {filtered.map((name) => (
+                <button
+                  key={name}
+                  type="button"
+                  onClick={() => { onChange(name); setOpen(false); }}
+                  className={cn(
+                    "flex items-center justify-center h-8 w-8 rounded-md transition-colors",
+                    value === name
+                      ? "bg-primary text-primary-foreground"
+                      : "hover:bg-muted text-muted-foreground"
+                  )}
+                  title={name}
+                >
+                  <DynamicIcon name={name} className="w-4 h-4" />
+                </button>
+              ))}
+            </div>
+            {filtered.length === 0 && (
+              <p className="text-xs text-muted-foreground text-center py-4">Ничего не найдено</p>
+            )}
+          </ScrollArea>
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 interface Role {
   id: string;
   name: string;
   description: string | null;
   color: string;
+  icon?: string;
+  priority: number;
+  isDefault: boolean;
   permissions: string[];
   isSystem: boolean;
+  isActive: boolean;
+  maxUsers?: number | null;
+  scope?: string;
   memberCount?: number;
 }
 
@@ -117,12 +271,19 @@ export function RolesManagement() {
   const [selectedRoleId, setSelectedRoleId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [permissionSearchQuery, setPermissionSearchQuery] = useState("");
+  const [showInactive, setShowInactive] = useState(false);
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [newRoleName, setNewRoleName] = useState("");
   const [newRoleDesc, setNewRoleDesc] = useState("");
   const [editName, setEditName] = useState("");
   const [editDesc, setEditDesc] = useState("");
   const [editColor, setEditColor] = useState("#6366f1");
+  const [editIcon, setEditIcon] = useState("Shield");
+  const [editPriority, setEditPriority] = useState(100);
+  const [editMaxUsers, setEditMaxUsers] = useState<number | null>(null);
+  const [editScope, setEditScope] = useState<string>("global");
+  const [editIsDefault, setEditIsDefault] = useState(false);
+  const [editIsActive, setEditIsActive] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
 
   // Owner transfer state
@@ -138,9 +299,9 @@ export function RolesManagement() {
   const [transferToRoleId, setTransferToRoleId] = useState("");
 
   const { data: apiRoles = [], isLoading: rolesLoading } = useQuery<Role[]>({
-    queryKey: ["/api/roles"],
+    queryKey: ["/api/roles", showInactive],
     queryFn: async () => {
-      const res = await apiRequest("GET", "/api/roles");
+      const res = await apiRequest("GET", `/api/roles?includeInactive=${showInactive}`);
       return res.json();
     },
   });
@@ -172,7 +333,7 @@ export function RolesManagement() {
   const isCurrentUserOwner = currentUser?.id === currentOwner?.id;
 
   const createRoleMutation = useMutation({
-    mutationFn: async (data: { name: string; description: string }) => {
+    mutationFn: async (data: { name: string; description: string; color: string; icon: string; priority: number; isDefault: boolean; isActive: boolean }) => {
       const res = await apiRequest("POST", "/api/roles", data);
       return res.json();
     },
@@ -197,7 +358,7 @@ export function RolesManagement() {
   });
 
   const updateRoleMutation = useMutation({
-    mutationFn: async ({ id, ...data }: { id: string; name?: string; description?: string; permissions?: string[]; color?: string }) => {
+    mutationFn: async ({ id, ...data }: { id: string; name?: string; description?: string; permissions?: string[]; color?: string; icon?: string; priority?: number; maxUsers?: number | null; scope?: string; isDefault?: boolean; isActive?: boolean }) => {
       const res = await apiRequest("PUT", `/api/roles/${id}`, data);
       return res.json();
     },
@@ -327,6 +488,12 @@ export function RolesManagement() {
       setEditName(selectedRole.name);
       setEditDesc(selectedRole.description || "");
       setEditColor(selectedRole.color || "#6366f1");
+      setEditIcon(selectedRole.icon || "Shield");
+      setEditPriority(selectedRole.priority ?? 100);
+      setEditMaxUsers(selectedRole.maxUsers ?? null);
+      setEditScope(selectedRole.scope ?? "global");
+      setEditIsDefault(selectedRole.isDefault ?? false);
+      setEditIsActive(selectedRole.isActive ?? true);
       setIsEditing(false);
     }
   }, [selectedRole?.id]);
@@ -350,6 +517,11 @@ export function RolesManagement() {
     createRoleMutation.mutate({
       name: newRoleName.trim(),
       description: newRoleDesc.trim() || "",
+      color: "#6366f1",
+      icon: "Shield",
+      priority: 100,
+      isDefault: false,
+      isActive: true,
     });
   };
 
@@ -401,13 +573,21 @@ export function RolesManagement() {
       name: editName.trim(),
       description: editDesc.trim(),
       color: editColor,
+      icon: editIcon,
+      priority: editPriority,
+      maxUsers: editMaxUsers,
+      scope: editScope,
+      isDefault: editIsDefault,
+      isActive: editIsActive,
     });
     setIsEditing(false);
   };
 
-  const filteredRoles = roles.filter(role =>
-    role.name.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredRoles = roles.filter(role => {
+    const matchesSearch = role.name.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesActive = showInactive ? true : role.isActive !== false;
+    return matchesSearch && matchesActive;
+  });
 
   const permissionsByCategory = useMemo(() => {
     const query = permissionSearchQuery.toLowerCase().trim();
@@ -497,6 +677,14 @@ export function RolesManagement() {
                 onChange={(e) => setSearchQuery(e.target.value)}
               />
             </div>
+            <div className="flex items-center justify-between px-1">
+              <Label className="text-xs text-muted-foreground cursor-pointer" htmlFor="show-inactive">Показывать неактивные</Label>
+              <Switch
+                id="show-inactive"
+                checked={showInactive}
+                onCheckedChange={setShowInactive}
+              />
+            </div>
 
             <div className="space-y-1.5">
               {filteredRoles.map((role) => (
@@ -511,9 +699,11 @@ export function RolesManagement() {
                   )}
                 >
                   <div
-                    className="w-2 h-2 rounded-full shrink-0"
+                    className="w-6 h-6 rounded-md shrink-0 flex items-center justify-center"
                     style={{ backgroundColor: role.color || "#6366f1" }}
-                  />
+                  >
+                    <DynamicIcon name={role.icon} className="w-3.5 h-3.5 text-white" />
+                  </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1.5">
                       <span className="font-semibold text-xs tracking-tight truncate">{role.name}</span>
@@ -529,7 +719,11 @@ export function RolesManagement() {
                   </div>
                   <div className="flex items-center gap-1.5 shrink-0">
                     <span className="text-[9px] font-medium text-muted-foreground">
-                      {role.memberCount !== undefined ? `${role.memberCount}` : ""}
+                      {role.memberCount !== undefined
+                        ? role.maxUsers
+                          ? `${role.memberCount} / ${role.maxUsers}`
+                          : `${role.memberCount}`
+                        : ""}
                     </span>
                     {!role.isSystem && (
                       <Button
@@ -591,14 +785,73 @@ export function RolesManagement() {
                         className="h-8 text-sm bg-background/50 border-border/50"
                         placeholder="Описание роли"
                       />
+                      <div className="flex items-center gap-4 pt-2">
+                        <div className="flex items-center gap-2">
+                          <Label className="text-xs text-muted-foreground">Иконка</Label>
+                          <div className="w-40">
+                            <IconPicker value={editIcon} onChange={setEditIcon} />
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Label className="text-xs text-muted-foreground">Приоритет</Label>
+                          <Input
+                            type="number"
+                            value={editPriority}
+                            onChange={(e) => setEditPriority(Number(e.target.value))}
+                            className="h-7 w-20 text-xs bg-background/50 border-border/50"
+                            min={1}
+                            max={999}
+                          />
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Label className="text-xs text-muted-foreground">Лимит пользователей</Label>
+                          <Input
+                            type="number"
+                            value={editMaxUsers ?? ""}
+                            onChange={(e) => setEditMaxUsers(e.target.value ? Number(e.target.value) : null)}
+                            className="h-7 w-24 text-xs bg-background/50 border-border/50"
+                            min={1}
+                            placeholder="Без лимита"
+                          />
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Label className="text-xs text-muted-foreground">Область</Label>
+                          <Select value={editScope} onValueChange={setEditScope}>
+                            <SelectTrigger className="h-7 w-32 text-xs bg-background/50 border-border/50">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="global" className="text-xs">Глобальная</SelectItem>
+                              <SelectItem value="workspace" className="text-xs">Рабочая область</SelectItem>
+                              <SelectItem value="project" className="text-xs">Проект</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Label className="text-xs text-muted-foreground">По умолчанию</Label>
+                          <Switch
+                            checked={editIsDefault}
+                            onCheckedChange={setEditIsDefault}
+                          />
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Label className="text-xs text-muted-foreground">Активна</Label>
+                          <Switch
+                            checked={editIsActive}
+                            onCheckedChange={setEditIsActive}
+                          />
+                        </div>
+                      </div>
                     </>
                   ) : (
                     <>
                       <div className="flex items-center gap-3">
                         <div
-                          className="w-3 h-3 rounded-full"
+                          className="w-8 h-8 rounded-lg flex items-center justify-center"
                           style={{ backgroundColor: selectedRole.color || "#6366f1" }}
-                        />
+                        >
+                          <DynamicIcon name={selectedRole.icon} className="w-4 h-4 text-white" />
+                        </div>
                         <CardTitle className="text-xl font-bold tracking-tight">
                           Права доступа: {selectedRole.name}
                         </CardTitle>
@@ -606,6 +859,26 @@ export function RolesManagement() {
                       <CardDescription className="text-sm font-medium">
                         {selectedRole.description || "Нет описания"}
                       </CardDescription>
+                      <div className="flex items-center gap-2 mt-1">
+                        <Badge variant="outline" className="text-[10px] h-5 border-border/50">
+                          Приоритет: {selectedRole.priority}
+                        </Badge>
+                        {selectedRole.scope && selectedRole.scope !== "global" && (
+                          <Badge variant="outline" className="text-[10px] h-5 border-border/50 bg-amber-500/5 text-amber-600">
+                            {selectedRole.scope === "workspace" ? "Рабочая область" : "Проект"}
+                          </Badge>
+                        )}
+                        {selectedRole.maxUsers && (
+                          <Badge variant="outline" className="text-[10px] h-5 border-border/50">
+                            Лимит: {selectedRole.memberCount || 0} / {selectedRole.maxUsers}
+                          </Badge>
+                        )}
+                        {selectedRole.isDefault && (
+                          <Badge variant="outline" className="text-[10px] h-5 border-border/50 bg-primary/5 text-primary">
+                            По умолчанию
+                          </Badge>
+                        )}
+                      </div>
                     </>
                   )}
                 </div>

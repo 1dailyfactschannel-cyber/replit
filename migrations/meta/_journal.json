@@ -1,34 +1,265 @@
 {
-  "version": "7",
-  "dialect": "postgresql",
-  "entries": [
-    {
-      "idx": 0,
-      "version": "7",
-      "when": 1769514009550,
-      "tag": "0000_magenta_fantastic_four",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "7",
-      "when": 1770737535671,
-      "tag": "0001_magenta_quasar",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "7",
-      "when": 1771403274284,
-      "tag": "0002_young_steel_serpent",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "7",
-      "when": 1771403515527,
-      "tag": "0003_fast_ted_forrester",
-      "breakpoints": true
-    }
-  ]
+    "entries":  [
+                    {
+                        "idx":  0,
+                        "breakpoints":  true,
+                        "when":  "1777974123422",
+                        "version":  "7",
+                        "tag":  "0000_magenta_fantastic_four"
+                    },
+                    {
+                        "idx":  1,
+                        "breakpoints":  true,
+                        "when":  "1777974123432",
+                        "version":  "7",
+                        "tag":  "0001_initial_schema"
+                    },
+                    {
+                        "idx":  2,
+                        "breakpoints":  true,
+                        "when":  "1777974123433",
+                        "version":  "7",
+                        "tag":  "0002_magenta_quasar"
+                    },
+                    {
+                        "idx":  3,
+                        "breakpoints":  true,
+                        "when":  "1777974123434",
+                        "version":  "7",
+                        "tag":  "0003_young_steel_serpent"
+                    },
+                    {
+                        "idx":  4,
+                        "breakpoints":  true,
+                        "when":  "1777974123435",
+                        "version":  "7",
+                        "tag":  "0004_fast_ted_forrester"
+                    },
+                    {
+                        "idx":  5,
+                        "breakpoints":  true,
+                        "when":  "1777974123436",
+                        "version":  "7",
+                        "tag":  "0005_add_priorities"
+                    },
+                    {
+                        "idx":  6,
+                        "breakpoints":  true,
+                        "when":  "1777974123437",
+                        "version":  "7",
+                        "tag":  "0006_add_triggers"
+                    },
+                    {
+                        "idx":  7,
+                        "breakpoints":  true,
+                        "when":  "1777974123438",
+                        "version":  "7",
+                        "tag":  "0007_add_comment_mentions"
+                    },
+                    {
+                        "idx":  8,
+                        "breakpoints":  true,
+                        "when":  "1777974123439",
+                        "version":  "7",
+                        "tag":  "0008_add_workspaces"
+                    },
+                    {
+                        "idx":  9,
+                        "breakpoints":  true,
+                        "when":  "1777974123440",
+                        "version":  "7",
+                        "tag":  "0009_add_workspace_to_projects"
+                    },
+                    {
+                        "idx":  10,
+                        "breakpoints":  true,
+                        "when":  "1777974123441",
+                        "version":  "7",
+                        "tag":  "0010_add_archived_to_tasks"
+                    },
+                    {
+                        "idx":  11,
+                        "breakpoints":  true,
+                        "when":  "1777974123442",
+                        "version":  "7",
+                        "tag":  "0011_add_reply_to_messages"
+                    },
+                    {
+                        "idx":  12,
+                        "breakpoints":  true,
+                        "when":  "1777974123443",
+                        "version":  "7",
+                        "tag":  "0012_update_todo_status"
+                    },
+                    {
+                        "idx":  13,
+                        "breakpoints":  true,
+                        "when":  "1777974123444",
+                        "version":  "7",
+                        "tag":  "0013_add_task_types"
+                    },
+                    {
+                        "idx":  14,
+                        "breakpoints":  true,
+                        "when":  "1777974123445",
+                        "version":  "7",
+                        "tag":  "0014_add_team_rooms"
+                    },
+                    {
+                        "idx":  15,
+                        "breakpoints":  true,
+                        "when":  "1777974123446",
+                        "version":  "7",
+                        "tag":  "0015_add_call_features"
+                    },
+                    {
+                        "idx":  16,
+                        "breakpoints":  true,
+                        "when":  "1777974123447",
+                        "version":  "7",
+                        "tag":  "0016_make_call_receiver_nullable"
+                    },
+                    {
+                        "idx":  17,
+                        "breakpoints":  true,
+                        "when":  "1777974123448",
+                        "version":  "7",
+                        "tag":  "0017_add_user_settings"
+                    },
+                    {
+                        "idx":  18,
+                        "breakpoints":  true,
+                        "when":  "1777974123449",
+                        "version":  "7",
+                        "tag":  "0018_add_guest_invitations"
+                    },
+                    {
+                        "idx":  19,
+                        "breakpoints":  true,
+                        "when":  "1777974123450",
+                        "version":  "7",
+                        "tag":  "0019_add_column_description"
+                    },
+                    {
+                        "idx":  20,
+                        "breakpoints":  true,
+                        "when":  "1777974123451",
+                        "version":  "7",
+                        "tag":  "0020_add_audit_logs"
+                    },
+                    {
+                        "idx":  21,
+                        "breakpoints":  true,
+                        "when":  "1777974123452",
+                        "version":  "7",
+                        "tag":  "0021_add_accrual_rules"
+                    },
+                    {
+                        "idx":  22,
+                        "breakpoints":  true,
+                        "when":  "1777974123453",
+                        "version":  "7",
+                        "tag":  "0022_add_task_dependencies"
+                    },
+                    {
+                        "idx":  23,
+                        "breakpoints":  true,
+                        "when":  "1777974123454",
+                        "version":  "7",
+                        "tag":  "0023_add_user_invitations"
+                    },
+                    {
+                        "idx":  24,
+                        "breakpoints":  true,
+                        "when":  "1777974123455",
+                        "version":  "7",
+                        "tag":  "0024_add_workspace_owners_to_members"
+                    },
+                    {
+                        "idx":  25,
+                        "breakpoints":  true,
+                        "when":  "1777974123456",
+                        "version":  "7",
+                        "tag":  "0025_add_work_time"
+                    },
+                    {
+                        "idx":  26,
+                        "breakpoints":  true,
+                        "when":  "1777974123457",
+                        "version":  "7",
+                        "tag":  "0026_add_missing_columns"
+                    },
+                    {
+                        "idx":  27,
+                        "breakpoints":  true,
+                        "when":  "1777974123458",
+                        "version":  "7",
+                        "tag":  "0027_add_sprints"
+                    },
+                    {
+                        "idx":  28,
+                        "breakpoints":  true,
+                        "when":  "1777974123459",
+                        "version":  "7",
+                        "tag":  "0028_add_rbac_tables"
+                    },
+                    {
+                        "idx":  29,
+                        "breakpoints":  true,
+                        "when":  "1777974123460",
+                        "version":  "7",
+                        "tag":  "0029_add_accepted_at"
+                    },
+                    {
+                        "idx":  30,
+                        "breakpoints":  true,
+                        "when":  "1777974123461",
+                        "version":  "7",
+                        "tag":  "0030_add_yandex_calendar"
+                    },
+                    {
+                        "idx":  31,
+                        "breakpoints":  true,
+                        "when":  "1777974123462",
+                        "version":  "7",
+                        "tag":  "0031_add_news_table"
+                    },
+                    {
+                        "idx":  32,
+                        "breakpoints":  true,
+                        "when":  "1777974123463",
+                        "version":  "7",
+                        "tag":  "0032_add_knowledge_base_tables"
+                    },
+                    {
+                        "idx":  33,
+                        "breakpoints":  true,
+                        "when":  "1777974123464",
+                        "version":  "7",
+                        "tag":  "0033_add_kb_workspace_visibility"
+                    },
+                    {
+                        "idx":  34,
+                        "breakpoints":  true,
+                        "when":  "1777974123465",
+                        "version":  "7",
+                        "tag":  "0034_all_migrations"
+                    },
+                    {
+                        "idx":  35,
+                        "breakpoints":  true,
+                        "when":  "1777974763517",
+                        "version":  "7",
+                        "tag":  "0035_add_role_fields"
+                    },
+                    {
+                        "idx":  36,
+                        "breakpoints":  true,
+                        "when":  "1777979460311",
+                        "version":  "7",
+                        "tag":  "0036_add_role_limits_and_scope"
+                    }
+                ],
+    "version":  "7",
+    "dialect":  "postgresql"
 }
