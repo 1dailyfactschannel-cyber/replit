@@ -1711,17 +1711,24 @@ export class PostgresStorage {
   }
 
   // Knowledge Base methods
-  async getKnowledgeSections(): Promise<any[]> {
+  async getKnowledgeSections(workspaceIds?: string[]): Promise<any[]> {
     try {
-      return await this.db.select().from(schema.knowledgeSections).where(eq(schema.knowledgeSections.isVisible, true)).orderBy(schema.knowledgeSections.sortOrder);
+      const conditions = [eq(schema.knowledgeSections.isVisible, true)];
+      if (workspaceIds && workspaceIds.length > 0) {
+        conditions.push(or(inArray(schema.knowledgeSections.workspaceId, workspaceIds), isNull(schema.knowledgeSections.workspaceId)));
+      }
+      return await this.db.select().from(schema.knowledgeSections).where(and(...conditions)).orderBy(schema.knowledgeSections.sortOrder);
     } catch (error) {
       console.error("Error getting knowledge sections:", error);
       throw error;
     }
   }
 
-  async getAllKnowledgeSections(): Promise<any[]> {
+  async getAllKnowledgeSections(workspaceIds?: string[]): Promise<any[]> {
     try {
+      if (workspaceIds && workspaceIds.length > 0) {
+        return await this.db.select().from(schema.knowledgeSections).where(or(inArray(schema.knowledgeSections.workspaceId, workspaceIds), isNull(schema.knowledgeSections.workspaceId))).orderBy(schema.knowledgeSections.sortOrder);
+      }
       return await this.db.select().from(schema.knowledgeSections).orderBy(schema.knowledgeSections.sortOrder);
     } catch (error) {
       console.error("Error getting all knowledge sections:", error);
@@ -1768,13 +1775,19 @@ export class PostgresStorage {
     }
   }
 
-  async getKnowledgeArticles(sectionId?: string): Promise<any[]> {
+  async getKnowledgeArticles(sectionId?: string, workspaceIds?: string[]): Promise<any[]> {
     try {
+      const conditions = [];
       if (sectionId) {
-        return await this.db.select().from(schema.knowledgeArticles).where(eq(schema.knowledgeArticles.sectionId, sectionId)).orderBy(schema.knowledgeArticles.sortOrder);
-      } else {
-        return await this.db.select().from(schema.knowledgeArticles).orderBy(schema.knowledgeArticles.sortOrder);
+        conditions.push(eq(schema.knowledgeArticles.sectionId, sectionId));
       }
+      if (workspaceIds && workspaceIds.length > 0) {
+        conditions.push(or(inArray(schema.knowledgeArticles.workspaceId, workspaceIds), isNull(schema.knowledgeArticles.workspaceId)));
+      }
+      if (conditions.length > 0) {
+        return await this.db.select().from(schema.knowledgeArticles).where(and(...conditions)).orderBy(schema.knowledgeArticles.sortOrder);
+      }
+      return await this.db.select().from(schema.knowledgeArticles).orderBy(schema.knowledgeArticles.sortOrder);
     } catch (error) {
       console.error("Error getting knowledge articles:", error);
       throw error;

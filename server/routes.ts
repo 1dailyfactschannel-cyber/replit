@@ -6605,7 +6605,8 @@ export async function registerRoutes(
   app.get("/api/kb/sections", async (req, res) => {
     if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
     try {
-      const sections = await storage.getKnowledgeSections();
+      const accessibleIds = await getAccessibleWorkspaceIds(req.user!.id);
+      const sections = await storage.getKnowledgeSections(accessibleIds || undefined);
       res.json(sections);
     } catch (error) {
       console.error("Error fetching knowledge sections:", error);
@@ -6615,7 +6616,8 @@ export async function registerRoutes(
 
   app.get("/api/kb/sections/all", requirePermission("management:team"), async (req, res) => {
     try {
-      const sections = await storage.getAllKnowledgeSections();
+      const accessibleIds = await getAccessibleWorkspaceIds(req.user!.id);
+      const sections = await storage.getAllKnowledgeSections(accessibleIds || undefined);
       res.json(sections);
     } catch (error) {
       console.error("Error fetching all knowledge sections:", error);
@@ -6670,7 +6672,8 @@ export async function registerRoutes(
     if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
     try {
       const sectionId = req.query.sectionId as string | undefined;
-      const articles = await storage.getKnowledgeArticles(sectionId);
+      const accessibleIds = await getAccessibleWorkspaceIds(req.user!.id);
+      const articles = await storage.getKnowledgeArticles(sectionId, accessibleIds || undefined);
       res.json(articles);
     } catch (error) {
       console.error("Error fetching knowledge articles:", error);

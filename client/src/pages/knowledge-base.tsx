@@ -20,6 +20,13 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
@@ -207,6 +214,7 @@ interface KBArticle {
   sectionId: string;
   title: string;
   content: string | null;
+  workspaceId: string | null;
   sortOrder: number | null;
   isVisible: boolean | null;
   createdAt: string | null;
@@ -217,6 +225,7 @@ interface KBSection {
   id: string;
   title: string;
   icon: string | null;
+  workspaceId: string | null;
   sortOrder: number | null;
   isVisible: boolean | null;
   createdAt: string | null;
@@ -240,13 +249,13 @@ export default function KnowledgeBasePage() {
   // Section dialog
   const [sectionDialogOpen, setSectionDialogOpen] = useState(false);
   const [editingSection, setEditingSection] = useState<KBSection | null>(null);
-  const [sectionForm, setSectionForm] = useState({ title: "", icon: "FileText", sortOrder: 0, isVisible: true });
+  const [sectionForm, setSectionForm] = useState({ title: "", icon: "FileText", workspaceId: null as string | null, sortOrder: 0, isVisible: true });
 
   // Article dialog
   const [articleDialogOpen, setArticleDialogOpen] = useState(false);
   const [editingArticle, setEditingArticle] = useState<KBArticle | null>(null);
   const [articleSectionId, setArticleSectionId] = useState<string | null>(null);
-  const [articleForm, setArticleForm] = useState({ title: "", content: "", sortOrder: 0, isVisible: true });
+  const [articleForm, setArticleForm] = useState({ title: "", content: "", workspaceId: null as string | null, sortOrder: 0, isVisible: true });
 
   const { data: sectionsData = [], isLoading: sectionsLoading } = useQuery<KBSection[]>({
     queryKey: [isEditor ? "/api/kb/sections/all" : "/api/kb/sections"],
@@ -263,6 +272,15 @@ export default function KnowledgeBasePage() {
     queryFn: async () => {
       const res = await fetch("/api/kb/articles", { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch articles");
+      return res.json();
+    },
+  });
+
+  const { data: workspacesData = [] } = useQuery<{ id: string; name: string }[]>({
+    queryKey: ["/api/workspaces"],
+    queryFn: async () => {
+      const res = await fetch("/api/workspaces", { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch workspaces");
       return res.json();
     },
   });
@@ -387,12 +405,13 @@ export default function KnowledgeBasePage() {
       setSectionForm({
         title: section.title,
         icon: section.icon || "FileText",
+        workspaceId: section.workspaceId || null,
         sortOrder: section.sortOrder ?? 0,
         isVisible: section.isVisible !== false,
       });
     } else {
       setEditingSection(null);
-      setSectionForm({ title: "", icon: "FileText", sortOrder: sectionsData.length, isVisible: true });
+      setSectionForm({ title: "", icon: "FileText", workspaceId: null, sortOrder: sectionsData.length, isVisible: true });
     }
     setSectionDialogOpen(true);
   };
@@ -404,12 +423,14 @@ export default function KnowledgeBasePage() {
       setArticleForm({
         title: article.title,
         content: article.content || "",
+        workspaceId: article.workspaceId || null,
         sortOrder: article.sortOrder ?? 0,
         isVisible: article.isVisible !== false,
       });
     } else {
       setEditingArticle(null);
-      setArticleForm({ title: "", content: "", sortOrder: 0, isVisible: true });
+      const parentSection = sectionsData.find((s) => s.id === sectionId);
+      setArticleForm({ title: "", content: "", workspaceId: parentSection?.workspaceId || null, sortOrder: 0, isVisible: true });
     }
     setArticleDialogOpen(true);
   };
@@ -822,6 +843,23 @@ export default function KnowledgeBasePage() {
                 onChange={(icon) => setSectionForm((p) => ({ ...p, icon }))}
               />
             </div>
+            <div>
+              <label className="text-xs font-medium mb-1 block">Пространство</label>
+              <Select
+                value={sectionForm.workspaceId || "null"}
+                onValueChange={(v) => setSectionForm((p) => ({ ...p, workspaceId: v === "null" ? null : v }))}
+              >
+                <SelectTrigger className="h-9 text-xs">
+                  <SelectValue placeholder="Все пространства" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="null">Все пространства</SelectItem>
+                  {workspacesData.map((ws) => (
+                    <SelectItem key={ws.id} value={ws.id}>{ws.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
             <div className="flex items-center gap-4">
               <div className="flex-1">
                 <label className="text-xs font-medium mb-1 block">Порядок</label>
@@ -867,6 +905,23 @@ export default function KnowledgeBasePage() {
                 onChange={(e) => setArticleForm((p) => ({ ...p, title: e.target.value }))}
                 placeholder="Название статьи"
               />
+            </div>
+            <div className="shrink-0">
+              <label className="text-xs font-medium mb-1 block">Пространство</label>
+              <Select
+                value={articleForm.workspaceId || "null"}
+                onValueChange={(v) => setArticleForm((p) => ({ ...p, workspaceId: v === "null" ? null : v }))}
+              >
+                <SelectTrigger className="h-9 text-xs">
+                  <SelectValue placeholder="Все пространства" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="null">Все пространства</SelectItem>
+                  {workspacesData.map((ws) => (
+                    <SelectItem key={ws.id} value={ws.id}>{ws.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="flex-1 flex flex-col min-h-0">
               <label className="text-xs font-medium mb-1 block">Содержимое</label>
