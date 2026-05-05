@@ -62,6 +62,7 @@ import {
 } from "@shared/schema";
 import { drizzle } from "drizzle-orm/postgres-js";
 import { eq, and, or, desc, asc, ne, sql, inArray, isNull, gte, lte, lt } from "drizzle-orm";
+import crypto from "crypto";
 import postgres from "postgres";
 import * as schema from "@shared/schema";
 import dotenv from "dotenv";
@@ -386,6 +387,81 @@ export class PostgresStorage {
     } catch (error) {
       console.error("Error creating user status history:", error);
       return null;
+    }
+  }
+
+  async getUsersDailyActivity(dateStr: string): Promise<{
+    userId: string;
+    firstOnline: string | null;
+    lastOffline: string | null;
+    totalOnlineMinutes: number;
+  }[]> {
+    try {
+      const startOfDay = new Date(dateStr);
+      startOfDay.setHours(0, 0, 0, 0);
+      const endOfDay = new Date(dateStr);
+      endOfDay.setHours(23, 59, 59, 999);
+
+      const history = await this.db
+        .select()
+        .from(schema.userStatusHistory)
+        .where(
+          and(
+            sql`${schema.userStatusHistory.createdAt} >= ${startOfDay.toISOString()}`,
+            sql`${schema.userStatusHistory.createdAt} <= ${endOfDay.toISOString()}`
+          )
+        )
+        .orderBy(schema.userStatusHistory.createdAt);
+
+      const onlineStatuses = new Set(["online", "в сети", "active", "активен", "available", "доступен"]);
+      const byUser = new Map<string, typeof history>();
+
+      for (const entry of history) {
+        if (!byUser.has(entry.userId)) byUser.set(entry.userId, []);
+        byUser.get(entry.userId)!.push(entry);
+      }
+
+      const result: ReturnType<typeof this.getUsersDailyActivity> extends Promise<infer T> ? T : never = [];
+
+      for (const [userId, entries] of Array.from(byUser.entries())) {
+        let firstOnline: string | null = null;
+        let lastOffline: string | null = null;
+        let totalOnlineMinutes = 0;
+        let onlineStart: Date | null = null;
+
+        for (const entry of entries) {
+          if (!entry.createdAt) continue;
+          const isOnline = onlineStatuses.has(entry.newStatus.toLowerCase().trim());
+          const entryTime = new Date(entry.createdAt);
+
+          if (isOnline) {
+            if (!firstOnline) {
+              firstOnline = entryTime.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+            }
+            onlineStart = entryTime;
+          } else {
+            if (onlineStart) {
+              const diffMs = entryTime.getTime() - onlineStart.getTime();
+              totalOnlineMinutes += Math.round(diffMs / 60000);
+              onlineStart = null;
+            }
+            lastOffline = entryTime.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+          }
+        }
+
+        // If still online at end of day
+        if (onlineStart) {
+          const diffMs = endOfDay.getTime() - onlineStart.getTime();
+          totalOnlineMinutes += Math.round(diffMs / 60000);
+        }
+
+        result.push({ userId, firstOnline, lastOffline, totalOnlineMinutes });
+      }
+
+      return result;
+    } catch (error) {
+      console.error("Error getting users daily activity:", error);
+      return [];
     }
   }
 
@@ -1118,31 +1194,63 @@ export class PostgresStorage {
   }
 
   // Role methods
-  async getUserRoles(userId: string): Promise<schema.Role[]> {
+  async getUserRoles(userId: string, workspaceId?: string, projectId?: string): Promise<schema.Role[]> {
     try {
-      const result = await this.db.select({
-        id: schema.roles.id,
-        name: schema.roles.name,
-        description: schema.roles.description,
-        permissions: schema.roles.permissions,
-        isSystem: schema.roles.isSystem,
-        createdAt: schema.roles.createdAt,
-        updatedAt: schema.roles.updatedAt
-      })
+      const conditions: any[] = [eq(schema.userRoles.userId, userId)];
+      if (workspaceId) {
+        conditions.push(
+          or(
+            eq(schema.userRoles.workspaceId, workspaceId),
+            isNull(schema.userRoles.workspaceId)
+          )
+        );
+      } else {
+        conditions.push(isNull(schema.userRoles.workspaceId));
+      }
+      if (projectId) {
+        conditions.push(
+          or(
+            eq(schema.userRoles.projectId, projectId),
+            isNull(schema.userRoles.projectId)
+          )
+        );
+      } else {
+        conditions.push(isNull(schema.userRoles.projectId));
+      }
+      
+      const result = await this.db.select()
         .from(schema.roles)
         .innerJoin(schema.userRoles, eq(schema.roles.id, schema.userRoles.roleId))
-        .where(eq(schema.userRoles.userId, userId));
+        .where(and(...conditions));
       
-      return result as schema.Role[];
+      return result.map(r => ({
+        ...r.roles,
+      })) as schema.Role[];
     } catch (error) {
       console.error("Error getting user roles:", error);
       return [];
     }
   }
 
-  async assignRoleToUser(userId: string, roleId: string): Promise<void> {
+  async assignRoleToUser(userId: string, roleId: string, workspaceId?: string, projectId?: string): Promise<void> {
     try {
-      await this.db.insert(schema.userRoles).values({ userId, roleId }).onConflictDoNothing();
+      // Check maxUsers limit
+      const [role] = await this.db.select().from(schema.roles).where(eq(schema.roles.id, roleId)).limit(1);
+      if (role?.maxUsers) {
+        const conditions = [eq(schema.userRoles.roleId, roleId)];
+        if (workspaceId) conditions.push(eq(schema.userRoles.workspaceId, workspaceId));
+        else conditions.push(isNull(schema.userRoles.workspaceId));
+        if (projectId) conditions.push(eq(schema.userRoles.projectId, projectId));
+        else conditions.push(isNull(schema.userRoles.projectId));
+        
+        const countResult = await this.db.select({ count: sql<number>`count(*)` }).from(schema.userRoles).where(and(...conditions));
+        const currentCount = Number(countResult[0]?.count || 0);
+        if (currentCount >= role.maxUsers) {
+          throw new Error(`Достигнут лимит пользователей для роли "${role.name}" (максимум ${role.maxUsers})`);
+        }
+      }
+      
+      await this.db.insert(schema.userRoles).values({ userId, roleId, workspaceId: workspaceId || null, projectId: projectId || null }).onConflictDoNothing();
     } catch (error) {
       console.error("Error assigning role to user:", error);
       throw error;
@@ -1160,9 +1268,12 @@ export class PostgresStorage {
     }
   }
 
-  async getAllRoles(): Promise<schema.Role[]> {
+  async getAllRoles(includeInactive = false): Promise<schema.Role[]> {
     try {
-      return await this.db.select().from(schema.roles).orderBy(schema.roles.name);
+      if (includeInactive) {
+        return await this.db.select().from(schema.roles).orderBy(schema.roles.priority, schema.roles.name);
+      }
+      return await this.db.select().from(schema.roles).where(eq(schema.roles.isActive, true)).orderBy(schema.roles.priority, schema.roles.name);
     } catch (error) {
       console.error("Error getting all roles:", error);
       return [];
@@ -1189,6 +1300,16 @@ export class PostgresStorage {
     }
   }
 
+  async getDefaultRole(): Promise<schema.Role | undefined> {
+    try {
+      const result = await this.db.select().from(schema.roles).where(eq(schema.roles.isDefault, true)).limit(1);
+      return result[0];
+    } catch (error) {
+      console.error("Error getting default role:", error);
+      return undefined;
+    }
+  }
+
   async createRole(data: schema.InsertRole): Promise<schema.Role> {
     const result = await this.db.insert(schema.roles).values(data).returning();
     return result[0];
@@ -1211,17 +1332,57 @@ export class PostgresStorage {
     return result[0];
   }
 
-  async setUserRoles(userId: string, roleIds: string[], assignedBy?: string): Promise<void> {
+  async setUserRoles(userId: string, roleIds: string[], assignedBy?: string, workspaceId?: string, projectId?: string): Promise<void> {
     try {
       await this.db.transaction(async (tx) => {
-        await tx.delete(schema.userRoles).where(eq(schema.userRoles.userId, userId));
+        // Get current roles in this scope to check maxUsers for newly added ones
+        const currentConditions = [eq(schema.userRoles.userId, userId)];
+        if (workspaceId) currentConditions.push(eq(schema.userRoles.workspaceId, workspaceId));
+        else currentConditions.push(isNull(schema.userRoles.workspaceId));
+        if (projectId) currentConditions.push(eq(schema.userRoles.projectId, projectId));
+        else currentConditions.push(isNull(schema.userRoles.projectId));
+
+        const currentRoles = await tx.select({ roleId: schema.userRoles.roleId }).from(schema.userRoles).where(and(...currentConditions));
+        const currentRoleIds = new Set(currentRoles.map(r => r.roleId));
+
+        // Check maxUsers for each newly added role
+        for (const roleId of roleIds) {
+          if (currentRoleIds.has(roleId)) continue; // already has this role
+
+          const [role] = await tx.select().from(schema.roles).where(eq(schema.roles.id, roleId)).limit(1);
+          if (role?.maxUsers) {
+            const countConditions = [eq(schema.userRoles.roleId, roleId)];
+            if (workspaceId) countConditions.push(eq(schema.userRoles.workspaceId, workspaceId));
+            else countConditions.push(isNull(schema.userRoles.workspaceId));
+            if (projectId) countConditions.push(eq(schema.userRoles.projectId, projectId));
+            else countConditions.push(isNull(schema.userRoles.projectId));
+
+            const countResult = await tx.select({ count: sql<number>`count(*)` }).from(schema.userRoles).where(and(...countConditions));
+            const currentCount = Number(countResult[0]?.count || 0);
+            if (currentCount >= role.maxUsers) {
+              throw new Error(`Достигнут лимит пользователей для роли "${role.name}" (максимум ${role.maxUsers})`);
+            }
+          }
+        }
+
+        // Delete only roles in the same scope
+        const deleteConditions = [eq(schema.userRoles.userId, userId)];
+        if (workspaceId) deleteConditions.push(eq(schema.userRoles.workspaceId, workspaceId));
+        else deleteConditions.push(isNull(schema.userRoles.workspaceId));
+        if (projectId) deleteConditions.push(eq(schema.userRoles.projectId, projectId));
+        else deleteConditions.push(isNull(schema.userRoles.projectId));
+
+        await tx.delete(schema.userRoles).where(and(...deleteConditions));
+
         if (roleIds.length > 0) {
           const values = roleIds.map(roleId => ({
             userId,
             roleId,
+            workspaceId: workspaceId || null,
+            projectId: projectId || null,
             assignedBy: assignedBy || null
           }));
-          await tx.insert(schema.userRoles).values(values);
+          await tx.insert(schema.userRoles).values(values).onConflictDoNothing();
         }
       });
     } catch (error) {
@@ -1230,8 +1391,8 @@ export class PostgresStorage {
     }
   }
 
-  async getUserPermissions(userId: string): Promise<string[]> {
-    const userRoles = await this.getUserRoles(userId);
+  async getUserPermissions(userId: string, workspaceId?: string, projectId?: string): Promise<string[]> {
+    const userRoles = await this.getUserRoles(userId, workspaceId, projectId);
     const permissions = new Set<string>();
     for (const role of userRoles) {
       const rolePerms = role.permissions as string[];
@@ -1240,11 +1401,11 @@ export class PostgresStorage {
     return Array.from(permissions);
   }
 
-  async hasPermission(userId: string, permission: string): Promise<boolean> {
-    const userRoles = await this.getUserRoles(userId);
-    const isAdmin = userRoles.some(r => r.name === "Администратор");
+  async hasPermission(userId: string, permission: string, workspaceId?: string, projectId?: string): Promise<boolean> {
+    const userRoles = await this.getUserRoles(userId, workspaceId, projectId);
+    const isAdmin = userRoles.some(r => (r.priority ?? 100) <= 2);
     if (isAdmin) return true;
-    const permissions = await this.getUserPermissions(userId);
+    const permissions = await this.getUserPermissions(userId, workspaceId, projectId);
     return permissions.includes(permission);
   }
 
@@ -1643,6 +1804,196 @@ export class PostgresStorage {
     }
   }
 
+  // News methods
+  async getNews(): Promise<any[]> {
+    try {
+      const newsList = await this.db.select().from(schema.news).orderBy(desc(schema.news.createdAt));
+      const result = [];
+      for (const item of newsList) {
+        const author = item.authorId
+          ? await this.db.select().from(schema.users).where(eq(schema.users.id, item.authorId)).then((r: any) => r[0])
+          : null;
+        result.push({
+          ...item,
+          authorName: author ? `${author.firstName || ""} ${author.lastName || ""}`.trim() || author.username : null,
+        });
+      }
+      return result;
+    } catch (error) {
+      console.error("Error getting news:", error);
+      throw error;
+    }
+  }
+
+  async getNewsById(id: string): Promise<any> {
+    try {
+      const item = await this.db.select().from(schema.news).where(eq(schema.news.id, id)).then((r: any) => r[0]);
+      if (!item) return null;
+      const author = item.authorId
+        ? await this.db.select().from(schema.users).where(eq(schema.users.id, item.authorId)).then((r: any) => r[0])
+        : null;
+      return {
+        ...item,
+        authorName: author ? `${author.firstName || ""} ${author.lastName || ""}`.trim() || author.username : null,
+      };
+    } catch (error) {
+      console.error("Error getting news by id:", error);
+      throw error;
+    }
+  }
+
+  async createNews(data: any): Promise<any> {
+    try {
+      const result = await this.db.insert(schema.news).values(data).returning();
+      return result[0];
+    } catch (error) {
+      console.error("Error creating news:", error);
+      throw error;
+    }
+  }
+
+  async updateNews(id: string, data: any): Promise<any> {
+    try {
+      const result = await this.db.update(schema.news).set(data).where(eq(schema.news.id, id)).returning();
+      return result[0];
+    } catch (error) {
+      console.error("Error updating news:", error);
+      throw error;
+    }
+  }
+
+  async deleteNews(id: string): Promise<void> {
+    try {
+      await this.db.delete(schema.news).where(eq(schema.news.id, id));
+    } catch (error) {
+      console.error("Error deleting news:", error);
+      throw error;
+    }
+  }
+
+  // Knowledge Base methods
+  async getKnowledgeSections(workspaceIds?: string[]): Promise<any[]> {
+    try {
+      const conditions: (ReturnType<typeof eq> | ReturnType<typeof or>)[] = [eq(schema.knowledgeSections.isVisible, true)];
+      if (workspaceIds && workspaceIds.length > 0) {
+        conditions.push(or(inArray(schema.knowledgeSections.workspaceId, workspaceIds), isNull(schema.knowledgeSections.workspaceId))!);
+      }
+      return await this.db.select().from(schema.knowledgeSections).where(and(...conditions)).orderBy(schema.knowledgeSections.sortOrder);
+    } catch (error) {
+      console.error("Error getting knowledge sections:", error);
+      throw error;
+    }
+  }
+
+  async getAllKnowledgeSections(workspaceIds?: string[]): Promise<any[]> {
+    try {
+      if (workspaceIds && workspaceIds.length > 0) {
+        return await this.db.select().from(schema.knowledgeSections).where(or(inArray(schema.knowledgeSections.workspaceId, workspaceIds), isNull(schema.knowledgeSections.workspaceId))).orderBy(schema.knowledgeSections.sortOrder);
+      }
+      return await this.db.select().from(schema.knowledgeSections).orderBy(schema.knowledgeSections.sortOrder);
+    } catch (error) {
+      console.error("Error getting all knowledge sections:", error);
+      throw error;
+    }
+  }
+
+  async getKnowledgeSectionById(id: string): Promise<any> {
+    try {
+      const result = await this.db.select().from(schema.knowledgeSections).where(eq(schema.knowledgeSections.id, id));
+      return result[0] || null;
+    } catch (error) {
+      console.error("Error getting knowledge section:", error);
+      throw error;
+    }
+  }
+
+  async createKnowledgeSection(data: any): Promise<any> {
+    try {
+      const result = await this.db.insert(schema.knowledgeSections).values(data).returning();
+      return result[0];
+    } catch (error) {
+      console.error("Error creating knowledge section:", error);
+      throw error;
+    }
+  }
+
+  async updateKnowledgeSection(id: string, data: any): Promise<any> {
+    try {
+      const result = await this.db.update(schema.knowledgeSections).set({ ...data, updatedAt: new Date() }).where(eq(schema.knowledgeSections.id, id)).returning();
+      return result[0];
+    } catch (error) {
+      console.error("Error updating knowledge section:", error);
+      throw error;
+    }
+  }
+
+  async deleteKnowledgeSection(id: string): Promise<void> {
+    try {
+      await this.db.delete(schema.knowledgeSections).where(eq(schema.knowledgeSections.id, id));
+    } catch (error) {
+      console.error("Error deleting knowledge section:", error);
+      throw error;
+    }
+  }
+
+  async getKnowledgeArticles(sectionId?: string, workspaceIds?: string[]): Promise<any[]> {
+    try {
+      const conditions = [];
+      if (sectionId) {
+        conditions.push(eq(schema.knowledgeArticles.sectionId, sectionId));
+      }
+      if (workspaceIds && workspaceIds.length > 0) {
+        conditions.push(or(inArray(schema.knowledgeArticles.workspaceId, workspaceIds), isNull(schema.knowledgeArticles.workspaceId)));
+      }
+      if (conditions.length > 0) {
+        return await this.db.select().from(schema.knowledgeArticles).where(and(...conditions)).orderBy(schema.knowledgeArticles.sortOrder);
+      }
+      return await this.db.select().from(schema.knowledgeArticles).orderBy(schema.knowledgeArticles.sortOrder);
+    } catch (error) {
+      console.error("Error getting knowledge articles:", error);
+      throw error;
+    }
+  }
+
+  async getKnowledgeArticleById(id: string): Promise<any> {
+    try {
+      const result = await this.db.select().from(schema.knowledgeArticles).where(eq(schema.knowledgeArticles.id, id));
+      return result[0] || null;
+    } catch (error) {
+      console.error("Error getting knowledge article:", error);
+      throw error;
+    }
+  }
+
+  async createKnowledgeArticle(data: any): Promise<any> {
+    try {
+      const result = await this.db.insert(schema.knowledgeArticles).values(data).returning();
+      return result[0];
+    } catch (error) {
+      console.error("Error creating knowledge article:", error);
+      throw error;
+    }
+  }
+
+  async updateKnowledgeArticle(id: string, data: any): Promise<any> {
+    try {
+      const result = await this.db.update(schema.knowledgeArticles).set({ ...data, updatedAt: new Date() }).where(eq(schema.knowledgeArticles.id, id)).returning();
+      return result[0];
+    } catch (error) {
+      console.error("Error updating knowledge article:", error);
+      throw error;
+    }
+  }
+
+  async deleteKnowledgeArticle(id: string): Promise<void> {
+    try {
+      await this.db.delete(schema.knowledgeArticles).where(eq(schema.knowledgeArticles.id, id));
+    } catch (error) {
+      console.error("Error deleting knowledge article:", error);
+      throw error;
+    }
+  }
+
   async deleteBoard(id: string): Promise<void> {
     try {
       await this.db.delete(schema.boards).where(eq(schema.boards.id, id));
@@ -1774,24 +2125,17 @@ export class PostgresStorage {
     try {
       if (tasks.length === 0) return;
       
-      // Use bulk update with single query using ON CONFLICT DO UPDATE
-      // This is much more efficient than individual updates in a loop
+      // Use bulk update with parameterized CASE expression (no sql.raw)
       const taskMap = new Map(tasks.map(t => [t.id, t.order]));
       const taskIds = Array.from(taskMap.keys());
       
-      // Build CASE WHEN statements for each task
-      const whenClauses = taskIds.map(id => 
-        `WHEN id = '${id}' THEN ${taskMap.get(id)}`
-      ).join(' ');
+      // Build CASE WHEN statements safely with sql template tags
+      const cases = taskIds.map(id => sql`WHEN id = ${id} THEN ${taskMap.get(id)}`);
+      const caseExpr = sql`CASE ${sql.join(cases, sql` `)} END`;
       
-      const setOrders = taskIds.map(id => 
-        `id = '${id}'`
-      ).join(', ');
-      
-      // Execute raw SQL for bulk update (most efficient)
       await this.db.execute(sql`
         UPDATE tasks 
-        SET "order" = CASE ${sql.raw(whenClauses)} END,
+        SET "order" = ${caseExpr},
             updated_at = NOW()
         WHERE id IN (${sql.join(taskIds.map(id => sql`${id}::uuid`), sql`, `)})
       `);
@@ -3479,12 +3823,7 @@ export class PostgresStorage {
   }
 
   generateInviteCode(): string {
-    const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
-    let code = '';
-    for (let i = 0; i < 8; i++) {
-      code += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
-    return code;
+    return crypto.randomBytes(6).toString('base64url').slice(0, 8);
   }
 
   // Call Settings Methods
@@ -4439,10 +4778,5 @@ export const storage = getStorage();
 
 // Helper function to generate secure token
 function generateSecureToken(): string {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  let token = '';
-  for (let i = 0; i < 32; i++) {
-    token += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return token;
+  return crypto.randomBytes(24).toString('base64url');
 }

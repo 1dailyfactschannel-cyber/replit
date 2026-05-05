@@ -94,20 +94,28 @@ const systemRoles = [
     name: "Владелец",
     description: "Полный контроль над системой, включая передачу прав владельца",
     color: "#1e1b4b",
+    icon: "Crown",
+    priority: 1,
     permissions: systemPermissions.map(p => p.key),
-    isSystem: true
+    isSystem: true,
+    scope: "global"
   },
   {
     name: "Администратор",
     description: "Полный доступ ко всем функциям системы",
     color: "#ef4444",
+    icon: "Shield",
+    priority: 2,
     permissions: systemPermissions.map(p => p.key),
-    isSystem: true
+    isSystem: true,
+    scope: "global"
   },
   {
     name: "Менеджер",
     description: "Управление проектами и командой",
     color: "#3b82f6",
+    icon: "Users",
+    priority: 3,
     permissions: [
       // Pages
       "dashboard:view", "projects:view", "projects:create", "projects:edit",
@@ -129,12 +137,16 @@ const systemRoles = [
       // Statuses
       "statuses:create", "statuses:edit", "statuses:delete",
     ],
-    isSystem: true
+    isSystem: true,
+    scope: "global"
   },
   {
     name: "Сотрудник",
     description: "Базовый доступ к рабочим инструментам",
     color: "#22c55e",
+    icon: "User",
+    priority: 4,
+    isDefault: true,
     permissions: [
       // Pages
       "dashboard:view", "projects:view",
@@ -151,12 +163,15 @@ const systemRoles = [
       "boards:create", "boards:edit",
       "columns:create", "columns:edit",
     ],
-    isSystem: true
+    isSystem: true,
+    scope: "global"
   },
   {
     name: "Гость",
     description: "Только просмотр",
     color: "#64748b",
+    icon: "Eye",
+    priority: 5,
     permissions: [
       // Pages
       "dashboard:view", "projects:view",
@@ -207,13 +222,25 @@ export async function initializeRolesAndPermissions() {
         await storage.createRole({
           name: role.name,
           description: role.description,
+          color: role.color,
+          icon: role.icon,
+          priority: role.priority,
+          isDefault: role.isDefault,
           permissions: role.permissions,
-          isSystem: role.isSystem
-        } as any);
+          isSystem: role.isSystem,
+          scope: role.scope || "global"
+        });
         console.log(`Created role: ${role.name}`);
       } else {
-        // Don't overwrite existing role permissions - they may have been customized via UI
-        console.log(`Role exists: ${role.name} (keeping existing permissions)`);
+        // Update system role metadata (color, icon, priority, isDefault, scope) without overwriting permissions
+        await storage.updateRole(existing.id, {
+          color: role.color,
+          icon: role.icon,
+          priority: role.priority,
+          isDefault: role.isDefault,
+          scope: role.scope || "global"
+        });
+        console.log(`Role exists: ${role.name} (updated metadata)`);
       }
     } catch (error) {
       console.log(`Role ${role.name} error:`, error);
@@ -228,8 +255,8 @@ export async function ensureAdminUsers() {
 
   try {
     const roles = await storage.getAllRoles();
-    const adminRole = roles.find(r => r.name === "Администратор");
-    const ownerRole = roles.find(r => r.name === "Владелец");
+    const adminRole = roles.find(r => r.priority === 2);
+    const ownerRole = roles.find(r => r.priority === 1);
 
     if (!adminRole) {
       console.log("[ensureAdminUsers] Admin role not found, skipping");
@@ -244,8 +271,8 @@ export async function ensureAdminUsers() {
     }
 
     const userRoles = await storage.getUserRoles(adminUser.id);
-    const hasAdminRole = userRoles.some(r => r.name === "Администратор");
-    const hasOwnerRole = userRoles.some(r => r.name === "Владелец");
+    const hasAdminRole = userRoles.some(r => (r.priority ?? 100) <= 2);
+    const hasOwnerRole = userRoles.some(r => r.priority === 1);
 
     if (!hasAdminRole) {
       console.log(`[ensureAdminUsers] Assigning admin role to ${adminUser.email} (${adminUser.id})`);

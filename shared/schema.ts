@@ -72,8 +72,15 @@ export const roles = pgTable("roles", {
   id: uuid("id").primaryKey().defaultRandom(),
   name: text("name").notNull().unique(),
   description: text("description"),
+  color: text("color").default("#6366f1"),
+  icon: text("icon"),
+  priority: integer("priority").default(100),
+  isDefault: boolean("is_default").default(false),
   permissions: jsonb("permissions").notNull(), // Array of permission strings
   isSystem: boolean("is_system").default(false),
+  isActive: boolean("is_active").default(true),
+  maxUsers: integer("max_users"),
+  scope: text("scope").default("global"), // global | workspace | project
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -82,10 +89,12 @@ export const roles = pgTable("roles", {
 export const userRoles = pgTable("user_roles", {
   userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   roleId: uuid("role_id").notNull().references(() => roles.id, { onDelete: "cascade" }),
+  workspaceId: uuid("workspace_id").references(() => workspaces.id, { onDelete: "cascade" }),
+  projectId: uuid("project_id").references(() => projects.id, { onDelete: "cascade" }),
   assignedAt: timestamp("assigned_at").defaultNow(),
   assignedBy: uuid("assigned_by").references(() => users.id),
 }, (table) => ({
-  pk: primaryKey({ columns: [table.userId, table.roleId] }),
+  pk: primaryKey({ columns: [table.userId, table.roleId, table.workspaceId, table.projectId] }),
 }));
 
 // Permissions table
@@ -488,7 +497,15 @@ export type InsertUserStatusHistory = z.infer<typeof insertUserStatusHistorySche
 export const insertRoleSchema = createInsertSchema(roles).pick({
   name: true,
   description: true,
+  color: true,
+  icon: true,
+  priority: true,
+  isDefault: true,
   permissions: true,
+  isSystem: true,
+  isActive: true,
+  maxUsers: true,
+  scope: true,
 });
 
 export const insertPermissionSchema = createInsertSchema(permissions).pick({
@@ -884,7 +901,7 @@ export const notifications = pgTable("notifications", {
   id: uuid("id").primaryKey().defaultRandom(),
   userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   senderId: uuid("sender_id").references(() => users.id, { onDelete: "set null" }),
-  type: text("type").$type<"chat" | "task" | "calendar" | "call" | "system">().notNull(),
+  type: text("type").$type<"chat" | "task" | "task_comment" | "calendar" | "call" | "system" | "news">().notNull(),
   title: text("title").notNull(),
   message: text("message").notNull(),
   link: text("link"), // Optional link to redirect
@@ -905,8 +922,74 @@ export const insertNotificationSchema = createInsertSchema(notifications).pick({
   isRead: true,
 });
 
+export const news = pgTable("news", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  title: text("title").notNull(),
+  content: text("content").notNull(),
+  authorId: uuid("author_id").references(() => users.id, { onDelete: "set null" }),
+  isPublished: boolean("is_published").default(false),
+  publishedAt: timestamp("published_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertNewsSchema = createInsertSchema(news).pick({
+  title: true,
+  content: true,
+});
+
+export type News = typeof news.$inferSelect;
+export type InsertNews = z.infer<typeof insertNewsSchema>;
+
 export type Notification = typeof notifications.$inferSelect;
 export type InsertNotification = z.infer<typeof insertNotificationSchema>;
+
+// Knowledge Base tables
+export const knowledgeSections = pgTable("knowledge_sections", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  title: text("title").notNull(),
+  icon: text("icon").default("FileText"),
+  workspaceId: uuid("workspace_id").references(() => workspaces.id, { onDelete: "set null" }),
+  sortOrder: integer("sort_order").default(0),
+  isVisible: boolean("is_visible").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertKnowledgeSectionSchema = createInsertSchema(knowledgeSections).pick({
+  title: true,
+  icon: true,
+  workspaceId: true,
+  sortOrder: true,
+  isVisible: true,
+});
+
+export type KnowledgeSection = typeof knowledgeSections.$inferSelect;
+export type InsertKnowledgeSection = z.infer<typeof insertKnowledgeSectionSchema>;
+
+export const knowledgeArticles = pgTable("knowledge_articles", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  sectionId: uuid("section_id").references(() => knowledgeSections.id, { onDelete: "cascade" }).notNull(),
+  title: text("title").notNull(),
+  content: text("content").default(""),
+  workspaceId: uuid("workspace_id").references(() => workspaces.id, { onDelete: "set null" }),
+  sortOrder: integer("sort_order").default(0),
+  isVisible: boolean("is_visible").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertKnowledgeArticleSchema = createInsertSchema(knowledgeArticles).pick({
+  sectionId: true,
+  title: true,
+  content: true,
+  workspaceId: true,
+  sortOrder: true,
+  isVisible: true,
+});
+
+export type KnowledgeArticle = typeof knowledgeArticles.$inferSelect;
+export type InsertKnowledgeArticle = z.infer<typeof insertKnowledgeArticleSchema>;
 
 // Shop items table
 export const shopItems = pgTable("shop_items", {

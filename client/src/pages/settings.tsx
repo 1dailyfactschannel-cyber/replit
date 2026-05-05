@@ -108,11 +108,53 @@ export default function SettingsPage() {
 }
 
 function NotificationSettings() {
-  const settings = [
-    { id: "email-tasks", label: "Email уведомления", desc: "Получать отчеты о новых задачах на почту", defaultChecked: true },
-    { id: "push-messages", label: "Push уведомления", desc: "Всплывающие окна о новых сообщениях в чате", defaultChecked: true },
-    { id: "mentions", label: "Упоминания", desc: "Уведомлять, когда вас отмечают в комментариях", defaultChecked: true },
-    { id: "deadlines", label: "Дедлайны", desc: "Напоминания о приближающихся сроках задач", defaultChecked: false },
+  const { toast } = useToast();
+  const [settings, setSettings] = useState({
+    "email-tasks": true,
+    "push-messages": true,
+    "mentions": true,
+    "deadlines": false,
+  });
+
+  const { data: savedSettings, isLoading } = useQuery({
+    queryKey: ["/api/user/settings"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/user/settings");
+      const data = await res.json();
+      return data as { key: string; value: any }[];
+    },
+  });
+
+  useEffect(() => {
+    if (savedSettings) {
+      const notif = savedSettings.find((s) => s.key === "notifications");
+      if (notif?.value) {
+        setSettings((prev) => ({ ...prev, ...notif.value }));
+      }
+    }
+  }, [savedSettings]);
+
+  const mutation = useMutation({
+    mutationFn: async () => {
+      await apiRequest("PUT", "/api/user/settings", { key: "notifications", value: settings });
+    },
+    onSuccess: () => {
+      toast({ title: "Сохранено", description: "Настройки уведомлений обновлены." });
+    },
+    onError: () => {
+      toast({ title: "Ошибка", description: "Не удалось сохранить настройки.", variant: "destructive" });
+    },
+  });
+
+  const toggleSetting = (id: string) => {
+    setSettings((prev) => ({ ...prev, [id]: !prev[id as keyof typeof prev] }));
+  };
+
+  const settingDefs = [
+    { id: "email-tasks", label: "Email уведомления", desc: "Получать отчеты о новых задачах на почту" },
+    { id: "push-messages", label: "Push уведомления", desc: "Всплывающие окна о новых сообщениях в чате" },
+    { id: "mentions", label: "Упоминания", desc: "Уведомлять, когда вас отмечают в комментариях" },
+    { id: "deadlines", label: "Дедлайны", desc: "Напоминания о приближающихся сроках задач" },
   ];
 
   return (
@@ -123,19 +165,24 @@ function NotificationSettings() {
           <CardDescription className="text-xs">Выберите, о каких событиях вы хотите знать</CardDescription>
         </CardHeader>
         <CardContent className="p-0 divide-y divide-border/50">
-          {settings.map((s) => (
+          {settingDefs.map((s) => (
             <div key={s.id} className="p-6 flex items-center justify-between hover:bg-muted/10 transition-colors">
               <div className="space-y-0.5">
                 <Label htmlFor={s.id} className="text-sm font-bold cursor-pointer">{s.label}</Label>
                 <p className="text-xs text-muted-foreground">{s.desc}</p>
               </div>
-              <Switch id={s.id} defaultChecked={s.defaultChecked} />
+              <Switch 
+                id={s.id} 
+                checked={settings[s.id as keyof typeof settings]} 
+                onCheckedChange={() => toggleSetting(s.id)}
+                disabled={isLoading}
+              />
             </div>
           ))}
         </CardContent>
         <CardFooter className="bg-muted/10 border-t border-border/40 px-6 py-4 flex justify-end">
-          <Button size="sm" className="gap-2">
-            <Save className="w-4 h-4" />
+          <Button size="sm" className="gap-2" onClick={() => mutation.mutate()} disabled={mutation.isPending}>
+            {mutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
             Сохранить настройки
           </Button>
         </CardFooter>

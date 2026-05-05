@@ -636,7 +636,7 @@ export default function CalendarPage() {
                               className={cn(
                                 "text-xs font-bold w-6 h-6 flex items-center justify-center rounded-full transition-colors",
                                 isToday ? "bg-primary text-primary-foreground" : "text-muted-foreground group-hover:text-foreground",
-                                !isCurrentMonth && "text-muted-foreground/30"
+                                !isCurrentMonth && "text-muted-foreground/50"
                               )}
                             >
                               {format(dayDate, "d")}

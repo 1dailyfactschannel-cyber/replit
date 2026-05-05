@@ -26,6 +26,7 @@ const sidebarItemsBase = [
   { icon: lazy(() => import("lucide-react").then(m => ({ default: m.Calendar }))), label: "Календарь", href: "/calendar", permission: "calendar:view" },
   { icon: lazy(() => import("lucide-react").then(m => ({ default: m.MessageSquare }))), label: "Общение", href: "/chat", permission: "chat:view" },
   { icon: lazy(() => import("lucide-react").then(m => ({ default: m.Users }))), label: "Команда", href: "/team", permission: "team:view" },
+  { icon: lazy(() => import("lucide-react").then(m => ({ default: m.BookOpen }))), label: "База знаний", href: "/knowledge-base", permission: "dashboard:view" },
   { icon: lazy(() => import("lucide-react").then(m => ({ default: m.BarChart2 }))), label: "Отчеты", href: "/reports", permission: "reports:view" },
   { icon: lazy(() => import("lucide-react").then(m => ({ default: m.ShoppingBag }))), label: "Магазин", href: "/shop", permission: "shop:view" },
   { icon: lazy(() => import("lucide-react").then(m => ({ default: m.Shield }))), label: "Управление", href: "/management", permission: "management:view" },

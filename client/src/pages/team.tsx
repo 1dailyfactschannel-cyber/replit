@@ -163,6 +163,21 @@ export default function EmployeesPage() {
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
   const [isCreateEmployeeOpen, setIsCreateEmployeeOpen] = useState(false);
   const [activeTab, setActiveTab] = useState(initialTab);
+  const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().split('T')[0]);
+
+  const { data: dailyActivity = [] } = useQuery<{
+    userId: string;
+    firstOnline: string | null;
+    lastOffline: string | null;
+    totalOnlineMinutes: number;
+  }[]>({
+    queryKey: ["/api/users/daily-activity", selectedDate],
+    queryFn: async () => {
+      const res = await apiRequest("GET", `/api/users/daily-activity?date=${selectedDate}`);
+      return res.json();
+    },
+    enabled: activeTab === "analytics",
+  });
 
   // New employee form state
   const [newEmployee, setNewEmployee] = useState({
@@ -1107,12 +1122,22 @@ export default function EmployeesPage() {
             <div className="flex items-center gap-4">
               <div className="relative flex-1 max-w-sm">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                <Input placeholder="Поиск по дате или сотруднику..." className="pl-9 bg-secondary/30 border-border/50" />
+                <Input 
+                  placeholder="Поиск сотрудника..." 
+                  className="pl-9 bg-secondary/30 border-border/50"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                />
               </div>
-              <Button variant="outline" className="gap-2 border-border/50">
-                <CalendarIcon className="w-4 h-4" />
-                Январь 2026
-              </Button>
+              <div className="flex items-center gap-2">
+                <CalendarIcon className="w-4 h-4 text-muted-foreground" />
+                <Input
+                  type="date"
+                  value={selectedDate}
+                  onChange={(e) => setSelectedDate(e.target.value)}
+                  className="h-9 w-40 text-sm bg-background border-border/50"
+                />
+              </div>
             </div>
 
             <div className="border border-border/50 rounded-xl bg-card/50 backdrop-blur-sm overflow-hidden shadow-sm">
@@ -1128,12 +1153,22 @@ export default function EmployeesPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {allActiveEmployees.map((employee) => {
+                  {allActiveEmployees.filter(emp => {
+                    const fullName = `${emp.firstName || ""} ${emp.lastName || ""}`.trim();
+                    const displayName = fullName || emp.email || "";
+                    return displayName.toLowerCase().includes(deferredSearchQuery.toLowerCase());
+                  }).map((employee) => {
                     const fullName = `${employee.firstName || ""} ${employee.lastName || ""}`.trim();
                     const displayName = fullName || employee.email || "Без имени";
                     const initials = fullName
                       ? fullName.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()
                       : (employee.email?.substring(0, 2).toUpperCase() || "??");
+                    const activity = dailyActivity.find(a => a.userId === employee.id);
+                    const formatMinutes = (m: number) => {
+                      const h = Math.floor(m / 60);
+                      const min = m % 60;
+                      return `${h}ч ${min}м`;
+                    };
                     return (
                     <TableRow key={employee.id} className="hover:bg-secondary/30 transition-colors">
                       <TableCell className="font-medium text-foreground">
@@ -1150,7 +1185,9 @@ export default function EmployeesPage() {
                           </div>
                         </div>
                       </TableCell>
-                      <TableCell className="text-sm font-medium text-emerald-500">—</TableCell>
+                      <TableCell className="text-sm font-medium text-emerald-500">
+                        {activity?.firstOnline || "—"}
+                      </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-1">
                           <Input
@@ -1187,8 +1224,12 @@ export default function EmployeesPage() {
                           />
                         </div>
                       </TableCell>
-                      <TableCell className="text-sm font-medium text-rose-500">—</TableCell>
-                      <TableCell className="text-right font-bold text-primary">—</TableCell>
+                      <TableCell className="text-sm font-medium text-rose-500">
+                        {activity?.lastOffline || "—"}
+                      </TableCell>
+                      <TableCell className="text-right font-bold text-primary">
+                        {activity ? formatMinutes(activity.totalOnlineMinutes) : "—"}
+                      </TableCell>
                     </TableRow>
                     );
                   })}

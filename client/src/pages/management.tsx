@@ -59,7 +59,8 @@ import {
   Store,
   Image as ImageIcon,
   Package,
-  ShoppingBag
+  ShoppingBag,
+  Newspaper
 } from "lucide-react";
 import { RolesManagement } from "@/components/settings/RolesManagement";
 import { YandexCalendarConnect, YandexCalendarSettings } from "@/components/integrations/YandexCalendarConnect";
@@ -1478,6 +1479,240 @@ function TeamManagement() {
                 <Loader2 className="w-4 h-4 animate-spin mr-2" />
               ) : null}
               {editingDept ? "Сохранить" : "Создать"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <NewsManagement />
+    </div>
+  );
+}
+
+function NewsManagement() {
+  const { toast } = useToast();
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [editingNews, setEditingNews] = useState<any>(null);
+  const [title, setTitle] = useState("");
+  const [content, setContent] = useState("");
+
+  const { data: newsList = [], isLoading, refetch } = useQuery<any[]>({
+    queryKey: ["/api/news"],
+  });
+
+  const createMutation = useMutation({
+    mutationFn: async (data: { title: string; content: string }) => {
+      const res = await apiRequest("POST", "/api/news", data);
+      return res.json();
+    },
+    onSuccess: () => {
+      refetch();
+      toast({ title: "Новость создана", description: "Черновик новости сохранён" });
+      resetForm();
+    },
+    onError: (error: any) => {
+      toast({ title: "Ошибка", description: error?.message || "Не удалось создать новость", variant: "destructive" });
+    }
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: any }) => {
+      const res = await apiRequest("PATCH", `/api/news/${id}`, data);
+      return res.json();
+    },
+    onSuccess: () => {
+      refetch();
+      toast({ title: "Новость обновлена", description: "Изменения сохранены" });
+      resetForm();
+    },
+    onError: (error: any) => {
+      toast({ title: "Ошибка", description: error?.message || "Не удалось обновить новость", variant: "destructive" });
+    }
+  });
+
+  const publishMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await apiRequest("PATCH", `/api/news/${id}/publish`, {});
+      return res.json();
+    },
+    onSuccess: () => {
+      refetch();
+      toast({ title: "Опубликовано", description: "Новость отправлена всем пользователям" });
+    },
+    onError: (error: any) => {
+      toast({ title: "Ошибка", description: error?.message || "Не удалось опубликовать", variant: "destructive" });
+    }
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await apiRequest("DELETE", `/api/news/${id}`, {});
+      if (!res.ok) throw new Error("Failed to delete news");
+      return { success: true };
+    },
+    onSuccess: () => {
+      refetch();
+      toast({ title: "Новость удалена", description: "Новость успешно удалена" });
+    },
+    onError: (error: any) => {
+      toast({ title: "Ошибка", description: error?.message || "Не удалось удалить новость", variant: "destructive" });
+    }
+  });
+
+  const resetForm = () => {
+    setTitle("");
+    setContent("");
+    setEditingNews(null);
+    setIsDialogOpen(false);
+  };
+
+  const handleEdit = (item: any) => {
+    setEditingNews(item);
+    setTitle(item.title);
+    setContent(item.content);
+    setIsDialogOpen(true);
+  };
+
+  const handleSave = () => {
+    if (editingNews) {
+      updateMutation.mutate({ id: editingNews.id, data: { title, content } });
+    } else {
+      createMutation.mutate({ title, content });
+    }
+  };
+
+  const handleDelete = (id: string, title: string) => {
+    if (confirm(`Вы уверены, что хотите удалить новость "${title}"?`)) {
+      deleteMutation.mutate(id);
+    }
+  };
+
+  const formatDate = (dateStr: string | null) => {
+    if (!dateStr) return "";
+    return new Date(dateStr).toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between px-1">
+        <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+          <Newspaper className="w-3.5 h-3.5" />
+          Управление новостями
+        </h4>
+        <Button size="sm" className="h-8 gap-2 text-xs" onClick={() => setIsDialogOpen(true)}>
+          <Plus className="w-3.5 h-3.5" />
+          Создать
+        </Button>
+      </div>
+
+      <Card className="border-border/50 shadow-sm bg-card/50">
+        <CardContent className="p-0">
+          {isLoading ? (
+            <div className="p-8 text-center">
+              <Loader2 className="w-6 h-6 animate-spin text-muted-foreground mx-auto" />
+            </div>
+          ) : newsList.length === 0 ? (
+            <div className="p-8 text-center space-y-2">
+              <Newspaper className="w-8 h-8 text-muted-foreground opacity-20 mx-auto" />
+              <p className="text-[11px] text-muted-foreground">Нет новостей. Создайте первую новость.</p>
+            </div>
+          ) : (
+            <div className="divide-y divide-border/50">
+              {newsList.map((item: any) => (
+                <div key={item.id} className="p-4 space-y-2">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <p className="text-sm font-medium truncate">{item.title}</p>
+                        {item.isPublished ? (
+                          <Badge variant="outline" className="text-[10px] h-5 border-green-200 text-green-600 bg-green-50">Опубликовано</Badge>
+                        ) : (
+                          <Badge variant="outline" className="text-[10px] h-5 border-amber-200 text-amber-600 bg-amber-50">Черновик</Badge>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-muted-foreground line-clamp-2">{item.content}</p>
+                      <div className="flex items-center gap-2 mt-1.5 text-[10px] text-muted-foreground">
+                        <span>{item.authorName || "Неизвестный автор"}</span>
+                        <span>·</span>
+                        <span>{formatDate(item.publishedAt || item.createdAt)}</span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      {!item.isPublished && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 text-muted-foreground hover:text-green-600"
+                          onClick={() => publishMutation.mutate(item.id)}
+                          disabled={publishMutation.isPending}
+                          title="Опубликовать"
+                        >
+                          <Send className="w-3.5 h-3.5" />
+                        </Button>
+                      )}
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                        onClick={() => handleEdit(item)}
+                        title="Редактировать"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 text-muted-foreground hover:text-rose-500"
+                        onClick={() => handleDelete(item.id, item.title)}
+                        title="Удалить"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{editingNews ? "Редактировать новость" : "Новая новость"}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>Заголовок</Label>
+              <Input
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="Заголовок новости"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Содержание</Label>
+              <Textarea
+                value={content}
+                onChange={(e) => setContent(e.target.value)}
+                placeholder="Текст новости..."
+                rows={6}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setIsDialogOpen(false); resetForm(); }}>
+              Отмена
+            </Button>
+            <Button
+              onClick={handleSave}
+              disabled={!title.trim() || !content.trim() || createMutation.isPending || updateMutation.isPending}
+            >
+              {createMutation.isPending || updateMutation.isPending ? (
+                <Loader2 className="w-4 h-4 animate-spin mr-2" />
+              ) : null}
+              {editingNews ? "Сохранить" : "Создать"}
             </Button>
           </DialogFooter>
         </DialogContent>

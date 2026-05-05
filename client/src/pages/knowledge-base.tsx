@@ -1,21 +1,59 @@
+import React, { useState, useMemo } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Layout } from "@/components/layout/Layout";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
+import { apiRequest } from "@/lib/queryClient";
+import { usePermission } from "@/hooks/use-permission";
+import { RichTextEditor } from "@/components/ui/rich-text-editor";
+import DOMPurify from "dompurify";
 import {
   BookOpen,
   ChevronRight,
   ChevronDown,
   FileText,
-  Image,
+  Search,
+  Plus,
+  Pencil,
+  Trash2,
+  Eye,
+  EyeOff,
+  GripVertical,
+  ArrowUp,
+  ArrowDown,
+  AlertCircle,
+  Loader2,
+  X,
+  LucideIcon,
   Lock,
   LayoutDashboard,
   Kanban,
@@ -28,36 +66,19 @@ import {
   BarChart2,
   ShoppingBag,
   Shield,
-  Search,
-  Filter,
   Star,
-  GripVertical,
   Phone,
   Video,
   Paperclip,
   Send,
-  CheckCheck,
-  Trash2,
-  UserCog,
+  Check,
   Download,
   Camera,
   Coins,
-  Minus,
-  Eye,
-  EyeOff,
-  Key,
-  Mail,
-  ExternalLink,
-  Monitor,
-  Check,
-  User,
-  Award,
-  Plus,
   Clock,
   TrendingUp,
   FolderOpen,
   Briefcase,
-  AlertCircle,
   RefreshCw,
   Play,
   Activity,
@@ -69,7 +90,6 @@ import {
   Palette,
   Store,
   Package,
-  Pencil,
   Code,
   Globe,
   Zap,
@@ -88,1111 +108,483 @@ import {
   UserPlus,
   MessageCircle,
   ToggleLeft,
+  User,
+  Key,
+  Mail,
+  ExternalLink,
+  Monitor,
+  Award,
+  Minus,
+  Image,
 } from "lucide-react";
-import { useState } from "react";
 
-interface Screenshot {
-  title: string;
-  path: string;
+const ICON_MAP: Record<string, LucideIcon> = {
+  Lock, LayoutDashboard, Kanban, CheckSquare, Calendar, MessageSquare, Users,
+  Settings, Bell, BarChart2, ShoppingBag, Shield, Star, Phone, Video, Paperclip,
+  Send, Check, Download, Camera, Coins, Clock, TrendingUp, FolderOpen, Briefcase,
+  RefreshCw, Play, Activity, LayoutGrid, Archive, RotateCcw, Layers, Tags,
+  Palette, Store, Package, Code, Globe, Zap, Flag, Hash, ListChecks, XCircle,
+  Timer, CreditCard, History, AlertTriangle, Wrench, GitBranch, Smartphone,
+  FolderPlus, UserPlus, MessageCircle, ToggleLeft, User, Key, Mail, ExternalLink,
+  Monitor, Award, Minus, Image, FileText, Eye, EyeOff, Plus, Pencil, Trash2,
+  ArrowUp, ArrowDown, Search, BookOpen, ChevronRight, ChevronDown, GripVertical,
+  AlertCircle, Loader2, X,
+};
+
+function DynamicIcon({ name, className }: { name?: string | null; className?: string }) {
+  const Icon = name ? ICON_MAP[name] : null;
+  if (!Icon) return <FileText className={className || "w-4 h-4"} />;
+  return <Icon className={className || "w-4 h-4"} />;
 }
 
-interface Article {
-  id: string;
-  title: string;
-  description: string;
-  features: { icon: React.ReactNode; title: string; text: string }[];
-  screenshots?: Screenshot[];
-}
-
-interface Section {
-  id: string;
-  title: string;
-  icon: React.ReactNode;
-  articles: Article[];
-}
-
-const SECTIONS: Section[] = [
-  {
-    id: "auth",
-    title: "Авторизация",
-    icon: <Lock className="w-4 h-4" />,
-    articles: [
-      {
-        id: "auth-login",
-        title: "Форма входа",
-        description:
-          "Страница авторизации (маршрут /auth) — единственная публичная страница приложения. Содержит форму входа с полями email и пароль, переключатель видимости пароля, ссылку «Забыли пароль?», а также вкладки «Вход» и «Регистрация».",
-        features: [
-          {
-            icon: <Mail className="w-4 h-4" />,
-            title: "Поле Email",
-            text: "Ввод адреса электронной почты, используемого в качестве логина. Проверяется на корректность формата.",
-          },
-          {
-            icon: <Lock className="w-4 h-4" />,
-            title: "Поле Пароль",
-            text: "Ввод пароля. Рядом находится кнопка переключения видимости — иконки Eye (показать) или EyeOff (скрыть).",
-          },
-          {
-            icon: <Check className="w-4 h-4" />,
-            title: "Кнопка «Войти»",
-            text: "Отправляет данные на API /api/login. При успехе перенаправляет на главную страницу (/).",
-          },
-          {
-            icon: <Key className="w-4 h-4" />,
-            title: "Восстановление пароля",
-            text: "Ссылка «Забыли пароль?» открывает форму сброса пароля по email с отправкой инструкций через SMTP.",
-          },
-        ],
-      },
-      {
-        id: "auth-register",
-        title: "Регистрация нового пользователя",
-        description:
-          "Вкладка «Регистрация» позволяет создать новый аккаунт с указанием email, пароля, имени и фамилии. После регистрации пользователь автоматически входит в систему.",
-        features: [
-          {
-            icon: <Plus className="w-4 h-4" />,
-            title: "Создание аккаунта",
-            text: "Форма отправляет данные на API /api/register. Пароль хешируется через bcrypt перед сохранением в базу.",
-          },
-          {
-            icon: <Mail className="w-4 h-4" />,
-            title: "Email",
-            text: "Уникальный адрес электронной почты. Проверяется на дублирование в базе данных.",
-          },
-          {
-            icon: <Lock className="w-4 h-4" />,
-            title: "Пароль",
-            text: "Минимальные требования к сложности пароля. Есть переключатель видимости.",
-          },
-          {
-            icon: <User className="w-4 h-4" />,
-            title: "Имя и фамилия",
-            text: "Персональные данные пользователя, отображаемые в профиле и списке сотрудников.",
-          },
-        ],
-      },
-      {
-        id: "auth-forgot",
-        title: "Восстановление пароля",
-        description:
-          "Форма восстановления пароля доступна по ссылке «Забыли пароль?». Пользователь вводит email, на который приходит письмо с инструкциями по сбросу пароля.",
-        features: [
-          {
-            icon: <Mail className="w-4 h-4" />,
-            title: "Поле Email",
-            text: "Адрес, связанный с существующим аккаунтом. Проверяется наличие пользователя в системе.",
-          },
-          {
-            icon: <Send className="w-4 h-4" />,
-            title: "Отправка инструкций",
-            text: "Кнопка отправляет email с токеном сброса через настроенный SMTP-сервер.",
-          },
-          {
-            icon: <Key className="w-4 h-4" />,
-            title: "Новый пароль",
-            text: "После перехода по ссылке из письма пользователь задаёт новый пароль.",
-          },
-        ],
-      },
-      {
-        id: "auth-mobile",
-        title: "Мобильная версия",
-        description:
-          "Адаптивная вёрстка страницы авторизации. На мобильных устройствах форма входа занимает всю ширину экрана. Поддерживаются разрешения от 375×667 до 1920×1080.",
-        features: [
-          {
-            icon: <Smartphone className="w-4 h-4" />,
-            title: "Адаптивный layout",
-            text: "Форма перестраивается в одну колонку на экранах менее 768px. Промо-изображение скрывается.",
-          },
-          {
-            icon: <Check className="w-4 h-4" />,
-            title: "Touch-friendly элементы",
-            text: "Кнопки и поля ввода имеют увеличенные размеры для удобства нажатия пальцем.",
-          },
-        ],
-      },
-    ],
-  },
-  {
-    id: "dashboard",
-    title: "Главная",
-    icon: <LayoutDashboard className="w-4 h-4" />,
-    articles: [
-      {
-        id: "dashboard-overview",
-        title: "Дашборд",
-        description:
-          "Главная страница приложения (маршрут /), доступная сразу после авторизации. Обзорная панель с ключевыми метриками, задачами на сегодня, загрузкой команды и недавними проектами. Данные обновляются автоматически.",
-        features: [
-          {
-            icon: <CheckSquare className="w-4 h-4" />,
-            title: "Всего задач",
-            text: "Карточка с общим количеством задач текущего пользователя.",
-          },
-          {
-            icon: <Check className="w-4 h-4" />,
-            title: "Выполнено",
-            text: "Количество завершённых задач. Зелёный индикатор прогресса.",
-          },
-          {
-            icon: <Play className="w-4 h-4" />,
-            title: "В работе",
-            text: "Задачи в статусе «в процессе». Синий индикатор активности.",
-          },
-          {
-            icon: <TrendingUp className="w-4 h-4" />,
-            title: "Эффективность",
-            text: "Процент выполненных задач от общего числа. Рост продуктивности.",
-          },
-          {
-            icon: <Clock className="w-4 h-4" />,
-            title: "Задачи на сегодня",
-            text: "Вертикальный таймлайн задач с дедлайном на текущий день.",
-          },
-          {
-            icon: <Users className="w-4 h-4" />,
-            title: "Загрузка команды",
-            text: "Список сотрудников с прогресс-барами загрузки по задачам.",
-          },
-          {
-            icon: <FolderOpen className="w-4 h-4" />,
-            title: "Недавние проекты",
-            text: "Компактный список последних проектов с бейджами статуса.",
-          },
-          {
-            icon: <RefreshCw className="w-4 h-4" />,
-            title: "Обновить",
-            text: "Кнопка ручного обновления данных дашборда.",
-          },
-        ],
-      },
-    ],
-  },
-  {
-    id: "projects",
-    title: "Проекты",
-    icon: <Kanban className="w-4 h-4" />,
-    articles: [
-      {
-        id: "projects-kanban",
-        title: "Kanban-доска",
-        description:
-          "Центральный рабочий инструмент (маршрут /projects). Kanban-доска с drag-and-drop перемещением задач между колонками. Поддерживает фильтрацию, поиск, спринты, избранное и детальный просмотр задач.",
-        features: [
-          {
-            icon: <GripVertical className="w-4 h-4" />,
-            title: "Drag-and-drop колонок",
-            text: "Ручка для перетаскивания позволяет менять порядок столбцов на доске.",
-          },
-          {
-            icon: <GripVertical className="w-4 h-4" />,
-            title: "Drag-and-drop задач",
-            text: "Задачи перетаскиваются между колонками. Статус обновляется автоматически.",
-          },
-          {
-            icon: <Plus className="w-4 h-4" />,
-            title: "Добавить задачу",
-            text: "Кнопка «+» в заголовке колонки создаёт новую задачу в этом статусе.",
-          },
-          {
-            icon: <Search className="w-4 h-4" />,
-            title: "Поиск проектов",
-            text: "Поле поиска в боковой панели фильтрует проекты и задачи по названию.",
-          },
-          {
-            icon: <Filter className="w-4 h-4" />,
-            title: "Фильтры",
-            text: "Мульти-фильтрация по проектам, статусам, исполнителям, приоритетам и меткам.",
-          },
-          {
-            icon: <Star className="w-4 h-4" />,
-            title: "Избранное",
-            text: "Звезда в списке проектов добавляет проект в избранное для быстрого доступа.",
-          },
-          {
-            icon: <MessageSquare className="w-4 h-4" />,
-            title: "Комментарии",
-            text: "На карточке задачи показывается счётчик комментариев.",
-          },
-          {
-            icon: <AlertCircle className="w-4 h-4" />,
-            title: "Блокирующие задачи",
-            text: "Предупреждение о задачах, заблокированных другими задачами.",
-          },
-          {
-            icon: <Clock className="w-4 h-4" />,
-            title: "Дедлайн",
-            text: "Дата окончания на карточке задачи. Просроченные задачи выделяются красным.",
-          },
-        ],
-      },
-      {
-        id: "projects-task-details",
-        title: "Детали задачи",
-        description:
-          "Модальное окно детального просмотра задачи. Содержит полное описание, комментарии, вложения, подзадачи, историю изменений, приоритет, метки и назначенных исполнителей.",
-        features: [
-          {
-            icon: <FileText className="w-4 h-4" />,
-            title: "Описание",
-            text: "Полное текстовое описание задачи с возможностью редактирования.",
-          },
-          {
-            icon: <MessageSquare className="w-4 h-4" />,
-            title: "Комментарии",
-            text: "Тред обсуждения задачи с возможностью добавления, редактирования и удаления комментариев.",
-          },
-          {
-            icon: <Paperclip className="w-4 h-4" />,
-            title: "Вложения",
-            text: "Прикреплённые файлы к задаче. Поддерживается загрузка и скачивание.",
-          },
-          {
-            icon: <ListChecks className="w-4 h-4" />,
-            title: "Подзадачи",
-            text: "Список вложенных подзадач с чекбоксами для отметки выполнения.",
-          },
-          {
-            icon: <History className="w-4 h-4" />,
-            title: "История изменений",
-            text: "Хронология всех изменений задачи: кто и когда менял статус, описание, исполнителя.",
-          },
-          {
-            icon: <Flag className="w-4 h-4" />,
-            title: "Приоритет",
-            text: "Уровень важности задачи (низкий, средний, высокий, критический) с цветовой индикацией.",
-          },
-          {
-            icon: <Tags className="w-4 h-4" />,
-            title: "Метки",
-            text: "Цветные метки для категоризации задач. Настраиваются в разделе управления.",
-          },
-          {
-            icon: <Users className="w-4 h-4" />,
-            title: "Исполнители",
-            text: "Назначение одного или нескольких исполнителей на задачу.",
-          },
-        ],
-      },
-    ],
-  },
-  {
-    id: "tasks",
-    title: "Мои задачи",
-    icon: <CheckSquare className="w-4 h-4" />,
-    articles: [
-      {
-        id: "tasks-list",
-        title: "Список задач и трекер времени",
-        description:
-          "Страница «Мои задачи» (маршрут /tasks) отображает все назначенные задачи в виде таблицы. Поддерживает фильтрацию по проектам и статусам, а также трекер времени для принятых задач.",
-        features: [
-          {
-            icon: <CheckSquare className="w-4 h-4" />,
-            title: "Таблица задач",
-            text: "Столбцы: ID, Название, Статус, Приоритет, Проект, Дедлайн, Действия. Чекбоксы для массового выбора.",
-          },
-          {
-            icon: <Play className="w-4 h-4" />,
-            title: "Принять задачу",
-            text: "Кнопка запускает таймер и меняет статус на «в процессе». Время отсчитывается в реальном времени.",
-          },
-          {
-            icon: <Timer className="w-4 h-4" />,
-            title: "Трекер времени",
-            text: "Для принятых задач показывается прошедшее время с момента старта. Обновляется каждую минуту.",
-          },
-          {
-            icon: <Filter className="w-4 h-4" />,
-            title: "Фильтр",
-            text: "Выпадающая панель с фильтрами по проектам и статусам. Бейдж показывает количество активных фильтров.",
-          },
-          {
-            icon: <Briefcase className="w-4 h-4" />,
-            title: "Проект",
-            text: "Название проекта в таблице. Клик открывает соответствующую Kanban-доску.",
-          },
-          {
-            icon: <AlertTriangle className="w-4 h-4" />,
-            title: "Просроченные задачи",
-            text: "Задачи с истёкшим дедлайном выделяются красным цветом и маркером.",
-          },
-        ],
-      },
-    ],
-  },
-  {
-    id: "calendar",
-    title: "Календарь",
-    icon: <Calendar className="w-4 h-4" />,
-    articles: [
-      {
-        id: "calendar-main",
-        title: "Календарь событий",
-        description:
-          "Календарь (маршрут /calendar) с интеграцией Яндекс Календаря. Поддерживает месячный и дневной вид, создание событий разных типов (работа, видео, аудио, социальные) и привязку к комнатам команды.",
-        features: [
-          {
-            icon: <Calendar className="w-4 h-4" />,
-            title: "Месячный вид",
-            text: "Сетка 7×N с днями месяца. В каждой ячейке отображается до 3 событий. Клик по дню открывает детальный вид.",
-          },
-          {
-            icon: <Clock className="w-4 h-4" />,
-            title: "Дневной вид",
-            text: "Таймлайн на 24 часа с текущим временем и позиционированием событий по высоте.",
-          },
-          {
-            icon: <Plus className="w-4 h-4" />,
-            title: "Создать событие",
-            text: "Диалог создания: название, время начала/окончания, тип, комната, ссылка на встречу.",
-          },
-          {
-            icon: <Video className="w-4 h-4" />,
-            title: "Типы событий",
-            text: "Работа, Видео, Аудио, Командные. Каждый тип имеет свой цвет и иконку.",
-          },
-          {
-            icon: <Phone className="w-4 h-4" />,
-            title: "Подключиться",
-            text: "Кнопка в деталях события позволяет сразу перейти к звонку или встрече.",
-          },
-          {
-            icon: <ExternalLink className="w-4 h-4" />,
-            title: "Яндекс Календарь",
-            text: "Синхронизация событий с Яндекс Календарём через OAuth2 и CalDAV.",
-          },
-        ],
-      },
-    ],
-  },
-  {
-    id: "communication",
-    title: "Общение",
-    icon: <MessageSquare className="w-4 h-4" />,
-    articles: [
-      {
-        id: "chat-messenger",
-        title: "Мессенджер",
-        description:
-          "Чат (маршрут /chat) для коммуникации внутри команды. Работает в реальном времени через Socket.IO. Поддерживает личные сообщения, групповые чаты, вложения, ответы на сообщения и папки.",
-        features: [
-          {
-            icon: <MessageSquare className="w-4 h-4" />,
-            title: "Список чатов",
-            text: "Боковая панель со списком контактов и групп. Показывает онлайн-статус, непрочитанные сообщения и время последней активности.",
-          },
-          {
-            icon: <Send className="w-4 h-4" />,
-            title: "Отправка сообщений",
-            text: "Текстовые сообщения с поддержкой emoji. Отправка по Enter или кнопке с иконкой Send.",
-          },
-          {
-            icon: <Paperclip className="w-4 h-4" />,
-            title: "Вложения",
-            text: "Прикрепление файлов к сообщению через скрепку. Поддерживается drag-and-drop.",
-          },
-          {
-            icon: <Check className="w-4 h-4" />,
-            title: "Статус прочтения",
-            text: "Галочки под сообщением: одна — отправлено, две — прочитано собеседником.",
-          },
-          {
-            icon: <FolderPlus className="w-4 h-4" />,
-            title: "Папки чатов",
-            text: "Создание кастомных папок для организации чатов. Перетаскивание чатов между папками.",
-          },
-          {
-            icon: <Users className="w-4 h-4" />,
-            title: "Командные комнаты",
-            text: "Постоянные групповые чаты, привязанные к командным комнатам для совместной работы.",
-          },
-        ],
-      },
-      {
-        id: "chat-calls",
-        title: "Видео- и аудиозвонки",
-        description:
-          "Встроенная система звонков через WebRTC. Поддерживает аудио- и видеовызовы, демонстрацию экрана, а также запланированные встречи.",
-        features: [
-          {
-            icon: <Phone className="w-4 h-4" />,
-            title: "Аудиозвонок",
-            text: "Иконка Phone запускает голосовой вызов через WebRTC в текущем чате или комнате.",
-          },
-          {
-            icon: <Video className="w-4 h-4" />,
-            title: "Видеозвонок",
-            text: "Иконка Video запускает видеовызов с возможностью демонстрации экрана.",
-          },
-          {
-            icon: <Monitor className="w-4 h-4" />,
-            title: "Демонстрация экрана",
-            text: "Во время видеозвонка можно поделиться экраном с собеседниками.",
-          },
-          {
-            icon: <Calendar className="w-4 h-4" />,
-            title: "Запланировать встречу",
-            text: "Создание запланированного звонка с указанием времени и участников.",
-          },
-        ],
-      },
-    ],
-  },
-  {
-    id: "notifications",
-    title: "Уведомления",
-    icon: <Bell className="w-4 h-4" />,
-    articles: [
-      {
-        id: "notifications-center",
-        title: "Центр уведомлений",
-        description:
-          "Страница уведомлений (маршрут /notifications) с real-time обновлениями через WebSocket. Группирует уведомления по датам (Сегодня, Вчера, На этой неделе, Ранее). Поддерживает фильтрацию по типу и массовые действия.",
-        features: [
-          {
-            icon: <Bell className="w-4 h-4" />,
-            title: "Список уведомлений",
-            text: "Бесконечный скролл с уведомлениями. Каждое имеет иконку типа, текст, время и кнопки действий.",
-          },
-          {
-            icon: <CheckCheck className="w-4 h-4" />,
-            title: "Прочитать все",
-            text: "Кнопка с двойной галочкой отмечает все уведомления как прочитанные.",
-          },
-          {
-            icon: <Filter className="w-4 h-4" />,
-            title: "Фильтры",
-            text: "Фильтры: Все / Непрочитанные / Прочитанные / Удалить прочитанные.",
-          },
-          {
-            icon: <CheckSquare className="w-4 h-4" />,
-            title: "Задачи",
-            text: "Вкладка фильтрует уведомления, связанные с задачами.",
-          },
-          {
-            icon: <MessageSquare className="w-4 h-4" />,
-            title: "Чат",
-            text: "Вкладка с уведомлениями о новых сообщениях.",
-          },
-          {
-            icon: <Calendar className="w-4 h-4" />,
-            title: "Календарь",
-            text: "Вкладка с напоминаниями о событиях и встречах.",
-          },
-          {
-            icon: <Trash2 className="w-4 h-4" />,
-            title: "Удалить",
-            text: "Иконка мусорной корзины появляется при наведении для удаления уведомления.",
-          },
-        ],
-      },
-    ],
-  },
-  {
-    id: "team",
-    title: "Команда",
-    icon: <Users className="w-4 h-4" />,
-    articles: [
-      {
-        id: "team-directory",
-        title: "Справочник сотрудников",
-        description:
-          "Страница команды (маршрут /team) с группировкой сотрудников по отделам. Две вкладки: «Список» и «Аналитика». Поддерживает поиск, фильтрацию, добавление, редактирование и блокировку пользователей.",
-        features: [
-          {
-            icon: <Users className="w-4 h-4" />,
-            title: "Список сотрудников",
-            text: "Таблица с сотрудниками, сгруппированными по отделам. Колонки: имя, статус, должность, баллы, действия.",
-          },
-          {
-            icon: <UserCog className="w-4 h-4" />,
-            title: "Добавить сотрудника",
-            text: "Форма создания нового сотрудника с полями: имя, email, телефон, должность, отдел, Telegram, пароль, роль.",
-          },
-          {
-            icon: <Search className="w-4 h-4" />,
-            title: "Поиск",
-            text: "Поиск по имени, email, должности, Telegram, статусу и комментарию.",
-          },
-          {
-            icon: <Filter className="w-4 h-4" />,
-            title: "Фильтры",
-            text: "Фильтрация по статусу (онлайн, занят, офлайн), отделу и должности.",
-          },
-          {
-            icon: <Coins className="w-4 h-4" />,
-            title: "Баллы",
-            text: "Баланс внутренней валюты каждого сотрудника. Начисляются за выполнение задач.",
-          },
-          {
-            icon: <Monitor className="w-4 h-4" />,
-            title: "Режим работы",
-            text: "Индикатор удалённой работы (Monitor) или офиса. Отображается рядом со статусом.",
-          },
-          {
-            icon: <Pencil className="w-4 h-4" />,
-            title: "Редактирование",
-            text: "Модальное окно с вкладками: Данные, Аудит статусов, Аудит баллов. Редактирование всех полей, смена статуса, операции с баллами.",
-          },
-          {
-            icon: <BarChart2 className="w-4 h-4" />,
-            title: "Аналитика",
-            text: "Вкладка с таблицей учёта рабочего времени: приход, начало/окончание работы, уход, общее количество часов.",
-          },
-        ],
-      },
-    ],
-  },
-  {
-    id: "reports",
-    title: "Отчёты",
-    icon: <BarChart2 className="w-4 h-4" />,
-    articles: [
-      {
-        id: "reports-analytics",
-        title: "Аналитика и отчёты",
-        description:
-          "Страница отчётов (маршрут /reports) по 7 направлениям: Обзор, Рабочие пространства, Проекты, Доски, Задачи, Пользователи, Загрузка. Поддерживает фильтрацию по датам и экспорт данных.",
-        features: [
-          {
-            icon: <BarChart2 className="w-4 h-4" />,
-            title: "Графики",
-            text: "Pie Chart, Bar Chart, Area Chart, Line Chart. Визуализация через библиотеку recharts.",
-          },
-          {
-            icon: <Download className="w-4 h-4" />,
-            title: "Экспорт",
-            text: "Кнопка экспортирует текущий отчёт в CSV или Excel для дальнейшей работы.",
-          },
-          {
-            icon: <Filter className="w-4 h-4" />,
-            title: "Фильтры",
-            text: "6 фильтров: рабочее пространство, проект, доска, пользователь, дата начала, дата окончания.",
-          },
-          {
-            icon: <TrendingUp className="w-4 h-4" />,
-            title: "Тренды",
-            text: "Индикаторы роста/падения метрик со стрелками — сравнение с предыдущим периодом.",
-          },
-          {
-            icon: <Users className="w-4 h-4" />,
-            title: "По пользователям",
-            text: "Отчёт о загрузке каждого сотрудника: количество задач, выполненных, в процессе, просроченных.",
-          },
-          {
-            icon: <Layers className="w-4 h-4" />,
-            title: "По рабочим пространствам",
-            text: "Статистика по рабочим пространствам: проекты, задачи, участники, прогресс.",
-          },
-          {
-            icon: <CheckSquare className="w-4 h-4" />,
-            title: "По задачам",
-            text: "Анализ задач по статусам, приоритетам, меткам. Время в статусах (time tracking).", 
-          },
-        ],
-      },
-    ],
-  },
-  {
-    id: "shop",
-    title: "Магазин",
-    icon: <ShoppingBag className="w-4 h-4" />,
-    articles: [
-      {
-        id: "shop-store",
-        title: "Магазин мерча",
-        description:
-          "Магазин (маршрут /shop) для покупки мерча за внутренние баллы (points), заработанные за выполнение задач. Каталог товаров с фильтрами, корзина и история покупок.",
-        features: [
-          {
-            icon: <ShoppingBag className="w-4 h-4" />,
-            title: "Каталог товаров",
-            text: "Сетка товаров с изображением, названием, описанием и стоимостью в баллах.",
-          },
-          {
-            icon: <Coins className="w-4 h-4" />,
-            title: "Баллы",
-            text: "Текущий баланс баллов отображается в шапке. Товары покупаются только за баллы.",
-          },
-          {
-            icon: <CreditCard className="w-4 h-4" />,
-            title: "Покупка",
-            text: "Кнопка «Купить» списывает баллы и создаёт заявку на покупку. Требуется подтверждение администратором.",
-          },
-          {
-            icon: <History className="w-4 h-4" />,
-            title: "История покупок",
-            text: "Список всех заказов со статусами: одобрено, отклонено, ожидание. Доступен в профиле.",
-          },
-          {
-            icon: <Filter className="w-4 h-4" />,
-            title: "Категории",
-            text: "Фильтрация товаров по категориям: одежда, аксессуары, техника и другие.",
-          },
-        ],
-      },
-    ],
-  },
-  {
-    id: "management",
-    title: "Управление",
-    icon: <Shield className="w-4 h-4" />,
-    articles: [
-      {
-        id: "mgmt-team",
-        title: "Команда",
-        description:
-          "Раздел управления составом команды. Включает отправку email-приглашений новым сотрудникам и управление департаментами (создание, редактирование, удаление, назначение цвета).",
-        features: [
-          {
-            icon: <Mail className="w-4 h-4" />,
-            title: "Приглашения по email",
-            text: "Отправка приглашений на указанный email с выбором роли. Список отправленных приглашений со статусами: ожидает, принято, просрочено. Возможность отменить ожидающее приглашение.",
-          },
-          {
-            icon: <UserPlus className="w-4 h-4" />,
-            title: "Быстрое приглашение",
-            text: "Упрощённая форма: email + роль — для быстрой отправки приглашения без лишних полей.",
-          },
-          {
-            icon: <Layers className="w-4 h-4" />,
-            title: "Департаменты",
-            text: "CRUD департаментов: название, описание, цвет. 10 предустановленных цветов для визуальной идентификации отдела.",
-          },
-          {
-            icon: <Palette className="w-4 h-4" />,
-            title: "Цвета департаментов",
-            text: "Каждый департамент имеет свой цвет, отображаемый в списке сотрудников и на странице команды.",
-          },
-        ],
-      },
-      {
-        id: "mgmt-statuses",
-        title: "Статусы",
-        description:
-          "Управление кастомными статусами пользователей (онлайн, занят, офлайн и др.). Администратор может создавать, редактировать и удалять статусы, назначать цвета и устанавливать статус по умолчанию.",
-        features: [
-          {
-            icon: <Activity className="w-4 h-4" />,
-            title: "Список статусов",
-            text: "Таблица всех статусов с названием, цветом и признаком «по умолчанию».",
-          },
-          {
-            icon: <Plus className="w-4 h-4" />,
-            title: "Создание статуса",
-            text: "Форма: название, выбор цвета из палитры или color-picker, флаг «по умолчанию».",
-          },
-          {
-            icon: <Pencil className="w-4 h-4" />,
-            title: "Редактирование",
-            text: "Изменение названия, цвета и статуса по умолчанию. Изменения применяются ко всем пользователям.",
-          },
-          {
-            icon: <Check className="w-4 h-4" />,
-            title: "Статус по умолчанию",
-            text: "Один статус может быть назначен по умолчанию для всех новых и существующих пользователей.",
-          },
-        ],
-      },
-      {
-        id: "mgmt-projects",
-        title: "Проекты",
-        description:
-          "Комплексный раздел управления проектной инфраструктурой: рабочие пространства, проекты, приоритеты, метки и типы задач. Все сущности поддерживают CRUD-операции.",
-        features: [
-          {
-            icon: <LayoutGrid className="w-4 h-4" />,
-            title: "Рабочие пространства",
-            text: "Создание, редактирование и удаление рабочих пространств. Назначение названия и цвета. Управление участниками пространства.",
-          },
-          {
-            icon: <FolderOpen className="w-4 h-4" />,
-            title: "Проекты",
-            text: "CRUD проектов внутри рабочих пространств. Фильтрация по пространству. Для удаления требуется мастер-пароль.",
-          },
-          {
-            icon: <Flag className="w-4 h-4" />,
-            title: "Приоритеты",
-            text: "Создание приоритетов задач: название, цвет, уровень (1–10). Используются при создании и фильтрации задач.",
-          },
-          {
-            icon: <Tags className="w-4 h-4" />,
-            title: "Метки",
-            text: "Цветные метки для категоризации задач. Название + цвет. Отображаются на карточках задач Kanban-доски.",
-          },
-          {
-            icon: <Hash className="w-4 h-4" />,
-            title: "Типы задач",
-            text: "Классификация задач: Ошибка, Доработка, Эпик и др. Каждый тип имеет название и цвет.",
-          },
-        ],
-      },
-      {
-        id: "mgmt-archive",
-        title: "Архив задач",
-        description:
-          "Раздел для просмотра и восстановления архивированных задач. Архивированные задачи не отображаются на Kanban-доске, но сохраняют все данные и могут быть возвращены в работу.",
-        features: [
-          {
-            icon: <Archive className="w-4 h-4" />,
-            title: "Список архивных задач",
-            text: "Таблица архивированных задач с названием, проектом, доской и датой архивации.",
-          },
-          {
-            icon: <RotateCcw className="w-4 h-4" />,
-            title: "Восстановление",
-            text: "Кнопка «Восстановить» возвращает задачу из архива на Kanban-доску в исходную колонку.",
-          },
-          {
-            icon: <Search className="w-4 h-4" />,
-            title: "Поиск",
-            text: "Поиск архивных задач по названию для быстрого нахождения нужной задачи.",
-          },
-        ],
-      },
-      {
-        id: "mgmt-security",
-        title: "Безопасность",
-        description:
-          "Раздел управления мастер-паролем — ключевым элементом безопасности для критических операций (удаление проектов, передача владения). Установка и смена пароля требуют подтверждения через email-код.",
-        features: [
-          {
-            icon: <Shield className="w-4 h-4" />,
-            title: "Мастер-пароль",
-            text: "Установка или изменение мастер-пароля. Используется для подтверждения критических операций в системе.",
-          },
-          {
-            icon: <Mail className="w-4 h-4" />,
-            title: "Подтверждение по email",
-            text: "При смене мастер-пароля отправляется 6-значный код на email. 60-секундный таймер до повторной отправки.",
-          },
-          {
-            icon: <Key className="w-4 h-4" />,
-            title: "Требования к паролю",
-            text: "Мастер-пароль должен быть надёжным. Есть переключатель видимости (Eye / EyeOff).",
-          },
-        ],
-      },
-      {
-        id: "mgmt-roles",
-        title: "Роли",
-        description:
-          "Управление ролями и правами доступа (RBAC). Создание ролей, назначение разрешений по категориям, копирование прав, передача владения системой.",
-        features: [
-          {
-            icon: <Shield className="w-4 h-4" />,
-            title: "Список ролей",
-            text: "Панель ролей с названием, описанием, цветом и количеством участников. Системные роли помечены бейджем «Система».",
-          },
-          {
-            icon: <Plus className="w-4 h-4" />,
-            title: "Создание роли",
-            text: "Форма: название, описание, цвет. Новая роль создаётся без прав, которые назначаются отдельно.",
-          },
-          {
-            icon: <Pencil className="w-4 h-4" />,
-            title: "Редактирование прав",
-            text: "Матрица разрешений по категориям: Страницы, Управление, Проекты, Задачи, Команда, Общение, Календарь, Отчёты, Магазин, Доски, Роли, Отделы, Статусы, Интеграции.",
-          },
-          {
-            icon: <Trash2 className="w-4 h-4" />,
-            title: "Удаление роли",
-            text: "При удалении роли с участниками требуется выбрать роль для переноса пользователей. Системные роли нельзя удалить.",
-          },
-          {
-            icon: <Users className="w-4 h-4" />,
-            title: "Передача владения",
-            text: "Двухэтапный процесс: верификация мастер-пароля → отправка кода на email → подтверждение передачи роли Владельца.",
-          },
-        ],
-      },
-      {
-        id: "mgmt-calls",
-        title: "Звонки",
-        description:
-          "Управление командными комнатами — виртуальными пространствами для аудио- и видеовстреч. Каждая комната имеет уникальный slug, код приглашения и список администраторов.",
-        features: [
-          {
-            icon: <Phone className="w-4 h-4" />,
-            title: "Командные комнаты",
-            text: "CRUD комнат: название, slug, описание, тип доступа (открытая/закрытая), цвет.",
-          },
-          {
-            icon: <Key className="w-4 h-4" />,
-            title: "Код приглашения",
-            text: "Автоматически генерируемый код для входа в комнату. Возможность скопировать ссылку или регенерировать код.",
-          },
-          {
-            icon: <Users className="w-4 h-4" />,
-            title: "Администраторы комнаты",
-            text: "Назначение администраторов, которые могут исключать участников из комнаты.",
-          },
-          {
-            icon: <ExternalLink className="w-4 h-4" />,
-            title: "Ссылка на комнату",
-            text: "Копирование прямой ссылки на комнату в буфер обмена для отправки участникам.",
-          },
-        ],
-      },
-      {
-        id: "mgmt-integrations",
-        title: "Интеграции",
-        description:
-          "Подключение внешних сервисов и API. Включает 8 интеграций, сгруппированных по категориям: мессенджеры, уведомления, разработка, управление, календари, автоматизация.",
-        features: [
-          {
-            icon: <MessageCircle className="w-4 h-4" />,
-            title: "Telegram-бот",
-            text: "Настройка Telegram-бота для отправки уведомлений. Ввод токена бота, настройка webhook.",
-          },
-          {
-            icon: <Mail className="w-4 h-4" />,
-            title: "Email SMTP",
-            text: "Конфигурация почтового сервера: хост, порт, логин, пароль, адрес отправителя. Тестовое письмо. Примеры конфигураций (Yandex, Google, Mail.ru, Beget).",
-          },
-          {
-            icon: <Calendar className="w-4 h-4" />,
-            title: "Яндекс Календарь",
-            text: "OAuth2-авторизация и синхронизация событий через CalDAV. Просмотр и создание событий Яндекс Календаря.",
-          },
-          {
-            icon: <GitBranch className="w-4 h-4" />,
-            title: "GitHub",
-            text: "Интеграция с GitHub для привязки репозиториев к проектам и отслеживания задач.",
-          },
-          {
-            icon: <MessageSquare className="w-4 h-4" />,
-            title: "Slack",
-            text: "Подключение Slack-воркспейса для отправки уведомлений о задачах и событиях в каналы.",
-          },
-          {
-            icon: <Code className="w-4 h-4" />,
-            title: "Jira",
-            text: "Синхронизация задач с Jira. Импорт/экспорт задач между системами.",
-          },
-          {
-            icon: <FileText className="w-4 h-4" />,
-            title: "Notion",
-            text: "Интеграция с Notion для экспорта документации и заметок проектов.",
-          },
-          {
-            icon: <Zap className="w-4 h-4" />,
-            title: "Zapier",
-            text: "Автоматизация через Zapier. Настройка триггеров и действий между сервисами.",
-          },
-        ],
-      },
-      {
-        id: "mgmt-balance",
-        title: "Баланс",
-        description:
-          "Настройка системы начисления баллов (points) сотрудникам. Определение количества баллов за переходы задач между статусами и правила автоматического начисления.",
-        features: [
-          {
-            icon: <Coins className="w-4 h-4" />,
-            title: "Баллы за статусы",
-            text: "Настройка количества баллов, начисляемых при переходе задачи в определённый статус. Максимальное время в статусе.",
-          },
-          {
-            icon: <ListChecks className="w-4 h-4" />,
-            title: "Правила начисления",
-            text: "Автоматические правила: например, начисление баллов за приход на работу вовремя. Включение/выключение, положительные/отрицательные баллы.",
-          },
-          {
-            icon: <ToggleLeft className="w-4 h-4" />,
-            title: "Включение/выключение",
-            text: "Каждое правило можно активировать или деактивировать переключателем.",
-          },
-        ],
-      },
-      {
-        id: "mgmt-shop",
-        title: "Магазин",
-        description:
-          "Управление каталогом товаров и заявками на покупку. Две вкладки: «Товары» и «Заявки». Администратор может добавлять товары, редактировать их, управлять остатками и обрабатывать заказы сотрудников.",
-        features: [
-          {
-            icon: <Package className="w-4 h-4" />,
-            title: "Товары",
-            text: "CRUD товаров: название, описание, стоимость в баллах, остаток, категория, изображение. Активность товара.",
-          },
-          {
-            icon: <Image className="w-4 h-4" />,
-            title: "Изображения",
-            text: "Загрузка изображения товара через файловый аплоад или указание URL. Превью в карточке товара.",
-          },
-          {
-            icon: <Store className="w-4 h-4" />,
-            title: "Заявки",
-            text: "Список заявок на покупку со статусами: ожидание, одобрено, отклонено. Кнопки одобрения и отклонения.",
-          },
-          {
-            icon: <Check className="w-4 h-4" />,
-            title: "Одобрение заказа",
-            text: "При одобрении списываются баллы у покупателя и создаётся запись в истории покупок.",
-          },
-          {
-            icon: <XCircle className="w-4 h-4" />,
-            title: "Отклонение заказа",
-            text: "При отклонении заявка помечается соответствующим статусом. Баллы не списываются.",
-          },
-        ],
-      },
-    ],
-  },
-  {
-    id: "profile",
-    title: "Профиль",
-    icon: <User className="w-4 h-4" />,
-    articles: [
-      {
-        id: "profile-main",
-        title: "Личный профиль",
-        description:
-          "Страница профиля (маршрут /profile) с возможностью редактирования контактных данных, загрузки аватара, подключения Telegram-уведомлений, просмотра баланса баллов и истории покупок.",
-        features: [
-          {
-            icon: <Camera className="w-4 h-4" />,
-            title: "Аватар",
-            text: "Загрузка фото профиля. При наведении появляется оверлей с иконкой Camera и текстом «Изменить фото».",
-          },
-          {
-            icon: <User className="w-4 h-4" />,
-            title: "Личные данные",
-            text: "Имя, фамилия, должность, отдел, телефон, email. Поле должности имеет иконку Briefcase.",
-          },
-          {
-            icon: <Send className="w-4 h-4" />,
-            title: "Telegram",
-            text: "Подключение Telegram-бота для получения уведомлений. Кнопка открывает диалог с ботом.",
-          },
-          {
-            icon: <Coins className="w-4 h-4" />,
-            title: "Баланс баллов",
-            text: "Текущий баланс, всего заработано, всего потрачено. История транзакций с пагинацией.",
-          },
-          {
-            icon: <Award className="w-4 h-4" />,
-            title: "Уровень",
-            text: "Система уровней с круглым прогресс-баром. Чем больше задач выполнено — тем выше уровень.",
-          },
-          {
-            icon: <ShoppingBag className="w-4 h-4" />,
-            title: "Покупки",
-            text: "История покупок в магазине мерча. Статусы: одобрено, отклонено, ожидание.",
-          },
-        ],
-      },
-    ],
-  },
-  {
-    id: "settings",
-    title: "Настройки",
-    icon: <Settings className="w-4 h-4" />,
-    articles: [
-      {
-        id: "settings-system",
-        title: "Настройки системы",
-        description:
-          "Страница настроек (маршрут /settings) для изменения пароля, управления уведомлениями и просмотра системного статуса. Доступна из выпадающего меню профиля.",
-        features: [
-          {
-            icon: <Lock className="w-4 h-4" />,
-            title: "Смена пароля",
-            text: "Форма с тремя полями: текущий пароль, новый пароль, подтверждение. Переключатель видимости (Eye / EyeOff).",
-          },
-          {
-            icon: <Key className="w-4 h-4" />,
-            title: "Генератор пароля",
-            text: "Кнопка генерирует случайный надёжный пароль и автоматически копирует его в буфер обмена.",
-          },
-          {
-            icon: <Bell className="w-4 h-4" />,
-            title: "Уведомления",
-            text: "Переключатели для включения/отключения уведомлений по типам: задачи, чат, календарь, звонки, системные.",
-          },
-          {
-            icon: <Shield className="w-4 h-4" />,
-            title: "Системный статус",
-            text: "Индикатор работоспособности системы с пульсирующей точкой. Проверка соединения с базой данных.",
-          },
-        ],
-      },
-    ],
-  },
+const POPULAR_ICONS = [
+  "BookOpen", "Lock", "LayoutDashboard", "Kanban", "CheckSquare", "Calendar",
+  "MessageSquare", "Users", "Settings", "Bell", "BarChart2", "ShoppingBag",
+  "Shield", "Star", "Phone", "Video", "Paperclip", "Send", "Check", "Download",
+  "Camera", "Coins", "Clock", "TrendingUp", "FolderOpen", "Briefcase", "RefreshCw",
+  "Play", "Activity", "LayoutGrid", "Archive", "RotateCcw", "Layers", "Tags",
+  "Palette", "Store", "Package", "Code", "Globe", "Zap", "Flag", "Hash",
+  "ListChecks", "XCircle", "Timer", "CreditCard", "History", "AlertTriangle",
+  "Wrench", "GitBranch", "Smartphone", "FolderPlus", "UserPlus", "MessageCircle",
+  "ToggleLeft", "User", "Key", "Mail", "ExternalLink", "Monitor", "Award",
+  "Minus", "Image", "FileText", "Eye", "EyeOff", "Plus", "Pencil", "Trash2",
+  "ArrowUp", "ArrowDown", "Search", "ChevronRight", "ChevronDown", "GripVertical",
+  "AlertCircle", "Loader2", "X",
 ];
 
+function IconPicker({ value, onChange }: { value: string; onChange: (icon: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const [filter, setFilter] = useState("");
+  const filtered = useMemo(() => {
+    if (!filter.trim()) return POPULAR_ICONS;
+    const q = filter.toLowerCase();
+    return POPULAR_ICONS.filter((name) => name.toLowerCase().includes(q));
+  }, [filter]);
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button variant="outline" className="w-full justify-start gap-2 text-xs h-9">
+          <DynamicIcon name={value} className="w-4 h-4" />
+          <span className="truncate">{value || "Выберите иконку"}</span>
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-64 p-2" align="start">
+        <div className="space-y-2">
+          <div className="relative">
+            <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+            <Input
+              placeholder="Поиск иконки..."
+              className="pl-7 h-7 text-xs"
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+            />
+          </div>
+          <ScrollArea className="h-48">
+            <div className="grid grid-cols-6 gap-1">
+              {filtered.map((name) => (
+                <button
+                  key={name}
+                  type="button"
+                  onClick={() => { onChange(name); setOpen(false); }}
+                  className={cn(
+                    "flex items-center justify-center h-8 w-8 rounded-md transition-colors",
+                    value === name
+                      ? "bg-primary text-primary-foreground"
+                      : "hover:bg-muted text-muted-foreground"
+                  )}
+                  title={name}
+                >
+                  <DynamicIcon name={name} className="w-4 h-4" />
+                </button>
+              ))}
+            </div>
+            {filtered.length === 0 && (
+              <p className="text-xs text-muted-foreground text-center py-4">Ничего не найдено</p>
+            )}
+          </ScrollArea>
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+interface KBArticle {
+  id: string;
+  sectionId: string;
+  title: string;
+  content: string | null;
+  workspaceId: string | null;
+  sortOrder: number | null;
+  isVisible: boolean | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+interface KBSection {
+  id: string;
+  title: string;
+  icon: string | null;
+  workspaceId: string | null;
+  sortOrder: number | null;
+  isVisible: boolean | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+interface SectionWithArticles extends KBSection {
+  articles: KBArticle[];
+}
+
 export default function KnowledgeBasePage() {
-  const [activeArticleId, setActiveArticleId] = useState<string>(
-    SECTIONS[0]?.articles[0]?.id || ""
-  );
-  const [openSections, setOpenSections] = useState<Set<string>>(
-    new Set([SECTIONS[0]?.id])
-  );
-  const [searchQuery, setSearchQuery] = useState<string>("");
+  const queryClient = useQueryClient();
+  const { isAdmin, canManage, isLoading: permLoading } = usePermission();
+  const isEditor = canManage("team");
 
-  const lowerQuery = searchQuery.toLowerCase().trim();
+  const [searchQuery, setSearchQuery] = useState("");
+  const [activeSectionId, setActiveSectionId] = useState<string | null>(null);
+  const [activeArticleId, setActiveArticleId] = useState<string | null>(null);
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set());
 
-  const filteredSections = lowerQuery
-    ? SECTIONS.map((section) => ({
-        ...section,
-        articles: section.articles.filter(
-          (article) =>
-            article.title.toLowerCase().includes(lowerQuery) ||
-            article.description.toLowerCase().includes(lowerQuery) ||
-            article.id.toLowerCase().includes(lowerQuery) ||
-            article.features.some(
-              (f) =>
-                f.title.toLowerCase().includes(lowerQuery) ||
-                f.text.toLowerCase().includes(lowerQuery)
-            )
-        ),
-      })).filter((s) => s.articles.length > 0)
-    : SECTIONS;
+  // Section dialog
+  const [sectionDialogOpen, setSectionDialogOpen] = useState(false);
+  const [editingSection, setEditingSection] = useState<KBSection | null>(null);
+  const [sectionForm, setSectionForm] = useState({ title: "", icon: "FileText", workspaceId: null as string | null, sortOrder: 0, isVisible: true });
 
-  const activeArticle = filteredSections
-    .flatMap((s) => s.articles)
-    .find((a) => a.id === activeArticleId);
+  // Article dialog
+  const [articleDialogOpen, setArticleDialogOpen] = useState(false);
+  const [editingArticle, setEditingArticle] = useState<KBArticle | null>(null);
+  const [articleSectionId, setArticleSectionId] = useState<string | null>(null);
+  const [articleForm, setArticleForm] = useState({ title: "", content: "", workspaceId: null as string | null, sortOrder: 0, isVisible: true });
 
-  const activeSection = filteredSections.find((s) =>
-    s.articles.some((a) => a.id === activeArticleId)
-  );
+  const { data: sectionsData = [], isLoading: sectionsLoading } = useQuery<KBSection[]>({
+    queryKey: [isEditor ? "/api/kb/sections/all" : "/api/kb/sections"],
+    queryFn: async () => {
+      const url = isEditor ? "/api/kb/sections/all" : "/api/kb/sections";
+      const res = await fetch(url, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch sections");
+      return res.json();
+    },
+  });
 
-  const totalResults = filteredSections.reduce(
-    (sum, s) => sum + s.articles.length,
-    0
-  );
+  const { data: articlesData = [], isLoading: articlesLoading } = useQuery<KBArticle[]>({
+    queryKey: ["/api/kb/articles"],
+    queryFn: async () => {
+      const res = await fetch("/api/kb/articles", { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch articles");
+      return res.json();
+    },
+  });
+
+  const { data: workspacesData = [] } = useQuery<{ id: string; name: string }[]>({
+    queryKey: ["/api/workspaces"],
+    queryFn: async () => {
+      const res = await fetch("/api/workspaces", { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch workspaces");
+      return res.json();
+    },
+  });
+
+  const sectionsWithArticles = useMemo<SectionWithArticles[]>(() => {
+    const sections = sectionsData
+      .filter((s) => isEditor || s.isVisible !== false)
+      .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+    return sections.map((s) => ({
+      ...s,
+      articles: articlesData
+        .filter((a) => a.sectionId === s.id)
+        .filter((a) => isEditor || a.isVisible !== false)
+        .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0)),
+    }));
+  }, [sectionsData, articlesData, isEditor]);
+
+  const activeSection = useMemo(() => sectionsWithArticles.find((s) => s.id === activeSectionId) || null, [sectionsWithArticles, activeSectionId]);
+  const activeArticle = useMemo(() => articlesData.find((a) => a.id === activeArticleId) || null, [articlesData, activeArticleId]);
+
+  // Search across all articles
+  const allArticles = useMemo(() => {
+    return sectionsWithArticles.flatMap((s) => s.articles);
+  }, [sectionsWithArticles]);
+
+  const searchResults = useMemo(() => {
+    if (!searchQuery.trim()) return null;
+    const q = searchQuery.toLowerCase();
+    return allArticles.filter((a) =>
+      a.title.toLowerCase().includes(q) ||
+      (a.content || "").toLowerCase().includes(q)
+    );
+  }, [searchQuery, allArticles]);
+
+  // Mutations
+  const createSectionMutation = useMutation({
+    mutationFn: async (data: { title: string; icon: string; sortOrder: number; isVisible: boolean }) => {
+      const res = await apiRequest("POST", "/api/kb/sections", data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/kb/sections/all"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/kb/sections"] });
+      setSectionDialogOpen(false);
+    },
+  });
+
+  const updateSectionMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: Partial<KBSection> }) => {
+      const res = await apiRequest("PATCH", `/api/kb/sections/${id}`, data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/kb/sections/all"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/kb/sections"] });
+      setSectionDialogOpen(false);
+    },
+  });
+
+  const deleteSectionMutation = useMutation({
+    mutationFn: async (id: string) => {
+      await apiRequest("DELETE", `/api/kb/sections/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/kb/sections/all"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/kb/sections"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/kb/articles"] });
+      if (activeSectionId) {
+        setActiveSectionId(null);
+        setActiveArticleId(null);
+      }
+    },
+  });
+
+  const createArticleMutation = useMutation({
+    mutationFn: async (data: { sectionId: string; title: string; content: string; sortOrder: number; isVisible: boolean }) => {
+      const res = await apiRequest("POST", "/api/kb/articles", data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/kb/articles"] });
+      setArticleDialogOpen(false);
+    },
+  });
+
+  const updateArticleMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: Partial<KBArticle> }) => {
+      const res = await apiRequest("PATCH", `/api/kb/articles/${id}`, data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/kb/articles"] });
+      setArticleDialogOpen(false);
+    },
+  });
+
+  const deleteArticleMutation = useMutation({
+    mutationFn: async (id: string) => {
+      await apiRequest("DELETE", `/api/kb/articles/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/kb/articles"] });
+      if (activeArticleId) setActiveArticleId(null);
+    },
+  });
+
+  const reorderMutation = useMutation({
+    mutationFn: async (data: { sections?: { id: string; sortOrder: number }[]; articles?: { id: string; sortOrder: number; sectionId: string }[] }) => {
+      const res = await apiRequest("PATCH", "/api/kb/reorder", data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/kb/sections/all"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/kb/sections"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/kb/articles"] });
+    },
+  });
+
+  const openSectionDialog = (section?: KBSection) => {
+    if (section) {
+      setEditingSection(section);
+      setSectionForm({
+        title: section.title,
+        icon: section.icon || "FileText",
+        workspaceId: section.workspaceId || null,
+        sortOrder: section.sortOrder ?? 0,
+        isVisible: section.isVisible !== false,
+      });
+    } else {
+      setEditingSection(null);
+      setSectionForm({ title: "", icon: "FileText", workspaceId: null, sortOrder: sectionsData.length, isVisible: true });
+    }
+    setSectionDialogOpen(true);
+  };
+
+  const openArticleDialog = (sectionId: string, article?: KBArticle) => {
+    setArticleSectionId(sectionId);
+    if (article) {
+      setEditingArticle(article);
+      setArticleForm({
+        title: article.title,
+        content: article.content || "",
+        workspaceId: article.workspaceId || null,
+        sortOrder: article.sortOrder ?? 0,
+        isVisible: article.isVisible !== false,
+      });
+    } else {
+      setEditingArticle(null);
+      const parentSection = sectionsData.find((s) => s.id === sectionId);
+      setArticleForm({ title: "", content: "", workspaceId: parentSection?.workspaceId || null, sortOrder: 0, isVisible: true });
+    }
+    setArticleDialogOpen(true);
+  };
+
+  const handleSaveSection = () => {
+    if (!sectionForm.title.trim()) return;
+    if (editingSection) {
+      updateSectionMutation.mutate({ id: editingSection.id, data: sectionForm });
+    } else {
+      createSectionMutation.mutate(sectionForm);
+    }
+  };
+
+  const handleSaveArticle = () => {
+    if (!articleForm.title.trim() || !articleSectionId) return;
+    if (editingArticle) {
+      updateArticleMutation.mutate({ id: editingArticle.id, data: articleForm });
+    } else {
+      createArticleMutation.mutate({ ...articleForm, sectionId: articleSectionId, content: articleForm.content || "" });
+    }
+  };
+
+  const moveSection = (index: number, direction: "up" | "down") => {
+    const items = [...sectionsWithArticles];
+    if (direction === "up" && index > 0) {
+      [items[index], items[index - 1]] = [items[index - 1], items[index]];
+    } else if (direction === "down" && index < items.length - 1) {
+      [items[index], items[index + 1]] = [items[index + 1], items[index]];
+    }
+    const updates = items.map((s, i) => ({ id: s.id, sortOrder: i }));
+    reorderMutation.mutate({ sections: updates });
+  };
+
+  const moveArticle = (sectionId: string, index: number, direction: "up" | "down") => {
+    const section = sectionsWithArticles.find((s) => s.id === sectionId);
+    if (!section) return;
+    const items = [...section.articles];
+    if (direction === "up" && index > 0) {
+      [items[index], items[index - 1]] = [items[index - 1], items[index]];
+    } else if (direction === "down" && index < items.length - 1) {
+      [items[index], items[index + 1]] = [items[index + 1], items[index]];
+    }
+    const updates = items.map((a, i) => ({ id: a.id, sortOrder: i, sectionId }));
+    reorderMutation.mutate({ articles: updates });
+  };
 
   const toggleSection = (id: string) => {
-    setOpenSections((prev) => {
+    setExpandedSections((prev) => {
       const next = new Set(prev);
-      if (next.has(id)) {
-        next.delete(id);
-      } else {
-        next.add(id);
-      }
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
       return next;
     });
   };
 
+  const selectArticle = (article: KBArticle) => {
+    setActiveArticleId(article.id);
+    setActiveSectionId(article.sectionId);
+    if (!expandedSections.has(article.sectionId)) {
+      setExpandedSections((prev) => new Set(prev).add(article.sectionId));
+    }
+  };
+
+  const sanitizedHtml = (html: string) => {
+    return DOMPurify.sanitize(html, {
+      ALLOWED_TAGS: [
+        "p", "br", "strong", "b", "em", "i", "u", "s", "strike", "del",
+        "h1", "h2", "h3", "h4", "h5", "h6",
+        "ul", "ol", "li", "blockquote", "pre", "code",
+        "a", "img", "span", "div", "hr",
+        "table", "thead", "tbody", "tr", "td", "th",
+      ],
+      ALLOWED_ATTR: [
+        "href", "target", "rel", "src", "alt", "title", "class", "style",
+        "width", "height", "data-icon",
+      ],
+    });
+  };
+
+  function domNodeToReact(node: Node, key: number): React.ReactNode {
+    if (node.nodeType === Node.TEXT_NODE) {
+      return node.textContent;
+    }
+    if (node.nodeType !== Node.ELEMENT_NODE) {
+      return null;
+    }
+    const el = node as HTMLElement;
+    const tagName = el.tagName.toLowerCase();
+
+    // Handle icon spans
+    if (tagName === 'span' && el.hasAttribute('data-icon')) {
+      const iconName = el.getAttribute('data-icon');
+      return (
+        <DynamicIcon
+          key={key}
+          name={iconName}
+          className="w-4 h-4 inline-block mr-1.5 align-text-bottom text-primary shrink-0"
+        />
+      );
+    }
+
+    // Build props
+    const props: any = { key };
+    const allowedAttrs = ['class', 'id', 'href', 'target', 'rel', 'src', 'alt', 'title', 'width', 'height'];
+    allowedAttrs.forEach((attr) => {
+      if (el.hasAttribute(attr)) {
+        props[attr] = el.getAttribute(attr);
+      }
+    });
+
+    // Void elements cannot have children in React
+    const voidElements = new Set(['area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'param', 'source', 'track', 'wbr']);
+    if (voidElements.has(tagName)) {
+      return React.createElement(tagName, props);
+    }
+
+    // Recursively process children
+    const children = Array.from(el.childNodes).map((child, i) => domNodeToReact(child, i));
+    return React.createElement(tagName, props, children);
+  }
+
+  function ArticleContent({ html }: { html: string }) {
+    const nodes = useMemo(() => {
+      const clean = sanitizedHtml(html);
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(clean, 'text/html');
+      return Array.from(doc.body.childNodes);
+    }, [html]);
+
+    return <>{nodes.map((node, i) => domNodeToReact(node, i))}</>;
+  }
+
+  const isLoading = sectionsLoading || articlesLoading || permLoading;
+
   return (
     <Layout>
-      <div className="flex h-[calc(100vh-64px)] overflow-hidden bg-background">
+      <div className="flex h-[calc(100vh-4rem)] overflow-hidden">
         {/* Sidebar */}
-        <aside className="w-[300px] border-r border-border bg-muted/30 flex flex-col shrink-0">
-          <div className="p-4 border-b border-border/50">
-            <h2 className="text-base font-bold flex items-center gap-2 mb-3">
-              <BookOpen className="w-4 h-4 text-primary" />
-              База знаний
-            </h2>
+        <aside className="w-80 border-r bg-card flex flex-col shrink-0 text-foreground">
+          <div className="p-4 border-b space-y-3">
+            <div className="flex items-center justify-between">
+              <h1 className="font-semibold text-sm flex items-center gap-2">
+                <BookOpen className="w-4 h-4 text-primary" />
+                База знаний
+              </h1>
+              {isEditor && (
+                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openSectionDialog()} title="Добавить раздел">
+                  <Plus className="w-4 h-4" />
+                </Button>
+              )}
+            </div>
             <div className="relative">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
               <Input
-                type="text"
                 placeholder="Поиск по статьям..."
                 className="pl-8 h-8 text-xs"
                 value={searchQuery}
@@ -1200,108 +592,181 @@ export default function KnowledgeBasePage() {
               />
               {searchQuery && (
                 <button
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                   onClick={() => setSearchQuery("")}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                 >
-                  <Minus className="w-3 h-3" />
+                  <X className="w-3 h-3" />
                 </button>
               )}
             </div>
-            {searchQuery && (
-              <p className="text-[10px] text-muted-foreground mt-1.5">
-                {totalResults} {totalResults === 1 ? "результат" : totalResults < 5 ? "результата" : "результатов"}
-              </p>
-            )}
           </div>
 
           <ScrollArea className="flex-1">
-            <div className="p-2 space-y-1">
-              {filteredSections.length === 0 && searchQuery && (
-                <div className="px-3 py-8 text-center">
-                  <Search className="w-8 h-8 text-muted-foreground mx-auto mb-2 opacity-50" />
-                  <p className="text-xs text-muted-foreground">
-                    По запросу «{searchQuery}» ничего не найдено
-                  </p>
-                  <p className="text-[10px] text-muted-foreground mt-1">
-                    Попробуйте изменить поисковый запрос
-                  </p>
-                </div>
-              )}
-
-              {filteredSections.map((section) => {
-                const isOpen = searchQuery ? true : openSections.has(section.id);
-                return (
-                  <Collapsible
-                    key={section.id}
-                    open={isOpen}
-                    onOpenChange={() => toggleSection(section.id)}
-                  >
-                    <CollapsibleTrigger asChild>
+            {isLoading ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+              </div>
+            ) : searchResults ? (
+              <div className="p-3 space-y-1">
+                {searchResults.length === 0 ? (
+                  <p className="text-xs text-muted-foreground text-center py-8">Ничего не найдено</p>
+                ) : (
+                  searchResults.map((article) => {
+                    const section = sectionsWithArticles.find((s) => s.id === article.sectionId);
+                    return (
                       <button
+                        key={article.id}
+                        onClick={() => {
+                          selectArticle(article);
+                          setSearchQuery("");
+                        }}
                         className={cn(
-                          "w-full flex items-center justify-between px-3 py-2 rounded-md text-sm font-medium transition-colors",
-                          isOpen
-                            ? "text-foreground"
-                            : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
+                          "w-full text-left px-3 py-2 rounded-md text-xs transition-colors",
+                          activeArticleId === article.id
+                            ? "bg-primary/10 text-primary font-medium"
+                            : "hover:bg-muted text-foreground"
                         )}
                       >
-                        <div className="flex items-center gap-2">
-                          {section.icon}
-                          <span>{section.title}</span>
-                        </div>
-                        {isOpen ? (
-                          <ChevronDown className="w-3.5 h-3.5 opacity-50" />
-                        ) : (
-                          <ChevronRight className="w-3.5 h-3.5 opacity-50" />
+                        <div className="font-medium truncate">{article.title}</div>
+                        {section && (
+                          <div className="text-[10px] text-muted-foreground flex items-center gap-1 mt-0.5">
+                            <DynamicIcon name={section.icon} className="w-3 h-3" />
+                            {section.title}
+                          </div>
                         )}
                       </button>
-                    </CollapsibleTrigger>
-                    <CollapsibleContent>
-                      <div className="pl-7 pr-1 space-y-0.5">
-                        {section.articles.map((article) => {
-                          const isActive = article.id === activeArticleId;
-                          return (
-                            <button
-                              key={article.id}
-                              onClick={() => setActiveArticleId(article.id)}
-                              className={cn(
-                                "w-full text-left px-2.5 py-1.5 rounded-md text-xs transition-colors flex items-start gap-1.5",
-                                isActive
-                                  ? "bg-primary/10 text-primary font-medium"
-                                  : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
+                    );
+                  })
+                )}
+              </div>
+            ) : (
+              <div className="p-2 space-y-1">
+                {sectionsWithArticles.length === 0 && (
+                  <p className="text-xs text-muted-foreground text-center py-8">
+                    {isEditor ? "Нет разделов. Создайте первый раздел." : "База знаний пуста"}
+                  </p>
+                )}
+                {sectionsWithArticles.map((section, sIdx) => {
+                  const isExpanded = expandedSections.has(section.id);
+                  const isActiveSection = activeSectionId === section.id;
+                  return (
+                    <Collapsible key={section.id} open={isExpanded} onOpenChange={() => toggleSection(section.id)}>
+                      <CollapsibleTrigger asChild>
+                        <button
+                          className={cn(
+                            "w-full flex items-center gap-2 px-3 py-2 rounded-md text-xs transition-colors group",
+                            isActiveSection && !activeArticleId
+                              ? "bg-primary/10 text-primary font-medium"
+                              : "hover:bg-muted text-foreground"
+                          )}
+                        >
+                          <ChevronDown
+                            className={cn(
+                              "w-3 h-3 shrink-0 transition-transform",
+                              !isExpanded && "-rotate-90"
+                            )}
+                          />
+                          <DynamicIcon name={section.icon} className="w-3.5 h-3.5 shrink-0" />
+                          <span className="flex-1 text-left truncate">{section.title}</span>
+                          {isEditor && section.isVisible === false && <EyeOff className="w-3 h-3 text-muted-foreground" />}
+                          <Badge variant="secondary" className="text-[10px] h-4 px-1 shrink-0">
+                            {section.articles.length}
+                          </Badge>
+                          {isEditor && (
+                            <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <div
+                                className={cn("inline-flex items-center justify-center h-5 w-5 rounded-md cursor-pointer hover:bg-accent", (sIdx === 0 || reorderMutation.isPending) && "opacity-30 pointer-events-none")}
+                                onClick={(e) => { e.stopPropagation(); moveSection(sIdx, "up"); }}
+                                role="button"
+                                tabIndex={0}
+                              >
+                                <ArrowUp className="w-3 h-3" />
+                              </div>
+                              <div
+                                className={cn("inline-flex items-center justify-center h-5 w-5 rounded-md cursor-pointer hover:bg-accent", (sIdx === sectionsWithArticles.length - 1 || reorderMutation.isPending) && "opacity-30 pointer-events-none")}
+                                onClick={(e) => { e.stopPropagation(); moveSection(sIdx, "down"); }}
+                                role="button"
+                                tabIndex={0}
+                              >
+                                <ArrowDown className="w-3 h-3" />
+                              </div>
+                              <div
+                                className="inline-flex items-center justify-center h-5 w-5 rounded-md cursor-pointer hover:bg-accent"
+                                onClick={(e) => { e.stopPropagation(); openSectionDialog(section); }}
+                                role="button"
+                                tabIndex={0}
+                              >
+                                <Pencil className="w-3 h-3" />
+                              </div>
+                              <div
+                                className="inline-flex items-center justify-center h-5 w-5 rounded-md cursor-pointer hover:bg-accent text-destructive hover:text-destructive"
+                                onClick={(e) => { e.stopPropagation(); if (confirm("Удалить раздел и все статьи в нём?")) deleteSectionMutation.mutate(section.id); }}
+                                role="button"
+                                tabIndex={0}
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </div>
+                            </div>
+                          )}
+                        </button>
+                      </CollapsibleTrigger>
+                      <CollapsibleContent>
+                        <div className="pl-7 pr-2 pb-1 space-y-0.5">
+                          {section.articles.length === 0 && isEditor && (
+                            <p className="text-[10px] text-muted-foreground px-2 py-1">Нет статей</p>
+                          )}
+                          {section.articles.map((article, aIdx) => (
+                            <div key={article.id} className="flex items-center group">
+                              <button
+                                onClick={() => selectArticle(article)}
+                                className={cn(
+                                  "flex-1 text-left px-2 py-1.5 rounded-md text-xs transition-colors truncate",
+                                  activeArticleId === article.id
+                                    ? "bg-primary/10 text-primary font-medium"
+                                    : "hover:bg-muted text-muted-foreground"
+                                )}
+                              >
+                                <span className="truncate">{article.title}</span>
+                                {isEditor && article.isVisible === false && (
+                                  <EyeOff className="w-2.5 h-2.5 inline ml-1 text-muted-foreground" />
+                                )}
+                              </button>
+                              {isEditor && (
+                                <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                                  <Button variant="ghost" size="icon" className="h-5 w-5" onClick={() => moveArticle(section.id, aIdx, "up")} disabled={aIdx === 0 || reorderMutation.isPending}>
+                                    <ArrowUp className="w-3 h-3" />
+                                  </Button>
+                                  <Button variant="ghost" size="icon" className="h-5 w-5" onClick={() => moveArticle(section.id, aIdx, "down")} disabled={aIdx === section.articles.length - 1 || reorderMutation.isPending}>
+                                    <ArrowDown className="w-3 h-3" />
+                                  </Button>
+                                  <Button variant="ghost" size="icon" className="h-5 w-5" onClick={() => openArticleDialog(section.id, article)}>
+                                    <Pencil className="w-3 h-3" />
+                                  </Button>
+                                  <Button variant="ghost" size="icon" className="h-5 w-5 text-destructive hover:text-destructive" onClick={() => { if (confirm("Удалить статью?")) deleteArticleMutation.mutate(article.id); }}>
+                                    <Trash2 className="w-3 h-3" />
+                                  </Button>
+                                </div>
                               )}
+                            </div>
+                          ))}
+                          {isEditor && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="w-full justify-start text-xs h-7 text-muted-foreground hover:text-foreground"
+                              onClick={() => openArticleDialog(section.id)}
                             >
-                              <FileText className="w-3 h-3 mt-0.5 shrink-0" />
-                              <span className="leading-tight">
-                                {searchQuery
-                                  ? article.title
-                                      .split(
-                                        new RegExp(`(${searchQuery})`, "gi")
-                                      )
-                                      .map((part, i) =>
-                                        part.toLowerCase() ===
-                                        lowerQuery ? (
-                                          <mark
-                                            key={i}
-                                            className="bg-yellow-500/30 text-inherit rounded px-0.5"
-                                          >
-                                            {part}
-                                          </mark>
-                                        ) : (
-                                          part
-                                        )
-                                      )
-                                  : article.title}
-                              </span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </CollapsibleContent>
-                  </Collapsible>
-                );
-              })}
-            </div>
+                              <Plus className="w-3 h-3 mr-1" />
+                              Добавить статью
+                            </Button>
+                          )}
+                        </div>
+                      </CollapsibleContent>
+                    </Collapsible>
+                  );
+                })}
+              </div>
+            )}
           </ScrollArea>
         </aside>
 
@@ -1309,113 +774,45 @@ export default function KnowledgeBasePage() {
         <main className="flex-1 flex flex-col min-w-0 bg-background overflow-hidden">
           <ScrollArea className="flex-1">
             {activeArticle ? (
-              <article className="max-w-4xl mx-auto p-8">
-                {/* Breadcrumbs */}
+              <article className="max-w-4xl mx-auto p-8 text-foreground">
                 <nav className="flex items-center gap-2 text-xs text-muted-foreground mb-6">
                   <BookOpen className="w-3.5 h-3.5" />
                   <span>База знаний</span>
                   <ChevronRight className="w-3 h-3" />
                   <span>{activeSection?.title}</span>
                   <ChevronRight className="w-3 h-3" />
-                  <span className="text-foreground font-medium">
-                    {activeArticle.title}
-                  </span>
+                  <span className="text-foreground font-medium">{activeArticle.title}</span>
                 </nav>
 
-                {/* Title */}
-                <h1 className="text-3xl font-bold tracking-tight mb-4">
-                  {activeArticle.title}
-                </h1>
-
-                {/* Description */}
-                <p className="text-base text-muted-foreground leading-relaxed mb-8">
-                  {activeArticle.description}
-                </p>
-
-                <Separator className="mb-8" />
-
-                {/* Features */}
-                <div className="mb-8">
-                  <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
-                    <FileText className="w-5 h-5 text-primary" />
-                    Функции и элементы управления
-                  </h2>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    {activeArticle.features.map((feature, idx) => (
-                      <Card
-                        key={idx}
-                        className="border-border/50 hover:border-border transition-colors"
-                      >
-                        <CardContent className="p-4">
-                          <div className="flex items-start gap-3">
-                            <div className="mt-0.5 text-primary">
-                              {feature.icon}
-                            </div>
-                            <div>
-                              <h3 className="text-sm font-semibold mb-1">
-                                {feature.title}
-                              </h3>
-                              <p className="text-xs text-muted-foreground leading-relaxed">
-                                {feature.text}
-                              </p>
-                            </div>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Screenshots */}
-                {activeArticle.screenshots &&
-                  activeArticle.screenshots.length > 0 && (
-                    <div className="mb-8">
-                      <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
-                        <Image className="w-5 h-5 text-primary" />
-                        Скриншоты
-                        <Badge variant="secondary" className="text-[10px]">
-                          {activeArticle.screenshots.length}
-                        </Badge>
-                      </h2>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        {activeArticle.screenshots.map((shot, idx) => (
-                          <div
-                            key={idx}
-                            className="rounded-lg border border-border overflow-hidden bg-muted/20"
-                          >
-                            <div className="aspect-video bg-muted/30 flex items-center justify-center">
-                              <img
-                                src={shot.path}
-                                alt={shot.title}
-                                className="w-full h-full object-cover"
-                                loading="lazy"
-                                onError={(e) => {
-                                  (e.target as HTMLImageElement).style.display =
-                                    "none";
-                                }}
-                              />
-                            </div>
-                            <div className="px-3 py-2">
-                              <p className="text-xs font-medium truncate">
-                                {shot.title}
-                              </p>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
+                <div className="flex items-start justify-between gap-4 mb-4">
+                  <h1 className="text-3xl font-bold tracking-tight text-foreground">{activeArticle.title}</h1>
+                  {isEditor && (
+                    <div className="flex items-center gap-1 shrink-0">
+                      <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => activeSection && openArticleDialog(activeSection.id, activeArticle)}>
+                        <Pencil className="w-4 h-4" />
+                      </Button>
+                      <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive" onClick={() => { if (confirm("Удалить статью?")) deleteArticleMutation.mutate(activeArticle.id); }}>
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
                     </div>
                   )}
+                </div>
+
+                {activeArticle.content ? (
+                  <div className="prose prose-sm max-w-none kb-article">
+                    <ArticleContent html={activeArticle.content} />
+                  </div>
+                ) : (
+                  <p className="text-muted-foreground text-sm italic">Статья пока пуста</p>
+                )}
               </article>
             ) : (
               <div className="flex h-full items-center justify-center">
                 <div className="text-center space-y-4">
                   <BookOpen className="w-16 h-16 text-muted-foreground mx-auto opacity-30" />
-                  <h2 className="text-xl font-bold text-muted-foreground">
-                    Выберите статью из списка
-                  </h2>
+                  <h2 className="text-xl font-bold text-muted-foreground">Выберите статью из списка</h2>
                   <p className="text-sm text-muted-foreground max-w-sm">
-                    Используйте боковую панель для навигации по разделам базы
-                    знаний
+                    Используйте боковую панель для навигации по разделам базы знаний
                   </p>
                 </div>
               </div>
@@ -1423,6 +820,149 @@ export default function KnowledgeBasePage() {
           </ScrollArea>
         </main>
       </div>
+
+      {/* Section Dialog */}
+      <Dialog open={sectionDialogOpen} onOpenChange={setSectionDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{editingSection ? "Редактировать раздел" : "Новый раздел"}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div>
+              <label className="text-xs font-medium mb-1 block">Название</label>
+              <Input
+                value={sectionForm.title}
+                onChange={(e) => setSectionForm((p) => ({ ...p, title: e.target.value }))}
+                placeholder="Например, Авторизация"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-medium mb-1 block">Иконка</label>
+              <IconPicker
+                value={sectionForm.icon}
+                onChange={(icon) => setSectionForm((p) => ({ ...p, icon }))}
+              />
+            </div>
+            <div>
+              <label className="text-xs font-medium mb-1 block">Пространство</label>
+              <Select
+                value={sectionForm.workspaceId || "null"}
+                onValueChange={(v) => setSectionForm((p) => ({ ...p, workspaceId: v === "null" ? null : v }))}
+              >
+                <SelectTrigger className="h-9 text-xs">
+                  <SelectValue placeholder="Все пространства" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="null">Все пространства</SelectItem>
+                  {workspacesData.map((ws) => (
+                    <SelectItem key={ws.id} value={ws.id}>{ws.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex items-center gap-4">
+              <div className="flex-1">
+                <label className="text-xs font-medium mb-1 block">Порядок</label>
+                <Input
+                  type="number"
+                  value={sectionForm.sortOrder}
+                  onChange={(e) => setSectionForm((p) => ({ ...p, sortOrder: parseInt(e.target.value) || 0 }))}
+                />
+              </div>
+              <div className="flex items-center gap-2 pt-5">
+                <input
+                  id="section-visible"
+                  type="checkbox"
+                  checked={sectionForm.isVisible}
+                  onChange={(e) => setSectionForm((p) => ({ ...p, isVisible: e.target.checked }))}
+                  className="rounded border-gray-300"
+                />
+                <label htmlFor="section-visible" className="text-xs">Видимый</label>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSectionDialogOpen(false)}>Отмена</Button>
+            <Button onClick={handleSaveSection} disabled={!sectionForm.title.trim() || createSectionMutation.isPending || updateSectionMutation.isPending}>
+              {(createSectionMutation.isPending || updateSectionMutation.isPending) && <Loader2 className="w-3 h-3 animate-spin mr-1" />}
+              Сохранить
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Article Dialog */}
+      <Dialog open={articleDialogOpen} onOpenChange={setArticleDialogOpen}>
+        <DialogContent className="sm:max-w-none sm:w-[95vw] h-[95vh] flex flex-col p-0 gap-0 overflow-hidden">
+          <DialogHeader className="px-6 py-4 border-b shrink-0">
+            <DialogTitle>{editingArticle ? "Редактировать статью" : "Новая статья"}</DialogTitle>
+          </DialogHeader>
+          <div className="flex-1 overflow-hidden flex flex-col px-6 py-4 gap-4 min-h-0">
+            <div className="shrink-0">
+              <label className="text-xs font-medium mb-1 block">Название</label>
+              <Input
+                value={articleForm.title}
+                onChange={(e) => setArticleForm((p) => ({ ...p, title: e.target.value }))}
+                placeholder="Название статьи"
+              />
+            </div>
+            <div className="shrink-0">
+              <label className="text-xs font-medium mb-1 block">Пространство</label>
+              <Select
+                value={articleForm.workspaceId || "null"}
+                onValueChange={(v) => setArticleForm((p) => ({ ...p, workspaceId: v === "null" ? null : v }))}
+              >
+                <SelectTrigger className="h-9 text-xs">
+                  <SelectValue placeholder="Все пространства" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="null">Все пространства</SelectItem>
+                  {workspacesData.map((ws) => (
+                    <SelectItem key={ws.id} value={ws.id}>{ws.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex-1 flex flex-col min-h-0">
+              <label className="text-xs font-medium mb-1 block">Содержимое</label>
+              <div className="flex-1 min-h-0 flex flex-col">
+                <RichTextEditor
+                  content={articleForm.content}
+                  onChange={(content) => setArticleForm((p) => ({ ...p, content }))}
+                  placeholder="Начните писать статью..."
+                />
+              </div>
+            </div>
+            <div className="flex items-center gap-4 shrink-0">
+              <div className="flex-1">
+                <label className="text-xs font-medium mb-1 block">Порядок</label>
+                <Input
+                  type="number"
+                  value={articleForm.sortOrder}
+                  onChange={(e) => setArticleForm((p) => ({ ...p, sortOrder: parseInt(e.target.value) || 0 }))}
+                />
+              </div>
+              <div className="flex items-center gap-2 pt-5">
+                <input
+                  id="article-visible"
+                  type="checkbox"
+                  checked={articleForm.isVisible}
+                  onChange={(e) => setArticleForm((p) => ({ ...p, isVisible: e.target.checked }))}
+                  className="rounded border-gray-300"
+                />
+                <label htmlFor="article-visible" className="text-xs">Видимая</label>
+              </div>
+            </div>
+          </div>
+          <DialogFooter className="px-6 py-4 border-t shrink-0">
+            <Button variant="outline" onClick={() => setArticleDialogOpen(false)}>Отмена</Button>
+            <Button onClick={handleSaveArticle} disabled={!articleForm.title.trim() || !articleSectionId || createArticleMutation.isPending || updateArticleMutation.isPending}>
+              {(createArticleMutation.isPending || updateArticleMutation.isPending) && <Loader2 className="w-3 h-3 animate-spin mr-1" />}
+              Сохранить
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Layout>
   );
 }

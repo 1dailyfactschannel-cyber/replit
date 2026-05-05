@@ -1720,7 +1720,7 @@ export function TaskDetailsModal({
                         handleTitleBlur();
                       }
                     }}
-                    className="text-3xl font-bold border-none bg-transparent pr-12 focus-visible:ring-0 h-auto placeholder:text-muted-foreground/30 font-sans text-black dark:text-white"
+                    className="text-3xl font-bold border-none bg-transparent pr-12 focus-visible:ring-0 h-auto placeholder:text-muted-foreground/70 font-sans text-black dark:text-white"
                     placeholder="Введите название задачи..."
                   />
                   {newTitle !== task?.title && (
@@ -2371,7 +2371,7 @@ export function TaskDetailsModal({
                               className="w-full h-full object-cover"
                             />
                             <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
-                              <Eye className="w-5 h-5 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+                               <Eye className="w-5 h-5 text-white opacity-0 group-hover:opacity-100 transition-opacity drop-shadow-lg" />
                             </div>
                           </div>
                           <button 
@@ -2436,7 +2436,7 @@ export function TaskDetailsModal({
                     <textarea
                       ref={inputRef as any}
                       placeholder="Напишите сообщение..."
-                      className="w-full h-full bg-transparent border-0 resize-none focus:ring-0 focus:outline-none text-[14px] leading-relaxed placeholder:text-muted-foreground/50 py-0.5"
+                      className="w-full h-full bg-transparent border-0 resize-none focus:ring-0 focus:outline-none text-[14px] leading-relaxed placeholder:text-muted-foreground/70 py-0.5"
                       value={newComment}
                       rows={1}
                       onInput={(e: any) => {

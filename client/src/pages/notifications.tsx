@@ -11,9 +11,10 @@ import { ru } from "date-fns/locale";
 import { cn } from "@/lib/utils";
 import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
-import { io, Socket } from "socket.io-client";
+// Socket connection now handled by useSocket hook
 import { toast } from "sonner";
 import { useNotifications } from "@/hooks/use-notifications";
+import { useSocket } from "@/hooks/use-socket";
 import {
   Bell,
   BellRing,
@@ -31,6 +32,9 @@ import {
   Clock,
   ArrowRight,
   User,
+  Newspaper,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -46,6 +50,13 @@ const notificationTypeConfig = {
   task: {
     icon: CheckSquare,
     label: "Задачи",
+    color: "text-blue-500",
+    bgColor: "bg-blue-500/10",
+    borderColor: "border-blue-200",
+  },
+  task_comment: {
+    icon: CheckSquare,
+    label: "Комментарии",
     color: "text-blue-500",
     bgColor: "bg-blue-500/10",
     borderColor: "border-blue-200",
@@ -70,6 +81,13 @@ const notificationTypeConfig = {
     color: "text-orange-500",
     bgColor: "bg-orange-500/10",
     borderColor: "border-orange-200",
+  },
+  news: {
+    icon: Newspaper,
+    label: "Новости",
+    color: "text-red-500",
+    bgColor: "bg-red-500/10",
+    borderColor: "border-red-200",
   },
   system: {
     icon: Settings,
@@ -126,6 +144,8 @@ interface ParsedNotificationData {
   eventName?: string;
   commentPreview?: string;
   userName: string;
+  content?: string;
+  title?: string;
 }
 
 function parseNotificationMessage(message: string): ParsedNotificationData | null {
@@ -174,6 +194,8 @@ function formatNotificationContent(notification: Notification) {
     taskTitle: data.taskTitle,
     boardName: data.boardName,
     commentPreview: data.commentPreview,
+    content: data.content,
+    title: data.title,
   };
 }
 
@@ -191,6 +213,7 @@ function CompactNotificationItem({
   const type = getNotificationType(notification.type);
   const config = notificationTypeConfig[type];
   const Icon = config.icon;
+  const [expanded, setExpanded] = useState(false);
 
   const formatTime = (date: Date | string | null) => {
     if (!date) return "";
@@ -199,11 +222,16 @@ function CompactNotificationItem({
   };
 
   const content = formatNotificationContent(notification);
-  const isClickable = notification.link || type === "task" || type === "chat" || type === "calendar" || type === "call";
+  const isClickable = type !== "news" && (notification.link || type === "task" || type === "chat" || type === "calendar" || type === "call");
+  const isNews = type === "news";
 
   const handleClick = () => {
     if (!notification.isRead) {
       onMarkAsRead(notification.id);
+    }
+    if (isNews) {
+      setExpanded(!expanded);
+      return;
     }
     onNavigate(notification);
   };
@@ -219,6 +247,100 @@ function CompactNotificationItem({
     if (content.commentPreview) parts.push(`: "${content.commentPreview.substring(0, 50)}${content.commentPreview.length > 50 ? '...' : ''}"`);
     return parts.join(" ");
   };
+
+  // News item render
+  if (isNews) {
+    return (
+      <div
+        className={cn(
+          "group px-3 py-2 rounded-md transition-all duration-200",
+          notification.isRead
+            ? "bg-background hover:bg-accent/40"
+            : "bg-primary/[0.04] hover:bg-primary/[0.08]"
+        )}
+      >
+        <div className="flex items-start gap-2.5">
+          {/* Unread dot */}
+          <div className="w-1.5 h-1.5 shrink-0 mt-1.5 cursor-pointer" onClick={handleClick}>
+            {!notification.isRead && (
+              <span className="block w-1.5 h-1.5 rounded-full bg-primary" />
+            )}
+          </div>
+
+          {/* Icon */}
+          <div
+            className={cn(
+              "w-7 h-7 rounded-md flex items-center justify-center shrink-0",
+              config.bgColor
+            )}
+          >
+            <Icon className={cn("w-3.5 h-3.5", config.color)} />
+          </div>
+
+          {/* Content */}
+          <div className="flex-1 min-w-0 cursor-pointer" onClick={handleClick}>
+            <p className={cn(
+              "text-sm",
+              notification.isRead ? "text-muted-foreground" : "text-foreground font-medium"
+            )}>
+              {notification.title || "Новость"}
+            </p>
+            <span className="text-[11px] text-muted-foreground">
+              {formatTime(notification.createdAt)}
+            </span>
+            {expanded && (
+              <div className="mt-2 text-sm text-foreground bg-muted/50 rounded-md p-3 whitespace-pre-wrap">
+                {content.content || notification.message}
+              </div>
+            )}
+          </div>
+
+          {/* Actions */}
+          <div className="flex items-center gap-0.5 shrink-0">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7"
+              onClick={(e) => {
+                e.stopPropagation();
+                setExpanded(!expanded);
+              }}
+            >
+              {expanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+            </Button>
+            <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+              {!notification.isRead && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onMarkAsRead(notification.id);
+                  }}
+                  title="Отметить как прочитанное"
+                >
+                  <Check className="h-3.5 w-3.5" />
+                </Button>
+              )}
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 text-destructive hover:text-destructive"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDelete(notification.id);
+                }}
+                title="Удалить"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -380,16 +502,12 @@ export default function NotificationsPage() {
     },
   });
 
+  const socket = useSocket();
+
   useEffect(() => {
-    const socket: Socket = io({
-      transports: ["websocket", "polling"],
-    });
+    if (!socket) return;
 
-    socket.on("connect", () => {
-      console.log("Notifications page socket connected");
-    });
-
-    socket.on("new-notification", (notification: Notification) => {
+    const handleNewNotification = (notification: Notification) => {
       queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
       // Show browser notification if page is not visible
       if (document.hidden) {
@@ -402,10 +520,12 @@ export default function NotificationsPage() {
           data: { url: notification.link || '/notifications' },
         });
       }
-    });
+    };
+
+    socket.on("new-notification", handleNewNotification);
 
     return () => {
-      socket.disconnect();
+      socket.off("new-notification", handleNewNotification);
     };
   }, [queryClient, notify]);
 

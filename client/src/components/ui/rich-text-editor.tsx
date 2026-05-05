@@ -1,5 +1,5 @@
 import { useEditor, EditorContent } from '@tiptap/react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useRef } from 'react';
 import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
 import Link from '@tiptap/extension-link';
@@ -8,6 +8,7 @@ import { TextStyle } from '@tiptap/extension-text-style';
 import { TextAlign } from '@tiptap/extension-text-align';
 import { Highlight } from '@tiptap/extension-highlight';
 import { Color } from '@tiptap/extension-color';
+import Image from '@tiptap/extension-image';
 
 // Custom extension to support font-size via textStyle mark
 const FontSize = TextStyle.extend({
@@ -47,7 +48,46 @@ import {
   AlignRight,
   Palette,
   Highlighter,
-  ChevronDown
+  ChevronDown,
+  Image as ImageIcon,
+  Smile,
+  Mail,
+  Key,
+  Check,
+  RefreshCw,
+  UserPlus,
+  LayoutDashboard,
+  Clock,
+  TrendingUp,
+  Calendar,
+  Users,
+  FolderOpen,
+  LayoutGrid,
+  Search,
+  Flag,
+  ListChecks,
+  Plus,
+  Tags,
+  Paperclip,
+  Globe,
+  MessageSquare,
+  Video,
+  Filter,
+  User,
+  Shield,
+  Bell,
+  Zap,
+  Send,
+  Store,
+  Coins,
+  ShoppingBag,
+  BarChart2,
+  Download,
+  Briefcase,
+  BookOpen,
+  Activity,
+  Trash2,
+  Star
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
@@ -75,14 +115,107 @@ const HIGHLIGHT_COLORS = [
   '#f3e8ff', '#fce7f3', '#f1f5f9', '#ffffff', '#000000'
 ];
 
+const ImageUploadButton = ({ editor }: { editor: any }) => {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !editor) return;
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      const res = await fetch('/api/upload', {
+        method: 'POST',
+        body: formData,
+        credentials: 'include',
+      });
+      if (!res.ok) throw new Error('Upload failed');
+      const data = await res.json();
+      if (data.url) {
+        editor.chain().focus().setImage({ src: data.url }).run();
+      }
+    } catch (err) {
+      console.error('Image upload failed:', err);
+    }
+
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  return (
+    <>
+      <input
+        type="file"
+        ref={fileInputRef}
+        className="hidden"
+        accept="image/*"
+        onChange={handleFileChange}
+      />
+      <Button
+        variant="ghost"
+        size="icon"
+        className="h-6 w-6 text-muted-foreground hover:text-foreground"
+        onClick={() => fileInputRef.current?.click()}
+        onMouseDown={(e) => e.preventDefault()}
+        type="button"
+        title="Вставить изображение"
+      >
+        <ImageIcon className="h-3.5 w-3.5" />
+      </Button>
+    </>
+  );
+};
+
 const MenuBar = ({ editor }: { editor: any }) => {
   if (!editor) return null;
 
   const [fontSizeOpen, setFontSizeOpen] = useState(false);
   const [textColorOpen, setTextColorOpen] = useState(false);
   const [highlightColorOpen, setHighlightColorOpen] = useState(false);
+  const [iconPickerOpen, setIconPickerOpen] = useState(false);
   const [linkUrl, setLinkUrl] = useState('');
   const [showLinkInput, setShowLinkInput] = useState(false);
+
+  const POPULAR_ICONS = [
+    { name: 'Mail', icon: Mail },
+    { name: 'Key', icon: Key },
+    { name: 'Check', icon: Check },
+    { name: 'RefreshCw', icon: RefreshCw },
+    { name: 'UserPlus', icon: UserPlus },
+    { name: 'LayoutDashboard', icon: LayoutDashboard },
+    { name: 'Clock', icon: Clock },
+    { name: 'TrendingUp', icon: TrendingUp },
+    { name: 'Calendar', icon: Calendar },
+    { name: 'Users', icon: Users },
+    { name: 'FolderOpen', icon: FolderOpen },
+    { name: 'LayoutGrid', icon: LayoutGrid },
+    { name: 'Search', icon: Search },
+    { name: 'Flag', icon: Flag },
+    { name: 'ListChecks', icon: ListChecks },
+    { name: 'Plus', icon: Plus },
+    { name: 'Tags', icon: Tags },
+    { name: 'Paperclip', icon: Paperclip },
+    { name: 'Globe', icon: Globe },
+    { name: 'MessageSquare', icon: MessageSquare },
+    { name: 'Video', icon: Video },
+    { name: 'Filter', icon: Filter },
+    { name: 'User', icon: User },
+    { name: 'Shield', icon: Shield },
+    { name: 'Bell', icon: Bell },
+    { name: 'Zap', icon: Zap },
+    { name: 'Send', icon: Send },
+    { name: 'Store', icon: Store },
+    { name: 'Coins', icon: Coins },
+    { name: 'ShoppingBag', icon: ShoppingBag },
+    { name: 'BarChart2', icon: BarChart2 },
+    { name: 'Download', icon: Download },
+    { name: 'Briefcase', icon: Briefcase },
+    { name: 'BookOpen', icon: BookOpen },
+    { name: 'Activity', icon: Activity },
+    { name: 'Trash2', icon: Trash2 },
+    { name: 'Star', icon: Star },
+  ];
 
   const getCurrentFontSize = () => {
     try {
@@ -436,6 +569,39 @@ const MenuBar = ({ editor }: { editor: any }) => {
 
       <div className="flex-1" />
 
+      <ImageUploadButton editor={editor} />
+
+      <Popover open={iconPickerOpen} onOpenChange={setIconPickerOpen}>
+        <PopoverTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-6 w-6 text-muted-foreground hover:text-foreground"
+            onMouseDown={(e) => e.preventDefault()}
+            title="Вставить иконку"
+          >
+            <Smile className="h-3.5 w-3.5" />
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent className="p-2 w-auto" align="end">
+          <div className="grid grid-cols-8 gap-1 w-64">
+            {POPULAR_ICONS.map(({ name, icon: Icon }) => (
+              <button
+                key={name}
+                className="h-7 w-7 rounded hover:bg-secondary flex items-center justify-center text-muted-foreground hover:text-foreground"
+                title={name}
+                onClick={() => {
+                  editor.chain().focus().insertContent(`<span data-icon="${name}"></span>&nbsp;`).run();
+                  setIconPickerOpen(false);
+                }}
+              >
+                <Icon className="h-3.5 w-3.5" />
+              </button>
+            ))}
+          </div>
+        </PopoverContent>
+      </Popover>
+
       <Button
         variant="ghost"
         size="icon"
@@ -494,6 +660,9 @@ export function RichTextEditor({ content, onChange, onBlur, placeholder }: RichT
     }),
     Placeholder.configure({
       placeholder: placeholder || 'Начните писать...',
+    }),
+    Image.configure({
+      allowBase64: true,
     }),
   ], [placeholder]);
 
